@@ -1,45 +1,87 @@
 # JetsonTracker .gitignore
+# Comprehensive ignore file for multi-platform robotics project
 
+# =============================================================================
+# macOS
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# =============================================================================
+# Xcode / Swift / iOS
+# =============================================================================
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+.swiftpm/
+.build/
+DerivedData/
+Carthage/Build/
+Dependencies/
+.accio/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+iOSInjectionProject/
+
+# =============================================================================
 # Python
+# =============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+env/
+venv/
+ENV/
+.venv/
 *.egg-info/
-.eggs/
+*.eggs/
 dist/
 build/
-venv/
-.venv/
-env/
-.env
+.pytest_cache/
+.mypy_cache/
+*.coverage
+.coverage
+.coverage.*
+htmlcov/
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# ML Models (too large for git - download separately)
-*.pt
-*.onnx
-*.engine
-*.weights
-
-# Logs
-logs/
-*.log
-
-# STM32 Build artifacts
+# =============================================================================
+# STM32 / Embedded Build Artifacts
+# =============================================================================
 nucleo/firmware/*/Debug/
+nucleo/firmware/*/Release/
 nucleo/firmware/*/.settings/
 *.o
 *.elf
@@ -47,31 +89,102 @@ nucleo/firmware/*/.settings/
 *.bin
 *.hex
 
-# Xcode/Swift
-*.xcuserstate
-xcuserdata/
-DerivedData/
-.build/
-*.swiftpm/
-*.xcodeproj/project.xcworkspace/xcuserdata/
-*.xcodeproj/xcuserdata/
-.swiftpm/xcode/
+# =============================================================================
+# ML Models (too large for git - download separately)
+# =============================================================================
+*.pt
+*.onnx
+*.engine
+*.weights
+models/
 
-# Secrets (never commit)
+# =============================================================================
+# IDEs / Editors
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =============================================================================
+# Logs
+# =============================================================================
+logs/
+*.log
+jetson/*.log
+
+# =============================================================================
+# Secrets (NEVER commit)
+# =============================================================================
 *.json.credentials
 credentials*.json
 *.pem
 *.key
 secrets/
+.env
+.env.*
+!.env.example
 
-# Temporary files
+# =============================================================================
+# Temporary / Cache
+# =============================================================================
 *.tmp
 *.temp
 .cache/
+jetson/fixes.jsonl
 
-# Serena memories (project-specific, but don't share)
+# =============================================================================
+# AI Assistant / Tool Directories
+# =============================================================================
+.cursor/
 .serena/
-
-# Gemini clipboard
+.claude/
 .gemini-clipboard/
+
+# =============================================================================
+# Archive and Backup (local only, not for repo)
+# =============================================================================
 archive/
+archive*/
+Archive*/
+*_archive/
+backup*/
+Backup*/
+*.backup
+*.bak
+
+# =============================================================================
+# Markdown Files - Selective Tracking
+# =============================================================================
+# Ignore random notes/drafts by default
+*.md
+
+# Root level docs - KEEP
+!README.md
+!BOM.md
+!CONTRIBUTING.md
+!CHANGELOG.md
+!CODE_OF_CONDUCT.md
+!SECURITY.md
+!LICENSE.md
+
+# docs/ folder - KEEP ALL
+!docs/
+!docs/**
+!docs/**/*.md
+
+# Component READMEs - KEEP
+!orin/README.md
+!orin/*/README.md
+!nucleo/README.md
+!nucleo/**/*.md
+!gimbal/README.md
+
+# GitHub templates - KEEP
+!.github/
+!.github/**/*.md
+
+# =============================================================================
+# End of .gitignore
+# =============================================================================
