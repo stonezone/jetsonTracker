@@ -1,0 +1,3 @@
+[submodule "gps-relay-framework"]
+	path = gps-relay-framework
+	url = https://github.com/stonezone/gps-relay-framework.git
