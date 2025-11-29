@@ -200,6 +200,11 @@ class RobotGpsServer:
             if update.base:
                 self.last_iphone_fix = update.base
 
+            # CRITICAL: Broadcast to local clients (e.g., FusionEngine/VisionTracker)
+            # This closes the loop: iPhone -> Server -> Local Fusion
+            if update.remote or update.base:
+                await self._broadcast_to_local_clients(message, websocket)
+
         except json.JSONDecodeError:
             logger.warning(f"Invalid JSON received: {message[:100]}...")
         except KeyError as e:
@@ -225,6 +230,28 @@ class RobotGpsServer:
                 callback(fix)
             except Exception as e:
                 logger.error(f"Callback error: {e}")
+
+    async def _broadcast_to_local_clients(self, message: str, sender_ws):
+        """Relay GPS update to all other connected clients.
+
+        This enables local processes (like VisionTracker/FusionEngine) to receive
+        GPS data by connecting as WebSocket clients to this server.
+
+        Data flow: iPhone -> Cloudflare -> gps_server -> local clients -> FusionEngine
+        """
+        # Get all clients except the sender (don't echo back to iPhone)
+        receivers = [ws for ws in self.connected_clients if ws != sender_ws]
+        if not receivers:
+            return
+
+        # Broadcast to all local listeners
+        send_tasks = [ws.send(message) for ws in receivers]
+        results = await asyncio.gather(*send_tasks, return_exceptions=True)
+
+        # Log any broadcast failures (but don't crash)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning(f"Broadcast to client failed: {result}")
 
     def get_stats(self) -> dict:
         """Return server statistics."""

@@ -27,7 +27,7 @@ class IntegratedTrackerConfig:
     conf_threshold: float = 0.5
     
     # GPS
-    gps_uri: str = 'ws://192.168.1.100:8765'  # iPhone IP
+    gps_uri: str = 'ws://localhost:8765'  # Local gps_server.py
     gps_enabled: bool = True
     
     # Gimbal
