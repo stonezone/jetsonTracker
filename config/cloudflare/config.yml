@@ -1,0 +1,7 @@
+tunnel: 3ea6c1a2-5b5a-4d91-b0df-5e458b0fbbf5
+credentials-file: /etc/cloudflared/3ea6c1a2-5b5a-4d91-b0df-5e458b0fbbf5.json
+
+ingress:
+  - hostname: ws.stonezone.net
+    service: http://localhost:8765
+  - service: http_status:404

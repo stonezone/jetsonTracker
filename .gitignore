@@ -1,0 +1,77 @@
+# JetsonTracker .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+venv/
+.venv/
+env/
+.env
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ML Models (too large for git - download separately)
+*.pt
+*.onnx
+*.engine
+*.weights
+
+# Logs
+logs/
+*.log
+
+# STM32 Build artifacts
+nucleo/firmware/*/Debug/
+nucleo/firmware/*/.settings/
+*.o
+*.elf
+*.map
+*.bin
+*.hex
+
+# Xcode/Swift
+*.xcuserstate
+xcuserdata/
+DerivedData/
+.build/
+*.swiftpm/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+.swiftpm/xcode/
+
+# Secrets (never commit)
+*.json.credentials
+credentials*.json
+*.pem
+*.key
+secrets/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Serena memories (project-specific, but don't share)
+.serena/
+
+# Gemini clipboard
+.gemini-clipboard/
+archive/

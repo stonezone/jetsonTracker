@@ -1,0 +1,350 @@
+<svg viewBox="0 0 1400 900" xmlns="http://www.w3.org/2000/svg">
+  <!-- Define styles -->
+  <defs>
+    <style>
+      .board { fill: #1a1a2e; stroke: #00d4ff; stroke-width: 2; }
+      .chip { fill: #2d3561; stroke: #00d4ff; stroke-width: 1.5; }
+      .power-positive { stroke: #ff4444; stroke-width: 2.5; }
+      .power-ground { stroke: #000000; stroke-width: 2.5; }
+      .power-logic { stroke: #ffaa00; stroke-width: 2; }
+      .signal { stroke: #00ff88; stroke-width: 2; }
+      .capacitor { fill: #ff6b6b; stroke: #cc0000; stroke-width: 1.5; }
+      .motor { fill: #9933ff; stroke: #cc00ff; stroke-width: 1.5; }
+      .text-label { font-family: monospace; font-size: 11px; fill: #ffffff; }
+      .text-title { font-family: monospace; font-size: 14px; font-weight: bold; fill: #00ff88; }
+      .text-warning { font-family: monospace; font-size: 10px; fill: #ff4444; font-weight: bold; }
+      .connector { fill: #cccccc; stroke: #666666; stroke-width: 1; }
+      .pin { fill: #ffff00; stroke: #ff8800; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="900" fill="#0a0a0a"/>
+
+  <!-- Title -->
+  <text x="700" y="30" class="text-title" text-anchor="middle" font-size="18">STM32 NUCLEO DUAL STEPPER DRIVER WIRING DIAGRAM</text>
+  <text x="700" y="50" class="text-label" text-anchor="middle" font-size="12">DRV8825 / A4988 Configuration with Critical Safety Components</text>
+
+  <!-- ============ POWER SUPPLY SECTION (Left) ============ -->
+  <g id="power-supply">
+    <text x="100" y="100" class="text-title">POWER SUPPLY</text>
+    <text x="100" y="120" class="text-label">(12V-36V)</text>
+    
+    <!-- PSU Box -->
+    <rect x="50" y="140" width="100" height="80" class="board"/>
+    <text x="100" y="165" class="text-label" text-anchor="middle">PSU</text>
+    <text x="100" y="180" class="text-label" text-anchor="middle" font-size="10">12-36V</text>
+    
+    <!-- Positive terminal -->
+    <circle cx="100" cy="220" r="6" class="pin"/>
+    <text x="100" y="245" class="text-label" text-anchor="middle">+ VMOT</text>
+    
+    <!-- Negative terminal -->
+    <circle cx="140" cy="220" r="6" class="pin"/>
+    <text x="140" y="245" class="text-label" text-anchor="middle">- GND</text>
+  </g>
+
+  <!-- ============ STM32 NUCLEO SECTION (Center-Top) ============ -->
+  <g id="nucleo">
+    <text x="500" y="100" class="text-title">STM32 NUCLEO F103RB</text>
+    
+    <!-- Main board -->
+    <rect x="400" y="130" width="200" height="200" class="board"/>
+    <text x="500" y="160" class="text-label" text-anchor="middle" font-size="12">NUCLEO</text>
+    
+    <!-- Left connector (CN9) -->
+    <g id="cn9-header">
+      <text x="415" y="190" class="text-label" font-size="9">CN9</text>
+      <!-- GND -->
+      <rect x="405" y="200" width="8" height="8" class="connector"/>
+      <text x="408" y="225" class="text-label" font-size="9" text-anchor="middle">GND</text>
+      
+      <!-- +3.3V -->
+      <rect x="405" y="240" width="8" height="8" class="connector"/>
+      <text x="408" y="265" class="text-label" font-size="9" text-anchor="middle">+3.3V</text>
+    </g>
+    
+    <!-- Right connector (CN10) - Signal pins -->
+    <g id="cn10-header">
+      <text x="580" y="190" class="text-label" font-size="9">CN10</text>
+      
+      <!-- D2 (PA10) -->
+      <rect x="587" y="200" width="8" height="8" class="connector"/>
+      <text x="590" y="225" class="text-label" font-size="9" text-anchor="middle">D2</text>
+      <text x="610" y="225" class="text-label" font-size="8">PA10</text>
+      
+      <!-- D3 (PB3) -->
+      <rect x="587" y="240" width="8" height="8" class="connector"/>
+      <text x="590" y="265" class="text-label" font-size="9" text-anchor="middle">D3</text>
+      <text x="610" y="265" class="text-label" font-size="8">PB3</text>
+      
+      <!-- D4 (PB5) -->
+      <rect x="587" y="280" width="8" height="8" class="connector"/>
+      <text x="590" y="305" class="text-label" font-size="9" text-anchor="middle">D4</text>
+      <text x="610" y="305" class="text-label" font-size="8">PB5</text>
+      
+      <!-- D5 (PB4) -->
+      <rect x="587" y="320" width="8" height="8" class="connector"/>
+      <text x="590" y="345" class="text-label" font-size="9" text-anchor="middle">D5</text>
+      <text x="610" y="345" class="text-label" font-size="8">PB4</text>
+    </g>
+  </g>
+
+  <!-- ============ DRIVER A (DRV8825) ============ -->
+  <g id="driver-a">
+    <text x="150" y="420" class="text-title">DRIVER A</text>
+    <text x="150" y="440" class="text-label">(DRV8825/A4988)</text>
+    
+    <!-- Driver chip -->
+    <rect x="50" y="460" width="200" height="180" class="chip"/>
+    
+    <!-- Power pins (Left side) -->
+    <circle cx="55" cy="480" r="4" class="pin"/>
+    <text x="75" y="485" class="text-label">VMOT</text>
+    
+    <circle cx="55" cy="510" r="4" class="pin"/>
+    <text x="75" y="515" class="text-label">VDD (3.3V)</text>
+    
+    <circle cx="55" cy="540" r="4" class="pin"/>
+    <text x="75" y="545" class="text-label">GND (Power)</text>
+    
+    <circle cx="55" cy="570" r="4" class="pin"/>
+    <text x="75" y="575" class="text-label">GND (Logic)</text>
+    
+    <!-- Control pins (Right side) -->
+    <circle cx="245" cy="480" r="4" class="pin"/>
+    <text x="180" y="485" class="text-label" text-anchor="end">STEP</text>
+    
+    <circle cx="245" cy="510" r="4" class="pin"/>
+    <text x="180" y="515" class="text-label" text-anchor="end">DIR</text>
+    
+    <circle cx="245" cy="540" r="4" class="pin"/>
+    <text x="180" y="545" class="text-label" text-anchor="end">ENABLE</text>
+    
+    <!-- Config pins -->
+    <circle cx="55" cy="600" r="4" class="pin"/>
+    <text x="75" y="605" class="text-label">SLEEP</text>
+    
+    <circle cx="245" cy="600" r="4" class="pin"/>
+    <text x="180" y="605" class="text-label" text-anchor="end">RESET</text>
+    
+    <!-- Motor outputs -->
+    <circle cx="55" cy="630" r="4" class="motor"/>
+    <text x="75" y="635" class="text-label">OUT1/2</text>
+    
+    <circle cx="245" cy="630" r="4" class="motor"/>
+    <text x="180" y="635" class="text-label" text-anchor="end">OUT3/4</text>
+  </g>
+
+  <!-- ============ DRIVER B (DRV8825) ============ -->
+  <g id="driver-b">
+    <text x="900" y="420" class="text-title">DRIVER B</text>
+    <text x="900" y="440" class="text-label">(DRV8825/A4988)</text>
+    
+    <!-- Driver chip -->
+    <rect x="800" y="460" width="200" height="180" class="chip"/>
+    
+    <!-- Power pins (Left side) -->
+    <circle cx="805" cy="480" r="4" class="pin"/>
+    <text x="825" y="485" class="text-label">VMOT</text>
+    
+    <circle cx="805" cy="510" r="4" class="pin"/>
+    <text x="825" y="515" class="text-label">VDD (3.3V)</text>
+    
+    <circle cx="805" cy="540" r="4" class="pin"/>
+    <text x="825" y="545" class="text-label">GND (Power)</text>
+    
+    <circle cx="805" cy="570" r="4" class="pin"/>
+    <text x="825" y="575" class="text-label">GND (Logic)</text>
+    
+    <!-- Control pins (Right side) -->
+    <circle cx="995" cy="480" r="4" class="pin"/>
+    <text x="930" y="485" class="text-label" text-anchor="end">STEP</text>
+    
+    <circle cx="995" cy="510" r="4" class="pin"/>
+    <text x="930" y="515" class="text-label" text-anchor="end">DIR</text>
+    
+    <circle cx="995" cy="540" r="4" class="pin"/>
+    <text x="930" y="545" class="text-label" text-anchor="end">ENABLE</text>
+    
+    <!-- Config pins -->
+    <circle cx="805" cy="600" r="4" class="pin"/>
+    <text x="825" y="605" class="text-label">SLEEP</text>
+    
+    <circle cx="995" cy="600" r="4" class="pin"/>
+    <text x="930" y="605" class="text-label" text-anchor="end">RESET</text>
+    
+    <!-- Motor outputs -->
+    <circle cx="805" cy="630" r="4" class="motor"/>
+    <text x="825" y="635" class="text-label">OUT1/2</text>
+    
+    <circle cx="995" cy="630" r="4" class="motor"/>
+    <text x="930" y="635" class="text-label" text-anchor="end">OUT3/4</text>
+  </g>
+
+  <!-- ============ MOTORS ============ -->
+  <g id="motors">
+    <!-- Motor A -->
+    <circle cx="150" cy="750" r="30" class="motor"/>
+    <text x="150" y="755" class="text-label" text-anchor="middle" font-size="10">MOTOR</text>
+    <text x="150" y="768" class="text-label" text-anchor="middle" font-size="9">A</text>
+    
+    <!-- Motor B -->
+    <circle cx="900" cy="750" r="30" class="motor"/>
+    <text x="900" y="755" class="text-label" text-anchor="middle" font-size="10">MOTOR</text>
+    <text x="900" y="768" class="text-label" text-anchor="middle" font-size="9">B</text>
+  </g>
+
+  <!-- ============ WIRING CONNECTIONS ============ -->
+  
+  <!-- PSU to Driver A Power -->
+  <line x1="100" y1="220" x2="100" y2="400" stroke="#ff4444" stroke-width="2.5" stroke-dasharray="5,5"/>
+  <line x1="100" y1="400" x2="55" y2="400" stroke="#ff4444" stroke-width="2.5"/>
+  <line x1="55" y1="400" x2="55" y2="480" stroke="#ff4444" stroke-width="2.5"/>
+  <text x="30" y="440" class="text-label" font-size="9">+12V</text>
+  
+  <!-- PSU to Driver B Power -->
+  <line x1="100" y1="220" x2="100" y2="350" stroke="#ff4444" stroke-width="2.5" stroke-dasharray="5,5"/>
+  <line x1="100" y1="350" x2="850" y2="350" stroke="#ff4444" stroke-width="2.5"/>
+  <line x1="850" y1="350" x2="850" y2="400" stroke="#ff4444" stroke-width="2.5"/>
+  <line x1="850" y1="400" x2="805" y2="400" stroke="#ff4444" stroke-width="2.5"/>
+  <line x1="805" y1="400" x2="805" y2="480" stroke="#ff4444" stroke-width="2.5"/>
+  
+  <!-- PSU GND to both drivers -->
+  <line x1="140" y1="220" x2="140" y2="300" stroke="#000000" stroke-width="2.5"/>
+  <line x1="140" y1="300" x2="55" y2="300" stroke="#000000" stroke-width="2.5"/>
+  <line x1="55" y1="300" x2="55" y2="540" stroke="#000000" stroke-width="2.5"/>
+  
+  <line x1="140" y1="300" x2="805" y2="300" stroke="#000000" stroke-width="2.5"/>
+  <line x1="805" y1="300" x2="805" y2="540" stroke="#000000" stroke-width="2.5"/>
+  
+  <!-- Nucleo +3.3V to Driver A VDD -->
+  <line x1="413" y1="248" x2="413" y2="380" stroke="#ffaa00" stroke-width="2"/>
+  <line x1="413" y1="380" x2="55" y2="380" stroke="#ffaa00" stroke-width="2"/>
+  <line x1="55" y1="380" x2="55" y2="510" stroke="#ffaa00" stroke-width="2"/>
+  <text x="430" y="380" class="text-label" font-size="8">3.3V</text>
+  
+  <!-- Nucleo +3.3V to Driver B VDD -->
+  <line x1="413" y1="248" x2="413" y2="320" stroke="#ffaa00" stroke-width="2" stroke-dasharray="3,3"/>
+  <line x1="413" y1="320" x2="850" y2="320" stroke="#ffaa00" stroke-width="2"/>
+  <line x1="850" y1="320" x2="850" y2="370" stroke="#ffaa00" stroke-width="2"/>
+  <line x1="850" y1="370" x2="805" y2="370" stroke="#ffaa00" stroke-width="2"/>
+  <line x1="805" y1="370" x2="805" y2="510" stroke="#ffaa00" stroke-width="2"/>
+  
+  <!-- Nucleo GND to drivers -->
+  <line x1="413" y1="208" x2="413" y2="270" stroke="#000000" stroke-width="2.5"/>
+  <line x1="413" y1="270" x2="55" y2="270" stroke="#000000" stroke-width="2.5"/>
+  <line x1="55" y1="270" x2="55" y2="570" stroke="#000000" stroke-width="2.5"/>
+  
+  <!-- Signal: D2 (PA10) -> Driver A DIR -->
+  <line x1="587" y1="204" x2="500" y2="204" stroke="#00ff88" stroke-width="2"/>
+  <line x1="500" y1="204" x2="500" y2="510" stroke="#00ff88" stroke-width="2"/>
+  <line x1="500" y1="510" x2="245" y2="510" stroke="#00ff88" stroke-width="2"/>
+  <text x="450" y="355" class="text-label" font-size="8">D2→DIR</text>
+  
+  <!-- Signal: D3 (PB3) -> Driver A STEP -->
+  <line x1="587" y1="244" x2="480" y2="244" stroke="#00ff88" stroke-width="2"/>
+  <line x1="480" y1="244" x2="480" y2="480" stroke="#00ff88" stroke-width="2"/>
+  <line x1="480" y1="480" x2="245" y2="480" stroke="#00ff88" stroke-width="2"/>
+  <text x="430" y="360" class="text-label" font-size="8">D3→STEP</text>
+  
+  <!-- Signal: D4 (PB5) -> Driver B DIR -->
+  <line x1="587" y1="284" x2="750" y2="284" stroke="#00ff88" stroke-width="2"/>
+  <line x1="750" y1="284" x2="750" y2="510" stroke="#00ff88" stroke-width="2"/>
+  <line x1="750" y1="510" x2="995" y2="510" stroke="#00ff88" stroke-width="2"/>
+  <text x="800" y="395" class="text-label" font-size="8">D4→DIR</text>
+  
+  <!-- Signal: D5 (PB4) -> Driver B STEP -->
+  <line x1="587" y1="324" x2="770" y2="324" stroke="#00ff88" stroke-width="2"/>
+  <line x1="770" y1="324" x2="770" y2="480" stroke="#00ff88" stroke-width="2"/>
+  <line x1="770" y1="480" x2="995" y2="480" stroke="#00ff88" stroke-width="2"/>
+  <text x="820" y="400" class="text-label" font-size="8">D5→STEP</text>
+  
+  <!-- Motor A connections -->
+  <line x1="55" y1="630" x2="55" y2="700" stroke="#9933ff" stroke-width="2"/>
+  <line x1="55" y1="700" x2="130" y2="700" stroke="#9933ff" stroke-width="2"/>
+  <line x1="130" y1="700" x2="130" y2="720" stroke="#9933ff" stroke-width="2"/>
+  
+  <line x1="245" y1="630" x2="245" y2="700" stroke="#9933ff" stroke-width="2"/>
+  <line x1="245" y1="700" x2="170" y2="700" stroke="#9933ff" stroke-width="2"/>
+  <line x1="170" y1="700" x2="170" y2="720" stroke="#9933ff" stroke-width="2"/>
+  
+  <!-- Motor B connections -->
+  <line x1="805" y1="630" x2="805" y2="700" stroke="#9933ff" stroke-width="2"/>
+  <line x1="805" y1="700" x2="880" y2="700" stroke="#9933ff" stroke-width="2"/>
+  <line x1="880" y1="700" x2="880" y2="720" stroke="#9933ff" stroke-width="2"/>
+  
+  <line x1="995" y1="630" x2="995" y2="700" stroke="#9933ff" stroke-width="2"/>
+  <line x1="995" y1="700" x2="920" y2="700" stroke="#9933ff" stroke-width="2"/>
+  <line x1="920" y1="700" x2="920" y2="720" stroke="#9933ff" stroke-width="2"/>
+
+  <!-- ============ CRITICAL CAPACITOR BOX ============ -->
+  <g id="capacitor-warning">
+    <rect x="1100" y="150" width="280" height="280" fill="none" stroke="#ff4444" stroke-width="3" stroke-dasharray="5,5"/>
+    <text x="1240" y="175" class="text-warning" text-anchor="middle" font-size="12">⚠️ CRITICAL: CAPACITORS</text>
+    
+    <text x="1110" y="210" class="text-label" font-size="10">Place 100µF capacitors across</text>
+    <text x="1110" y="228" class="text-label" font-size="10">VMOT ↔ GND on EACH driver:</text>
+    
+    <!-- Capacitor A diagram -->
+    <line x1="1150" y1="250" x2="1180" y2="250" stroke="#ff6b6b" stroke-width="3"/>
+    <line x1="1150" y1="265" x2="1180" y2="265" stroke="#ff6b6b" stroke-width="3"/>
+    <line x1="1165" y1="240" x2="1165" y2="275" stroke="#ff6b6b" stroke-width="2"/>
+    
+    <text x="1190" y="262" class="text-label" font-size="9">Driver A</text>
+    <text x="1190" y="275" class="text-label" font-size="8">(near pins)</text>
+    
+    <!-- Capacitor B diagram -->
+    <line x1="1150" y1="310" x2="1180" y2="310" stroke="#ff6b6b" stroke-width="3"/>
+    <line x1="1150" y1="325" x2="1180" y2="325" stroke="#ff6b6b" stroke-width="3"/>
+    <line x1="1165" y1="300" x2="1165" y2="335" stroke="#ff6b6b" stroke-width="2"/>
+    
+    <text x="1190" y="322" class="text-label" font-size="9">Driver B</text>
+    <text x="1190" y="335" class="text-label" font-size="8">(near pins)</text>
+    
+    <text x="1110" y="370" class="text-warning" font-size="9">• >35V rated (48V+ preferred)</text>
+    <text x="1110" y="385" class="text-warning" font-size="9">• Ceramic or electrolytic OK</text>
+    <text x="1110" y="400" class="text-warning" font-size="9">• Position close to driver pins</text>
+  </g>
+
+  <!-- ============ PIN CONFIGURATION TABLE ============ -->
+  <g id="config-table">
+    <rect x="1100" y="480" width="280" height="150" fill="none" stroke="#00ff88" stroke-width="2"/>
+    <text x="1240" y="505" class="text-title" text-anchor="middle" font-size="11">DRIVER CONFIGURATION</text>
+    
+    <text x="1110" y="530" class="text-label" font-size="10">MS1, MS2, MS3 Pins:</text>
+    <text x="1120" y="545" class="text-label" font-size="9">• Leave OPEN = Full Step</text>
+    <text x="1120" y="558" class="text-label" font-size="9">• Connect to VDD = 1/32 Step</text>
+    
+    <text x="1110" y="580" class="text-label" font-size="10">SLEEP + RESET:</text>
+    <text x="1120" y="595" class="text-label" font-size="9">• Jumper together (keep enabled)</text>
+    
+    <text x="1110" y="615" class="text-label" font-size="10">ENABLE Pin:</text>
+    <text x="1120" y="630" class="text-label" font-size="9">• GND = Always ON (shown)</text>
+  </g>
+
+  <!-- ============ LEGEND ============ -->
+  <g id="legend">
+    <rect x="50" y="800" width="1300" height="80" fill="none" stroke="#666666" stroke-width="1" stroke-dasharray="3,3"/>
+    
+    <line x1="70" y1="820" x2="110" y2="820" stroke="#ff4444" stroke-width="2.5"/>
+    <text x="130" y="825" class="text-label" font-size="10">Power (+VMOT)</text>
+    
+    <line x1="70" y1="840" x2="110" y2="840" stroke="#000000" stroke-width="2.5"/>
+    <text x="130" y="845" class="text-label" font-size="10">Ground (GND)</text>
+    
+    <line x1="70" y1="860" x2="110" y2="860" stroke="#ffaa00" stroke-width="2"/>
+    <text x="130" y="865" class="text-label" font-size="10">Logic Power (3.3V)</text>
+    
+    <line x1="350" y1="820" x2="390" y2="820" stroke="#00ff88" stroke-width="2"/>
+    <text x="410" y="825" class="text-label" font-size="10">Signal (STEP/DIR)</text>
+    
+    <line x1="350" y1="840" x2="390" y2="840" stroke="#9933ff" stroke-width="2"/>
+    <text x="410" y="845" class="text-label" font-size="10">Motor Output</text>
+    
+    <rect x="350" y="856" width="8" height="8" fill="#ff6b6b" stroke="#cc0000" stroke-width="1"/>
+    <text x="410" y="863" class="text-label" font-size="10">Capacitor (Critical!)</text>
+    
+    <text x="800" y="825" class="text-warning" font-size="11">CRITICAL: Never disconnect motors while powered! Ensure common ground (PSU - to STM32 GND)</text>
+  </g>
+</svg>

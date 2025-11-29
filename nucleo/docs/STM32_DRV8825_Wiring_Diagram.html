@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STM32 + DRV8825 Wiring Diagram</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #252526;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        h1 {
+            color: #4ec9b0;
+            text-align: center;
+            border-bottom: 2px solid #4ec9b0;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #569cd6;
+            margin-top: 30px;
+        }
+        .warning {
+            background: #5a1e1e;
+            border-left: 4px solid #f48771;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info {
+            background: #1e3a5a;
+            border-left: 4px solid #4ec9b0;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        svg {
+            background: #1e1e1e;
+            border: 2px solid #3e3e42;
+            border-radius: 8px;
+            display: block;
+            margin: 20px auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th {
+            background: #2d2d30;
+            color: #4ec9b0;
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #3e3e42;
+        }
+        td {
+            padding: 10px;
+            border: 1px solid #3e3e42;
+        }
+        tr:nth-child(even) {
+            background: #2d2d30;
+        }
+        .critical {
+            color: #f48771;
+            font-weight: bold;
+        }
+        .pin-label {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #4ec9b0;
+        }
+        code {
+            background: #1e1e1e;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #ce9178;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .legend-color {
+            width: 30px;
+            height: 20px;
+            border: 1px solid #3e3e42;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 STM32 Nucleo + DRV8825 Stepper Driver Wiring Diagram</h1>
+        
+        <div class="warning">
+            <strong>⚠️ CRITICAL SAFETY REQUIREMENT:</strong> Motor power supply ground MUST be connected to STM32 ground. Floating grounds can cause erratic behavior, component damage, or fire hazard.
+        </div>
+
+        <h2>📊 Visual Wiring Diagram</h2>
+        
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f44336;"></div>
+                <span>Power (+)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #000000;"></div>
+                <span>Ground</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #4caf50;"></div>
+                <span>Control Signals</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #2196f3;"></div>
+                <span>Optional Signals</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ff9800;"></div>
+                <span>Motor Coils</span>
+            </div>
+        </div>
+
+        <svg width="1340" height="900" xmlns="http://www.w3.org/2000/svg">
+            <!-- Power Supply -->
+            <rect x="550" y="20" width="240" height="80" fill="#2d2d30" stroke="#f44336" stroke-width="3" rx="5"/>
+            <text x="670" y="50" text-anchor="middle" fill="#f44336" font-size="16" font-weight="bold">MOTOR POWER</text>
+            <text x="670" y="70" text-anchor="middle" fill="#d4d4d4" font-size="14">8-35V DC</text>
+            <text x="670" y="90" text-anchor="middle" fill="#d4d4d4" font-size="12">3-5A minimum</text>
+
+            <!-- Power lines from PSU -->
+            <line x1="620" y1="100" x2="620" y2="150" stroke="#f44336" stroke-width="3"/>
+            <line x1="720" y1="100" x2="720" y2="150" stroke="#000" stroke-width="3"/>
+            <text x="600" y="130" fill="#f44336" font-size="12">+</text>
+            <text x="700" y="130" fill="#d4d4d4" font-size="12">GND</text>
+
+            <!-- DRV8825 Driver 1 -->
+            <rect x="100" y="150" width="200" height="400" fill="#8e24aa" stroke="#9c27b0" stroke-width="3" rx="5"/>
+            <text x="200" y="180" text-anchor="middle" fill="#ffffff" font-size="18" font-weight="bold">DRV8825 #1</text>
+            <text x="200" y="200" text-anchor="middle" fill="#e1bee7" font-size="12">(Driver A)</text>
+            
+            <!-- Driver 1 pins -->
+            <circle cx="120" cy="230" r="5" fill="#f44336"/>
+            <text x="135" y="235" fill="#d4d4d4" font-size="12">VMOT</text>
+            
+            <circle cx="120" cy="260" r="5" fill="#000"/>
+            <text x="135" y="265" fill="#d4d4d4" font-size="12">GND</text>
+            
+            <circle cx="120" cy="290" r="5" fill="#4caf50"/>
+            <text x="135" y="295" fill="#d4d4d4" font-size="12">STEP</text>
+            
+            <circle cx="120" cy="320" r="5" fill="#4caf50"/>
+            <text x="135" y="325" fill="#d4d4d4" font-size="12">DIR</text>
+            
+            <circle cx="120" cy="350" r="5" fill="#2196f3"/>
+            <text x="135" y="355" fill="#d4d4d4" font-size="12">EN</text>
+            
+            <circle cx="120" cy="380" r="5" fill="#2196f3"/>
+            <text x="135" y="385" fill="#d4d4d4" font-size="12">RST</text>
+            
+            <circle cx="120" cy="410" r="5" fill="#2196f3"/>
+            <text x="135" y="415" fill="#d4d4d4" font-size="12">SLP</text>
+            
+            <circle cx="120" cy="470" r="5" fill="#ff9800"/>
+            <text x="135" y="475" fill="#d4d4d4" font-size="12">A1/A2</text>
+            
+            <circle cx="120" cy="500" r="5" fill="#ff9800"/>
+            <text x="135" y="505" fill="#d4d4d4" font-size="12">B1/B2</text>
+
+            <!-- DRV8825 Driver 2 -->
+            <rect x="1040" y="150" width="200" height="400" fill="#8e24aa" stroke="#9c27b0" stroke-width="3" rx="5"/>
+            <text x="1140" y="180" text-anchor="middle" fill="#ffffff" font-size="18" font-weight="bold">DRV8825 #2</text>
+            <text x="1140" y="200" text-anchor="middle" fill="#e1bee7" font-size="12">(Driver B)</text>
+            
+            <!-- Driver 2 pins -->
+            <circle cx="1220" cy="230" r="5" fill="#f44336"/>
+            <text x="1180" y="235" fill="#d4d4d4" font-size="12">VMOT</text>
+            
+            <circle cx="1220" cy="260" r="5" fill="#000"/>
+            <text x="1180" y="265" fill="#d4d4d4" font-size="12">GND</text>
+            
+            <circle cx="1220" cy="290" r="5" fill="#4caf50"/>
+            <text x="1180" y="295" fill="#d4d4d4" font-size="12">STEP</text>
+            
+            <circle cx="1220" cy="320" r="5" fill="#4caf50"/>
+            <text x="1180" y="325" fill="#d4d4d4" font-size="12">DIR</text>
+            
+            <circle cx="1220" cy="350" r="5" fill="#2196f3"/>
+            <text x="1180" y="355" fill="#d4d4d4" font-size="12">EN</text>
+            
+            <circle cx="1220" cy="380" r="5" fill="#2196f3"/>
+            <text x="1180" y="385" fill="#d4d4d4" font-size="12">RST</text>
+            
+            <circle cx="1220" cy="410" r="5" fill="#2196f3"/>
+            <text x="1180" y="415" fill="#d4d4d4" font-size="12">SLP</text>
+            
+            <circle cx="1220" cy="470" r="5" fill="#ff9800"/>
+            <text x="1180" y="475" fill="#d4d4d4" font-size="12">A1/A2</text>
+            
+            <circle cx="1220" cy="500" r="5" fill="#ff9800"/>
+            <text x="1180" y="505" fill="#d4d4d4" font-size="12">B1/B2</text>
+
+            <!-- STM32 Nucleo -->
+            <rect x="520" y="600" width="300" height="280" fill="#2d2d30" stroke="#4ec9b0" stroke-width="3" rx="5"/>
+            <text x="670" y="630" text-anchor="middle" fill="#4ec9b0" font-size="18" font-weight="bold">STM32 NUCLEO</text>
+            <text x="670" y="650" text-anchor="middle" fill="#d4d4d4" font-size="12">MB1136 Rev C</text>
+            
+            <!-- STM32 pins left side -->
+            <circle cx="540" cy="690" r="5" fill="#4caf50"/>
+            <text x="555" y="695" fill="#d4d4d4" font-size="11">D2 (PA10) - STEP1</text>
+            
+            <circle cx="540" cy="720" r="5" fill="#4caf50"/>
+            <text x="555" y="725" fill="#d4d4d4" font-size="11">D3 (PB3) - DIR1</text>
+            
+            <circle cx="540" cy="750" r="5" fill="#2196f3"/>
+            <text x="555" y="755" fill="#d4d4d4" font-size="11">D4 (PB5) - EN1</text>
+            
+            <circle cx="540" cy="780" r="5" fill="#2196f3"/>
+            <text x="555" y="785" fill="#d4d4d4" font-size="11">D5 (PB4) - RST1</text>
+            
+            <circle cx="540" cy="810" r="5" fill="#2196f3"/>
+            <text x="555" y="815" fill="#d4d4d4" font-size="11">D6 (PB10) - SLP1</text>
+
+            <!-- STM32 pins right side -->
+            <circle cx="800" cy="690" r="5" fill="#4caf50"/>
+            <text x="720" y="695" fill="#d4d4d4" font-size="11">D7 (PA8) - STEP2</text>
+            
+            <circle cx="800" cy="720" r="5" fill="#4caf50"/>
+            <text x="720" y="725" fill="#d4d4d4" font-size="11">D8 (PA9) - DIR2</text>
+            
+            <circle cx="800" cy="750" r="5" fill="#2196f3"/>
+            <text x="720" y="755" fill="#d4d4d4" font-size="11">D9 (PC7) - EN2</text>
+            
+            <circle cx="800" cy="780" r="5" fill="#2196f3"/>
+            <text x="730" y="785" fill="#d4d4d4" font-size="11">D10 (PB6) - RST2</text>
+            
+            <circle cx="800" cy="810" r="5" fill="#2196f3"/>
+            <text x="730" y="815" fill="#d4d4d4" font-size="11">D11 (PA7) - SLP2</text>
+
+            <!-- STM32 GND and 5V -->
+            <circle cx="540" cy="850" r="5" fill="#000"/>
+            <text x="555" y="855" fill="#d4d4d4" font-size="11">GND</text>
+            
+            <circle cx="800" cy="850" r="5" fill="#f44336"/>
+            <text x="760" y="855" fill="#d4d4d4" font-size="11">5V</text>
+
+            <!-- Power connections -->
+            <line x1="620" y1="150" x2="620" y2="180" stroke="#f44336" stroke-width="2"/>
+            <line x1="620" y1="180" x2="120" y2="230" stroke="#f44336" stroke-width="2"/>
+            <line x1="620" y1="180" x2="1220" y2="230" stroke="#f44336" stroke-width="2"/>
+
+            <!-- Ground connections - critical path -->
+            <line x1="720" y1="150" x2="720" y2="580" stroke="#000" stroke-width="4" stroke-dasharray="10,5"/>
+            <line x1="120" y1="260" x2="400" y2="260" stroke="#000" stroke-width="3"/>
+            <line x1="400" y1="260" x2="400" y2="570" stroke="#000" stroke-width="3"/>
+            <line x1="400" y1="570" x2="540" y2="850" stroke="#000" stroke-width="3"/>
+            <line x1="1220" y1="260" x2="940" y2="260" stroke="#000" stroke-width="3"/>
+            <line x1="940" y1="260" x2="940" y2="570" stroke="#000" stroke-width="3"/>
+            <line x1="940" y1="570" x2="540" y2="850" stroke="#000" stroke-width="3"/>
+
+            <!-- Control signal connections Driver 1 -->
+            <line x1="120" y1="290" x2="540" y2="690" stroke="#4caf50" stroke-width="2"/>
+            <line x1="120" y1="320" x2="540" y2="720" stroke="#4caf50" stroke-width="2"/>
+            <line x1="120" y1="350" x2="540" y2="750" stroke="#2196f3" stroke-width="2"/>
+            <line x1="120" y1="380" x2="540" y2="780" stroke="#2196f3" stroke-width="2"/>
+            <line x1="120" y1="410" x2="540" y2="810" stroke="#2196f3" stroke-width="2"/>
+
+            <!-- Control signal connections Driver 2 -->
+            <line x1="1220" y1="290" x2="800" y2="690" stroke="#4caf50" stroke-width="2"/>
+            <line x1="1220" y1="320" x2="800" y2="720" stroke="#4caf50" stroke-width="2"/>
+            <line x1="1220" y1="350" x2="800" y2="750" stroke="#2196f3" stroke-width="2"/>
+            <line x1="1220" y1="380" x2="800" y2="780" stroke="#2196f3" stroke-width="2"/>
+            <line x1="1220" y1="410" x2="800" y2="810" stroke="#2196f3" stroke-width="2"/>
+
+            <!-- Motors -->
+            <rect x="50" y="570" width="100" height="80" fill="#2d2d30" stroke="#ff9800" stroke-width="2" rx="5"/>
+            <text x="100" y="600" text-anchor="middle" fill="#ff9800" font-size="14" font-weight="bold">MOTOR A</text>
+            <text x="100" y="620" text-anchor="middle" fill="#d4d4d4" font-size="10">Coil A</text>
+            <text x="100" y="635" text-anchor="middle" fill="#d4d4d4" font-size="10">Coil B</text>
+            
+            <rect x="1190" y="570" width="100" height="80" fill="#2d2d30" stroke="#ff9800" stroke-width="2" rx="5"/>
+            <text x="1240" y="600" text-anchor="middle" fill="#ff9800" font-size="14" font-weight="bold">MOTOR B</text>
+            <text x="1240" y="620" text-anchor="middle" fill="#d4d4d4" font-size="10">Coil A</text>
+            <text x="1240" y="635" text-anchor="middle" fill="#d4d4d4" font-size="10">Coil B</text>
+
+            <!-- Motor connections -->
+            <line x1="120" y1="470" x2="100" y2="570" stroke="#ff9800" stroke-width="2"/>
+            <line x1="120" y1="500" x2="100" y2="570" stroke="#ff9800" stroke-width="2"/>
+            <line x1="1220" y1="470" x2="1240" y2="570" stroke="#ff9800" stroke-width="2"/>
+            <line x1="1220" y1="500" x2="1240" y2="570" stroke="#ff9800" stroke-width="2"/>
+
+            <!-- Critical ground annotation -->
+            <rect x="350" y="400" width="240" height="60" fill="#5a1e1e" stroke="#f48771" stroke-width="2" rx="5"/>
+            <text x="470" y="425" text-anchor="middle" fill="#f48771" font-size="14" font-weight="bold">⚠️ COMMON GND</text>
+            <text x="470" y="445" text-anchor="middle" fill="#d4d4d4" font-size="11">CRITICAL CONNECTION</text>
+            <line x1="470" y1="460" x2="540" y2="850" stroke="#f48771" stroke-width="2" stroke-dasharray="5,5"/>
+
+            <!-- Capacitor symbols -->
+            <g transform="translate(60, 180)">
+                <line x1="0" y1="0" x2="0" y2="20" stroke="#ffd700" stroke-width="2"/>
+                <line x1="-8" y1="20" x2="8" y2="20" stroke="#ffd700" stroke-width="2"/>
+                <line x1="-8" y1="25" x2="8" y2="25" stroke="#ffd700" stroke-width="2"/>
+                <line x1="0" y1="25" x2="0" y2="45" stroke="#ffd700" stroke-width="2"/>
+                <text x="15" y="25" fill="#ffd700" font-size="10">100µF</text>
+            </g>
+            
+            <g transform="translate(1260, 180)">
+                <line x1="0" y1="0" x2="0" y2="20" stroke="#ffd700" stroke-width="2"/>
+                <line x1="-8" y1="20" x2="8" y2="20" stroke="#ffd700" stroke-width="2"/>
+                <line x1="-8" y1="25" x2="8" y2="25" stroke="#ffd700" stroke-width="2"/>
+                <line x1="0" y1="25" x2="0" y2="45" stroke="#ffd700" stroke-width="2"/>
+                <text x="-50" y="25" fill="#ffd700" font-size="10">100µF</text>
+            </g>
+        </svg>
+
+        <h2>🔌 Connection Table - Driver 1 (Motor A)</h2>
+        <table>
+            <tr>
+                <th>DRV8825 Pin</th>
+                <th>STM32 Nucleo Pin</th>
+                <th>Wire Color Suggestion</th>
+                <th>Function</th>
+            </tr>
+            <tr>
+                <td class="pin-label">VMOT</td>
+                <td>Motor PSU (+)</td>
+                <td style="color: #f44336;">Red</td>
+                <td>8-35V motor power</td>
+            </tr>
+            <tr>
+                <td class="pin-label">GND</td>
+                <td class="critical">Motor PSU (-) + Nucleo GND</td>
+                <td style="color: #000; background: #666;">Black</td>
+                <td class="critical">COMMON GROUND (CRITICAL)</td>
+            </tr>
+            <tr>
+                <td class="pin-label">STEP</td>
+                <td class="pin-label">D2 (PA10)</td>
+                <td style="color: #4caf50;">Green</td>
+                <td>Step pulse signal</td>
+            </tr>
+            <tr>
+                <td class="pin-label">DIR</td>
+                <td class="pin-label">D3 (PB3)</td>
+                <td style="color: #ffeb3b;">Yellow</td>
+                <td>Direction control</td>
+            </tr>
+            <tr>
+                <td class="pin-label">EN</td>
+                <td class="pin-label">D4 (PB5) or GND</td>
+                <td style="color: #2196f3;">Blue</td>
+                <td>Enable (LOW=on, optional)</td>
+            </tr>
+            <tr>
+                <td class="pin-label">RST</td>
+                <td>5V or D5 (PB4)</td>
+                <td style="color: #ff9800;">Orange</td>
+                <td>Reset (HIGH=active, optional)</td>
+            </tr>
+            <tr>
+                <td class="pin-label">SLP</td>
+                <td>5V or D6 (PB10)</td>
+                <td style="color: #9c27b0;">Purple</td>
+                <td>Sleep (HIGH=awake, optional)</td>
+            </tr>
+            <tr>
+                <td class="pin-label">M0, M1, M2</td>
+                <td>GND or 5V</td>
+                <td>-</td>
+                <td>Microstepping configuration</td>
+            </tr>
+            <tr>
+                <td class="pin-label">A1, A2</td>
+                <td>Motor A - Coil 1</td>
+                <td>-</td>
+                <td>Phase A motor connections</td>
+            </tr>
+            <tr>
+                <td class="pin-label">B1, B2</td>
+                <td>Motor A - Coil 2</td>
+                <td>-</td>
+                <td>Phase B motor connections</td>
+            </tr>
+        </table>
+
+        <h2>🔌 Connection Table - Driver 2 (Motor B)</h2>
+        <table>
+            <tr>
+                <th>DRV8825 Pin</th>
+                <th>STM32 Nucleo Pin</th>
+                <th>Wire Color Suggestion</th>
+                <th>Function</th>
+            </tr>
+            <tr>
+                <td class="pin-label">VMOT</td>
+                <td>Motor PSU (+)</td>
+                <td style="color: #f44336;">Red</td>
+                <td>Shared with Driver 1</td>
+            </tr>
+            <tr>
+                <td class="pin-label">GND</td>
+                <td class="critical">Motor PSU (-) + Nucleo GND</td>
+                <td style="color: #000; background: #666;">Black</td>
+                <td class="critical">COMMON GROUND (CRITICAL)</td>
+            </tr>
+            <tr>
+                <td class="pin-label">STEP</td>
+                <td class="pin-label">D7 (PA8)</td>
+                <td style="color: #4caf50;">Green</td>
+                <td>Step pulse signal</td>
+            </tr>
+            <tr>
+                <td class="pin-label">DIR</td>
+                <td class="pin-label">D8 (PA9)</td>
+                <td style="color: #ffeb3b;">Yellow</td>
+                <td>Direction control</td>
+            </tr>
+            <tr>
+                <td class="pin-label">EN</td>
+                <td class="pin-label">D9 (PC7) or GND</td>
+                <td style="color: #2196f3;">Blue</td>
+                <td>Enable (LOW=on, optional)</td>
+            </tr>
+            <tr>
+                <td class="pin-label">RST</td>
+                <td>5V or D10 (PB6)</td>
+                <td style="color: #ff9800;">Orange</td>
+                <td>Reset (HIGH=active, optional)</td>
+            </tr>
+            <tr>
+                <td class="pin-label">SLP</td>
+                <td>5V or D11 (PA7)</td>
+                <td style="color: #9c27b0;">Purple</td>
+                <td>Sleep (HIGH=awake, optional)</td>
+            </tr>
+            <tr>
+                <td class="pin-label">M0, M1, M2</td>
+                <td>GND or 5V</td>
+                <td>-</td>
+                <td>Microstepping configuration</td>
+            </tr>
+            <tr>
+                <td class="pin-label">A1, A2</td>
+                <td>Motor B - Coil 1</td>
+                <td>-</td>
+                <td>Phase A motor connections</td>
+            </tr>
+            <tr>
+                <td class="pin-label">B1, B2</td>
+                <td>Motor B - Coil 2</td>
+                <td>-</td>
+                <td>Phase B motor connections</td>
+            </tr>
+        </table>
+
+        <h2>⚙️ Microstepping Configuration</h2>
+        <div class="info">
+            <p><strong>Set microstepping by connecting M0, M1, M2 pins to GND or 5V:</strong></p>
+            <ul>
+                <li>Full step (200 steps/rev): M0=L, M1=L, M2=L</li>
+                <li>1/2 step (400 steps/rev): M0=H, M1=L, M2=L</li>
+                <li>1/4 step (800 steps/rev): M0=L, M1=H, M2=L</li>
+                <li>1/8 step (1,600 steps/rev): M0=H, M1=H, M2=L</li>
+                <li><strong>1/16 step (3,200 steps/rev): M0=L, M1=L, M2=H ← RECOMMENDED</strong></li>
+                <li>1/32 step (6,400 steps/rev): M0=H, M1=L, M2=H</li>
+            </ul>
+        </div>
+
+        <h2>⚡ Current Limit Adjustment</h2>
+        <div class="warning">
+            <p><strong>REQUIRED BEFORE FIRST USE:</strong></p>
+            <ol>
+                <li>DO NOT connect motor yet</li>
+                <li>Power up driver with motor power supply</li>
+                <li>Measure voltage between potentiometer wiper and GND</li>
+                <li>Calculate target: <code>Vref = Motor_Current × 2 × 0.1</code></li>
+                <li>Example: 1.0A motor → Vref = 0.2V</li>
+                <li>Adjust potentiometer (small screwdriver, CCW=increase)</li>
+                <li>Start 10-20% below motor's maximum current rating</li>
+            </ol>
+        </div>
+
+        <h2>✅ Pre-Power Checklist</h2>
+        <div class="info">
+            <ul>
+                <li>☐ Motor PSU ground connected to Nucleo GND</li>
+                <li>☐ 100µF capacitor across VMOT and GND on each driver</li>
+                <li>☐ Current limit set (Vref measured)</li>
+                <li>☐ RST and SLP tied HIGH (to 5V)</li>
+                <li>☐ All signal wires connected</li>
+                <li>☐ Motors attached to driver outputs</li>
+                <li>☐ Visual inspection complete</li>
+                <li>☐ No reversed polarity connections</li>
+            </ul>
+        </div>
+
+        <h2>📝 Notes</h2>
+        <ul>
+            <li>DRV8825 accepts 3.3V logic from STM32 (no level shifting required)</li>
+            <li>Maximum motor supply voltage: 35V</li>
+            <li>Maximum current per coil: 2.2A (with cooling)</li>
+            <li>Minimum step pulse width: 1.9µs (recommend 5µs)</li>
+            <li>Add heatsinks if running >1A continuous current</li>
+            <li>Consider TVS diodes on motor outputs for noise protection</li>
+        </ul>
+
+        <div style="text-align: center; margin-top: 50px; padding: 20px; border-top: 1px solid #3e3e42;">
+            <p>Document: STM32_DRV8825_Wiring_Diagram.html</p>
+            <p>Version: 1.0 | Date: 2025-11-23</p>
+            <p>Board: STM32 Nucleo MB1136 Rev C | Driver: DRV8825</p>
+        </div>
+    </div>
+</body>
+</html>

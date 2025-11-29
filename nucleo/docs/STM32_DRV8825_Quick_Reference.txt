@@ -1,0 +1,172 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║        STM32 NUCLEO + DRV8825 STEPPER DRIVER - QUICK REFERENCE CARD        ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ CRITICAL: COMMON GROUND                                                     │
+│ ✓ Motor PSU (-) MUST connect to Nucleo GND                                 │
+│ ✓ Both driver GND pins connect to this common ground                       │
+│ ⚠  Failure = erratic behavior or component damage                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────┬──────────────────────┬──────────────────────────────┐
+│   DRV8825 DRIVER 1   │   STM32 NUCLEO PIN   │         FUNCTION             │
+├──────────────────────┼──────────────────────┼──────────────────────────────┤
+│ VMOT                 │ Motor PSU (+)        │ 8-35V Motor Power            │
+│ GND                  │ GND + Motor PSU (-)  │ ⚠  COMMON GROUND             │
+│ STEP                 │ D2 (PA10)            │ Step pulse (5µs min)         │
+│ DIR                  │ D3 (PB3)             │ Direction control            │
+│ EN                   │ D4 (PB5) or GND      │ Enable (LOW=on)              │
+│ RST                  │ 5V or D5 (PB4)       │ Reset (HIGH=active)          │
+│ SLP                  │ 5V or D6 (PB10)      │ Sleep (HIGH=awake)           │
+│ M0                   │ GND or 5V            │ Microstep config             │
+│ M1                   │ GND or 5V            │ Microstep config             │
+│ M2                   │ GND or 5V            │ Microstep config             │
+│ A1, A2               │ Motor A (Coil 1)     │ Phase A connections          │
+│ B1, B2               │ Motor A (Coil 2)     │ Phase B connections          │
+└──────────────────────┴──────────────────────┴──────────────────────────────┘
+
+┌──────────────────────┬──────────────────────┬──────────────────────────────┐
+│   DRV8825 DRIVER 2   │   STM32 NUCLEO PIN   │         FUNCTION             │
+├──────────────────────┼──────────────────────┼──────────────────────────────┤
+│ VMOT                 │ Motor PSU (+)        │ Shared with Driver 1         │
+│ GND                  │ GND + Motor PSU (-)  │ ⚠  COMMON GROUND             │
+│ STEP                 │ D7 (PA8)             │ Step pulse (5µs min)         │
+│ DIR                  │ D8 (PA9)             │ Direction control            │
+│ EN                   │ D9 (PC7) or GND      │ Enable (LOW=on)              │
+│ RST                  │ 5V or D10 (PB6)      │ Reset (HIGH=active)          │
+│ SLP                  │ 5V or D11 (PA7)      │ Sleep (HIGH=awake)           │
+│ M0                   │ GND or 5V            │ Microstep config             │
+│ M1                   │ GND or 5V            │ Microstep config             │
+│ M2                   │ GND or 5V            │ Microstep config             │
+│ A1, A2               │ Motor B (Coil 1)     │ Phase A connections          │
+│ B1, B2               │ Motor B (Coil 2)     │ Phase B connections          │
+└──────────────────────┴──────────────────────┴──────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         MICROSTEPPING CONFIGURATION                        ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║  M0  │  M1  │  M2  │  Resolution  │  Steps per Revolution (1.8° motor)    ║
+╟──────┼──────┼──────┼──────────────┼───────────────────────────────────────╢
+║  L   │  L   │  L   │  Full step   │  200 steps                            ║
+║  H   │  L   │  L   │  1/2 step    │  400 steps                            ║
+║  L   │  H   │  L   │  1/4 step    │  800 steps                            ║
+║  H   │  H   │  L   │  1/8 step    │  1,600 steps                          ║
+║  L   │  L   │  H   │  1/16 step   │  3,200 steps  ⭐ RECOMMENDED          ║
+║  H   │  L   │  H   │  1/32 step   │  6,400 steps                          ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ QUICK START (MINIMAL WIRING)                                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 1. Connect power: VMOT → PSU(+), GND → PSU(-) + Nucleo GND                 │
+│ 2. Connect signals: STEP → D2/D7, DIR → D3/D8                              │
+│ 3. Tie enable: EN → GND (always on)                                        │
+│ 4. Tie reset/sleep: RST → 5V, SLP → 5V                                     │
+│ 5. Set microstepping: M0 → GND, M1 → GND, M2 → 5V (1/16 step)             │
+│ 6. Connect motor: A1/A2 to one coil, B1/B2 to other coil                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                            CURRENT ADJUSTMENT                              ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║ 1. DO NOT connect motor yet                                               ║
+║ 2. Power up driver with motor power supply                                ║
+║ 3. Set multimeter to measure DC voltage                                   ║
+║ 4. Measure between potentiometer wiper (small metal screw) and GND        ║
+║ 5. Calculate target Vref = Motor_Current × 2 × 0.1                        ║
+║    Example: 1.0A motor → Vref = 1.0 × 2 × 0.1 = 0.2V                      ║
+║ 6. Adjust potentiometer (CCW = increase, CW = decrease)                   ║
+║ 7. Start 10-20% below max current for safety                              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SAFETY CHECKLIST                                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ □ Common ground between motor PSU and STM32                                │
+│ □ 100µF capacitor across VMOT and GND on each driver                       │
+│ □ Current limit set correctly (Vref measured)                              │
+│ □ Motor voltage within 8-35V range                                         │
+│ □ Power supply rated for at least 2× motor current draw                    │
+│ □ RST and SLP pins connected (5V or GPIO)                                  │
+│ □ Heatsinks installed if running >1A current                               │
+│ □ All connections secure (no loose wires)                                  │
+│ □ Polarity verified (no reversed connections)                              │
+│ □ Visual inspection complete before power on                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                              TROUBLESHOOTING                               ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║ Motor doesn't move:                                                        ║
+║   • Check EN pin is LOW (enabled)                                          ║
+║   • Check RST and SLP pins are HIGH                                        ║
+║   • Verify step pulses arriving (oscilloscope or LED)                      ║
+║   • Confirm common ground connection                                       ║
+║                                                                            ║
+║ Motor moves erratically:                                                   ║
+║   • Add/check decoupling capacitors (100µF)                                ║
+║   • Verify all ground connections solid                                    ║
+║   • Check for loose wiring                                                 ║
+║   • Reduce step frequency                                                  ║
+║                                                                            ║
+║ Motor gets very hot:                                                       ║
+║   • Current limit too high - reduce Vref                                   ║
+║   • Add heatsinks to drivers                                               ║
+║   • Improve airflow                                                        ║
+║                                                                            ║
+║ Motor skips steps:                                                         ║
+║   • Current limit too low - increase Vref                                  ║
+║   • Step frequency too high - slow down                                    ║
+║   • Mechanical binding - check for obstructions                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ TIMING REQUIREMENTS                                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Step pulse width (HIGH):  ≥ 1.9µs (recommend 5µs)                          │
+│ Step pulse width (LOW):   ≥ 1.9µs (recommend 5µs)                          │
+│ Setup time (DIR/EN):      ≥ 200ns                                          │
+│ Max step frequency:        250 kHz (full step), lower for microstepping    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║  EXAMPLE CODE SNIPPET (HAL)                                                ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║  // One step                                                               ║
+║  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);   // STEP1 HIGH     ║
+║  HAL_Delay_us(5);                                                          ║
+║  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET); // STEP1 LOW      ║
+║  HAL_Delay_us(5);                                                          ║
+║                                                                            ║
+║  // Change direction                                                       ║
+║  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);    // DIR1 = CW      ║
+║  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);  // DIR1 = CCW     ║
+║                                                                            ║
+║  // Enable/Disable                                                         ║
+║  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);  // EN1 = ENABLED  ║
+║  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);    // EN1 = DISABLED ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+                            STM32 GPIO REFERENCE
+    ┌───────────────────────────────────────────────────────────────┐
+    │  Arduino  │  STM32   │  Used For  │  Arduino  │  STM32        │
+    │  Pin      │  Pin     │            │  Pin      │  Pin          │
+    ├───────────┼──────────┼────────────┼───────────┼───────────────┤
+    │  D0       │  PA3     │  (Serial)  │  D8       │  PA9  (DIR2)  │
+    │  D1       │  PA2     │  (Serial)  │  D9       │  PC7  (EN2)   │
+    │  D2       │  PA10    │  STEP1     │  D10      │  PB6  (RST2)  │
+    │  D3       │  PB3     │  DIR1      │  D11      │  PA7  (SLP2)  │
+    │  D4       │  PB5     │  EN1       │  D12      │  PA6          │
+    │  D5       │  PB4     │  RST1      │  D13      │  PA5  (LED)   │
+    │  D6       │  PB10    │  SLP1      │  D14      │  PB9          │
+    │  D7       │  PA8     │  STEP2     │  D15      │  PB8          │
+    └───────────┴──────────┴────────────┴───────────┴───────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+Document: STM32_DRV8825_Quick_Reference.txt
+Version: 1.0
+Date: 2025-11-23
+Board: STM32 Nucleo MB1136 Rev C
+Driver: DRV8825 Stepper Motor Driver
+═══════════════════════════════════════════════════════════════════════════════
