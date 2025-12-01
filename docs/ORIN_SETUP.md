@@ -289,18 +289,52 @@ cap.release()
 "
 ```
 
-### 4. IP Camera / Phone Webcam (Optional)
+### 4. DroidCam Phone Webcam (Recommended for Testing)
 
-To use a phone as a webcam via IP:
+DroidCam turns an Android phone into a webcam. Two connection methods:
+
+#### Method A: USB (Recommended - Lower Latency)
+
+1. Install DroidCam app on Android phone
+2. Enable USB Debugging in Developer Options
+3. Connect phone to Orin's **USB-A port** (USB-C is device-mode only!)
+4. Set up adb port forwarding:
 
 ```bash
-# Install scrcpy for Android or use DroidCam/EpocCam for iOS
-# Then create a virtual video device:
-sudo modprobe v4l2loopback devices=1 video_nr=10 card_label="Phone"
+# Verify phone is connected
+adb devices
 
-# Stream to the virtual device (example with ffmpeg)
-ffmpeg -i "http://phone-ip:port/video" -f v4l2 /dev/video10
+# Forward DroidCam port
+adb forward tcp:4747 tcp:4747
+
+# Test the stream
+python3 -c "
+import cv2
+cap = cv2.VideoCapture('http://localhost:4747/video')
+ret, frame = cap.read()
+print(f'Working: {ret}, Shape: {frame.shape if ret else None}')
+cap.release()
+"
 ```
+
+#### Method B: WiFi
+
+1. Connect phone and Orin to same network
+2. Open DroidCam, note the IP address shown
+3. Access stream at `http://<phone-ip>:4747/video`
+
+```bash
+# Test WiFi stream
+python3 -c "
+import cv2
+cap = cv2.VideoCapture('http://192.168.1.33:4747/video')  # Your phone's IP
+ret, frame = cap.read()
+print(f'Working: {ret}')
+cap.release()
+"
+```
+
+> **Note**: The Orin's USB-C port is in device mode (tegra-xudc) and cannot act as a USB host. Use the USB-A port with an adapter if needed.
 
 ---
 
