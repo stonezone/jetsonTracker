@@ -139,8 +139,25 @@ jetson/fixes.jsonl
 # =============================================================================
 .cursor/
 .serena/
-.claude/
 .gemini-clipboard/
+
+# =============================================================================
+# Claude Code / Claude OS
+# =============================================================================
+# .claude/ contains symlinks to local claude-os installation - don't track
+.claude/
+
+# .claude-os/ - track config, exclude state/cache
+.claude-os/claude-os-state.json
+.claude-os/.index_state
+.claude-os/.commit_count
+.claude-os/*.db
+.claude-os/tree_sitter_cache.db
+
+# agent-os/ - track config/specs, exclude state files
+agent-os/.agent-os-state.json
+agent-os/**/*.tmp
+agent-os/**/*.log
 
 # =============================================================================
 # Archive and Backup (local only, not for repo)
@@ -162,6 +179,7 @@ Backup*/
 
 # Root level docs - KEEP
 !README.md
+!CLAUDE.md
 !BOM.md
 !CONTRIBUTING.md
 !CHANGELOG.md

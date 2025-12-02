@@ -1,0 +1,20 @@
+{
+  "project_name": "JetsonTracker",
+  "claude_os_url": "http://localhost:5173",
+  "knowledge_bases": {
+    "memories": "JetsonTracker-project_memories",
+    "profile": "JetsonTracker-project_profile",
+    "index": "JetsonTracker-project_index",
+    "docs": "JetsonTracker-knowledge_docs"
+  },
+  "docs_settings": {
+    "watch_paths": ["./docs", "./archive", "./.serena/memories", "./gimbal"],
+    "auto_ingest_patterns": ["*.md", "*.txt", "*.pdf"],
+    "exclude_patterns": ["node_modules", ".git", "vendor", "build", "dist", "__pycache__"]
+  },
+  "tech_stack": "Python/TensorRT, Python/OpenCV, Python/PyTorch, C/STM32",
+  "database": "None",
+  "dev_environment": "Local + Jetson",
+  "created_at": "2025-12-02T00:00:00Z",
+  "claude_os_version": "1.0.0"
+}
