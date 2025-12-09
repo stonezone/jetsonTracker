@@ -10,8 +10,8 @@
  * Motor 1 (PAN):  DIR = PA10 (D2), STEP = PB3 (D3)
  * Motor 2 (TILT): DIR = PB5  (D4), STEP = PB4 (D5)
  * Microsteps:     M2=PA9 (D8), M1=PC7 (D9), M0=PB6 (D10)
- * Limit Switches: PAN_NEG=PB10 (D6), TILT_NEG=PA8 (D7)
- *                 PAN_POS=PA7 (D11), TILT_POS=PA6 (D12)
+ * Limit Switches: PAN_NEG=PA7 (D11), TILT_NEG=PA8 (D7)
+ *                 PAN_POS=PB10 (D6), TILT_POS=PA6 (D12)
  * USART2:         TX=PA2 (D1), RX=PA3 (D0)
  */
 
@@ -22,15 +22,15 @@
 #define M2_PORT GPIOA
 #define M2_PIN  9
 
-/* Limit switches - negative direction (home) */
-#define PAN_NEG_PORT    GPIOB
-#define PAN_NEG_PIN     10
+/* Limit switches - negative direction (home) - D11/PA7 stops leftward motion */
+#define PAN_NEG_PORT    GPIOA
+#define PAN_NEG_PIN     7
 #define TILT_NEG_PORT   GPIOA
 #define TILT_NEG_PIN    8
 
-/* Limit switches - positive direction */
-#define PAN_POS_PORT    GPIOA
-#define PAN_POS_PIN     7
+/* Limit switches - positive direction - D6/PB10 stops rightward motion */
+#define PAN_POS_PORT    GPIOB
+#define PAN_POS_PIN     10
 #define TILT_POS_PORT   GPIOA
 #define TILT_POS_PIN    6
 
@@ -46,9 +46,13 @@ static int32_t tilt_position = 0;
 static uint8_t pan_homed = 0;
 static uint8_t tilt_homed = 0;
 
-/* Software Limits (steps from home) */
-#define PAN_LIMIT_MIN   -8000
-#define PAN_LIMIT_MAX    8000
+/* Software Limits (steps from home position)
+ * After homing, position is 0 at the left limit switch.
+ * Physical travel is ~4255 steps (measured 2025-12-08).
+ * Set soft limits slightly inside physical limits for safety.
+ */
+#define PAN_LIMIT_MIN   0       // At home/left limit
+#define PAN_LIMIT_MAX   4200    // Just before right limit
 #define TILT_LIMIT_MIN  -2000
 #define TILT_LIMIT_MAX   2000
 
@@ -171,8 +175,9 @@ static int32_t move_pan(int32_t steps) {
     int32_t count = (steps > 0) ? steps : -steps;
     int32_t taken = 0;
 
-    if (dir) GPIOA->BSRR = (1U << 10);
-    else     GPIOA->BSRR = (1U << (10 + 16));
+    // PAN direction inverted (motor wiring)
+    if (dir) GPIOA->BSRR = (1U << (10 + 16));
+    else     GPIOA->BSRR = (1U << 10);
     delay_cycles(10000);
 
     for (int32_t i = 0; i < count; i++) {
@@ -217,22 +222,23 @@ static int32_t move_tilt(int32_t steps) {
 /* === Homing (moves to negative limit, then to center) === */
 static void home_pan(void) {
     uart_send_str("HOMING PAN...\r\n");
-    GPIOA->BSRR = (1U << (10 + 16));  // DIR toward negative limit
+    // PAN direction inverted (motor wiring)
+    GPIOA->BSRR = (1U << 10);  // DIR toward negative limit (inverted)
     delay_cycles(10000);
 
     uint32_t count = 0;
-    while (!read_pan_neg() && count < 10000) { step_pulse(GPIOB, 3); count++; }
-    if (count >= 10000) { uart_send_str("ERROR: PAN NEG LIMIT NOT FOUND\r\n"); return; }
+    while (!read_pan_neg() && count < 20000) { step_pulse(GPIOB, 3); count++; }
+    if (count >= 20000) { uart_send_str("ERROR: PAN NEG LIMIT NOT FOUND\r\n"); return; }
 
     delay_cycles(100000);
-    GPIOA->BSRR = (1U << 10);  // Back off
+    GPIOA->BSRR = (1U << (10 + 16));  // Back off (inverted)
     for (int i = 0; i < 200; i++) step_pulse(GPIOB, 3);
 
     delay_cycles(100000);
-    GPIOA->BSRR = (1U << (10 + 16));  // Slow approach
+    GPIOA->BSRR = (1U << 10);  // Slow approach (inverted)
     while (!read_pan_neg()) { step_pulse(GPIOB, 3); delay_cycles(5000); }
 
-    pan_position = PAN_LIMIT_MIN;  // Now at negative limit
+    pan_position = 0;  // Home position is 0 (at left limit switch)
     pan_homed = 1;
     uart_send_str("PAN HOMED\r\n");
 }

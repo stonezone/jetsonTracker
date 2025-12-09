@@ -12,26 +12,48 @@ logger = logging.getLogger('gimbal')
 
 @dataclass
 class GimbalLimits:
-    """Gimbal axis limits in steps."""
-    # Steps per degree (adjust based on your gear ratio)
-    steps_per_degree_pan: float = 17.78  # 3200 steps / 180°
-    steps_per_degree_tilt: float = 17.78
-    
-    # Soft limits in degrees
-    pan_min: float = -180.0
-    pan_max: float = 180.0
+    """Gimbal axis limits in steps.
+
+    Calibrated 2025-12-08 (after limit switch fix):
+    - PAN range: -2033 to 2222 (4255 steps total)
+    - TILT range: TBD (needs calibration)
+    - Center position: PAN=0 (after homing)
+
+    Limit switches:
+    - D6/PB10 (PP) = physical LEFT switch, stops rightward motion
+    - D11/PA7 (PN) = physical RIGHT switch, stops leftward motion
+    """
+    # Steps per degree (calibrated from actual range)
+    # 4255 steps / 180° ≈ 23.6 steps/degree
+    steps_per_degree_pan: float = 23.6
+    steps_per_degree_tilt: float = 14.86  # TBD - needs calibration
+
+    # Actual measured limits in steps (from home position)
+    # Home (0) is at LEFT limit switch, max is at RIGHT limit switch
+    pan_min_steps: int = 0       # Left limit / home
+    pan_max_steps: int = 4200    # Right limit (PP triggers ~4255)
+    tilt_min_steps: int = -2000  # Down limit (estimate)
+    tilt_max_steps: int = 2000   # Up limit (estimate)
+
+    # Center position (middle of travel)
+    pan_center_steps: int = 2100  # Halfway between 0 and 4200
+    tilt_center_steps: int = 0
+
+    # Soft limits in degrees (relative to home, not center)
+    pan_min: float = 0.0     # At home/left
+    pan_max: float = 178.0   # 4200 / 23.6
     tilt_min: float = -90.0
     tilt_max: float = 90.0
-    
+
     def pan_to_steps(self, degrees: float) -> int:
         return int(degrees * self.steps_per_degree_pan)
-    
+
     def tilt_to_steps(self, degrees: float) -> int:
         return int(degrees * self.steps_per_degree_tilt)
-    
+
     def steps_to_pan(self, steps: int) -> float:
         return steps / self.steps_per_degree_pan
-    
+
     def steps_to_tilt(self, steps: int) -> float:
         return steps / self.steps_per_degree_tilt
 
@@ -70,21 +92,49 @@ class GimbalController:
             self.ser = None
             logger.info('Disconnected')
     
-    def _send(self, cmd: str, timeout: float = 2.0) -> str:
-        """Send command and return response."""
+    def _send(self, cmd: str, timeout: float = 2.0, expect_prefix: str = None) -> str:
+        """Send command and return response.
+
+        Args:
+            cmd: Command to send
+            timeout: Max time to wait for response
+            expect_prefix: If set, keep reading until response starts with this prefix
+        """
         if not self.ser or not self.ser.is_open:
             raise RuntimeError('Not connected')
+
+        # Clear any stale data
         self.ser.reset_input_buffer()
+        time.sleep(0.02)  # Small delay for buffer to settle
+
+        # Send command
         self.ser.write(f'{cmd}\n'.encode('ascii'))
         self.ser.flush()
-        
+
         # Wait for response
         start = time.time()
         while time.time() - start < timeout:
             if self.ser.in_waiting:
-                return self.ser.readline().decode('ascii').strip()
+                line = self.ser.readline().decode('ascii', errors='ignore').strip()
+                if not line:
+                    continue
+                # If we expect a specific prefix, keep reading until we get it
+                if expect_prefix and not line.startswith(expect_prefix):
+                    logger.debug(f'Skipping unexpected response: {line}')
+                    continue
+                return line
             time.sleep(0.01)
+
+        logger.warning(f'Timeout waiting for response to: {cmd}')
         return ''
+
+    def _drain_buffer(self):
+        """Clear any pending data in the serial buffer."""
+        if self.ser and self.ser.is_open:
+            time.sleep(0.05)
+            while self.ser.in_waiting:
+                self.ser.read(self.ser.in_waiting)
+                time.sleep(0.01)
     
     def ping(self) -> bool:
         """Test connection. Returns True if PONG received."""
@@ -92,15 +142,17 @@ class GimbalController:
     
     def get_position(self) -> Tuple[int, int]:
         """Get current position in steps. Returns (pan, tilt)."""
-        resp = self._send('GET_POS')
+        resp = self._send('GET_POS', expect_prefix='POS')
         try:
+            # Response format: "POS PAN:xxx TILT:yyy"
             parts = resp.split()
             pan = int(parts[1].split(':')[1])
             tilt = int(parts[2].split(':')[1])
             self._pan_steps = pan
             self._tilt_steps = tilt
             return pan, tilt
-        except (IndexError, ValueError):
+        except (IndexError, ValueError) as e:
+            logger.debug(f'Position parse error: {e}, response was: {resp}')
             return self._pan_steps, self._tilt_steps
     
     def get_position_degrees(self) -> Tuple[float, float]:
@@ -110,70 +162,95 @@ class GimbalController:
                 self.limits.steps_to_tilt(tilt_steps))
     
     def get_limits_status(self) -> dict:
-        """Get limit switch status."""
-        resp = self._send('GET_STATUS')
+        """Get limit switch status.
+
+        Returns dict with:
+            pan_limit_neg (PN): True if left limit triggered (D11)
+            pan_limit_pos (PP): True if right limit triggered (D6)
+            tilt_limit_neg (TN): True if down limit triggered
+            tilt_limit_pos (TP): True if up limit triggered
+            pan_homed (PH): True if pan has been homed
+            tilt_homed (TH): True if tilt has been homed
+        """
+        resp = self._send('GET_STATUS', expect_prefix='STATUS')
         try:
+            # Response format: "STATUS PN:x PP:x TN:x TP:x PH:x TH:x"
             parts = resp.split()
             return {
                 'pan_limit_neg': bool(int(parts[1].split(':')[1])),
                 'pan_limit_pos': bool(int(parts[2].split(':')[1])),
                 'tilt_limit_neg': bool(int(parts[3].split(':')[1])),
                 'tilt_limit_pos': bool(int(parts[4].split(':')[1])),
+                'pan_homed': bool(int(parts[5].split(':')[1])),
+                'tilt_homed': bool(int(parts[6].split(':')[1])),
                 'homed': self._homed
             }
-        except (IndexError, ValueError):
+        except (IndexError, ValueError) as e:
+            logger.debug(f'Status parse error: {e}, response was: {resp}')
             return {'pan_limit_neg': False, 'pan_limit_pos': False,
                     'tilt_limit_neg': False, 'tilt_limit_pos': False,
+                    'pan_homed': False, 'tilt_homed': False,
                     'homed': False}
     
     def _clamp_pan(self, steps: int) -> int:
-        """Clamp pan to soft limits."""
-        min_steps = self.limits.pan_to_steps(self.limits.pan_min)
-        max_steps = self.limits.pan_to_steps(self.limits.pan_max)
-        return max(min_steps, min(max_steps, steps))
-    
+        """Clamp pan to hardware limits."""
+        return max(self.limits.pan_min_steps, min(self.limits.pan_max_steps, steps))
+
     def _clamp_tilt(self, steps: int) -> int:
-        """Clamp tilt to soft limits."""
-        min_steps = self.limits.tilt_to_steps(self.limits.tilt_min)
-        max_steps = self.limits.tilt_to_steps(self.limits.tilt_max)
-        return max(min_steps, min(max_steps, steps))
+        """Clamp tilt to hardware limits."""
+        return max(self.limits.tilt_min_steps, min(self.limits.tilt_max_steps, steps))
     
-    def move_relative(self, pan: int = 0, tilt: int = 0, 
-                      respect_limits: bool = True) -> Tuple[int, int]:
-        """Move relative steps. Returns actual (pan, tilt) moved."""
+    def move_relative(self, pan: int = 0, tilt: int = 0,
+                      respect_limits: bool = True,
+                      wait_for_completion: bool = False) -> Tuple[int, int]:
+        """Move relative steps. Returns actual (pan, tilt) moved.
+
+        Args:
+            pan: Steps to move pan axis (positive = right)
+            tilt: Steps to move tilt axis (positive = up)
+            respect_limits: If True, clamp to soft limits
+            wait_for_completion: If True, wait for motion to complete
+        """
         pan_actual = 0
         tilt_actual = 0
-        
+
         if pan != 0:
             target = self._pan_steps + pan
             if respect_limits:
                 target = self._clamp_pan(target)
                 pan = target - self._pan_steps
-            
+
             if pan != 0:
-                sign = '+' if pan > 0 else ''
-                resp = self._send(f'PAN_REL:{sign}{pan}')
+                # Response format: "OK PAN:xxx" where xxx is steps actually moved
+                resp = self._send(f'PAN_REL:{pan}', expect_prefix='OK')
                 try:
                     pan_actual = int(resp.split(':')[1])
                     self._pan_steps += pan_actual
-                except:
-                    pass
-        
+                except (IndexError, ValueError) as e:
+                    logger.debug(f'PAN_REL parse error: {e}, response: {resp}')
+                    # Assume full move if parse fails
+                    self._pan_steps += pan
+
         if tilt != 0:
             target = self._tilt_steps + tilt
             if respect_limits:
                 target = self._clamp_tilt(target)
                 tilt = target - self._tilt_steps
-            
+
             if tilt != 0:
-                sign = '+' if tilt > 0 else ''
-                resp = self._send(f'TILT_REL:{sign}{tilt}')
+                resp = self._send(f'TILT_REL:{tilt}', expect_prefix='OK')
                 try:
                     tilt_actual = int(resp.split(':')[1])
                     self._tilt_steps += tilt_actual
-                except:
-                    pass
-        
+                except (IndexError, ValueError) as e:
+                    logger.debug(f'TILT_REL parse error: {e}, response: {resp}')
+                    self._tilt_steps += tilt
+
+        if wait_for_completion:
+            # Wait a bit for motion to settle, then drain buffer
+            time.sleep(0.1)
+            self._drain_buffer()
+
         return pan_actual, tilt_actual
     
     def move_relative_degrees(self, pan_deg: float = 0, tilt_deg: float = 0) -> Tuple[float, float]:
@@ -184,17 +261,28 @@ class GimbalController:
         return (self.limits.steps_to_pan(actual_pan),
                 self.limits.steps_to_tilt(actual_tilt))
     
-    def move_absolute(self, pan: Optional[int] = None, 
-                      tilt: Optional[int] = None) -> Tuple[int, int]:
+    def sync_position(self) -> Tuple[int, int]:
+        """Re-sync internal position tracking with actual hardware position."""
+        self._drain_buffer()
+        return self.get_position()
+
+    def move_absolute(self, pan: Optional[int] = None,
+                      tilt: Optional[int] = None,
+                      wait_for_completion: bool = False) -> Tuple[int, int]:
         """Move to absolute position in steps. Returns final (pan, tilt)."""
         if pan is not None:
             pan = self._clamp_pan(pan)
-            self._send(f'PAN_ABS:{pan}')
+            self._send(f'PAN_ABS:{pan}', expect_prefix='OK')
             self._pan_steps = pan
         if tilt is not None:
             tilt = self._clamp_tilt(tilt)
-            self._send(f'TILT_ABS:{tilt}')
+            self._send(f'TILT_ABS:{tilt}', expect_prefix='OK')
             self._tilt_steps = tilt
+
+        if wait_for_completion:
+            time.sleep(0.1)
+            self._drain_buffer()
+
         return self._pan_steps, self._tilt_steps
     
     def move_absolute_degrees(self, pan_deg: Optional[float] = None,
