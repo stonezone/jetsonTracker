@@ -83,6 +83,8 @@ htmlcov/
 nucleo/firmware/*/Debug/
 nucleo/firmware/*/Release/
 nucleo/firmware/*/.settings/
+nucleo/firmware/*/.metadata/
+nucleo/stepper_control/
 *.o
 *.elf
 *.map

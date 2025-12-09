@@ -1,4 +1,21 @@
-"""Geographic calculations for GPS-based gimbal pointing."""
+"""Geographic calculations for GPS-based gimbal pointing.
+
+HEADING SOURCES (in order of preference):
+1. Motor position after HOME_ALL (pan=0 = "forward") - RECOMMENDED
+   - No magnetometer interference from stepper motors
+   - Absolute accuracy with limit switches
+   - Use get_heading_from_motor_position() below
+
+2. Compass heading from iPhone (Phase 1 testing only)
+   - Set gimbal.heading from iPhone CoreLocation
+   - Keep iPhone 1+ meter from gimbal to avoid interference
+
+3. Course over ground (when gimbal is moving)
+   - Calculate from consecutive GPS positions
+   - Only works when platform is moving > 0.5m
+
+See GPS Architecture Decision in CLAUDE.md for full context.
+"""
 
 import math
 from dataclasses import dataclass
@@ -6,6 +23,13 @@ from typing import Optional, Tuple
 
 # Earth radius in meters
 EARTH_RADIUS_M = 6_371_000
+
+# Motor position constants (for heading calculation)
+# These values should match your stepper motor configuration
+STEPS_PER_REVOLUTION = 200  # NEMA17 standard
+MICROSTEPPING = 8  # DRV8825 set to 1/8
+GEAR_RATIO = 1.0  # Direct drive (adjust if using gears)
+STEPS_PER_DEGREE = (STEPS_PER_REVOLUTION * MICROSTEPPING * GEAR_RATIO) / 360
 
 
 @dataclass
@@ -67,21 +91,74 @@ def normalize_angle(angle: float) -> float:
     return angle
 
 
-def calculate_relative_position(gimbal: GeoPoint, target: GeoPoint) -> RelativePosition:
-    """Calculate target position relative to gimbal."""
+def get_heading_from_motor_position(pan_steps: int,
+                                      initial_heading: float = 0.0,
+                                      steps_per_degree: float = STEPS_PER_DEGREE) -> float:
+    """Calculate gimbal heading from motor position.
+
+    RECOMMENDED over compass heading - avoids magnetometer interference from
+    stepper motor magnets. After HOME_ALL, pan=0 represents "forward" (whatever
+    direction the gimbal was placed facing).
+
+    Args:
+        pan_steps: Current pan motor position in steps (from GET_POS command)
+        initial_heading: The real-world heading when gimbal was placed (default 0 = relative)
+                        Set to compass reading at setup time if absolute heading needed
+        steps_per_degree: Motor steps per degree of rotation
+
+    Returns:
+        Heading in degrees (0-360, where 0 = direction gimbal faced at HOME)
+
+    Example:
+        # After HOME_ALL, facing the ocean
+        heading = get_heading_from_motor_position(pan_steps=0)  # Returns 0
+
+        # After rotating 45 degrees right
+        heading = get_heading_from_motor_position(pan_steps=200)  # Returns ~45
+
+        # With known initial compass heading of 270 (facing west)
+        heading = get_heading_from_motor_position(pan_steps=200, initial_heading=270)  # Returns ~315
+    """
+    motor_offset_degrees = pan_steps / steps_per_degree
+    heading = initial_heading + motor_offset_degrees
+    return heading % 360
+
+
+def calculate_relative_position(gimbal: GeoPoint, target: GeoPoint,
+                                  motor_heading: Optional[float] = None) -> RelativePosition:
+    """Calculate target position relative to gimbal.
+
+    Args:
+        gimbal: Gimbal position (from GPS module or iPhone)
+        target: Target position (from Watch GPS via Cloudflare)
+        motor_heading: Optional heading from motor position (preferred over gimbal.heading)
+                      Use get_heading_from_motor_position() to calculate this
+
+    Heading Priority:
+        1. motor_heading parameter (if provided) - RECOMMENDED
+        2. gimbal.heading (from compass) - Phase 1 testing only
+        3. No heading adjustment (returns absolute bearing from north)
+    """
     bearing = calculate_bearing(gimbal, target)
     distance = haversine_distance(gimbal, target)
-    
+
     # Altitude difference (positive = target above)
     alt_diff = 0.0
     if gimbal.alt is not None and target.alt is not None:
         alt_diff = target.alt - gimbal.alt
-    
+
     # Relative bearing (accounting for gimbal heading)
+    # Priority: motor_heading > gimbal.heading > no adjustment
     rel_bearing = bearing
-    if gimbal.heading is not None:
+    if motor_heading is not None:
+        # PREFERRED: Use motor position as heading (no magnetometer interference)
+        rel_bearing = normalize_angle(bearing - motor_heading)
+    elif gimbal.heading is not None:
+        # FALLBACK: Use compass heading (Phase 1 testing only)
+        # Note: Keep iPhone 1+ meter from gimbal to avoid interference
         rel_bearing = normalize_angle(bearing - gimbal.heading)
-    
+    # else: rel_bearing stays as absolute bearing from north
+
     return RelativePosition(
         bearing=bearing,
         distance=distance,

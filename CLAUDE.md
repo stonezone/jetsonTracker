@@ -212,7 +212,40 @@ rsync -avz --exclude '__pycache__' \
 
 - **Orin ↔ STM32**: UART via logic level shifter (3.3V/5V)
 - **Camera**: USB or `http://localhost:4747/video` (DroidCam)
-- **GPS Server**: Cloudflare tunnel for watch GPS data
+- **GPS Server**: Cloudflare tunnel for watch GPS data (`wss://ws.stonezone.net` → `localhost:8765`)
+
+## GPS Architecture Decision (December 2025)
+
+**Target Architecture**: Watch → Cloudflare → Orin (NO iPhone in the loop)
+
+### Key Decision: Motor Position as Heading
+- After `HOME_ALL`, pan position = 0 = "forward" (whatever direction gimbal faces)
+- Motor steps from home = heading offset
+- **No magnetometer needed** - avoids interference from stepper motor magnets
+- Steppers don't drift with limit switches = absolute position truth
+
+### Hardware
+- **GPS Module**: BN-220 (~$15) - u-blox M8, multi-constellation (GPS+GLONASS+BeiDou+Galileo), 2.5m accuracy
+- **Why not NEO-6M**: GPS-only, 5m accuracy, slower lock time
+
+### Implementation Phases
+1. **Phase 1** (Current): Test with iPhone relay to validate pipeline
+2. **Phase 2**: Add BN-220 GPS module to Orin
+3. **Phase 3**: Implement motor position as heading in `geo_calc.py`
+4. **Phase 4**: Remove iPhone, Watch uses LTE direct only
+
+### Architecture Diagram (Target)
+```
+Watch GPS (LTE) → wss://ws.stonezone.net → Orin:8765
+                                              ↓
+BN-220 GPS ──────────────────────► fusion_engine.py
+Motor Position (heading) ─────────►      ↓
+Camera → vision_tracker.py ────────► gimbal_controller.py
+                                         ↓
+                                    Nucleo → Steppers
+```
+
+**Plan File**: `~/.claude/plans/zesty-sparking-pretzel.md`
 
 ## Development Guidelines
 
