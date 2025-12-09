@@ -14,36 +14,38 @@ logger = logging.getLogger('gimbal')
 class GimbalLimits:
     """Gimbal axis limits in steps.
 
-    Calibrated 2025-12-08 (after limit switch fix):
-    - PAN range: -2033 to 2222 (4255 steps total)
-    - TILT range: TBD (needs calibration)
-    - Center position: PAN=0 (after homing)
+    Calibrated 2025-12-08/09 (after limit switch fixes):
+    - PAN range: 0 to 4200 (~4255 steps total, measured 2025-12-08)
+    - TILT range: 0 to 2600 (~2675 steps total, measured 2025-12-09)
+    - Home position: 0 for both axes (at negative limit switches)
 
     Limit switches:
-    - D6/PB10 (PP) = physical LEFT switch, stops rightward motion
-    - D11/PA7 (PN) = physical RIGHT switch, stops leftward motion
+    - D6/PB10 (PP) = physical LEFT switch, stops rightward pan
+    - D11/PA7 (PN) = physical RIGHT switch, stops leftward pan / home
+    - D12/PA6 (TP) = tilt positive limit
+    - D7/PA8 (TN) = tilt negative limit / home
     """
     # Steps per degree (calibrated from actual range)
-    # 4255 steps / 180° ≈ 23.6 steps/degree
+    # PAN: 4255 steps / 180° ≈ 23.6 steps/degree
+    # TILT: 2675 steps / 180° ≈ 14.86 steps/degree
     steps_per_degree_pan: float = 23.6
-    steps_per_degree_tilt: float = 14.86  # TBD - needs calibration
+    steps_per_degree_tilt: float = 14.86
 
-    # Actual measured limits in steps (from home position)
-    # Home (0) is at LEFT limit switch, max is at RIGHT limit switch
+    # Actual measured limits in steps (from home position = 0)
     pan_min_steps: int = 0       # Left limit / home
     pan_max_steps: int = 4200    # Right limit (PP triggers ~4255)
-    tilt_min_steps: int = -2000  # Down limit (estimate)
-    tilt_max_steps: int = 2000   # Up limit (estimate)
+    tilt_min_steps: int = 0      # Down limit / home
+    tilt_max_steps: int = 2600   # Up limit (TP triggers ~2675)
 
     # Center position (middle of travel)
-    pan_center_steps: int = 2100  # Halfway between 0 and 4200
-    tilt_center_steps: int = 0
+    pan_center_steps: int = 2100   # Halfway between 0 and 4200
+    tilt_center_steps: int = 1300  # Halfway between 0 and 2600
 
-    # Soft limits in degrees (relative to home, not center)
-    pan_min: float = 0.0     # At home/left
-    pan_max: float = 178.0   # 4200 / 23.6
-    tilt_min: float = -90.0
-    tilt_max: float = 90.0
+    # Soft limits in degrees (relative to home = 0)
+    pan_min: float = 0.0      # At home/left
+    pan_max: float = 178.0    # 4200 / 23.6
+    tilt_min: float = 0.0     # At home/down
+    tilt_max: float = 175.0   # 2600 / 14.86
 
     def pan_to_steps(self, degrees: float) -> int:
         return int(degrees * self.steps_per_degree_pan)

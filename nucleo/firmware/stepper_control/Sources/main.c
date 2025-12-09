@@ -47,14 +47,15 @@ static uint8_t pan_homed = 0;
 static uint8_t tilt_homed = 0;
 
 /* Software Limits (steps from home position)
- * After homing, position is 0 at the left limit switch.
- * Physical travel is ~4255 steps (measured 2025-12-08).
+ * After homing, position is 0 at the negative limit switch.
+ * PAN: Physical travel ~4255 steps (measured 2025-12-08)
+ * TILT: Physical travel ~2675 steps (measured 2025-12-09)
  * Set soft limits slightly inside physical limits for safety.
  */
 #define PAN_LIMIT_MIN   0       // At home/left limit
 #define PAN_LIMIT_MAX   4200    // Just before right limit
-#define TILT_LIMIT_MIN  -2000
-#define TILT_LIMIT_MAX   2000
+#define TILT_LIMIT_MIN  0       // At home/down limit
+#define TILT_LIMIT_MAX  2600    // Just before up limit (physical at ~2675)
 
 /* === Delay === */
 static void delay_cycles(volatile uint32_t cycles) {
@@ -260,7 +261,7 @@ static void home_tilt(void) {
     GPIOB->BSRR = (1U << (5 + 16));  // Slow approach
     while (!read_tilt_neg()) { step_pulse(GPIOB, 4); delay_cycles(5000); }
 
-    tilt_position = TILT_LIMIT_MIN;  // Now at negative limit
+    tilt_position = 0;  // Home position is 0 (at negative limit switch)
     tilt_homed = 1;
     uart_send_str("TILT HOMED\r\n");
 }
