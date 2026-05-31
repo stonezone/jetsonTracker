@@ -68,6 +68,7 @@ class GPSClient:
         self._last_seq: Dict[str, int] = {}
         self._min_offset: Dict[str, float] = {}
         self._max_age_ms: float = 3000.0
+        self._max_clock_skew_ms: float = 120000.0
 
     def get_state(self) -> GPSState:
         """Get current GPS state (thread-safe)."""
@@ -107,7 +108,13 @@ class GPSClient:
         ts_ms = data.get('ts_unix_ms')
         if ts_ms:
             raw = time.time() * 1000.0 - ts_ms
+            if raw < -self._max_clock_skew_ms:
+                return False
+            if raw > self._max_clock_skew_ms:
+                return False
             base = self._min_offset.get(source)
+            if base is not None and base < -self._max_clock_skew_ms:
+                base = None
             if base is None or raw < base:
                 self._min_offset[source] = raw
                 base = raw

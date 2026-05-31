@@ -118,6 +118,21 @@ def test_constant_clock_skew_not_dropped():
     assert s.dropped_stale == 0
 
 
+def test_implausible_future_fix_dropped_without_poisoning_baseline():
+    s = RobotGpsServer()
+    assert not s._should_accept(_fix(0, age_ms=-1100000))
+    assert s.dropped_future == 1
+    assert s._should_accept(_fix(1))
+    assert s.dropped_stale == 0
+
+
+def test_implausible_initial_old_fix_dropped():
+    s = RobotGpsServer()
+    assert not s._should_accept(_fix(0, age_ms=1100000))
+    assert s.dropped_stale == 1
+    assert s._should_accept(_fix(1))
+
+
 def test_per_source_independent():
     s = RobotGpsServer()
     assert s._should_accept(_fix(100, source=LocationSource.WATCH))

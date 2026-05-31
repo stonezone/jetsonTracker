@@ -30,6 +30,9 @@ PORT = int(os.environ.get("GPS_PORT", "8765"))
 # Reliability tuning.
 # Stale GPS is worse than missing GPS: a late fix yanks the camera backward.
 MAX_FIX_AGE_MS = int(os.environ.get("GPS_MAX_FIX_AGE_MS", "3000"))
+# Constant device clock skew is tolerated up to this bound. Anything beyond it
+# is more likely a bad device timestamp or delayed transport backlog.
+MAX_CLOCK_SKEW_MS = int(os.environ.get("GPS_MAX_CLOCK_SKEW_MS", "120000"))
 # An incoming seq this far below the last accepted seq is treated as a device
 # restart (accept + re-baseline) rather than an out-of-order straggler.
 SEQ_RESET_THRESHOLD = int(os.environ.get("GPS_SEQ_RESET_THRESHOLD", "100"))
@@ -331,6 +334,7 @@ class RobotGpsServer:
             LocationSource.IOS.value: 0,
         }
         self.dropped_stale: int = 0
+        self.dropped_future: int = 0
         self.dropped_out_of_order: int = 0
 
     def on_watch_fix(self, callback: FixCallback):
@@ -445,9 +449,29 @@ class RobotGpsServer:
         source = fix.source.value
         recv_ms = int(time.time() * 1000)
 
-        # Clock-skew-robust staleness.
+        # Clock-skew-robust staleness. Reject implausible offsets before they
+        # can become the per-source baseline; otherwise one future-dated fix can
+        # poison the source and make every later normal fix look stale.
         raw_offset = recv_ms - fix.timestamp_ms
+        if raw_offset < -MAX_CLOCK_SKEW_MS:
+            self.dropped_future += 1
+            logger.warning(
+                f"DROP future {source} seq={fix.sequence} skew~{-raw_offset}ms"
+            )
+            return False
+        if raw_offset > MAX_CLOCK_SKEW_MS:
+            self.dropped_stale += 1
+            logger.warning(
+                f"DROP stale {source} seq={fix.sequence} age~{raw_offset}ms"
+            )
+            return False
+
         base_offset = self._min_offset.get(source)
+        if base_offset is not None and base_offset < -MAX_CLOCK_SKEW_MS:
+            logger.warning(
+                f"Resetting invalid {source} clock baseline ({base_offset}ms)"
+            )
+            base_offset = None
         if base_offset is None or raw_offset < base_offset:
             self._min_offset[source] = raw_offset
             base_offset = raw_offset
@@ -539,6 +563,7 @@ class RobotGpsServer:
             'fix_rate_hz': round(rate, 2),
             'fixes_by_source': dict(self.fixes_by_source),
             'dropped_stale': self.dropped_stale,
+            'dropped_future': self.dropped_future,
             'dropped_out_of_order': self.dropped_out_of_order,
             'connected_clients': len(self.connected_clients),
             'last_watch_age_ms': self.last_watch_fix.age_ms() if self.last_watch_fix else None,
@@ -571,6 +596,7 @@ class RobotGpsServer:
                         f"iphone={stats['fixes_by_source'].get('iOS', 0)}) | "
                         f"Rate: {stats['fix_rate_hz']} Hz | "
                         f"Dropped: stale={stats['dropped_stale']} "
+                        f"future={stats['dropped_future']} "
                         f"ooo={stats['dropped_out_of_order']} | "
                         f"Clients: {stats['connected_clients']}"
                     )
