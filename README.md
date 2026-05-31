@@ -105,7 +105,7 @@ See [BOM.md](BOM.md) for complete bill of materials.
 ```bash
 ssh orin
 # or: ssh zack@192.168.1.155
-# sudo password: motherfucker
+# (sudo password intentionally NOT stored in the repo — keep credentials out of git)
 ```
 
 ### 3. Run Tracking System

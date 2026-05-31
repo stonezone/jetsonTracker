@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import random
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Dict, Any
@@ -29,6 +30,8 @@ class GPSState:
     target_updated: float = 0.0
     connected: bool = False
     fixes_received: Dict[str, int] = field(default_factory=lambda: {'iOS': 0, 'watchOS': 0})
+    dropped: int = 0
+    last_error: Optional[str] = None
 
 
 def parse_location_fix(data: Dict[str, Any]) -> Optional[GeoPoint]:
@@ -61,6 +64,10 @@ class GPSClient:
         self._running = False
         self._thread: Optional[Thread] = None
         self._ws = None
+        # Stale / out-of-order guards (defense in depth; gps_server also filters).
+        self._last_seq: Dict[str, int] = {}
+        self._min_offset: Dict[str, float] = {}
+        self._max_age_ms: float = 3000.0
 
     def get_state(self) -> GPSState:
         """Get current GPS state (thread-safe)."""
@@ -71,8 +78,48 @@ class GPSClient:
                 gimbal_updated=self.state.gimbal_updated,
                 target_updated=self.state.target_updated,
                 connected=self.state.connected,
-                fixes_received=self.state.fixes_received.copy()
+                fixes_received=self.state.fixes_received.copy(),
+                dropped=self.state.dropped,
+                last_error=self.state.last_error,
             )
+
+    def _handle_relay_update(self, data: Dict[str, Any]) -> None:
+        """Handle a RelayUpdate envelope {base, remote, ...} from gps_server.
+
+        gps_server re-broadcasts the raw Watch/iPhone payload, which is a
+        RelayUpdate envelope rather than a flat fix. Extract each side and route
+        it through _handle_fix. (MockGPSServer still sends flat fixes, handled
+        directly.)
+        """
+        remote = data.get('remote')
+        if remote:
+            remote = dict(remote)
+            remote.setdefault('source', 'watchOS')
+            self._handle_fix(remote)
+        base = data.get('base')
+        if base:
+            base = dict(base)
+            base.setdefault('source', 'iOS')
+            self._handle_fix(base)
+
+    def _accept(self, source: str, data: Dict[str, Any]) -> bool:
+        """Drop stale / out-of-order fixes (clock-skew-robust staleness)."""
+        ts_ms = data.get('ts_unix_ms')
+        if ts_ms:
+            raw = time.time() * 1000.0 - ts_ms
+            base = self._min_offset.get(source)
+            if base is None or raw < base:
+                self._min_offset[source] = raw
+                base = raw
+            if raw - base > self._max_age_ms:
+                return False
+        seq = data.get('seq')
+        if seq is not None:
+            last = self._last_seq.get(source)
+            if last is not None and seq <= last and (last - seq) < 100:
+                return False
+            self._last_seq[source] = seq
+        return True
 
     def _handle_fix(self, data: Dict[str, Any]) -> None:
         """Process incoming GPS fix."""
@@ -80,6 +127,11 @@ class GPSClient:
         point = parse_location_fix(data)
 
         if point is None:
+            return
+
+        if not self._accept(source, data):
+            with self._lock:
+                self.state.dropped += 1
             return
 
         now = time.time()
@@ -115,20 +167,30 @@ class GPSClient:
                             break
                         try:
                             data = json.loads(message)
-                            self._handle_fix(data)
+                            if isinstance(data, dict) and data.get('type'):
+                                continue  # control frame (ack/pong); ignore
+                            if isinstance(data, dict) and (
+                                'remote' in data or 'base' in data
+                            ):
+                                self._handle_relay_update(data)
+                            else:
+                                self._handle_fix(data)
                         except json.JSONDecodeError as e:
                             logger.warning(f'Invalid JSON: {e}')
 
             except Exception as e:
                 logger.warning(f'Connection error: {e}')
+                with self._lock:
+                    self.state.last_error = str(e)
 
             with self._lock:
                 self.state.connected = False
                 self._ws = None
 
             if self._running:
-                logger.info('Reconnecting in 5 seconds...')
-                await asyncio.sleep(5)
+                delay = 3.0 + random.random() * 2.0
+                logger.info(f'Reconnecting in {delay:.1f}s...')
+                await asyncio.sleep(delay)
 
     def _run_async(self) -> None:
         """Run the async event loop in a thread."""

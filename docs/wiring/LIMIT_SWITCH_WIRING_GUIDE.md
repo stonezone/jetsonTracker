@@ -7,12 +7,12 @@ Step-by-step instructions for wiring the 4 reed switch limit switches to the STM
 ## Overview
 
 The jetsonTracker gimbal uses 4 reed switches for position limiting:
-- **PAN_NEG (D6)** - Pan axis negative limit (home position)
-- **PAN_POS (D11)** - Pan axis positive limit
-- **TILT_NEG (D7)** - Tilt axis negative limit (home position)
-- **TILT_POS (D12)** - Tilt axis positive limit
+- **PAN_NEG (D11)** - Pan axis home (RIGHT side, stops leftward motion)
+- **PAN_POS (D6)** - Pan axis far limit (LEFT side, stops rightward motion)
+- **TILT_NEG (D7)** - Tilt axis home (DOWN, straight down)
+- **TILT_POS (D12)** - Tilt axis far limit (UP, 90° up)
 
-All switches are at **90 degrees** from center (±90° range for both axes).
+**Actual ranges:** Pan ~±70° from center, Tilt ~±90° (down to up).
 
 ---
 
@@ -27,12 +27,12 @@ All switches are at **90 degrees** from center (±90° range for both axes).
 
 ## Pin Mapping
 
-| Limit Switch | Arduino Pin | STM32 Pin | Nucleo Header Location |
-|--------------|-------------|-----------|------------------------|
-| **PAN_NEG** (Home) | D6 | PB10 | CN5 (Morpho) or CN7 |
-| **TILT_NEG** (Home) | D7 | PA8 | CN5 (Morpho) or CN9 |
-| **PAN_POS** | D11 | PA7 | CN5 (Morpho) or CN7 |
-| **TILT_POS** | D12 | PA6 | CN5 (Morpho) or CN7 |
+| Limit Switch | Arduino Pin | STM32 Pin | Physical Location | Function |
+|--------------|-------------|-----------|-------------------|----------|
+| **PAN_NEG** (Home) | D11 | PA7 | RIGHT side | Stops leftward motion |
+| **PAN_POS** | D6 | PB10 | LEFT side | Stops rightward motion |
+| **TILT_NEG** (Home) | D7 | PA8 | DOWN (straight down) | Stops downward motion |
+| **TILT_POS** | D12 | PA6 | UP (90° up) | Stops upward motion |
 
 ---
 
@@ -55,10 +55,10 @@ Reed Switch
 **For each of the 4 reed switches:**
 
 1. Connect **Wire 1** to the Nucleo Arduino header pin:
-   - PAN_NEG → D6
-   - TILT_NEG → D7
-   - PAN_POS → D11
-   - TILT_POS → D12
+   - PAN_NEG (RIGHT, home) → D11
+   - PAN_POS (LEFT) → D6
+   - TILT_NEG (DOWN, home) → D7
+   - TILT_POS (UP 90°) → D12
 
 2. Connect **Wire 2** to **GND** (any ground pin on Nucleo)
 
@@ -74,14 +74,14 @@ Multiple GND pins are available on Nucleo headers:
 
 ### Step 4: Physical Mounting
 
-Mount reed switches on the gimbal frame at the 90° and -90° positions:
+Mount reed switches on the gimbal frame at the limit positions:
 
-| Switch | Position | Axis | Location Description |
-|--------|----------|------|---------------------|
-| PAN_NEG | -90° | Pan (horizontal) | Far left when facing gimbal |
-| PAN_POS | +90° | Pan (horizontal) | Far right when facing gimbal |
-| TILT_NEG | -90° | Tilt (vertical) | Looking down |
-| TILT_POS | +90° | Tilt (vertical) | Looking up |
+| Switch | Pin | Axis | Location Description |
+|--------|-----|------|---------------------|
+| PAN_NEG (Home) | D11 | Pan (horizontal) | RIGHT side (~-70° from center) |
+| PAN_POS | D6 | Pan (horizontal) | LEFT side (~+70° from center) |
+| TILT_NEG (Home) | D7 | Tilt (vertical) | Straight DOWN (-90°) |
+| TILT_POS | D12 | Tilt (vertical) | Straight UP (+90°) |
 
 Mount magnets on the moving gimbal arm, positioned to pass within ~5mm of reed switches at limits.
 
@@ -90,24 +90,24 @@ Mount magnets on the moving gimbal arm, positioned to pass within ~5mm of reed s
 ## Wiring Diagram
 
 ```
-                    ┌─────────────────────┐
-                    │   STM32 Nucleo      │
-                    │                     │
-    PAN_NEG ───────►│ D6  (PB10)         │
-    Reed Switch     │                     │
-                    │                     │
-    TILT_NEG ──────►│ D7  (PA8)          │
-    Reed Switch     │                     │
-                    │                     │
-    PAN_POS ───────►│ D11 (PA7)          │
-    Reed Switch     │                     │
-                    │                     │
-    TILT_POS ──────►│ D12 (PA6)          │
-    Reed Switch     │                     │
-                    │                     │
-    All GND wires ─►│ GND                 │
-    (daisy-chain)   │                     │
-                    └─────────────────────┘
+                         ┌─────────────────────┐
+                         │   STM32 Nucleo      │
+                         │                     │
+    PAN_NEG (RIGHT) ────►│ D11 (PA7)  HOME    │
+    Reed Switch          │                     │
+                         │                     │
+    PAN_POS (LEFT) ─────►│ D6  (PB10)         │
+    Reed Switch          │                     │
+                         │                     │
+    TILT_NEG (DOWN) ────►│ D7  (PA8)   HOME   │
+    Reed Switch          │                     │
+                         │                     │
+    TILT_POS (UP 90°) ──►│ D12 (PA6)          │
+    Reed Switch          │                     │
+                         │                     │
+    All GND wires ──────►│ GND                 │
+    (daisy-chain)        │                     │
+                         └─────────────────────┘
 ```
 
 ---
@@ -122,7 +122,7 @@ Mount magnets on the moving gimbal arm, positioned to pass within ~5mm of reed s
 
 4. **Firmware Behavior**:
    - Motor stops immediately when limit switch triggers
-   - Homing routines use NEG limits (D6/D7) to find home position
+   - Homing routines use NEG limits (D11/D7) to find home position
    - Position tracking resets to known value after homing
 
 ---
@@ -132,10 +132,10 @@ Mount magnets on the moving gimbal arm, positioned to pass within ~5mm of reed s
 ### Test 1: Check Switch Detection
 
 ```bash
-# From Orin - connect to STM32
+# From Orin - connect to STM32 via UART
 python3 -c "
 import serial
-ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+ser = serial.Serial('/dev/ttyTHS1', 115200, timeout=1)
 ser.write(b'GET_STATUS\n')
 import time
 time.sleep(0.1)
@@ -168,7 +168,7 @@ STATUS PN:1 PP:0 TN:0 TP:0 PH:0 TH:0
 ```bash
 python3 -c "
 import serial
-ser = serial.Serial('/dev/ttyACM0', 115200, timeout=10)
+ser = serial.Serial('/dev/ttyTHS1', 115200, timeout=10)
 ser.write(b'HOME_ALL\n')
 import time
 while True:
@@ -223,5 +223,6 @@ ALL HOMED
 ---
 
 **Created:** 2025-12-04
-**Status:** Ready for physical wiring
-**Hardware:** 4x reed switches installed (not wired)
+**Updated:** 2025-12-15
+**Status:** Pin mappings verified, ready for wiring
+**Hardware:** 4x reed switches (D11=RIGHT/home, D6=LEFT, D7=DOWN/home, D12=UP)

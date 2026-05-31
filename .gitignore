@@ -210,3 +210,7 @@ Backup*/
 # =============================================================================
 docs/.DS_Store
 docs/wiring/.DS_Store
+
+# Agent collaboration state
+.agent-collab/
+.codex/

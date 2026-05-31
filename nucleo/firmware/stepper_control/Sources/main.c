@@ -1,5 +1,5 @@
-#if !defined(STM32F401xE)
-#define STM32F401xE
+#if !defined(STM32F446xx)
+#define STM32F446xx
 #endif
 
 #include "stm32f4xx.h"
@@ -7,18 +7,19 @@
 #include <stdlib.h>
 
 /* === Pin Mapping ===
- * Motor 1 (PAN):  DIR = PA10 (D2), STEP = PB3 (D3)
- * Motor 2 (TILT): DIR = PB5  (D4), STEP = PB4 (D5)
- * Microsteps:     M2=PA9 (D8), M1=PC7 (D9), M0=PB6 (D10)
+ * Motor 1 (PAN):  DIR = PB5 (D4), STEP = PB3 (D3)
+ * Motor 2 (TILT): DIR = PB4 (D5), STEP = PA5 (D13)
+ * Microsteps:     M2=PA9 (D8), M1=PA2 (D1), M0=PB6 (D10)
  * Limit Switches: PAN_NEG=PA7 (D11), TILT_NEG=PA8 (D7)
- *                 PAN_POS=PB10 (D6), TILT_POS=PA6 (D12)
- * USART2:         TX=PA2 (D1), RX=PA3 (D0)
+ *                 PAN_POS=PA10 (D2), TILT_POS=PA6 (D12)
+ * USART6:         TX=PC6 (CN10-4), RX=PC7 (D9)
+ * NOTE: D6/PB10 shorted to GND on this board, using D13 for TILT_STEP
  */
 
 #define M0_PORT GPIOB
 #define M0_PIN  6
-#define M1_PORT GPIOC
-#define M1_PIN  7
+#define M1_PORT GPIOA
+#define M1_PIN  2      // Moved from PC7 to PA2 (D1) to free PC7 for USART6
 #define M2_PORT GPIOA
 #define M2_PIN  9
 
@@ -28,8 +29,8 @@
 #define TILT_NEG_PORT   GPIOA
 #define TILT_NEG_PIN    8
 
-/* Limit switches - positive direction - D6/PB10 stops rightward motion */
-#define PAN_POS_PORT    GPIOB
+/* Limit switches - positive direction - D2/PA10 stops rightward motion */
+#define PAN_POS_PORT    GPIOA
 #define PAN_POS_PIN     10
 #define TILT_POS_PORT   GPIOA
 #define TILT_POS_PIN    6
@@ -46,16 +47,16 @@ static int32_t tilt_position = 0;
 static uint8_t pan_homed = 0;
 static uint8_t tilt_homed = 0;
 
-/* Software Limits (steps from home position)
- * After homing, position is 0 at the negative limit switch.
- * PAN: Physical travel ~4255 steps (measured 2025-12-08)
- * TILT: Physical travel ~2675 steps (measured 2025-12-09)
+/* Software Limits (steps from center home position)
+ * After homing, position is 0 at CENTER between limits.
+ * PAN: Physical travel ~4255 steps, so ±2100 from center
+ * TILT: Physical travel ~2675 steps, so ±1300 from center
  * Set soft limits slightly inside physical limits for safety.
  */
-#define PAN_LIMIT_MIN   0       // At home/left limit
-#define PAN_LIMIT_MAX   4200    // Just before right limit
-#define TILT_LIMIT_MIN  0       // At home/down limit
-#define TILT_LIMIT_MAX  2600    // Just before up limit (physical at ~2675)
+#define PAN_LIMIT_MIN   -2100   // Toward left limit (-90°)
+#define PAN_LIMIT_MAX   2100    // Toward right limit (+90°)
+#define TILT_LIMIT_MIN  -1300   // Toward down limit (-90°)
+#define TILT_LIMIT_MAX  1300    // Toward up limit (+90°)
 
 /* === Delay === */
 static void delay_cycles(volatile uint32_t cycles) {
@@ -66,25 +67,24 @@ static void delay_cycles(volatile uint32_t cycles) {
 static void gpio_init(void) {
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
 
-    // Motor DIR/STEP outputs
-    GPIOA->MODER &= ~(3U << (10 * 2));
-    GPIOA->MODER |=  (1U << (10 * 2));  // PA10 output
-
+    // Motor DIR/STEP outputs: PAN(D4=PB5,D3=PB3) TILT(D5=PB4,D13=PA5)
     GPIOB->MODER &= ~((3U << (3*2)) | (3U << (4*2)) | (3U << (5*2)));
     GPIOB->MODER |=  ((1U << (3*2)) | (1U << (4*2)) | (1U << (5*2)));
+    GPIOA->MODER &= ~(3U << (5*2));
+    GPIOA->MODER |=  (1U << (5*2));  // PA5 (D13) = TILT_STEP
 
     // Microstep outputs
     M0_PORT->MODER &= ~(3U << (M0_PIN * 2)); M0_PORT->MODER |= (1U << (M0_PIN * 2));
     M1_PORT->MODER &= ~(3U << (M1_PIN * 2)); M1_PORT->MODER |= (1U << (M1_PIN * 2));
     M2_PORT->MODER &= ~(3U << (M2_PIN * 2)); M2_PORT->MODER |= (1U << (M2_PIN * 2));
 
-    // USART2 (PA2=TX, PA3=RX) -> AF7
-    GPIOA->MODER &= ~((3U << (2*2)) | (3U << (3*2)));
-    GPIOA->MODER |=  ((2U << (2*2)) | (2U << (3*2)));
-    GPIOA->AFR[0] |= (7U << (2*4)) | (7U << (3*4));
+    // USART6 (PC6=TX, PC7=RX) -> AF8
+    GPIOC->MODER &= ~((3U << (6*2)) | (3U << (7*2)));
+    GPIOC->MODER |=  ((2U << (6*2)) | (2U << (7*2)));
+    GPIOC->AFR[0] |= (8U << (6*4)) | (8U << (7*4));
 
     // Limit switch inputs with pull-ups (active-low)
-    // PAN negative limit (D6 = PB10)
+    // PAN negative limit (D11 = PA7)
     PAN_NEG_PORT->MODER &= ~(3U << (PAN_NEG_PIN * 2));
     PAN_NEG_PORT->PUPDR &= ~(3U << (PAN_NEG_PIN * 2));
     PAN_NEG_PORT->PUPDR |=  (1U << (PAN_NEG_PIN * 2));
@@ -94,7 +94,7 @@ static void gpio_init(void) {
     TILT_NEG_PORT->PUPDR &= ~(3U << (TILT_NEG_PIN * 2));
     TILT_NEG_PORT->PUPDR |=  (1U << (TILT_NEG_PIN * 2));
 
-    // PAN positive limit (D11 = PA7)
+    // PAN positive limit (D2 = PA10)
     PAN_POS_PORT->MODER &= ~(3U << (PAN_POS_PIN * 2));
     PAN_POS_PORT->PUPDR &= ~(3U << (PAN_POS_PIN * 2));
     PAN_POS_PORT->PUPDR |=  (1U << (PAN_POS_PIN * 2));
@@ -119,19 +119,19 @@ static uint8_t read_tilt_pos(void) {
     return ((TILT_POS_PORT->IDR & (1U << TILT_POS_PIN)) == 0) ? 1 : 0;
 }
 
-/* === USART2 Init (115200 8N1 @ 16MHz HSI) === */
-static void usart2_init(void) {
-    RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
-    USART2->BRR = 0x8B;  // 16MHz / 115200
-    USART2->CR1 |= USART_CR1_RE | USART_CR1_TE | USART_CR1_RXNEIE;
-    USART2->CR1 |= USART_CR1_UE;
-    NVIC_EnableIRQ(USART2_IRQn);
+/* === USART6 Init (115200 8N1 @ 16MHz HSI) === */
+static void usart6_init(void) {
+    RCC->APB2ENR |= RCC_APB2ENR_USART6EN;
+    USART6->BRR = 0x8B;  // 16MHz / 115200
+    USART6->CR1 |= USART_CR1_RE | USART_CR1_TE | USART_CR1_RXNEIE;
+    USART6->CR1 |= USART_CR1_UE;
+    NVIC_EnableIRQ(USART6_IRQn);
 }
 
-/* === USART2 IRQ Handler === */
-void USART2_IRQHandler(void) {
-    if (USART2->SR & USART_SR_RXNE) {
-        char c = USART2->DR;
+/* === USART6 IRQ Handler === */
+void USART6_IRQHandler(void) {
+    if (USART6->SR & USART_SR_RXNE) {
+        char c = USART6->DR;
         if (cmd_ready) return;
         if (c == '\n' || c == '\r') {
             rx_buffer[rx_index] = '\0';
@@ -146,8 +146,8 @@ void USART2_IRQHandler(void) {
 /* === UART Output === */
 static void uart_send_str(const char *str) {
     while (*str) {
-        while (!(USART2->SR & USART_SR_TXE));
-        USART2->DR = *str++;
+        while (!(USART6->SR & USART_SR_TXE));
+        USART6->DR = *str++;
     }
 }
 
@@ -158,7 +158,7 @@ static void uart_send_int(int32_t val) {
     if (val == 0) buf[i++] = '0';
     else while (val > 0) { buf[i++] = '0' + (val % 10); val /= 10; }
     if (neg) buf[i++] = '-';
-    while (i > 0) { while (!(USART2->SR & USART_SR_TXE)); USART2->DR = buf[--i]; }
+    while (i > 0) { while (!(USART6->SR & USART_SR_TXE)); USART6->DR = buf[--i]; }
 }
 
 /* === Step Pulse === */
@@ -176,9 +176,9 @@ static int32_t move_pan(int32_t steps) {
     int32_t count = (steps > 0) ? steps : -steps;
     int32_t taken = 0;
 
-    // PAN direction inverted (motor wiring)
-    if (dir) GPIOA->BSRR = (1U << (10 + 16));
-    else     GPIOA->BSRR = (1U << 10);
+    // PAN direction: PB5 (D4)
+    if (dir) GPIOB->BSRR = (1U << (5 + 16));
+    else     GPIOB->BSRR = (1U << 5);
     delay_cycles(10000);
 
     for (int32_t i = 0; i < count; i++) {
@@ -202,8 +202,9 @@ static int32_t move_tilt(int32_t steps) {
     int32_t count = (steps > 0) ? steps : -steps;
     int32_t taken = 0;
 
-    if (dir) GPIOB->BSRR = (1U << 5);
-    else     GPIOB->BSRR = (1U << (5 + 16));
+    // TILT direction: PB4 (D5)
+    if (dir) GPIOB->BSRR = (1U << 4);
+    else     GPIOB->BSRR = (1U << (4 + 16));
     delay_cycles(10000);
 
     for (int32_t i = 0; i < count; i++) {
@@ -213,63 +214,92 @@ static int32_t move_tilt(int32_t steps) {
         // Software limits
         int32_t next = tilt_position + (dir ? 1 : -1);
         if (next < TILT_LIMIT_MIN || next > TILT_LIMIT_MAX) break;
-        step_pulse(GPIOB, 4);
+        step_pulse(GPIOA, 5);  // TILT STEP: PA5 (D13)
         tilt_position = next;
         taken++;
     }
     return dir ? taken : -taken;
 }
 
-/* === Homing (moves to negative limit, then to center) === */
+/* === Homing (finds center between limits) === */
 static void home_pan(void) {
     uart_send_str("HOMING PAN...\r\n");
-    // PAN direction inverted (motor wiring)
-    GPIOA->BSRR = (1U << 10);  // DIR toward negative limit (inverted)
-    delay_cycles(10000);
+    // PAN DIR: PB5 (D4), STEP: PB3 (D3)
 
+    // Step 1: Move to NEG limit
+    GPIOB->BSRR = (1U << 5);  // DIR toward negative limit
+    delay_cycles(10000);
     uint32_t count = 0;
     while (!read_pan_neg() && count < 20000) { step_pulse(GPIOB, 3); count++; }
     if (count >= 20000) { uart_send_str("ERROR: PAN NEG LIMIT NOT FOUND\r\n"); return; }
 
+    // Back off NEG limit
     delay_cycles(100000);
-    GPIOA->BSRR = (1U << (10 + 16));  // Back off (inverted)
-    for (int i = 0; i < 200; i++) step_pulse(GPIOB, 3);
+    GPIOB->BSRR = (1U << (5 + 16));  // DIR toward positive
+    for (int i = 0; i < 50; i++) step_pulse(GPIOB, 3);
 
+    // Step 2: Count steps to POS limit
     delay_cycles(100000);
-    GPIOA->BSRR = (1U << 10);  // Slow approach (inverted)
-    while (!read_pan_neg()) { step_pulse(GPIOB, 3); delay_cycles(5000); }
+    uint32_t total_steps = 0;
+    while (!read_pan_pos() && total_steps < 20000) { step_pulse(GPIOB, 3); total_steps++; }
+    if (total_steps >= 20000) { uart_send_str("ERROR: PAN POS LIMIT NOT FOUND\r\n"); return; }
 
-    pan_position = 0;  // Home position is 0 (at left limit switch)
+    uart_send_str("PAN RANGE: ");
+    uart_send_int(total_steps);
+    uart_send_str(" steps\r\n");
+
+    // Step 3: Move to center
+    uint32_t center = total_steps / 2;
+    GPIOB->BSRR = (1U << 5);  // DIR toward negative (back to center)
+    delay_cycles(10000);
+    for (uint32_t i = 0; i < center; i++) step_pulse(GPIOB, 3);
+
+    pan_position = 0;  // Center is 0
     pan_homed = 1;
-    uart_send_str("PAN HOMED\r\n");
+    uart_send_str("PAN HOMED AT CENTER\r\n");
 }
 
 static void home_tilt(void) {
     uart_send_str("HOMING TILT...\r\n");
-    GPIOB->BSRR = (1U << (5 + 16));  // DIR toward negative limit
+    // TILT DIR: PB4 (D5), STEP: PA5 (D13)
+
+    // Step 1: Move to NEG limit
+    GPIOB->BSRR = (1U << (4 + 16));  // DIR toward negative limit
     delay_cycles(10000);
-
     uint32_t count = 0;
-    while (!read_tilt_neg() && count < 5000) { step_pulse(GPIOB, 4); count++; }
-    if (count >= 5000) { uart_send_str("ERROR: TILT NEG LIMIT NOT FOUND\r\n"); return; }
+    while (!read_tilt_neg() && count < 10000) { step_pulse(GPIOA, 5); count++; }
+    if (count >= 10000) { uart_send_str("ERROR: TILT NEG LIMIT NOT FOUND\r\n"); return; }
 
+    // Back off NEG limit
     delay_cycles(100000);
-    GPIOB->BSRR = (1U << 5);  // Back off
-    for (int i = 0; i < 200; i++) step_pulse(GPIOB, 4);
+    GPIOB->BSRR = (1U << 4);  // DIR toward positive
+    for (int i = 0; i < 50; i++) step_pulse(GPIOA, 5);
 
+    // Step 2: Count steps to POS limit
     delay_cycles(100000);
-    GPIOB->BSRR = (1U << (5 + 16));  // Slow approach
-    while (!read_tilt_neg()) { step_pulse(GPIOB, 4); delay_cycles(5000); }
+    uint32_t total_steps = 0;
+    while (!read_tilt_pos() && total_steps < 10000) { step_pulse(GPIOA, 5); total_steps++; }
+    if (total_steps >= 10000) { uart_send_str("ERROR: TILT POS LIMIT NOT FOUND\r\n"); return; }
 
-    tilt_position = 0;  // Home position is 0 (at negative limit switch)
+    uart_send_str("TILT RANGE: ");
+    uart_send_int(total_steps);
+    uart_send_str(" steps\r\n");
+
+    // Step 3: Move to center
+    uint32_t center = total_steps / 2;
+    GPIOB->BSRR = (1U << (4 + 16));  // DIR toward negative (back to center)
+    delay_cycles(10000);
+    for (uint32_t i = 0; i < center; i++) step_pulse(GPIOA, 5);
+
+    tilt_position = 0;  // Center is 0
     tilt_homed = 1;
-    uart_send_str("TILT HOMED\r\n");
+    uart_send_str("TILT HOMED AT CENTER\r\n");
 }
 
 /* === Main === */
 int main(void) {
     gpio_init();
-    usart2_init();
+    usart6_init();
 
     // Microstep 1/8: M2=0, M1=1, M0=1
     M2_PORT->BSRR = (1U << (M2_PIN + 16));

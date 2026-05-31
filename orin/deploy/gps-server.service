@@ -1,0 +1,28 @@
+# JetsonTracker GPS WebSocket server.
+# Install on the Orin:
+#   sudo cp orin/deploy/gps-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gps-server
+#   journalctl -u gps-server -f
+#
+# Origin of the watch->Cloudflare->Orin pipeline. Must stay up; restarts on
+# crash/exit and never gives up (StartLimitIntervalSec=0).
+
+[Unit]
+Description=JetsonTracker GPS WebSocket server (Watch/iPhone -> fusion)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=zack
+WorkingDirectory=/data/projects/gimbal
+ExecStart=/usr/bin/python3 /data/projects/gimbal/gps_server.py
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

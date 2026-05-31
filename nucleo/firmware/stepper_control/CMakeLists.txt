@@ -38,7 +38,7 @@ set (MFLOAT_ABI_MIX                   "-mfloat-abi=softfp")
 ###################### VARIABLES ######################################
 set (PROJECT_NAME             "stepper_control")
 set (PROJECT_TYPE             "exe")
-set (LINKER_SCRIPT            "../STM32F401RETX_FLASH.ld")
+set (LINKER_SCRIPT            "../STM32F446RETX_FLASH.ld")
 set (MCPU                     "-mcpu=Cortex-M4")
 set (MFPU                 "-mfpu=fpv4-sp-d16")
 set (MFLOAT_ABI               "")
@@ -48,7 +48,7 @@ set (RUNTIME_LIBRARY_SYSCALLS "--specs=nosys.specs")
 
 set (PROJECT_SOURCES
 	# LIST SOURCE FILES HERE
-	Startup/startup_stm32f401retx.s
+	Startup/startup_stm32f446retx.s
 	Sources/main.c
 	Sources/syscalls.c
 	Sources/sysmem.c

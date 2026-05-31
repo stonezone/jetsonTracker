@@ -20,11 +20,14 @@ The gimbal is currently assembled and operational with:
 ## Design Notes
 
 - **Gear Ratio:** Herringbone gears provide smooth, backlash-free motion
-- **Range of Motion:**
-  - Pan: ±180° (software limited to ±8000 steps)
-  - Tilt: ±90° (software limited to ±2000 steps)
+- **Range of Motion:** (calibrated December 2025)
+  - Pan: ~±70° from center (~4200 steps total travel)
+  - Tilt: ~±90° down to up (~2600 steps total travel)
 - **Motor Mounting:** NEMA17 standard mounting holes
 - **Material:** PLA/PETG 3D printed parts
+- **Limit Switches:** 4x reed switches (2 per axis, at both ends of travel)
+  - Pan: D11=RIGHT (home), D6=LEFT (far limit)
+  - Tilt: D7=DOWN (home), D12=UP 90° (far limit)
 
 ## To Do
 
@@ -38,4 +41,4 @@ The gimbal is currently assembled and operational with:
 
 **Note:** This folder is a placeholder. STL files and detailed mechanical documentation will be added as they become available.
 
-**Last Updated:** November 28, 2025
+**Last Updated:** December 10, 2025

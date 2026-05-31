@@ -1,7 +1,7 @@
 # Robot Cameraman - System Architecture
 
 **Project:** Real-Time Subject Tracking Gimbal with GPS-Vision Fusion
-**Last Updated:** November 29, 2025
+**Last Updated:** December 10, 2025
 
 ---
 
@@ -120,8 +120,8 @@ A robot cameraman that tracks a subject using a 2-axis pan/tilt gimbal. The syst
 | GPU | 1024 CUDA cores, Tensor Cores |
 | RAM | 8GB LPDDR5 |
 | Storage | NVMe SSD (mounted at /data) |
-| IP Address | 192.168.1.155 |
-| SSH | `ssh orin` (keys configured) |
+| IP Address | 192.168.1.87 (DHCP, may vary) |
+| SSH | `ssh zack@orin` (keys configured) |
 | Username | zack |
 
 ### Microcontroller: STM32 Nucleo-F401RE
@@ -165,7 +165,7 @@ A robot cameraman that tracks a subject using a 2-axis pan/tilt gimbal. The syst
 ### Orin Software Stack
 
 ```
-/data/projects/gimbal/
+~/jetsonTracker/
 ├── vision_tracker.py      # YOLOv8 detection + tracking loop
 ├── gimbal_controller.py   # Serial UART controller for Nucleo
 ├── gps_server.py          # WebSocket server for GPS data (port 8765)
@@ -208,12 +208,24 @@ pyyaml>=6.0             # Configuration
 
 | Parameter | Value |
 |-----------|-------|
-| Port | /dev/ttyACM0 |
+| Port | `/dev/ttyTHS1` (GPIO UART, not USB) |
 | Baud Rate | 115200 |
 | Data Bits | 8 |
 | Parity | None |
 | Stop Bits | 1 |
 | Line Ending | `\n` (LF) |
+
+#### Direct UART Wiring (3.3V logic, no level shifter needed)
+
+```
+Orin 40-pin              Nucleo
+──────────              ──────
+Pin 8  (TXD)  ────────→  D0 (RX / PA3)
+Pin 10 (RXD)  ←────────  D1 (TX / PA2)
+Pin 6  (GND)  ──────────  GND
+```
+
+**Note:** May need to disable serial console: `sudo systemctl disable nvgetty`
 
 #### Command Set
 
@@ -376,12 +388,15 @@ ingress:
 
 #### Limit Switches (Active-Low with Pull-ups)
 
-| Limit | Arduino Pin | STM32 Pin | Description |
-|-------|-------------|-----------|-------------|
-| PAN_NEG | D6 | PB10 | Pan negative limit (-180°) |
-| PAN_POS | D11 | PA7 | Pan positive limit (+180°) |
-| TILT_NEG | D7 | PA8 | Tilt negative limit (-90°) |
-| TILT_POS | D12 | PA6 | Tilt positive limit (+90°) |
+| Firmware Name | Arduino Pin | STM32 Pin | Physical Location | Function |
+|---------------|-------------|-----------|-------------------|----------|
+| PAN_NEG (PN) | D11 | PA7 | RIGHT | **HOME** / stops leftward motion |
+| PAN_POS (PP) | D6 | PB10 | LEFT | Far limit / stops rightward motion |
+| TILT_NEG (TN) | D7 | PA8 | DOWN | **HOME** / tilt down limit |
+| TILT_POS (TP) | D12 | PA6 | UP 90° | Far limit / tilt up |
+
+**Note:** Firmware names (NEG/POS) refer to motion direction stopped, not physical location.
+Pan range: ~±70° from center. Tilt range: ~±90° (down to up).
 
 #### Serial (USART2)
 
@@ -405,41 +420,51 @@ Reed Switch          Nucleo
 
 When magnet is near: switch closes → pin reads LOW → detected as triggered.
 
-### Software Limits
+### Software Limits (Calibrated December 2025)
 
-| Axis | Min Steps | Max Steps | Degrees |
-|------|-----------|-----------|---------|
-| PAN | -8000 | +8000 | ±180° |
-| TILT | -2000 | +2000 | ±90° |
+| Axis | Home | Max Steps | Physical Range | Notes |
+|------|------|-----------|----------------|-------|
+| PAN | 0 (RIGHT) | 4200 | ~±70° from center | Home at D11, far limit at D6 |
+| TILT | 0 (DOWN) | 2600 | ~±90° (down to up) | Home at D7, far limit at D12 |
+
+**Note:** Position 0 is the homed position (at NEG reed switch).
+- After `HOME_ALL`, pan=0 means pointing RIGHT, tilt=0 means pointing DOWN
+- Center position: PAN ~2100 steps, TILT ~1300 steps
 
 ---
 
 ## Power System
 
-### Current Setup
+### Mobile Setup (6S LiPo)
+
+```
+6S LiPo (22-25V)
+    ├── DRV8825 VMOT (direct, no regulator needed)
+    │   └── 100µF cap at each driver
+    │
+    └── XL4015 Buck → 5V
+            ├── Nucleo E5V pin
+            └── DRV8825 logic VCC
+```
 
 | Component | Power Source | Voltage |
 |-----------|--------------|---------|
-| Jetson Orin Nano | DC barrel jack | 12V (from wall adapter) |
-| Nucleo F401RE | USB from Orin | 5V |
-| Stepper Motors | Laptop brick | 18V |
-| DRV8825 Logic | Nucleo 3.3V rail | 3.3V |
+| Jetson Orin Nano | 12V step-down from LiPo | 12V |
+| Nucleo F446RE | XL4015 buck converter | 5V (via E5V pin) |
+| Stepper Motors | Direct from 6S LiPo | 22-25V |
+| DRV8825 Logic | XL4015 buck converter | 5V |
 
-### Planned Mobile Setup
+### Why 6S?
+- Higher voltage = snappier motor response = smoother tracking
+- Even discharged (~20V), stays above 18V
+- DRV8825 handles up to 45V, so 25V max is safe
 
-| Component | Power Source |
-|-----------|--------------|
-| All | 6S 12Ah LiPo (22.2V nominal) |
-| Steppers | Direct from LiPo (via fuse) |
-| Orin | 12V step-down regulator |
-| Nucleo | USB from Orin or 5V regulator |
-
-### Power Calculations (TBD)
+### Power Calculations
 
 ```
 Orin Nano:    ~15W typical
-Steppers:     ~2A × 2 × 18V = ~72W peak (much less average)
-Total:        ~20-30W average, ~90W peak
+Steppers:     ~4.5A peak × 22V = ~100W peak (much less average)
+Total:        ~25-35W average, ~115W peak
 ```
 
 ---
@@ -540,21 +565,23 @@ jetsonTracker/
 
 ### Working
 
-- [x] YOLOv8n person detection on Orin
+- [x] YOLOv8n person detection on Orin (42+ FPS with TensorRT)
 - [x] Gimbal serial protocol (UART commands)
 - [x] Nucleo firmware with limit switches
 - [x] Cloudflare tunnel installed and running
 - [x] GPS fusion module (geo calculations)
+- [x] Reed switch limit switches installed and calibrated
+- [x] Pan axis: 0-4200 steps calibrated
+- [x] Tilt axis: 0-2600 steps calibrated
+- [x] DroidCam USB camera working via adb
 
 ### In Progress
 
-- [ ] GPS WebSocket server deployment
-- [ ] Phone camera streaming (scrcpy)
-- [ ] End-to-end integration testing
+- [ ] End-to-end integration testing (vision + gimbal)
+- [ ] GPS-to-gimbal coordinate mapping
 
 ### Future
 
-- [ ] Reed switch hardware installation
 - [ ] Mobile power system (LiPo)
 - [ ] Weather-sealed enclosure
-- [ ] Phone heading → gimbal orientation offset
+- [ ] Motor position as heading (no magnetometer needed)
