@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from .auth import CONFIG, PTZ, READ, SAFETY, install_auth, require, websocket_authorized
 from .ptz_owner import IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
+from .supervisor import read_health, snapshot_services
 
 
 FrameSource = Callable[[], Any]
@@ -389,7 +390,7 @@ def build_status_snapshot(pipeline, revision: int, media: dict | None = None) ->
         "tracking": build_tracking(legacy),
         "gps": unknown_gps(),
         "media": media if media is not None else unknown_media(),
-        "services": unknown_services(),
+        "services": snapshot_services(read_health()),
         "network": build_network(legacy),
     }
 
@@ -457,16 +458,6 @@ def normalize_media(status: dict) -> dict:
     media = unknown_media()
     media.update(status)
     return media
-
-
-def unknown_services() -> dict:
-    return {
-        "wavecam": "unknown",
-        "gps_server": "unknown",
-        "dashboard": "unknown",
-        "cloudflared": "unknown",
-        "supervisor": "unknown",
-    }
 
 
 def build_network(legacy: dict) -> dict:

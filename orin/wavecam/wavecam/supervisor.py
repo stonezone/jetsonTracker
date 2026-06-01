@@ -27,6 +27,14 @@ DEFAULT_UNITS = ("wavecam.service", "gps-server.service", "dashboard.service", "
 DEFAULT_HEALTH_PATH = "/run/wavecam/supervisor.json"
 DEFAULT_INTERVAL_SEC = 2.0
 
+# status-snapshot short name -> systemd unit (for control_api integration)
+SNAPSHOT_SERVICE_NAMES = {
+    "wavecam": "wavecam.service",
+    "gps_server": "gps-server.service",
+    "dashboard": "dashboard.service",
+    "cloudflared": "cloudflared.service",
+}
+
 
 @dataclass
 class SupervisorConfig:
@@ -58,6 +66,25 @@ def build_health(api_ok: bool, api_status: dict | None, services: dict[str, str]
         "services": {name: {"state": state, "ok": service_ok(state)} for name, state in services.items()},
         "all_services_ok": all(service_ok(s) for s in services.values()) if services else False,
     }
+
+
+def snapshot_services(health: dict | None) -> dict:
+    """Map a supervisor health snapshot to the status-snapshot 'services' field.
+
+    All-'unknown' when no health is available (supervisor not running / no file),
+    so the status contract is unchanged when the supervisor is absent.
+    """
+    if not health:
+        services = {short: "unknown" for short in SNAPSHOT_SERVICE_NAMES}
+        services["supervisor"] = "unknown"
+        return services
+    reported = health.get("services", {})
+    services = {
+        short: str(reported.get(unit, {}).get("state", "unknown"))
+        for short, unit in SNAPSHOT_SERVICE_NAMES.items()
+    }
+    services["supervisor"] = str(health.get("supervisor", "unknown"))
+    return services
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +123,16 @@ def write_health(path: str, health: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(health, handle)
     os.replace(tmp, path)
+
+
+def read_health(path: str | None = None) -> dict | None:
+    """Read the published health snapshot; None if missing/unreadable. Never raises."""
+    path = path or os.environ.get("WAVECAM_SUPERVISOR_HEALTH", DEFAULT_HEALTH_PATH)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
 
 
 def poll_once(cfg: SupervisorConfig, now_ms: int) -> dict:

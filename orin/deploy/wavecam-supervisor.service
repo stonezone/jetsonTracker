@@ -7,7 +7,8 @@ Wants=wavecam.service
 Type=simple
 User=zack
 Group=zack
-WorkingDirectory=/data/projects/wavecam-testbed
+WorkingDirectory=/data/projects/gimbal/wavecam
+Environment=PYTHONPATH=/data/projects/gimbal/wavecam
 # Local-only health watcher. Set WAVECAM_SUPERVISOR_TOKEN when API auth is enabled.
 Environment=WAVECAM_API_BASE=http://127.0.0.1:8088/api/v1
 Environment=WAVECAM_SUPERVISOR_HEALTH=/run/wavecam/supervisor.json

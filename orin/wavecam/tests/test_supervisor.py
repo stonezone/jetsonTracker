@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from wavecam.supervisor import SupervisorConfig, build_health, poll_once, service_ok, write_health
+from wavecam.supervisor import (
+    SupervisorConfig,
+    build_health,
+    poll_once,
+    read_health,
+    service_ok,
+    snapshot_services,
+    write_health,
+)
 
 
 def test_service_ok():
@@ -48,3 +56,35 @@ def test_write_health_atomic_roundtrip(tmp_path):
     payload = {"supervisor": "running", "api_ok": True}
     write_health(path, payload)
     assert json.loads(open(path, encoding="utf-8").read()) == payload
+
+
+def test_snapshot_services_no_health_is_all_unknown():
+    services = snapshot_services(None)
+    assert services == {
+        "wavecam": "unknown", "gps_server": "unknown", "dashboard": "unknown",
+        "cloudflared": "unknown", "supervisor": "unknown",
+    }
+
+
+def test_snapshot_services_maps_units_to_short_names():
+    health = {
+        "supervisor": "running",
+        "services": {
+            "wavecam.service": {"state": "active", "ok": True},
+            "gps-server.service": {"state": "inactive", "ok": False},
+        },
+    }
+    services = snapshot_services(health)
+    assert services["wavecam"] == "active"
+    assert services["gps_server"] == "inactive"
+    assert services["dashboard"] == "unknown"  # absent from health -> unknown
+    assert services["supervisor"] == "running"
+
+
+def test_read_health_roundtrip(tmp_path):
+    import json
+
+    path = tmp_path / "supervisor.json"
+    path.write_text(json.dumps({"supervisor": "running"}))
+    assert read_health(str(path)) == {"supervisor": "running"}
+    assert read_health(str(tmp_path / "nope.json")) is None
