@@ -25,6 +25,14 @@ struct ContentView: View {
             }
         }
         .task { await client.refresh() }
+        .alert("Command not confirmed", isPresented: Binding(
+            get: { client.lastCommandError != nil },
+            set: { if !$0 { client.clearCommandError() } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(client.lastCommandError ?? "")
+        }
     }
 }
 
