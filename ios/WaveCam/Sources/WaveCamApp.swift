@@ -15,13 +15,13 @@ struct WaveCamApp: App {
                 .environment(client)
                 .preferredColorScheme(.dark)
                 .task {
+                    // Apply persisted settings once at launch. Runtime changes go through
+                    // ConnectionView.applySettings (the single configure path); we deliberately
+                    // do NOT observe @AppStorage here, because writing those keys on Apply would
+                    // re-fire client.configure redundantly (iOS review #8).
                     applyStoredSettings()
                     await client.refresh()
                 }
-                .onChange(of: modeRaw) { _, _ in applyStoredSettings() }
-                .onChange(of: baseURLString) { _, _ in applyStoredSettings() }
-                .onChange(of: token) { _, _ in applyStoredSettings() }
-                .onChange(of: mockFallbackEnabled) { _, _ in applyStoredSettings() }
         }
     }
 
