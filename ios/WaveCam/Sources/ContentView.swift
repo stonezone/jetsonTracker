@@ -15,8 +15,8 @@ struct ContentView: View {
                     LiveView().tag(0).tabItem { Label("Live", systemImage: "viewfinder") }
                     PTZView().tag(1).tabItem { Label("PTZ", systemImage: "gamecontroller") }
                     CalibrateView().tag(2).tabItem { Label("Calibrate", systemImage: "scope") }
-                    AgentView().tag(3).tabItem { Label("Agent", systemImage: "cpu") }
-                    DashView().tag(4).tabItem { Label("Dash", systemImage: "square.grid.2x2") }
+                    ToolsView().tag(3).tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
+                    ConnectionView().tag(4).tabItem { Label("Connect", systemImage: "network") }
                 }
                 .tint(WC.brand)
             }
@@ -31,6 +31,17 @@ struct ContentView: View {
 /// Always-visible across every tab: brand, connection state, and the KILL chip.
 private struct TopBar: View {
     @Environment(WaveCamClient.self) private var client
+
+    private var connectionText: String {
+        if client.mode == .mock { return "MOCK" }
+        return client.connected ? "ORIN" : "OFFLINE"
+    }
+
+    private var connectionColor: Color {
+        if client.mode == .mock { return WC.warn }
+        return client.connected ? WC.ok : WC.faint
+    }
+
     var body: some View {
         HStack {
             HStack(spacing: 8) {
@@ -44,8 +55,8 @@ private struct TopBar: View {
             }
             Spacer()
             HStack(spacing: 6) {
-                Circle().fill(client.connected ? WC.ok : WC.faint).frame(width: 7, height: 7)
-                Text(client.connected ? "ORIN" : "OFFLINE")
+                Circle().fill(connectionColor).frame(width: 7, height: 7)
+                Text(connectionText)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(WC.muted)
             }

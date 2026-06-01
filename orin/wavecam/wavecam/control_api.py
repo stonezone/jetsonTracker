@@ -41,6 +41,18 @@ class VelocityRequest(BaseModel):
     source: str | None = None
 
 
+class PtzStopRequest(BaseModel):
+    source: str | None = None
+
+
+class ZoomRequest(BaseModel):
+    requested_owner: str = "manual"
+    mode: str = "velocity"
+    value: float = Field(default=0.0, ge=-1.0, le=1.0)
+    deadman_ms: int = Field(default=800, ge=100, le=5000)
+    source: str | None = None
+
+
 class HotConfigRequest(BaseModel):
     revision: int | None = None
     patch: Dict[str, Any]
@@ -97,6 +109,12 @@ def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
 
 def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.post("/api/v1/ptz/stop")
+    def ptz_stop(_: PtzStopRequest | None = None):
+        api.stop_ptz()
+        api.bump_revision()
+        return api.ok()
+
     @app.post("/api/v1/ptz/velocity")
     def ptz_velocity(req: VelocityRequest):
         if api.pipeline.owner.killed:
@@ -108,6 +126,26 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
         api.send_manual_velocity(req)
         api.schedule_manual_deadman(req.deadman_ms)
+        api.bump_revision()
+        return api.ok()
+
+    @app.post("/api/v1/ptz/zoom")
+    def ptz_zoom(req: ZoomRequest):
+        if api.pipeline.owner.killed:
+            return api.refusal("killed", "KILL is latched; resume before movement commands.")
+        if req.requested_owner != "manual":
+            return api.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
+        if req.mode != "velocity":
+            return api.refusal("invalid_request", "Only mode=velocity is accepted in v1.", 422)
+        if not api.pipeline.owner.request("manual"):
+            return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
+
+        api.send_manual_zoom_velocity(req.value)
+        if req.value == 0:
+            api.cancel_manual_deadman()
+            api.pipeline.owner.release("manual")
+        else:
+            api.schedule_manual_deadman(req.deadman_ms)
         api.bump_revision()
         return api.ok()
 
@@ -162,6 +200,13 @@ class ControlApiAdapter:
             self.pipeline.owner.release(self.pipeline.owner.owner)
         self.pipeline.state.set_status(killed=False, state="SEARCHING")
 
+    def stop_ptz(self) -> None:
+        self.cancel_manual_deadman()
+        self.pipeline.ptz.stop()
+        self.pipeline.ptz.zoom("stop")
+        if self.pipeline.owner.owner != IDLE:
+            self.pipeline.owner.release(self.pipeline.owner.owner)
+
     def send_manual_velocity(self, req: VelocityRequest) -> None:
         cfg = self.pipeline.cfg.ptz
         pan_dir, pan_speed = map_axis(req.pan, cfg, "pan")
@@ -178,6 +223,12 @@ class ControlApiAdapter:
         else:
             self.pipeline.ptz.pan_tilt(pan_speed, tilt_speed, pan_dir, tilt_dir)
         self.send_manual_zoom(req.zoom)
+
+    def send_manual_zoom_velocity(self, zoom: float) -> None:
+        if zoom == 0:
+            self.pipeline.ptz.zoom("stop")
+            return
+        self.send_manual_zoom(zoom)
 
     def send_manual_zoom(self, zoom: float) -> None:
         if zoom > 0:

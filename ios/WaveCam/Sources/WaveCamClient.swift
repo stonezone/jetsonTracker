@@ -1,6 +1,20 @@
 import Foundation
 import Observation
 
+enum WaveCamDefaults {
+    static let baseURLString = "http://172.20.10.8:8088/api/v1"
+    static let legacyLANBaseURLString = "http://192.168.1.155:8088/api/v1"
+    static let modeKey = "wavecam.mode"
+    static let baseURLKey = "wavecam.baseURL"
+    static let tokenKey = "wavecam.authToken"
+    static let mockFallbackKey = "wavecam.mockFallbackEnabled"
+    static let legacyBaseURLMigrationKey = "wavecam.didMigrateLegacyLANBaseURL"
+
+    static var baseURL: URL {
+        URL(string: baseURLString)!
+    }
+}
+
 // MARK: - Status models
 // Mirror docs/superpowers/specs/2026-06-01-wavecam-control-api-spec.md  GET /api/v1/status
 
@@ -85,17 +99,22 @@ extension WCStatus {
 // MARK: - Client
 
 /// The single seam to the Orin Control API. `.mock` returns canned, locally-mutable
-/// state so the app is fully interactive on the simulator before the Orin `/api/v1`
-/// exists; `.live` talks to the real FastAPI surface. Safety: KILL is the only path
-/// the UI must never gate behind anything else.
+/// state for offline UI checks; `.live` talks to the real FastAPI surface.
+/// Safety: KILL is the only path the UI must never gate behind anything else.
 @MainActor
 @Observable
 final class WaveCamClient {
-    enum Mode: Equatable { case mock, live }
+    enum Mode: String, CaseIterable, Identifiable, Hashable {
+        case live
+        case mock
+
+        var id: String { rawValue }
+    }
 
     var mode: Mode
     var baseURL: URL
     var token: String?
+    var mockFallbackEnabled: Bool
 
     private(set) var status: WCStatus?
     private(set) var connected: Bool = false
@@ -103,16 +122,25 @@ final class WaveCamClient {
 
     private var mockKilled = false
 
-    init(mode: Mode = .mock,
-         baseURL: URL = URL(string: "http://192.168.1.155:8088/api/v1")!,
-         token: String? = nil) {
+    init(mode: Mode = .live,
+         baseURL: URL = WaveCamDefaults.baseURL,
+         token: String? = nil,
+         mockFallbackEnabled: Bool = false) {
         self.mode = mode
         self.baseURL = baseURL
         self.token = token
+        self.mockFallbackEnabled = mockFallbackEnabled
     }
 
     var killed: Bool { status?.safety.killed ?? false }
     var owner: String { status?.ptz.owner ?? "idle" }
+
+    func configure(mode: Mode, baseURL: URL, token: String?, mockFallbackEnabled: Bool) {
+        self.mode = mode
+        self.baseURL = baseURL
+        self.token = normalizedToken(token)
+        self.mockFallbackEnabled = mockFallbackEnabled
+    }
 
     // MARK: status
 
@@ -129,6 +157,12 @@ final class WaveCamClient {
             connected = true
             lastError = nil
         } catch {
+            if mockFallbackEnabled {
+                status = .mockTracking(killed: mockKilled)
+                connected = false
+                lastError = "Live API failed; showing mock data: \(error.localizedDescription)"
+                return
+            }
             connected = false
             lastError = error.localizedDescription
         }
@@ -190,6 +224,12 @@ final class WaveCamClient {
 
     private func authorize(_ req: inout URLRequest) {
         if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+    }
+
+    private func normalizedToken(_ token: String?) -> String? {
+        guard let token else { return nil }
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func get(_ path: String) async throws -> Data {

@@ -157,6 +157,60 @@ def test_api_v1_ptz_velocity_accepts_zoom_only_manual_input():
     assert ("zoom", "tele", 4) in pipe.ptz.calls
 
 
+def test_api_v1_ptz_stop_bypasses_owner_and_releases_current_holder():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    response = client.post("/api/v1/ptz/stop", json={"source": "ios_native"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["status"]["ptz"]["owner"] == "idle"
+    assert pipe.owner.owner == "idle"
+    assert ("stop",) in pipe.ptz.calls
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+
+
+def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    response = client.post(
+        "/api/v1/ptz/zoom",
+        json={"requested_owner": "manual", "mode": "velocity", "value": -0.5},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["status"]["ptz"]["owner"] == "manual"
+    assert ("zoom", "wide", 4) in pipe.ptz.calls
+
+    pipe.owner.release("manual")
+    assert pipe.owner.request("testbed") is True
+    blocked = client.post(
+        "/api/v1/ptz/zoom",
+        json={"requested_owner": "manual", "mode": "velocity", "value": 0.5},
+    )
+
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "owner_busy"
+
+
+def test_api_v1_ptz_zoom_refuses_while_killed():
+    client = make_client()
+
+    client.post("/api/v1/safety/kill", json={"reason": "test"})
+    response = client.post(
+        "/api/v1/ptz/zoom",
+        json={"requested_owner": "manual", "mode": "velocity", "value": 0.5},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "killed"
+
+
 def test_api_v1_config_hot_applies_known_keys_only():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -192,5 +246,8 @@ if __name__ == "__main__":
     test_api_v1_safety_resume_does_not_restart_tracking_owner()
     test_api_v1_ptz_velocity_is_owner_gated_and_normalized()
     test_api_v1_ptz_velocity_accepts_zoom_only_manual_input()
+    test_api_v1_ptz_stop_bypasses_owner_and_releases_current_holder()
+    test_api_v1_ptz_zoom_endpoint_is_owner_gated()
+    test_api_v1_ptz_zoom_refuses_while_killed()
     test_api_v1_config_hot_applies_known_keys_only()
     print("CONTROL API TESTS PASSED")

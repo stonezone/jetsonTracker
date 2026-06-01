@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 /// Live/Monitor screen: operator preview, tracking HUD, and emergency stop.
 struct LiveView: View {
@@ -49,23 +50,62 @@ private struct FeedBackground: View {
     var body: some View {
         ZStack {
             if let previewURL {
-                AsyncImage(url: previewURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .failure:
-                        MockOceanScene(showOfflinePattern: true)
-                    case .empty:
-                        MockOceanScene(showOfflinePattern: false)
-                            .overlay(ProgressView().tint(WC.ok))
-                    @unknown default:
-                        MockOceanScene(showOfflinePattern: false)
-                    }
-                }
+                MJPEGPreviewView(url: previewURL)
             } else {
                 MockOceanScene(showOfflinePattern: false)
             }
         }
+    }
+}
+
+private struct MJPEGPreviewView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.isOpaque = false
+        webView.backgroundColor = UIColor(Color(hex: 0x0B1218))
+        webView.scrollView.backgroundColor = UIColor(Color(hex: 0x0B1218))
+        webView.scrollView.isScrollEnabled = false
+        webView.loadHTMLString(html(for: url), baseURL: nil)
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.loadedURL != url else { return }
+        context.coordinator.loadedURL = url
+        webView.loadHTMLString(html(for: url), baseURL: nil)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(loadedURL: url)
+    }
+
+    final class Coordinator {
+        var loadedURL: URL
+
+        init(loadedURL: URL) {
+            self.loadedURL = loadedURL
+        }
+    }
+
+    private func html(for url: URL) -> String {
+        """
+        <!doctype html>
+        <html>
+        <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+        html,body{margin:0;width:100%;height:100%;background:#0b1218;overflow:hidden}
+        img{width:100vw;height:100vh;object-fit:cover;display:block}
+        </style>
+        </head>
+        <body><img src="\(url.absoluteString)" alt=""></body>
+        </html>
+        """
     }
 }
 
