@@ -14,6 +14,8 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
+from .control_api import register_control_api
+
 
 PAGE = """<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
@@ -84,6 +86,7 @@ class Tune(BaseModel):
 
 def build_app(pipeline) -> FastAPI:
     app = FastAPI(title="WAVECAM testbed")
+    app.state.pipeline = pipeline
     cfg = pipeline.cfg
 
     @app.get("/", response_class=HTMLResponse)
@@ -173,5 +176,7 @@ def build_app(pipeline) -> FastAPI:
         if t.invert_tilt is not None:
             cfg.ptz.invert_tilt = t.invert_tilt
         return {"ok": True}
+
+    register_control_api(app, pipeline, _frames)
 
     return app
