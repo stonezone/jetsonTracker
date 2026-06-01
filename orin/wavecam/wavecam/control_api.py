@@ -12,10 +12,11 @@ import time
 import uuid
 from typing import Any, Callable, Dict
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from .auth import CONFIG, PTZ, READ, SAFETY, install_auth, require, websocket_authorized
 from .ptz_owner import IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
 
@@ -62,6 +63,7 @@ class HotConfigRequest(BaseModel):
 def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     adapter = ControlApiAdapter(pipeline, frames)
     app.state.control_api = adapter
+    install_auth(app)
     register_status_routes(app, adapter)
     register_safety_routes(app, adapter)
     register_ptz_routes(app, adapter)
@@ -69,11 +71,11 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
 
 
 def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
-    @app.get("/api/v1/status")
+    @app.get("/api/v1/status", dependencies=[Depends(require(READ))])
     def status():
         return api.status_snapshot()
 
-    @app.get("/api/v1/preview.mjpeg")
+    @app.get("/api/v1/preview.mjpeg", dependencies=[Depends(require(READ))])
     def preview():
         return StreamingResponse(
             api.frames(),
@@ -83,6 +85,9 @@ def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.websocket("/api/v1/telemetry")
     async def telemetry(websocket: WebSocket):
         await websocket.accept()
+        if not websocket_authorized(websocket, READ):
+            await websocket.close(code=1008)
+            return
         try:
             while True:
                 await websocket.send_json(
@@ -94,14 +99,14 @@ def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
 
 def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
-    @app.post("/api/v1/safety/kill")
+    @app.post("/api/v1/safety/kill", dependencies=[Depends(require(SAFETY))])
     def safety_kill(_: SafetyKillRequest | None = None):
         api.pipeline.kill(True)
         api.cancel_manual_deadman()
         api.bump_revision()
         return api.ok()
 
-    @app.post("/api/v1/safety/resume")
+    @app.post("/api/v1/safety/resume", dependencies=[Depends(require(SAFETY))])
     def safety_resume(_: SafetyResumeRequest | None = None):
         api.resume_without_autostart()
         api.bump_revision()
@@ -109,13 +114,13 @@ def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
 
 def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
-    @app.post("/api/v1/ptz/stop")
+    @app.post("/api/v1/ptz/stop", dependencies=[Depends(require(PTZ))])
     def ptz_stop(_: PtzStopRequest | None = None):
         api.stop_ptz()
         api.bump_revision()
         return api.ok()
 
-    @app.post("/api/v1/ptz/velocity")
+    @app.post("/api/v1/ptz/velocity", dependencies=[Depends(require(PTZ))])
     def ptz_velocity(req: VelocityRequest):
         if api.pipeline.owner.killed:
             return api.refusal("killed", "KILL is latched; resume before movement commands.")
@@ -129,7 +134,7 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         api.bump_revision()
         return api.ok()
 
-    @app.post("/api/v1/ptz/zoom")
+    @app.post("/api/v1/ptz/zoom", dependencies=[Depends(require(PTZ))])
     def ptz_zoom(req: ZoomRequest):
         if api.pipeline.owner.killed:
             return api.refusal("killed", "KILL is latched; resume before movement commands.")
@@ -151,7 +156,7 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
 
 def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
-    @app.post("/api/v1/config/hot")
+    @app.post("/api/v1/config/hot", dependencies=[Depends(require(CONFIG))])
     def config_hot(req: HotConfigRequest):
         refusal = api.apply_hot_config(req.patch)
         if refusal is not None:

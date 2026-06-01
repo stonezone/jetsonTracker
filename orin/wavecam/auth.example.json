@@ -1,0 +1,9 @@
+{
+  "_comment": "Example WaveCam Control API auth config. Copy to a LOCAL file (never commit real tokens), e.g. /data/projects/wavecam-testbed/auth.json, set WAVECAM_AUTH_FILE=<that path> in the wavecam.service unit, then restart the service. Generate tokens with: python3 -c \"import secrets; print(secrets.token_urlsafe(32))\". Roles: operator (full), viewer (read-only), supervisor (lifecycle + config, no direct PTZ), agent (read-only in v1). With no file present, auth is DISABLED (open) so existing clients keep working.",
+  "enabled": true,
+  "tokens": {
+    "REPLACE_WITH_OPERATOR_TOKEN": "operator",
+    "REPLACE_WITH_SUPERVISOR_TOKEN": "supervisor",
+    "REPLACE_WITH_AGENT_TOKEN": "agent"
+  }
+}
