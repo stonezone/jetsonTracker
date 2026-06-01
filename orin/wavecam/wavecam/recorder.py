@@ -133,3 +133,20 @@ class Recorder:
     @staticmethod
     def _default_popen(cmd: Sequence[str]) -> ProcessLike:
         return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def main_stream_from_detection_source(source) -> str:
+    """Return the full-quality RTSP stream paired with the detection source.
+
+    The Prisual uses ``/2`` for the sub-stream used by detection and ``/1`` for
+    the main recording stream. Non-RTSP or non-Prisual-like sources fall back to
+    the default main stream so recorder startup remains deterministic.
+    """
+    if not isinstance(source, str) or not source.startswith("rtsp://"):
+        return RecorderConfig().rtsp_main
+
+    normalized = source.rstrip("/")
+    base, _, tail = normalized.rpartition("/")
+    if tail == "2" and base:
+        return f"{base}/1"
+    return normalized

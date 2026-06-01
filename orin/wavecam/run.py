@@ -20,6 +20,7 @@ from wavecam.config import load_config
 from wavecam.ptz_visca import ViscaIP, NullPtz
 from wavecam.camera_http import disable_onboard_ai
 from wavecam.pipeline import Pipeline
+from wavecam.recorder import Recorder, RecorderConfig, main_stream_from_detection_source
 from wavecam.web import build_app
 
 
@@ -47,6 +48,9 @@ def main():
         return PersonDetector(cfg.detector)
 
     pipe = Pipeline(cfg, ptz, detector_factory)
+    pipe.recorder = Recorder(
+        RecorderConfig(rtsp_main=main_stream_from_detection_source(cfg.camera.source))
+    )
     pipe.start()
 
     app = build_app(pipe)

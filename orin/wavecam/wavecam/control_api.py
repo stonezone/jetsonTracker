@@ -54,6 +54,15 @@ class ZoomRequest(BaseModel):
     source: str | None = None
 
 
+class RecordStartRequest(BaseModel):
+    segment_seconds: int | None = Field(default=None, ge=1, le=21600)
+    source: str | None = None
+
+
+class RecordStopRequest(BaseModel):
+    source: str | None = None
+
+
 class HotConfigRequest(BaseModel):
     revision: int | None = None
     patch: Dict[str, Any]
@@ -67,6 +76,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_status_routes(app, adapter)
     register_safety_routes(app, adapter)
     register_ptz_routes(app, adapter)
+    register_media_routes(app, adapter)
     register_config_routes(app, adapter)
 
 
@@ -102,6 +112,7 @@ def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/safety/kill", dependencies=[Depends(require(SAFETY))])
     def safety_kill(_: SafetyKillRequest | None = None):
         api.pipeline.kill(True)
+        api.media.stop_for_safety()
         api.cancel_manual_deadman()
         api.bump_revision()
         return api.ok()
@@ -155,6 +166,30 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         return api.ok()
 
 
+def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/media/status", dependencies=[Depends(require(READ))])
+    def media_status():
+        return api.media.status()
+
+    @app.post("/api/v1/media/record/start", dependencies=[Depends(require(PTZ))])
+    def media_record_start(req: RecordStartRequest | None = None):
+        try:
+            result = api.media.start(req.segment_seconds if req else None)
+        except MediaUnavailable as exc:
+            return api.refusal("media_unavailable", exc.message, 503)
+        api.bump_revision()
+        return media_ok(api, result)
+
+    @app.post("/api/v1/media/record/stop", dependencies=[Depends(require(PTZ))])
+    def media_record_stop(_: RecordStopRequest | None = None):
+        try:
+            result = api.media.stop()
+        except MediaUnavailable as exc:
+            return api.refusal("media_unavailable", exc.message, 503)
+        api.bump_revision()
+        return media_ok(api, result)
+
+
 def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/config/hot", dependencies=[Depends(require(CONFIG))])
     def config_hot(req: HotConfigRequest):
@@ -171,6 +206,7 @@ class ControlApiAdapter:
     def __init__(self, pipeline, frames: FrameSource) -> None:
         self.pipeline = pipeline
         self.frames = frames
+        self.media = MediaAdapter(getattr(pipeline, "recorder", None))
         self._lock = threading.Lock()
         self._revision = 0
         self._manual_deadman: threading.Timer | None = None
@@ -185,7 +221,7 @@ class ControlApiAdapter:
             self._revision += 1
 
     def status_snapshot(self) -> dict:
-        return build_status_snapshot(self.pipeline, self.revision)
+        return build_status_snapshot(self.pipeline, self.revision, self.media.status())
 
     def ok(self) -> JSONResponse:
         return JSONResponse(
@@ -289,12 +325,60 @@ class ControlApiAdapter:
         return None
 
 
+class MediaAdapter:
+    """Small recorder facade used by /api/v1 status and media routes."""
+
+    def __init__(self, recorder) -> None:
+        self.recorder = recorder
+
+    def status(self) -> dict:
+        if self.recorder is None:
+            return unknown_media()
+        try:
+            return normalize_media(self.recorder.status())
+        except Exception as exc:
+            media = unknown_media()
+            media["error"] = str(exc)
+            return media
+
+    def start(self, segment_seconds: int | None) -> dict:
+        if self.recorder is None:
+            raise MediaUnavailable("Recorder is not configured.")
+        return self.recorder.start(segment_seconds=segment_seconds)
+
+    def stop(self) -> dict:
+        if self.recorder is None:
+            raise MediaUnavailable("Recorder is not configured.")
+        return self.recorder.stop()
+
+    def stop_for_safety(self) -> None:
+        if self.recorder is not None:
+            self.recorder.stop()
+
+
+class MediaUnavailable(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def media_ok(api: ControlApiAdapter, result: dict) -> JSONResponse:
+    return JSONResponse(
+        {
+            "ok": bool(result.get("ok", True)),
+            "request_id": make_request_id(),
+            "media": result,
+            "status": api.status_snapshot(),
+        }
+    )
+
+
 def make_request_id() -> str:
     ms = int(time.time() * 1000) % 1000
     return f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}.{ms:03d}Z-{uuid.uuid4().hex[:8]}"
 
 
-def build_status_snapshot(pipeline, revision: int) -> dict:
+def build_status_snapshot(pipeline, revision: int, media: dict | None = None) -> dict:
     legacy = merged_status(pipeline)
     return {
         "revision": revision,
@@ -304,7 +388,7 @@ def build_status_snapshot(pipeline, revision: int) -> dict:
         "ptz": build_ptz(legacy, pipeline),
         "tracking": build_tracking(legacy),
         "gps": unknown_gps(),
-        "media": unknown_media(),
+        "media": media if media is not None else unknown_media(),
         "services": unknown_services(),
         "network": build_network(legacy),
     }
@@ -367,6 +451,12 @@ def unknown_gps() -> dict:
 
 def unknown_media() -> dict:
     return {"recording": False, "segment_name": None, "free_gb": None}
+
+
+def normalize_media(status: dict) -> dict:
+    media = unknown_media()
+    media.update(status)
+    return media
 
 
 def unknown_services() -> dict:

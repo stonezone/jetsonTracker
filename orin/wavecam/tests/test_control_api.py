@@ -49,11 +49,45 @@ class DummyPtz:
         self.calls.append(("pan_tilt", pan_speed, tilt_speed, pan_dir, tilt_dir))
 
 
+class DummyRecorder:
+    def __init__(self):
+        self.started_with = []
+        self.stop_calls = 0
+        self.media = {
+            "recording": False,
+            "segment_name": None,
+            "free_gb": 123.4,
+            "segments": 0,
+            "latest": [],
+        }
+
+    def status(self):
+        return dict(self.media)
+
+    def start(self, segment_seconds=None):
+        self.started_with.append(segment_seconds)
+        self.media.update(
+            {
+                "recording": True,
+                "segment_name": "wavecam_20260601_120000_%03d.mp4",
+                "segments": 1,
+                "latest": ["wavecam_20260601_120000_000.mp4"],
+            }
+        )
+        return {"ok": True, "started": True, "segment_name": self.media["segment_name"]}
+
+    def stop(self):
+        self.stop_calls += 1
+        self.media["recording"] = False
+        return {"ok": True, "stopped": True}
+
+
 class DummyPipeline:
     def __init__(self):
         self.state = DummyState()
         self.owner = PtzOwner()
         self.ptz = DummyPtz()
+        self.recorder = DummyRecorder()
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
                 enabled=True,
@@ -97,6 +131,8 @@ def test_api_v1_status_maps_legacy_state_to_release_contract():
     assert body["ptz"]["enabled"] is True
     assert body["tracking"]["confidence"] == 0.72
     assert body["tracking"]["fps"] == 24.5
+    assert body["media"]["recording"] is False
+    assert body["media"]["free_gb"] == 123.4
     assert isinstance(body["revision"], int)
 
 
@@ -115,6 +151,18 @@ def test_api_v1_safety_resume_does_not_restart_tracking_owner():
     assert resumed["status"]["safety"]["killed"] is False
     assert resumed["status"]["ptz"]["owner"] == "idle"
     assert pipe.owner.owner == "idle"
+
+
+def test_api_v1_safety_kill_stops_active_recording():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.recorder.start()
+
+    killed = client.post("/api/v1/safety/kill", json={"reason": "test"}).json()
+
+    assert killed["ok"] is True
+    assert pipe.recorder.stop_calls == 1
+    assert killed["status"]["media"]["recording"] is False
 
 
 def test_api_v1_ptz_velocity_is_owner_gated_and_normalized():
@@ -241,6 +289,42 @@ def test_api_v1_config_hot_applies_known_keys_only():
     assert refused.json()["code"] == "invalid_request"
 
 
+def test_api_v1_media_status_reports_recorder_state():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.recorder.start(segment_seconds=300)
+
+    response = client.get("/api/v1/media/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recording"] is True
+    assert body["segment_name"] == "wavecam_20260601_120000_%03d.mp4"
+    assert body["free_gb"] == 123.4
+
+
+def test_api_v1_media_record_start_and_stop_control_recorder():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    started = client.post("/api/v1/media/record/start", json={"segment_seconds": 300})
+
+    assert started.status_code == 200
+    started_body = started.json()
+    assert started_body["ok"] is True
+    assert started_body["media"]["started"] is True
+    assert started_body["status"]["media"]["recording"] is True
+    assert pipe.recorder.started_with == [300]
+
+    stopped = client.post("/api/v1/media/record/stop", json={})
+
+    assert stopped.status_code == 200
+    stopped_body = stopped.json()
+    assert stopped_body["ok"] is True
+    assert stopped_body["media"]["stopped"] is True
+    assert stopped_body["status"]["media"]["recording"] is False
+
+
 if __name__ == "__main__":
     test_api_v1_status_maps_legacy_state_to_release_contract()
     test_api_v1_safety_resume_does_not_restart_tracking_owner()
@@ -250,4 +334,6 @@ if __name__ == "__main__":
     test_api_v1_ptz_zoom_endpoint_is_owner_gated()
     test_api_v1_ptz_zoom_refuses_while_killed()
     test_api_v1_config_hot_applies_known_keys_only()
+    test_api_v1_media_status_reports_recorder_state()
+    test_api_v1_media_record_start_and_stop_control_recorder()
     print("CONTROL API TESTS PASSED")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from wavecam.recorder import Recorder, RecorderConfig
+from wavecam.recorder import Recorder, RecorderConfig, main_stream_from_detection_source
 
 
 class FakeProcess:
@@ -129,3 +129,17 @@ def test_status_reports_latest_segment_and_disk_space(tmp_path: Path):
     assert status["total_mb"] == 0.0
     assert isinstance(status["free_gb"], float)
     assert status["dir"] == str(tmp_path)
+
+
+def test_main_stream_derives_prisual_main_rtsp_from_detection_substream():
+    assert (
+        main_stream_from_detection_source("rtsp://192.168.100.88:554/2")
+        == "rtsp://192.168.100.88:554/1"
+    )
+    assert (
+        main_stream_from_detection_source("rtsp://192.168.100.88:554/2/")
+        == "rtsp://192.168.100.88:554/1"
+    )
+    custom = "rtsp://camera.local/live/main"
+    assert main_stream_from_detection_source(custom) == custom
+    assert main_stream_from_detection_source(0) == RecorderConfig().rtsp_main
