@@ -171,7 +171,7 @@ def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def media_status():
         return api.media.status()
 
-    @app.post("/api/v1/media/record/start", dependencies=[Depends(require(PTZ))])
+    @app.post("/api/v1/media/record/start", dependencies=[Depends(require(CONFIG))])
     def media_record_start(req: RecordStartRequest | None = None):
         try:
             result = api.media.start(req.segment_seconds if req else None)
@@ -180,7 +180,7 @@ def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         api.bump_revision()
         return media_ok(api, result)
 
-    @app.post("/api/v1/media/record/stop", dependencies=[Depends(require(PTZ))])
+    @app.post("/api/v1/media/record/stop", dependencies=[Depends(require(CONFIG))])
     def media_record_stop(_: RecordStopRequest | None = None):
         try:
             result = api.media.stop()

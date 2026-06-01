@@ -59,9 +59,12 @@ def test_operator_allows_read_safety_ptz_config():
 def test_viewer_can_read_but_not_kill():
     client = client_with_auth(True, {"v": "viewer"})
     assert client.get("/api/v1/status", headers=hdr("v")).status_code == 200
+    assert client.get("/api/v1/media/status", headers=hdr("v")).status_code == 200
     blocked = client.post("/api/v1/safety/kill", json={}, headers=hdr("v"))
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "forbidden"
+    record_blocked = client.post("/api/v1/media/record/start", json={}, headers=hdr("v"))
+    assert record_blocked.status_code == 403
 
 
 def test_supervisor_no_direct_ptz_but_config_ok():
@@ -69,6 +72,8 @@ def test_supervisor_no_direct_ptz_but_config_ok():
     assert client.post("/api/v1/ptz/stop", json={}, headers=hdr("s")).status_code == 403
     ok = client.post("/api/v1/config/hot", json={"patch": {"ptz.deadzone": 0.1}}, headers=hdr("s"))
     assert ok.status_code == 200
+    record = client.post("/api/v1/media/record/start", json={}, headers=hdr("s"))
+    assert record.status_code == 200
 
 
 def test_agent_is_read_only_in_v1():
