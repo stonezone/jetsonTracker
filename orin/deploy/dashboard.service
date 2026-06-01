@@ -1,0 +1,20 @@
+# JetsonTracker operator dashboard (health/GPS/PTZ/logs).
+# Install: sudo bash /data/projects/gimbal/deploy/install_dashboard_service.sh
+# Then open http://<orin-ip>:8080
+[Unit]
+Description=JetsonTracker operator dashboard
+After=network-online.target gps-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zack
+WorkingDirectory=/data/projects/gimbal
+ExecStart=/usr/bin/python3 /data/projects/gimbal/dashboard/dashboard.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

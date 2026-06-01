@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy this to stream.local.json (gitignored) and paste your RTMP target, e.g. YouTube Live. Leave the PASTE placeholder and the streamer treats it as not-configured.",
+  "rtmp_url": "rtmp://a.rtmp.youtube.com/live2",
+  "stream_key": "PASTE-YOUR-STREAM-KEY-HERE"
+}

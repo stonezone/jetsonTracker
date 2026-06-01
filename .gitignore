@@ -124,6 +124,8 @@ credentials*.json
 *.pem
 *.key
 secrets/
+*.local.json
+*.local.yaml
 .env
 .env.*
 !.env.example

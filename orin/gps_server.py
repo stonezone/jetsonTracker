@@ -345,8 +345,16 @@ class RobotGpsServer:
         """Handle a single inbound WebSocket connection."""
         client_id = id(websocket)
         remote = websocket.remote_address
+        request = getattr(websocket, "request", None)
+        headers = getattr(request, "headers", {}) or {}
+        client_type = headers.get("X-Client-Type", "unknown")
+        device_id = headers.get("X-Device-Id", "unknown")
+        path = getattr(request, "path", "unknown")
         self.connected_clients.add(websocket)
-        logger.info(f"Client connected: {remote} (ID: {client_id})")
+        logger.info(
+            f"Client connected: {remote} (ID: {client_id}) "
+            f"type={client_type} device={device_id} path={path}"
+        )
 
         try:
             async for message in websocket:

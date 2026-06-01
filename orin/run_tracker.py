@@ -15,6 +15,7 @@ gps_server with scripts/gps_replay.py.
 
 import argparse
 import os
+import signal
 import sys
 import time
 
@@ -74,8 +75,10 @@ def main():
 
     period = 1.0 / args.rate
     t0, last_log = time.time(), 0.0
+    stop = {"f": False}
+    signal.signal(signal.SIGTERM, lambda *a: stop.update(f=True))  # graceful stop -> finally restores camera
     try:
-        while args.secs == 0.0 or time.time() - t0 < args.secs:
+        while not stop["f"] and (args.secs == 0.0 or time.time() - t0 < args.secs):
             st = gps.get_state()
             target = st.target
             fresh = target is not None and (time.time() - st.target_updated) < args.gps_timeout
