@@ -62,6 +62,109 @@ Current package state:
   so the microSD can become a removable export card.
 - Do not treat the current SD as disposable. It still provides the known-good boot fallback.
 
+## iPhone USB-C Tether Uplink Recon
+
+Read-only recon on 2026-06-01. No networking, module loading, service starts, or route changes were made.
+
+Goal: use a USB-C-connected iPhone as a field internet uplink for the Orin, while keeping local camera control on
+`enP8p1s0` (`192.168.100.10/24`) and the camera at `192.168.100.88`.
+
+Validated current state:
+
+| Check | Result | Meaning |
+|---|---|---|
+| Kernel driver | `modinfo ipheth` succeeds; driver is present at `/lib/modules/5.15.148-tegra/kernel/drivers/net/usb/ipheth.ko` | The Jetson kernel has the Apple iPhone USB Ethernet driver available. |
+| Driver loaded | `lsmod` does not show `ipheth` | Expected when no iPhone tether interface is currently enumerated. |
+| Apple USB device | `lsusb` shows no Apple `05ac` device | No iPhone was attached/trusted/enumerated during the check. |
+| Apple tools | `usbmuxd` package is installed; `/usr/sbin/usbmuxd` exists | Basic Apple USB multiplexor daemon is present. |
+| Pairing tools | `idevice_id` and `idevicepair` are not installed | `libimobiledevice-utils` is missing; useful for trust/pair diagnostics. |
+| `usbmuxd.service` | Static unit exists but is inactive | Expected with no active Apple USB session; not proven under attach. |
+| `usbmuxd.socket` | Unit not found | This image does not expose socket activation for `usbmuxd`. |
+| Current interfaces | `wlP1p1s0` Wi-Fi uplink, `enP8p1s0` camera LAN, `usb0`/`usb1` down/unmanaged Jetson gadget ports | No iPhone Ethernet interface is currently present. |
+| Current default route | `default via 192.168.1.1 dev wlP1p1s0 metric 600` | Internet currently comes from Wi-Fi, not the phone. |
+
+Current conclusion:
+
+- iPhone USB tethering is **unvalidated** on this Orin.
+- The missing piece is not obviously the kernel driver. `ipheth` is present.
+- The earlier failure where no new Ethernet interface appeared is consistent with one of these states:
+  - iPhone Personal Hotspot was off.
+  - The iPhone did not trust the Orin as a host.
+  - The USB-C cable/adapter did not expose data reliably.
+  - `usbmuxd` did not start for the attach event.
+  - NetworkManager did not manage the newly created `ipheth` interface.
+- The existing `usb0` and `usb1` interfaces are Jetson USB gadget ports, not proof of iPhone tethering.
+
+Bench validation steps, no persistent changes:
+
+1. On the iPhone, enable **Personal Hotspot** and keep the screen unlocked.
+2. Connect the iPhone to the Orin with a known-good USB-C data cable.
+3. Accept the **Trust This Computer** prompt on the iPhone if it appears.
+4. On the Orin, run read-only checks:
+   ```bash
+   lsusb | grep -Ei 'apple|05ac' || true
+   dmesg --color=never | grep -Ei 'apple|iphone|ipheth|usbmux|cdc' | tail -80
+   lsmod | grep '^ipheth' || true
+   ip -brief link
+   ip -brief addr
+   nmcli -f DEVICE,TYPE,STATE,CONNECTION device status
+   ```
+5. Expected success shape:
+   - `lsusb` shows an Apple device.
+   - `dmesg` shows the Apple device attaching and `ipheth` binding.
+   - `ip -brief link` shows a new Ethernet-style interface beyond `usb0`/`usb1`.
+   - NetworkManager can acquire a DHCP address on that new interface.
+6. Verify that camera LAN routing still stays local:
+   ```bash
+   ip route get 192.168.100.88
+   ping -c 2 192.168.100.88
+   ```
+   Expected: route uses `enP8p1s0`, not the iPhone interface.
+7. Verify internet route:
+   ```bash
+   ip route
+   curl -I --max-time 5 https://cloudflare.com
+   ```
+
+If the iPhone appears in `lsusb` but no network interface appears:
+
+1. Confirm `ipheth` is available:
+   ```bash
+   modinfo ipheth
+   ```
+2. Install diagnostics package in a maintenance window if needed:
+   ```bash
+   sudo apt install libimobiledevice-utils
+   ```
+3. Reconnect the iPhone and inspect trust/pairing:
+   ```bash
+   idevice_id -l
+   idevicepair validate
+   ```
+4. Start `usbmuxd` only for a bench test if it does not start automatically:
+   ```bash
+   sudo systemctl start usbmuxd
+   ```
+
+If the iPhone interface appears but stays unmanaged:
+
+1. Create a temporary DHCP connection for that interface with a higher route metric than the camera LAN.
+2. Do not add a gateway to `enP8p1s0`; the camera LAN remains no-gateway.
+3. Keep the iPhone route as internet-only; never route `192.168.100.0/24` through the phone.
+4. Only make NetworkManager changes persistent after a bench test proves:
+   - iPhone internet works.
+   - Camera LAN still reaches `192.168.100.88`.
+   - `cloudflared`, dashboard, and WaveCam still work after reconnect and reboot.
+
+Feasibility:
+
+| Option | Feasibility | Status | Notes |
+|---|---:|---|---|
+| USB-C iPhone tether as Orin field uplink | 6/10 | Unvalidated | Kernel support exists, but attach/trust/NetworkManager behavior must be proven on the bench. |
+| Wi-Fi hotspot from iPhone to Orin | 8/10 | Common fallback | Simpler routing; consumes Wi-Fi radio and may be less physically reliable than wired power/data. |
+| Dedicated LTE router/modem for Orin uplink | 8/10 | Recommended fallback | More field-grade than iPhone tethering; simpler to make persistent. |
+| Use iPhone USB only for charging/control, not uplink | 9/10 | Low risk | Keeps network topology simple if LoRa/Meshtastic or Wi-Fi provides the data path. |
+
 ## Feasibility Scores
 
 | Task | Feasibility | Status | Notes |
