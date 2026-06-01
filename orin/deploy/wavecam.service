@@ -1,5 +1,8 @@
-# WaveCam vision servo runner. The service starts paused so watchdog restarts
-# restore video/API without immediately handing PTZ to the autonomous loop.
+# WaveCam vision servo runner. Auto-resumes tracking on restart (Zack's field
+# choice: keep filming when he cannot manually resume from the water). To instead
+# come up paused/stationary on restart (safer for bench/dev), set
+# WAVECAM_START_PAUSED=1 below. NOTE: the in-memory KILL latch does not survive a
+# process restart -- persisting it across restarts is a separate follow-up.
 
 [Unit]
 Description=WaveCam vision servo runner
@@ -15,7 +18,7 @@ Group=zack
 WorkingDirectory=/data/projects/gimbal/wavecam
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=/data/projects/gimbal/wavecam
-Environment=WAVECAM_START_PAUSED=1
+# Environment=WAVECAM_START_PAUSED=1   # uncomment for paused-on-restart (bench/dev)
 ExecStart=/usr/bin/python3 /data/projects/gimbal/wavecam/run.py /data/projects/gimbal/wavecam/config.orin.servo.yaml
 Restart=always
 RestartSec=2
