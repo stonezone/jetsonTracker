@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="WaveCam" />
+<meta name="theme-color" content="#070b0f" />
+<title>WaveCam — Operator App Mockup</title>
+<!--
+  WaveCam iOS/iPadOS control-app MOCKUP (non-functional, for review).
+  Companion to docs/superpowers/specs/2026-06-01-wavecam-ios-app-spec.md
+  Aesthetic: instrument-grade dark; orange = the tracking cue (rashguard); red = KILL only.
+  Open in a browser. Tap the bottom tabs to move between screens. KILL is always visible.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Saira:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070b0f; --ink:#0d141b; --panel:#121b24; --panel-2:#16212c;
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --txt:#e9eff4; --muted:#8a99a6; --faint:#5b6873;
+    --brand:#ff6a1f;            /* orange = the locked subject / primary action */
+    --brand-soft:rgba(255,106,31,.16);
+    --ok:#37d6c2;               /* teal = healthy telemetry */
+    --warn:#ffb020;
+    --kill:#ff3b30;             /* red = emergency-stop ONLY */
+    --kill-soft:rgba(255,59,48,.16);
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --disp:'Saira Condensed','Saira',system-ui,sans-serif;
+    --ui:'Saira',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:var(--ui); color:var(--txt);
+    background:
+      radial-gradient(1200px 800px at 80% -10%, #14202b 0%, transparent 55%),
+      radial-gradient(900px 700px at -10% 110%, #131d18 0%, transparent 50%),
+      var(--bg);
+    min-height:100%; display:flex; flex-direction:column; align-items:center;
+    gap:18px; padding:34px 16px 60px;
+  }
+  .wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .kicker{font-family:var(--disp);text-transform:uppercase;letter-spacing:.34em;
+    font-size:12px;color:var(--faint)}
+  .title{font-family:var(--disp);font-weight:700;letter-spacing:.02em;font-size:26px;margin:0}
+  .title b{color:var(--brand)}
+  .sub{color:var(--muted);font-size:13px;max-width:640px;text-align:center;line-height:1.5}
+
+  /* ---------- phone frame ---------- */
+  .phone{
+    position:relative; width:390px; height:830px; border-radius:54px;
+    background:linear-gradient(180deg,#1b242d,#0b1117);
+    padding:13px; box-shadow:0 40px 90px -30px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.05),
+      inset 0 0 0 2px rgba(255,255,255,.03); flex:0 0 auto;
+  }
+  .screen{
+    position:relative; height:100%; width:100%; border-radius:42px; overflow:hidden;
+    background:var(--ink); display:flex; flex-direction:column;
+    isolation:isolate;
+  }
+  .island{position:absolute;top:9px;left:50%;transform:translateX(-50%);
+    width:118px;height:30px;background:#000;border-radius:18px;z-index:40}
+
+  /* ---------- app chrome ---------- */
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    padding:46px 18px 10px;gap:10px;z-index:30}
+  .brandmark{display:flex;align-items:center;gap:9px}
+  .brandmark .dot{width:9px;height:9px;border-radius:50%;background:var(--brand);
+    box-shadow:0 0 12px 1px var(--brand)}
+  .brandmark .name{font-family:var(--disp);font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;font-size:15px}
+  .brandmark .name span{color:var(--brand)}
+  .link-state{display:flex;align-items:center;gap:7px;font-family:var(--mono);
+    font-size:10.5px;color:var(--muted)}
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--ok);
+    box-shadow:0 0 0 0 rgba(55,214,194,.6);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(55,214,194,.5)}70%{box-shadow:0 0 0 7px rgba(55,214,194,0)}100%{box-shadow:0 0 0 0 rgba(55,214,194,0)}}
+
+  /* persistent KILL chip — present on every screen */
+  .kill-chip{display:flex;align-items:center;gap:7px;cursor:pointer;
+    font-family:var(--disp);font-weight:700;letter-spacing:.16em;font-size:12px;
+    color:var(--kill);background:var(--kill-soft);border:1px solid rgba(255,59,48,.4);
+    padding:7px 12px;border-radius:11px;user-select:none}
+  .kill-chip:active{transform:scale(.96)}
+  .kill-chip .sq{width:9px;height:9px;border-radius:2px;background:var(--kill)}
+
+  .views{flex:1;position:relative;overflow:hidden}
+  .view{position:absolute;inset:0;padding:6px 16px 14px;overflow-y:auto;
+    display:none;animation:fade .35s ease both}
+  .view.active{display:block}
+  .view::-webkit-scrollbar{width:0}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* staggered children */
+  .stagger>*{opacity:0;animation:rise .5s ease forwards}
+  .stagger>*:nth-child(1){animation-delay:.04s}
+  .stagger>*:nth-child(2){animation-delay:.10s}
+  .stagger>*:nth-child(3){animation-delay:.16s}
+  .stagger>*:nth-child(4){animation-delay:.22s}
+  .stagger>*:nth-child(5){animation-delay:.28s}
+  @keyframes rise{to{opacity:1;transform:none}}
+
+  /* ---------- shared bits ---------- */
+  .label{font-family:var(--disp);text-transform:uppercase;letter-spacing:.22em;
+    font-size:11px;color:var(--faint);margin:0 0 8px 2px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px}
+  .mono{font-family:var(--mono)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* ---------- LIVE / feed ---------- */
+  .feed{position:relative;border-radius:20px;overflow:hidden;height:430px;
+    border:1px solid var(--line-2);
+    background:linear-gradient(180deg,#16344a 0%,#1b4a5a 34%,#0f3a44 52%,#0a2630 100%)}
+  .feed .sky-glow{position:absolute;inset:0;background:
+    radial-gradient(120% 60% at 70% 8%, rgba(255,170,90,.28), transparent 60%)}
+  .feed .horizon{position:absolute;left:0;right:0;top:34%;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(255,210,160,.55),transparent)}
+  .waves{position:absolute;left:0;right:0;bottom:0;height:62%;opacity:.5}
+  .grain{position:absolute;inset:0;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")}
+  /* HUD overlay */
+  .hud{position:absolute;inset:0;pointer-events:none}
+  .reticle-corner{position:absolute;width:22px;height:22px;border:2px solid rgba(255,255,255,.32)}
+  .rc-tl{top:12px;left:12px;border-right:0;border-bottom:0}
+  .rc-tr{top:12px;right:12px;border-left:0;border-bottom:0}
+  .rc-bl{bottom:12px;left:12px;border-right:0;border-top:0}
+  .rc-br{bottom:12px;right:12px;border-left:0;border-top:0}
+  .hud-top{position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    display:flex;gap:8px;align-items:center}
+  .tag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+    padding:4px 8px;border-radius:7px;background:rgba(7,11,15,.6);
+    border:1px solid var(--line-2);backdrop-filter:blur(3px)}
+  .tag.lock{color:var(--brand);border-color:rgba(255,106,31,.5);background:rgba(255,106,31,.12)}
+  .tag.rec{color:var(--kill)}
+  .tag.rec .d{display:inline-block;width:7px;height:7px;border-radius:50%;
+    background:var(--kill);margin-right:5px;vertical-align:middle;animation:blink 1.3s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  /* subject + lock box */
+  .subject{position:absolute;left:58%;top:52%;transform:translate(-50%,-50%)}
+  .surfer{position:relative;width:30px;height:46px}
+  .surfer .body{position:absolute;left:9px;top:6px;width:12px;height:20px;border-radius:6px;
+    background:var(--brand);box-shadow:0 0 10px rgba(255,106,31,.6)} /* orange rashguard */
+  .surfer .head{position:absolute;left:12px;top:0;width:7px;height:7px;border-radius:50%;background:#10222b}
+  .surfer .legs{position:absolute;left:11px;top:24px;width:5px;height:13px;background:#10222b;border-radius:3px}
+  .surfer .board{position:absolute;left:2px;top:37px;width:30px;height:4px;border-radius:3px;background:#dfe9ee}
+  .surfer .mast{position:absolute;left:15px;top:37px;width:2px;height:9px;background:rgba(223,233,238,.7)}
+  .spray{position:absolute;left:-6px;top:34px;width:16px;height:12px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.8),transparent 70%);filter:blur(1px)}
+  .lockbox{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);
+    width:74px;height:92px;border:2px solid var(--brand);border-radius:6px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.4), 0 0 18px rgba(255,106,31,.35);
+    animation:lock 2.6s ease-in-out infinite}
+  @keyframes lock{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.04)}}
+  .lockbox::before{content:"";position:absolute;left:50%;top:50%;width:10px;height:10px;
+    transform:translate(-50%,-50%);border:1px solid var(--brand);border-radius:50%}
+  .lockbox .conf{position:absolute;left:0;top:-18px;font-family:var(--mono);font-size:9.5px;
+    color:var(--brand);letter-spacing:.04em;white-space:nowrap}
+  /* bottom telemetry strip on feed */
+  .telemetry{position:absolute;left:10px;right:10px;bottom:10px;display:flex;gap:6px;
+    justify-content:space-between}
+  .tcell{flex:1;background:rgba(7,11,15,.62);border:1px solid var(--line);border-radius:9px;
+    padding:6px 7px;backdrop-filter:blur(3px)}
+  .tcell .k{font-family:var(--disp);text-transform:uppercase;letter-spacing:.16em;
+    font-size:8.5px;color:var(--faint)}
+  .tcell .v{font-family:var(--mono);font-size:13px;margin-top:2px}
+  .tcell .v.ok{color:var(--ok)} .tcell .v.br{color:var(--brand)}
+
+  .live-actions{display:flex;gap:10px;margin-top:12px}
+  .btn{flex:1;border:1px solid var(--line-2);background:var(--panel-2);color:var(--txt);
+    font-family:var(--disp);text-transform:uppercase;letter-spacing:.12em;font-weight:600;
+    font-size:13px;padding:13px;border-radius:14px;cursor:pointer;display:flex;
+    align-items:center;justify-content:center;gap:8px}
+  .btn:active{transform:scale(.98)}
+  .btn.ghost{background:transparent}
+  .btn .ic{font-size:15px}
+
+  .kill-bar{margin-top:10px;width:100%;border:none;cursor:pointer;border-radius:16px;
+    padding:16px;background:linear-gradient(180deg,#ff5247,#e22b20);color:#fff;
+    font-family:var(--disp);font-weight:700;letter-spacing:.26em;text-transform:uppercase;
+    font-size:16px;box-shadow:0 10px 30px -10px rgba(255,59,48,.7);display:flex;
+    align-items:center;justify-content:center;gap:12px}
+  .kill-bar .sq{width:13px;height:13px;border-radius:3px;background:#fff}
+  .kill-bar:active{transform:scale(.99)}
+
+  /* ---------- PTZ ---------- */
+  .joy-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:6px}
+  .joypad{position:relative;width:230px;height:230px;border-radius:50%;
+    background:radial-gradient(circle at 50% 40%,#1a2730,#0e161d);
+    border:1px solid var(--line-2);box-shadow:inset 0 0 40px rgba(0,0,0,.6)}
+  .joypad .cross{position:absolute;inset:0}
+  .joypad .cross::before,.joypad .cross::after{content:"";position:absolute;background:var(--line)}
+  .joypad .cross::before{left:50%;top:14%;bottom:14%;width:1px;transform:translateX(-50%)}
+  .joypad .cross::after{top:50%;left:14%;right:14%;height:1px;transform:translateY(-50%)}
+  .joypad .ring{position:absolute;inset:30px;border-radius:50%;border:1px dashed var(--line)}
+  .joypad .dirlabel{position:absolute;font-family:var(--disp);font-size:10px;letter-spacing:.2em;
+    color:var(--faint);text-transform:uppercase}
+  .dl-up{top:8px;left:50%;transform:translateX(-50%)}
+  .dl-dn{bottom:8px;left:50%;transform:translateX(-50%)}
+  .dl-l{left:8px;top:50%;transform:translateY(-50%)}
+  .dl-r{right:8px;top:50%;transform:translateY(-50%)}
+  .nub{position:absolute;left:50%;top:50%;width:74px;height:74px;border-radius:50%;
+    transform:translate(-50%,-50%);cursor:grab;touch-action:none;
+    background:radial-gradient(circle at 50% 35%,#ff8a4d,#e2540f);
+    box-shadow:0 8px 22px -6px rgba(255,106,31,.7),inset 0 -4px 10px rgba(0,0,0,.35);
+    border:1px solid rgba(255,255,255,.18)}
+  .nub::after{content:"";position:absolute;inset:30px;border-radius:50%;
+    border:1px solid rgba(255,255,255,.35)}
+  .nub:active{cursor:grabbing}
+  .zoomrow{display:flex;align-items:center;gap:12px;width:100%;margin-top:4px}
+  .zoomrow .label{margin:0}
+  .zoom{flex:1;-webkit-appearance:none;height:6px;border-radius:6px;
+    background:linear-gradient(90deg,var(--brand),#33424d);outline:none}
+  .zoom::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;
+    background:#fff;border:3px solid var(--brand);cursor:pointer}
+  .readout{display:flex;gap:8px;margin-top:4px}
+  .readout .tcell{background:var(--panel)}
+
+  /* ---------- CALIBRATION ---------- */
+  .steps{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .step{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:14px;
+    border:1px solid var(--line);background:var(--panel)}
+  .step .n{width:26px;height:26px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;
+    font-family:var(--mono);font-size:12px;color:var(--faint);border:1px solid var(--line-2)}
+  .step .t{font-family:var(--ui);font-size:14px}
+  .step .s{margin-left:auto;font-family:var(--disp);font-size:10px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--faint)}
+  .step.done .n{background:var(--ok);color:#062;border-color:transparent}
+  .step.done .s{color:var(--ok)}
+  .step.active{border-color:rgba(255,106,31,.55);background:var(--brand-soft)}
+  .step.active .n{color:var(--brand);border-color:var(--brand)}
+  .step.active .s{color:var(--brand)}
+  .cal-card{margin-top:12px}
+  .cal-card .big{font-family:var(--disp);font-weight:600;font-size:19px;margin:2px 0 6px}
+  .cal-card p{color:var(--muted);font-size:13px;line-height:1.5;margin:0 0 12px}
+  .cal-actions{display:flex;gap:10px}
+
+  /* ---------- AGENT ---------- */
+  .svc{display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line)}
+  .svc:last-child{border-bottom:0}
+  .svc .st{width:9px;height:9px;border-radius:50%}
+  .st.up{background:var(--ok);box-shadow:0 0 8px var(--ok)} .st.warn{background:var(--warn)}
+  .svc .nm{font-family:var(--mono);font-size:12.5px}
+  .svc .meta{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;margin-top:12px}
+  .toggle-row .desc{max-width:200px}
+  .toggle-row .desc .h{font-family:var(--disp);text-transform:uppercase;letter-spacing:.12em;font-size:12px}
+  .toggle-row .desc .p{color:var(--muted);font-size:11.5px;line-height:1.4;margin-top:2px}
+  .switch{width:52px;height:30px;border-radius:30px;background:#23303a;border:1px solid var(--line-2);
+    position:relative;cursor:pointer;flex:0 0 auto;transition:.2s}
+  .switch i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;
+    background:#fff;transition:.2s}
+  .switch.on{background:var(--brand-soft);border-color:var(--brand)}
+  .switch.on i{left:25px;background:var(--brand)}
+  .summon{margin-top:12px;width:100%;border:1px dashed rgba(255,106,31,.5);background:var(--brand-soft);
+    color:var(--brand);font-family:var(--disp);text-transform:uppercase;letter-spacing:.16em;
+    font-weight:600;font-size:13px;padding:14px;border-radius:14px;cursor:pointer}
+  .agent-log{margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--muted);
+    line-height:1.7}
+  .agent-log .ts{color:var(--faint)} .agent-log .ok{color:var(--ok)}
+
+  /* ---------- DASHBOARD (WebView) ---------- */
+  .webchrome{display:flex;align-items:center;gap:8px;background:#0a1015;border:1px solid var(--line);
+    border-radius:12px 12px 0 0;padding:8px 11px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .webchrome .d{width:8px;height:8px;border-radius:50%;background:#2a3a45}
+  .weburl{margin-left:6px;background:#060a0e;border:1px solid var(--line);border-radius:7px;
+    padding:4px 8px;flex:1;color:var(--faint)}
+  .webview{border:1px solid var(--line);border-top:0;border-radius:0 0 14px 14px;background:#0b1218;
+    padding:13px;display:flex;flex-direction:column;gap:11px}
+  .webview .row{display:flex;gap:11px}
+  .panel-min{flex:1;background:#0f1822;border:1px solid var(--line);border-radius:12px;padding:11px}
+  .panel-min .k{font-family:var(--disp);text-transform:uppercase;letter-spacing:.16em;
+    font-size:9px;color:var(--faint)}
+  .panel-min .v{font-family:var(--mono);font-size:16px;margin-top:5px}
+  .panel-min .v.ok{color:var(--ok)} .panel-min .v.br{color:var(--brand)}
+  .bars{display:flex;align-items:flex-end;gap:4px;height:42px;margin-top:8px}
+  .bars i{flex:1;background:linear-gradient(180deg,var(--brand),#33424d);border-radius:3px 3px 0 0;opacity:.85}
+  .webnote{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:4px;text-align:center}
+
+  /* ---------- tab bar ---------- */
+  .tabbar{display:flex;background:rgba(8,12,16,.92);border-top:1px solid var(--line);
+    padding:9px 8px 22px;backdrop-filter:blur(8px);z-index:30}
+  .tab{flex:1;background:none;border:0;cursor:pointer;color:var(--faint);
+    display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px}
+  .tab .ic{width:22px;height:22px;display:grid;place-items:center}
+  .tab svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7}
+  .tab .lbl{font-family:var(--disp);text-transform:uppercase;letter-spacing:.1em;font-size:9px}
+  .tab.active{color:var(--brand)}
+
+  /* ---------- KILL latched overlay ---------- */
+  .latched{position:absolute;inset:0;z-index:50;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:18px;text-align:center;padding:30px;
+    background:rgba(12,3,3,.86);backdrop-filter:blur(4px);border:3px solid var(--kill);border-radius:42px}
+  .latched.show{display:flex;animation:fade .25s ease}
+  .latched .big{font-family:var(--disp);font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+    font-size:30px;color:var(--kill)}
+  .latched p{color:#f3c8c5;font-size:13px;margin:0;max-width:240px;line-height:1.5}
+  .latched .resume{border:1px solid var(--ok);color:var(--ok);background:rgba(55,214,194,.12);
+    font-family:var(--disp);text-transform:uppercase;letter-spacing:.18em;font-weight:600;
+    padding:13px 26px;border-radius:13px;cursor:pointer;font-size:14px}
+  .kill-icon{width:64px;height:64px;border-radius:16px;background:var(--kill-soft);
+    border:2px solid var(--kill);display:grid;place-items:center}
+  .kill-icon .sq{width:24px;height:24px;border-radius:5px;background:var(--kill)}
+
+  .legend{max-width:680px;color:var(--faint);font-size:12px;line-height:1.7;text-align:center}
+  .legend b{color:var(--muted)} .legend .sw{display:inline-block;width:10px;height:10px;
+    border-radius:3px;vertical-align:middle;margin:0 3px}
+  /* On a real phone (or launched from the Home Screen) drop the desktop frame
+     and fill the screen so it behaves like the actual app. */
+  @media (max-width:480px){
+    body{padding:0;gap:0;background:#000;display:block}
+    .wrap,.legend{display:none}
+    .phone{width:100vw;height:100vh;height:100dvh;border-radius:0;padding:0;box-shadow:none}
+    .screen{border-radius:0}
+    .island{display:none}
+    .latched{border-radius:0}
+    .topbar{padding-top:calc(14px + env(safe-area-inset-top))}
+    .tabbar{padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+  }
+  @media (display-mode:standalone){ .island{display:none} }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="kicker">WaveCam · Operator App</div>
+    <h1 class="title">Field Control — <b>iOS / iPadOS</b></h1>
+    <p class="sub">Non-functional mockup for review. The Orin is the authority; this app is the operator's window.
+      Tap the bottom tabs to move between screens. <b style="color:var(--kill)">KILL</b> is reachable on every screen and bypasses the WebView.</p>
+  </div>
+
+  <div class="phone">
+    <div class="screen">
+      <div class="island"></div>
+
+      <!-- chrome -->
+      <div class="topbar">
+        <div class="brandmark">
+          <span class="dot"></span>
+          <span class="name">WAVE<span>CAM</span></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="link-state"><span class="pulse"></span> ORIN · LAN</div>
+          <div class="kill-chip" onclick="latch(true)"><span class="sq"></span>KILL</div>
+        </div>
+      </div>
+
+      <div class="views">
+        <!-- ============ LIVE ============ -->
+        <section class="view active" id="v-live">
+          <div class="stagger">
+            <div class="feed">
+              <div class="sky-glow"></div>
+              <div class="horizon"></div>
+              <svg class="waves" viewBox="0 0 390 260" preserveAspectRatio="none">
+                <path d="M0,60 Q60,40 120,60 T240,60 T360,60 T480,60" stroke="rgba(255,255,255,.18)" fill="none"/>
+                <path d="M0,110 Q70,88 140,110 T280,110 T420,110" stroke="rgba(255,255,255,.12)" fill="none"/>
+                <path d="M0,165 Q60,145 120,165 T240,165 T360,165 T480,165" stroke="rgba(255,255,255,.10)" fill="none"/>
+              </svg>
+              <div class="grain"></div>
+
+              <!-- subject + tracking lock -->
+              <div class="subject">
+                <div class="surfer">
+                  <div class="spray"></div>
+                  <div class="board"></div><div class="mast"></div>
+                  <div class="legs"></div><div class="body"></div><div class="head"></div>
+                </div>
+              </div>
+              <div class="lockbox"><span class="conf">SUBJECT · 0.91 · ORANGE✓</span></div>
+
+              <div class="hud">
+                <span class="reticle-corner rc-tl"></span><span class="reticle-corner rc-tr"></span>
+                <span class="reticle-corner rc-bl"></span><span class="reticle-corner rc-br"></span>
+                <div class="hud-top">
+                  <span class="tag lock">● LOCKED</span>
+                  <span class="tag rec"><span class="d"></span>REC 12:48</span>
+                </div>
+                <div class="telemetry">
+                  <div class="tcell"><div class="k">State</div><div class="v br">TRACKING</div></div>
+                  <div class="tcell"><div class="k">Conf</div><div class="v">0.91</div></div>
+                  <div class="tcell"><div class="k">FPS</div><div class="v ok">26</div></div>
+                  <div class="tcell"><div class="k">Range</div><div class="v">148m</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="live-actions">
+              <button class="btn" onclick="go('ptz')"><span class="ic">⤓</span> Manual</button>
+              <button class="btn ghost" onclick="go('cal')"><span class="ic">◎</span> Re-cal</button>
+              <button class="btn ghost"><span class="ic">▣</span> Stop Rec</button>
+            </div>
+
+            <button class="kill-bar" onclick="latch(true)"><span class="sq"></span> Emergency Stop</button>
+          </div>
+        </section>
+
+        <!-- ============ PTZ ============ -->
+        <section class="view" id="v-ptz">
+          <p class="label">Manual PTZ · release to stop (deadman)</p>
+          <div class="card">
+            <div class="joy-wrap">
+              <div class="joypad" id="joypad">
+                <div class="cross"></div><div class="ring"></div>
+                <span class="dirlabel dl-up">Tilt ▲</span><span class="dirlabel dl-dn">Tilt ▼</span>
+                <span class="dirlabel dl-l">◀ Pan</span><span class="dirlabel dl-r">Pan ▶</span>
+                <div class="nub" id="nub"></div>
+              </div>
+              <div class="readout">
+                <div class="tcell"><div class="k">Pan</div><div class="v" id="pan-v">+00</div></div>
+                <div class="tcell"><div class="k">Tilt</div><div class="v" id="tilt-v">+00</div></div>
+                <div class="tcell"><div class="k">Owner</div><div class="v br">MANUAL</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:12px">
+            <div class="zoomrow"><p class="label">Zoom</p>
+              <input class="zoom" type="range" min="0" max="20" value="7" id="zoom" oninput="document.getElementById('zoom-v').textContent=this.value+'×'">
+              <span class="num br" id="zoom-v" style="font-size:14px">7×</span>
+            </div>
+          </div>
+          <div class="live-actions">
+            <button class="btn ghost">⌂ Home</button>
+            <button class="btn ghost">★ Preset 1</button>
+            <button class="btn" onclick="go('live')">▶ Resume Track</button>
+          </div>
+          <button class="kill-bar" onclick="latch(true)" style="margin-top:12px"><span class="sq"></span> Emergency Stop</button>
+        </section>
+
+        <!-- ============ CALIBRATION ============ -->
+        <section class="view" id="v-cal">
+          <p class="label">Setup wizard · ~90 sec</p>
+          <div class="steps">
+            <div class="step done"><span class="n">✓</span><span class="t">Preflight checks</span><span class="s">Done</span></div>
+            <div class="step done"><span class="n">✓</span><span class="t">Base lock (GPS)</span><span class="s">Done</span></div>
+            <div class="step active"><span class="n">3</span><span class="t">Heading — landmark</span><span class="s">Now</span></div>
+            <div class="step"><span class="n">4</span><span class="t">Tilt reference</span><span class="s">—</span></div>
+            <div class="step"><span class="n">5</span><span class="t">Zoom / FOV curve</span><span class="s">—</span></div>
+            <div class="step"><span class="n">6</span><span class="t">Dry-run</span><span class="s">—</span></div>
+          </div>
+          <div class="card cal-card">
+            <div class="big">Aim at a known landmark</div>
+            <p>Center the camera on a fixed point you can identify on the map (pier end, channel marker).
+               WaveCam reads the motor position and back-solves <span class="mono br">reference_heading</span> —
+               no magnetometer needed.</p>
+            <div class="cal-actions">
+              <button class="btn ghost" onclick="go('ptz')">Nudge camera</button>
+              <button class="btn" onclick="alert('Mockup: heading captured → next step')">Capture heading</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ AGENT ============ -->
+        <section class="view" id="v-agent">
+          <p class="label">Supervisor · deterministic health</p>
+          <div class="card" style="padding:4px 12px">
+            <div class="svc"><span class="st up"></span><span class="nm">wavecam.service</span><span class="meta">up · 1h12m</span></div>
+            <div class="svc"><span class="st up"></span><span class="nm">wavecam-supervisor</span><span class="meta">up · polling 1Hz</span></div>
+            <div class="svc"><span class="st up"></span><span class="nm">gps-server</span><span class="meta">up · LoRa fix 2s</span></div>
+            <div class="svc"><span class="st up"></span><span class="nm">dashboard</span><span class="meta">up · :8080</span></div>
+            <div class="svc"><span class="st warn"></span><span class="nm">cloudflared</span><span class="meta">degraded</span></div>
+          </div>
+
+          <p class="label" style="margin-top:16px">Codex · on-demand assistant</p>
+          <div class="card">
+            <div class="toggle-row">
+              <div class="desc"><div class="h">Agent control</div>
+                <div class="p">Let Codex command the camera. Off = supervise + diagnose only. KILL always overrides.</div></div>
+              <div class="switch" id="agtoggle" onclick="this.classList.toggle('on')"><i></i></div>
+            </div>
+            <button class="summon" onclick="alert('Mockup: a Codex session opens for diagnostics / config help')">⌁ Summon Codex</button>
+            <div class="agent-log">
+              <div><span class="ts">12:41</span> · NVMe recon committed <span class="ok">✓</span></div>
+              <div><span class="ts">12:48</span> · supervisor.service drafted <span class="ok">✓</span></div>
+              <div><span class="ts">12:55</span> · idle — awaiting tasking</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ DASHBOARD (WebView) ============ -->
+        <section class="view" id="v-dash">
+          <p class="label">Dashboard · WKWebView of the Orin</p>
+          <div class="webchrome"><span class="d"></span><span class="d"></span><span class="d"></span>
+            <span class="weburl">http://orin.local:8080</span></div>
+          <div class="webview">
+            <div class="row">
+              <div class="panel-min"><div class="k">Session</div><div class="v br">TRACKING</div></div>
+              <div class="panel-min"><div class="k">GPS · LoRa</div><div class="v ok">2.4 m</div></div>
+            </div>
+            <div class="row">
+              <div class="panel-min"><div class="k">Storage /data</div><div class="v">405 GB free</div></div>
+              <div class="panel-min"><div class="k">Power</div><div class="v ok">11.6 W</div></div>
+            </div>
+            <div class="panel-min">
+              <div class="k">Tracking confidence · 60s</div>
+              <div class="bars">
+                <i style="height:55%"></i><i style="height:70%"></i><i style="height:62%"></i><i style="height:85%"></i>
+                <i style="height:78%"></i><i style="height:91%"></i><i style="height:88%"></i><i style="height:80%"></i>
+                <i style="height:93%"></i><i style="height:86%"></i><i style="height:90%"></i><i style="height:84%"></i>
+              </div>
+            </div>
+            <div class="webnote">Full operator surface — health · tune · media · network · logs</div>
+          </div>
+        </section>
+      </div>
+
+      <!-- KILL latched overlay -->
+      <div class="latched" id="latched">
+        <div class="kill-icon"><span class="sq"></span></div>
+        <div class="big">Stop Latched</div>
+        <p>Pan, tilt &amp; zoom halted. The latch is sticky — it stays stopped until you explicitly resume.</p>
+        <button class="resume" onclick="latch(false)">Hold to Resume</button>
+      </div>
+
+      <!-- tab bar -->
+      <nav class="tabbar">
+        <button class="tab active" data-v="live" onclick="go('live')">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3z"/><circle cx="12" cy="12" r="3.2"/></svg></span><span class="lbl">Live</span></button>
+        <button class="tab" data-v="ptz" onclick="go('ptz')">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="3.4"/></svg></span><span class="lbl">PTZ</span></button>
+        <button class="tab" data-v="cal" onclick="go('cal')">
+          <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg></span><span class="lbl">Calibrate</span></button>
+        <button class="tab" data-v="agent" onclick="go('agent')">
+          <span class="ic"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="2"/><path d="M12 7V4M9 12h.01M15 12h.01"/></svg></span><span class="lbl">Agent</span></button>
+        <button class="tab" data-v="dash" onclick="go('dash')">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M4 13h7V4H4zM13 20h7v-9h-7zM13 8h7V4h-7zM4 20h7v-5H4z"/></svg></span><span class="lbl">Dash</span></button>
+      </nav>
+    </div>
+  </div>
+
+  <p class="legend">
+    <span class="sw" style="background:var(--brand)"></span><b>Orange</b> = the tracked subject (Zack's rashguard) &amp; primary actions ·
+    <span class="sw" style="background:var(--ok)"></span><b>Teal</b> = healthy telemetry ·
+    <span class="sw" style="background:var(--kill)"></span><b>Red</b> = emergency-stop only.<br>
+    Native screens (Live · PTZ · Calibrate · Agent) talk to the Orin Control API directly; Dash is a WKWebView of the dashboard.
+  </p>
+
+<script>
+  function go(v){
+    document.querySelectorAll('.view').forEach(s=>s.classList.remove('active'));
+    document.getElementById('v-'+v).classList.add('active');
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.v===v));
+  }
+  function latch(on){ document.getElementById('latched').classList.toggle('show',on); }
+
+  /* joystick: drag the nub, clamp to circle, read out pan/tilt, snap back on release (deadman) */
+  (function(){
+    const pad=document.getElementById('joypad'), nub=document.getElementById('nub');
+    const panV=document.getElementById('pan-v'), tiltV=document.getElementById('tilt-v');
+    let active=false, R=78;
+    const set=(dx,dy)=>{ nub.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;
+      panV.textContent=(dx>=0?'+':'')+Math.round(dx/R*10); tiltV.textContent=(dy<=0?'+':'-')+Math.abs(Math.round(dy/R*10)); };
+    const reset=()=>{ nub.style.transform='translate(-50%,-50%)'; panV.textContent='+00'; tiltV.textContent='+00'; };
+    const move=(cx,cy)=>{ const r=pad.getBoundingClientRect(); let dx=cx-(r.left+r.width/2), dy=cy-(r.top+r.height/2);
+      const d=Math.hypot(dx,dy); if(d>R){dx*=R/d;dy*=R/d;} set(dx,dy); };
+    nub.addEventListener('pointerdown',e=>{active=true;nub.setPointerCapture(e.pointerId);});
+    nub.addEventListener('pointermove',e=>{if(active)move(e.clientX,e.clientY);});
+    nub.addEventListener('pointerup',()=>{active=false;reset();});
+    nub.addEventListener('pointercancel',()=>{active=false;reset();});
+  })();
+</script>
+</body>
+</html>
