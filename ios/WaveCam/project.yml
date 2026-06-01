@@ -27,3 +27,4 @@ targets:
         INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "WaveCam connects to the Orin on your local network to control the camera and view the feed."
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
