@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WaveCam | Autonomous Surf Filming System</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b7f86'/%3E%3Cpath d='M13 40c8-17 22-25 42-23' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M29 45c4-8 11-12 22-11' fill='none' stroke='%23c7ff73' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --ink: #101315;
+      --muted: #5e696d;
+      --soft: #eef4f4;
+      --panel: #ffffff;
+      --line: #d8e4e3;
+      --ocean: #0b7f86;
+      --ocean-2: #14a9af;
+      --deep: #0b2529;
+      --orange: #ff7a1a;
+      --sand: #f5eee0;
+      --lime: #c7ff73;
+      --shadow: 0 24px 70px rgba(9, 36, 41, 0.18);
+      --radius: 18px;
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 4%, rgba(20, 169, 175, 0.18), transparent 28rem),
+        linear-gradient(180deg, #fbfcfb 0%, #edf5f3 46%, #f8f5ee 100%);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img {
+      max-width: 100%;
+      display: block;
+    }
+
+    .page {
+      overflow: hidden;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(18px);
+      background: rgba(248, 252, 251, 0.76);
+      border-bottom: 1px solid rgba(216, 228, 227, 0.8);
+    }
+
+    .nav-inner {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--deep), var(--ocean));
+      color: white;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 14px 30px rgba(11, 127, 134, 0.22);
+    }
+
+    .brand-mark svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      color: #314044;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .nav-links a {
+      opacity: 0.86;
+    }
+
+    .nav-links a:hover {
+      color: var(--ocean);
+      opacity: 1;
+    }
+
+    .nav-cta {
+      padding: 10px 15px;
+      border-radius: 999px;
+      color: white;
+      background: var(--deep);
+      box-shadow: 0 14px 30px rgba(5, 25, 28, 0.22);
+    }
+
+    .hero {
+      position: relative;
+      padding: 68px 0 48px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+      gap: 44px;
+      align-items: center;
+    }
+
+    .hero h1 {
+      margin: 0;
+      max-width: 780px;
+      font-size: clamp(48px, 7vw, 92px);
+      line-height: 0.9;
+      letter-spacing: 0;
+    }
+
+    .hero h1 span {
+      color: var(--ocean);
+    }
+
+    .hero-copy {
+      margin: 24px 0 0;
+      max-width: 620px;
+      font-size: clamp(18px, 2vw, 23px);
+      line-height: 1.45;
+      color: #334145;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 13px 18px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 14px;
+      border: 1px solid transparent;
+      transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-2px);
+    }
+
+    .button.primary {
+      color: white;
+      background: linear-gradient(135deg, var(--ocean), #053a40);
+      box-shadow: 0 18px 40px rgba(11, 127, 134, 0.27);
+    }
+
+    .button.secondary {
+      background: white;
+      border-color: var(--line);
+      color: var(--deep);
+    }
+
+    .hero-media {
+      position: relative;
+      border-radius: 30px;
+      overflow: hidden;
+      min-height: 560px;
+      box-shadow: var(--shadow);
+      background: var(--deep);
+      isolation: isolate;
+    }
+
+    .hero-media img {
+      width: 100%;
+      height: 100%;
+      min-height: 560px;
+      object-fit: cover;
+    }
+
+    .hero-media::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(6, 30, 34, 0.52), transparent 48%),
+        linear-gradient(0deg, rgba(6, 30, 34, 0.38), transparent 45%);
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .hero-card {
+      position: absolute;
+      left: 22px;
+      bottom: 22px;
+      right: 22px;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 14px;
+      border-radius: 16px;
+      color: white;
+      background: rgba(5, 25, 28, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      backdrop-filter: blur(12px);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 3px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .reticle {
+      position: absolute;
+      z-index: 3;
+      width: 96px;
+      height: 96px;
+      left: 31%;
+      top: 33%;
+      border: 3px solid rgba(255, 122, 26, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 0 0 999px transparent;
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+
+    .reticle::before,
+    .reticle::after {
+      content: "";
+      position: absolute;
+      background: rgba(255, 122, 26, 0.9);
+    }
+
+    .reticle::before {
+      width: 30px;
+      height: 3px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .reticle::after {
+      width: 3px;
+      height: 30px;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.92; }
+      50% { transform: scale(1.05); opacity: 0.62; }
+    }
+
+    .status-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      overflow: hidden;
+      border-radius: var(--radius);
+      background: var(--line);
+      box-shadow: 0 18px 46px rgba(9, 36, 41, 0.08);
+      margin: 20px auto 0;
+    }
+
+    .status-item {
+      background: rgba(255, 255, 255, 0.82);
+      padding: 22px;
+    }
+
+    .status-item b {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 14px;
+      color: var(--ocean);
+    }
+
+    .status-item span {
+      color: #28363a;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    section {
+      padding: 84px 0;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.7fr) minmax(0, 0.3fr);
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 34px;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: clamp(34px, 4vw, 58px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.55;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .feature {
+      padding: 24px;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.84);
+      border: 1px solid var(--line);
+      box-shadow: 0 20px 52px rgba(9, 36, 41, 0.06);
+      min-height: 238px;
+    }
+
+    .feature svg {
+      width: 36px;
+      height: 36px;
+      color: var(--ocean);
+      margin-bottom: 18px;
+    }
+
+    .feature h3 {
+      margin: 0 0 10px;
+      font-size: 21px;
+      letter-spacing: 0;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .system {
+      background: linear-gradient(180deg, rgba(8, 38, 42, 0.98), #071b1f);
+      color: white;
+    }
+
+    .system .section-head p,
+    .system .eyebrow,
+    .system .muted {
+      color: rgba(255, 255, 255, 0.68);
+    }
+
+    .system-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+      gap: 28px;
+      align-items: center;
+    }
+
+    .system-image {
+      border-radius: 24px;
+      overflow: hidden;
+      background: white;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.28);
+    }
+
+    .system-cards {
+      display: grid;
+      gap: 12px;
+    }
+
+    .system-card {
+      padding: 18px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .system-card h3 {
+      margin: 0 0 7px;
+      font-size: 18px;
+    }
+
+    .system-card p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.68);
+      line-height: 1.5;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 850;
+      color: var(--deep);
+      background: var(--lime);
+    }
+
+    .chip.dark {
+      color: white;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .workflow {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(245, 238, 224, 0.7)),
+        radial-gradient(circle at 94% 18%, rgba(255, 122, 26, 0.16), transparent 20rem);
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      counter-reset: steps;
+    }
+
+    .step {
+      position: relative;
+      padding: 24px;
+      min-height: 250px;
+      border-radius: var(--radius);
+      background: white;
+      border: 1px solid var(--line);
+      box-shadow: 0 20px 52px rgba(9, 36, 41, 0.06);
+    }
+
+    .step::before {
+      counter-increment: steps;
+      content: "0" counter(steps);
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      color: white;
+      background: var(--deep);
+      font-weight: 900;
+      margin-bottom: 48px;
+    }
+
+    .step h3 {
+      margin: 0 0 9px;
+      font-size: 22px;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .proof {
+      background: #fbfcfb;
+    }
+
+    .proof-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .proof-shot {
+      border-radius: 20px;
+      overflow: hidden;
+      background: white;
+      border: 1px solid var(--line);
+      box-shadow: 0 20px 52px rgba(9, 36, 41, 0.08);
+    }
+
+    .proof-shot img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: #111;
+    }
+
+    .proof-caption {
+      padding: 16px 18px 18px;
+    }
+
+    .proof-caption h3 {
+      margin: 0 0 6px;
+      font-size: 19px;
+    }
+
+    .proof-caption p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .tech-grid {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .stack-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .stack-row {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 18px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .stack-row b {
+      color: var(--deep);
+    }
+
+    .stack-row span {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .console {
+      border-radius: 22px;
+      overflow: hidden;
+      background: #071b1f;
+      color: white;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .console-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--orange);
+    }
+
+    .dot:nth-child(2) { background: #ffd166; }
+    .dot:nth-child(3) { background: var(--lime); }
+
+    .console-body {
+      padding: 22px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .console-body .ok {
+      color: var(--lime);
+    }
+
+    .console-body .warn {
+      color: #ffd166;
+    }
+
+    .roadmap {
+      background: var(--deep);
+      color: white;
+    }
+
+    .roadmap .section-head p {
+      color: rgba(255, 255, 255, 0.66);
+    }
+
+    .roadmap-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .roadmap-card {
+      min-height: 280px;
+      padding: 24px;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      color: var(--deep);
+      background: var(--lime);
+      margin-bottom: 18px;
+    }
+
+    .status-pill.plan {
+      background: #ffd166;
+    }
+
+    .status-pill.test {
+      background: #8ee8ff;
+    }
+
+    .roadmap-card h3 {
+      margin: 0 0 10px;
+      font-size: 23px;
+    }
+
+    .roadmap-card p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.55;
+    }
+
+    .footer {
+      padding: 46px 0;
+      background: #061215;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .footer .shell {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .footer strong {
+      color: white;
+    }
+
+    @media (max-width: 980px) {
+      .hero-grid,
+      .section-head,
+      .system-layout,
+      .tech-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-media,
+      .hero-media img {
+        min-height: 440px;
+      }
+
+      .feature-grid,
+      .steps,
+      .roadmap-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .nav-links {
+        display: none;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .shell {
+        width: min(100% - 28px, 1180px);
+      }
+
+      .hero {
+        padding-top: 42px;
+      }
+
+      .hero h1 {
+        font-size: 48px;
+      }
+
+      .hero-media,
+      .hero-media img {
+        min-height: 360px;
+      }
+
+      .reticle {
+        width: 70px;
+        height: 70px;
+        left: 28%;
+        top: 31%;
+      }
+
+      .hero-card,
+      .status-strip,
+      .feature-grid,
+      .steps,
+      .proof-grid,
+      .roadmap-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-card {
+        position: static;
+        margin: -68px 12px 12px;
+      }
+
+      .hero-media::after {
+        background: linear-gradient(0deg, rgba(6, 30, 34, 0.52), transparent 55%);
+      }
+
+      section {
+        padding: 58px 0;
+      }
+
+      .stack-row {
+        grid-template-columns: 1fr;
+        gap: 5px;
+      }
+
+      .footer .shell {
+        display: block;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation: none !important;
+        scroll-behavior: auto !important;
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="nav">
+      <div class="shell nav-inner">
+        <a class="brand" href="#">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4 15.5c2.6-5.7 7.2-8.3 13.8-7.7" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+              <path d="M9.5 17.5c1.3-3 3.9-4.4 7.7-4.2" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+              <path d="M17.7 7.8 20 5.5m-2.3 2.3L20 10" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span>WaveCam</span>
+        </a>
+        <nav class="nav-links" aria-label="Page">
+          <a href="#features">Features</a>
+          <a href="#system">System</a>
+          <a href="#proof">Proof</a>
+          <a href="#technology">Tech</a>
+          <a class="nav-cta" href="#roadmap">Roadmap</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="shell hero-grid">
+          <div>
+            <h1>Film the session. <span>Ride the session.</span></h1>
+            <p class="hero-copy">
+              WaveCam is a beach-side autonomous camera rig for foil surfing, wing foiling, and tow sessions. It points a real PTZ camera, follows the rider with vision, and keeps the operator controls on a phone.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="#workflow">See the field workflow</a>
+              <a class="button secondary" href="#technology">View the tech stack</a>
+            </div>
+          </div>
+
+          <div class="hero-media" aria-label="WaveCam beach setup render">
+            <img src="catalog_assets/wavecam-hero.png" alt="Autonomous PTZ surf filming system on a beach with a tracked foil surfer">
+            <div class="reticle" aria-hidden="true"></div>
+            <div class="hero-card" aria-label="Key system capabilities">
+              <div class="metric">
+                <strong>20x</strong>
+                <span>optical zoom camera</span>
+              </div>
+              <div class="metric">
+                <strong>60 fps</strong>
+                <span>RTSP sub-stream target</span>
+              </div>
+              <div class="metric">
+                <strong>LoRa</strong>
+                <span>GPS cueing path</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="shell status-strip" aria-label="Current build status">
+          <div class="status-item">
+            <b>Built</b>
+            <span>Orin dashboard, preview, PTZ controls, and vision follow.</span>
+          </div>
+          <div class="status-item">
+            <b>Validated</b>
+            <span>Raw VISCA, RTSP streams, YOLO/HSV detection, camera LAN.</span>
+          </div>
+          <div class="status-item">
+            <b>Next</b>
+            <span>Yard test, PTZ safety gates, LoRa GPS ingest.</span>
+          </div>
+          <div class="status-item">
+            <b>Goal</b>
+            <span>Reliable personal session footage, not broadcast complexity.</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="features">
+        <div class="shell">
+          <div class="section-head">
+            <h2>Built for one job: keep the rider in frame.</h2>
+            <p>WaveCam trims the system down to the parts that matter in the field: camera movement, target detection, status visibility, and reliable capture.</p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 12h16M12 4v16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M7 7h3V4M17 7h-3V4M7 17h3v3M17 17h-3v3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <h3>Vision-primary tracking</h3>
+              <p>YOLO person detection and an orange/red HSV cue work together. GPS helps point and reacquire; vision owns framing when the target is visible.</p>
+            </article>
+
+            <article class="feature">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7 8h10v7H7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M12 15v4M9 19h6M17 11l4-2v5l-4-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <h3>Real PTZ camera control</h3>
+              <p>The camera is controlled directly from the Orin over Ethernet using validated raw VISCA. No STM32, no stepper drivers, no DIY gimbal stack.</p>
+            </article>
+
+            <article class="feature">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8 17c2.7-2.7 5.3-2.7 8 0M5 14c4.7-4.7 9.3-4.7 14 0M2 11c6.7-6.7 13.3-6.7 20 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M12 20h.01" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+              </svg>
+              <h3>LoRa GPS ready</h3>
+              <p>The Watch/iPhone GPS path is being retired. The next GPS lane is Wio Tracker L1 Lite nodes with Meshtastic-style position packets into the Orin.</p>
+            </article>
+
+            <article class="feature">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="2"/>
+                <path d="M8 15h8M8 9h4M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <h3>Phone-first dashboard</h3>
+              <p>Start follow, stop follow, preview the sub-stream, nudge PTZ, check services, watch disk space, and see what the tracker thinks it is doing.</p>
+            </article>
+
+            <article class="feature">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6h12v12H6z" stroke="currentColor" stroke-width="2"/>
+                <path d="M9 9h6v6H9zM3 9h3M3 15h3M18 9h3M18 15h3M9 3v3M15 3v3M9 18v3M15 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <h3>Jetson inference core</h3>
+              <p>Jetson Orin Nano runs the camera loop, OpenCV color tracker, YOLO/TensorRT path, and operator dashboard. Recording stays copy/remux friendly.</p>
+            </article>
+
+            <article class="feature">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3 4 7v6c0 4.5 3.4 7 8 8 4.6-1 8-3.5 8-8V7l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                <path d="m8.5 12 2.2 2.2 4.8-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <h3>Safety by ownership</h3>
+              <p>Only one autonomous PTZ owner should run at once. Manual moves are blocked while follow owns the camera, and KILL/STOP remain first-class controls.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="system" class="system">
+        <div class="shell">
+          <div class="section-head">
+            <h2>Camera, compute, GPS, dashboard. One field system.</h2>
+            <p>The architecture is intentionally plain: Ethernet to the camera, local inference on the Orin, operator control from a phone, and LoRa GPS for acquisition.</p>
+          </div>
+
+          <div class="system-layout">
+            <div class="system-image">
+              <img src="catalog_assets/wavecam-system.png" alt="Isometric diagram of PTZ camera, Orin, LoRa trackers, surfer, and phone dashboard">
+            </div>
+            <div class="system-cards">
+              <article class="system-card">
+                <h3>Beach node</h3>
+                <p>Prisual PTZ camera on the dedicated camera LAN, Orin Nano on Wi-Fi or phone tether, no camera-LAN gateway.</p>
+                <div class="chip-row">
+                  <span class="chip">192.168.100.88</span>
+                  <span class="chip">RTSP /1 + /2</span>
+                  <span class="chip">VISCA UDP 1259</span>
+                </div>
+              </article>
+              <article class="system-card">
+                <h3>Rider node</h3>
+                <p>Orange rashguard is the near-term visible target. LoRa GPS becomes the range cue when vision needs help reacquiring.</p>
+                <div class="chip-row">
+                  <span class="chip dark">HSV cue</span>
+                  <span class="chip dark">YOLO person</span>
+                  <span class="chip dark">LoRa GPS</span>
+                </div>
+              </article>
+              <article class="system-card">
+                <h3>Operator surface</h3>
+                <p>The phone dashboard exists so field operation does not require SSH: preview, PTZ, follow, health, recording, and service status.</p>
+                <div class="chip-row">
+                  <span class="chip dark">Preview</span>
+                  <span class="chip dark">PTZ nudge</span>
+                  <span class="chip dark">Start/stop</span>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow" class="workflow">
+        <div class="shell">
+          <div class="section-head">
+            <h2>Field workflow without the laptop dance.</h2>
+            <p>Designed around the real setup sequence: power it, see if it is healthy, aim it, start it, ride.</p>
+          </div>
+
+          <div class="steps">
+            <article class="step">
+              <h3>Set the rig</h3>
+              <p>Tripod on the beach, Ethernet to the PTZ camera, Orin powered, camera LAN static, internet over Wi-Fi or phone tether.</p>
+            </article>
+            <article class="step">
+              <h3>Confirm health</h3>
+              <p>The dashboard checks camera route, preview, service state, recording space, and whether any tracker already owns PTZ.</p>
+            </article>
+            <article class="step">
+              <h3>Calibrate view</h3>
+              <p>Aim at the waterline, center the rider target, tune orange cue if needed, then lock the starting pose for stop/restore.</p>
+            </article>
+            <article class="step">
+              <h3>Start follow</h3>
+              <p>Vision follow tracks the subject, zoom only follows YOLO person boxes, and color-only frames hold zoom instead of hunting.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="proof" class="proof">
+        <div class="shell">
+          <div class="section-head">
+            <h2>Live proof, not just architecture.</h2>
+            <p>These are raw verification stills from the project. The garage is not glamorous, but it proves the camera and vision path are real.</p>
+          </div>
+
+          <div class="proof-grid">
+            <article class="proof-shot">
+              <img src="verification/preview_0256_HST.jpg" alt="RTSP sub-stream preview from the PTZ camera during indoor validation">
+              <div class="proof-caption">
+                <h3>Camera preview path</h3>
+                <p>RTSP sub-stream frame captured through the Orin path used for low-latency preview and vision follow.</p>
+              </div>
+            </article>
+            <article class="proof-shot">
+              <img src="verification/yolo_0314_HST.jpg" alt="YOLO validation frame from the PTZ camera stream">
+              <div class="proof-caption">
+                <h3>Vision validation frame</h3>
+                <p>YOLO/vision snapshot from the same camera stream. Outdoor follow tuning comes after the scratch testbed gates pass.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="technology">
+        <div class="shell">
+          <div class="section-head">
+            <h2>The stack is practical hardware plus boring control loops.</h2>
+            <p>No mystery platform. The parts are inspectable, replaceable, and already shaped around field failure modes.</p>
+          </div>
+
+          <div class="tech-grid">
+            <div class="stack-list" aria-label="Technology stack">
+              <div class="stack-row">
+                <b>Camera</b>
+                <span>Prisual PTZ with 20x optical zoom, RTSP main/sub streams, and raw VISCA UDP control.</span>
+              </div>
+              <div class="stack-row">
+                <b>Compute</b>
+                <span>Jetson Orin Nano on Ubuntu/L4T, running Python services, OpenCV, TensorRT, and dashboard code.</span>
+              </div>
+              <div class="stack-row">
+                <b>Vision</b>
+                <span>YOLO person detector, HSV orange/red cue, temporal continuity, target source gating, feed-forward PTZ.</span>
+              </div>
+              <div class="stack-row">
+                <b>GPS</b>
+                <span>LoRa/Meshtastic ingest planned for Wio Tracker L1 Lite nodes. Watch/iPhone path is deprecated for the project path.</span>
+              </div>
+              <div class="stack-row">
+                <b>Media</b>
+                <span>Local recording and livestreaming should avoid Orin re-encode. Use camera encode plus FFmpeg copy/remux where possible.</span>
+              </div>
+              <div class="stack-row">
+                <b>Control</b>
+                <span>Orin-hosted dashboard with preview, manual PTZ, vision follow, service health, and safety ownership state.</span>
+              </div>
+            </div>
+
+            <aside class="console" aria-label="Example system telemetry">
+              <div class="console-top" aria-hidden="true">
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+              </div>
+              <div class="console-body">
+                <div><span class="ok">camera</span> 192.168.100.88 reachable on camera LAN</div>
+                <div><span class="ok">rtsp</span> /2 sub-stream ready for preview + inference</div>
+                <div><span class="ok">ptz</span> raw VISCA UDP 1259 validated</div>
+                <div><span class="ok">vision</span> YOLO + HSV cue running in yard-MVP path</div>
+                <div><span class="warn">gps</span> LoRa ingest stubbed until Wio nodes arrive</div>
+                <div><span class="ok">dashboard</span> operator controls live on Orin</div>
+                <br>
+                <div>mode: vision_follow</div>
+                <div>owner: autonomous</div>
+                <div>kill_latched: false</div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="roadmap" class="roadmap">
+        <div class="shell">
+          <div class="section-head">
+            <h2>Roadmap: prove the simple thing, then add range.</h2>
+            <p>The current direction is to get the vision rig behaving in the yard first. LoRa GPS and wave-state logic layer in after the deterministic camera loop behaves.</p>
+          </div>
+
+          <div class="roadmap-grid">
+            <article class="roadmap-card">
+              <span class="status-pill">Built</span>
+              <h3>Yard vision MVP</h3>
+              <p>PTZ control, preview, YOLO, orange cue, dashboard start/stop, safety ownership, and live test instructions are in place.</p>
+            </article>
+            <article class="roadmap-card">
+              <span class="status-pill test">Testing</span>
+              <h3>Scratch WaveCam loop</h3>
+              <p>The testbed is being reconciled against live camera facts: raw VISCA, fusion continuity, zoom gating, and KILL latch before Orin deployment.</p>
+            </article>
+            <article class="roadmap-card">
+              <span class="status-pill plan">Planned</span>
+              <h3>LoRa acquisition</h3>
+              <p>Wio Tracker L1 Lite nodes provide long-range GPS cueing so the camera can aim and zoom before vision has a large target.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell">
+        <div><strong>WaveCam</strong> autonomous surf filming system</div>
+        <div>Static catalog page generated from current project facts, 2026-06-01.</div>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
