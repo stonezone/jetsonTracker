@@ -112,23 +112,6 @@ struct KillLatchOverlay: View {
     }
 }
 
-/// Shared placeholder used by screens not yet fleshed out.
-struct ScreenStub: View {
-    let title: String
-    let subtitle: String
-    var body: some View {
-        ZStack {
-            WC.bg.ignoresSafeArea()
-            VStack(spacing: 8) {
-                Text(title.uppercased())
-                    .font(.system(size: 22, weight: .bold)).tracking(3).foregroundStyle(WC.txt)
-                Text(subtitle)
-                    .font(.system(size: 12)).foregroundStyle(WC.muted)
-            }
-        }
-    }
-}
-
 #Preview {
     ContentView()
         .environment(WaveCamClient(mode: .mock))
