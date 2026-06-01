@@ -7,7 +7,6 @@ struct ConnectionView: View {
 
     @AppStorage(WaveCamDefaults.modeKey) private var storedMode = WaveCamClient.Mode.live.rawValue
     @AppStorage(WaveCamDefaults.baseURLKey) private var storedBaseURL = WaveCamDefaults.baseURLString
-    @AppStorage(WaveCamDefaults.tokenKey) private var storedToken = ""
     @AppStorage(WaveCamDefaults.mockFallbackKey) private var storedMockFallback = false
 
     @State private var selectedMode = WaveCamClient.Mode.live
@@ -48,7 +47,7 @@ struct ConnectionView: View {
     private func loadStoredSettings() {
         selectedMode = WaveCamClient.Mode(rawValue: storedMode) ?? .live
         baseURLText = storedBaseURL
-        tokenText = storedToken
+        tokenText = KeychainStore.load(account: KeychainStore.tokenAccount) ?? ""
         mockFallbackEnabled = storedMockFallback
         validationError = nil
     }
@@ -62,7 +61,11 @@ struct ConnectionView: View {
         validationError = nil
         storedMode = selectedMode.rawValue
         storedBaseURL = baseURL.absoluteString
-        storedToken = tokenText
+        if tokenText.isEmpty {
+            KeychainStore.delete(account: KeychainStore.tokenAccount)
+        } else {
+            KeychainStore.save(tokenText, account: KeychainStore.tokenAccount)
+        }
         storedMockFallback = mockFallbackEnabled
         client.configure(
             mode: selectedMode,
