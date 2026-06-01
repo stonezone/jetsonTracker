@@ -4,6 +4,7 @@ Pipeline: the deterministic loop. capture -> color + (throttled) YOLO -> fusion
 status, live-mutable tunables, kill latch) that the web layer reads/writes.
 """
 from __future__ import annotations
+import os
 import threading
 import time
 from typing import Optional
@@ -55,6 +56,9 @@ class Pipeline(threading.Thread):
         self.fusion = Fusion(cfg.fusion)
         self.servo = VisualServo(cfg.ptz)
         self.owner = PtzOwner()       # single PTZ writer + sticky KILL latch
+        # Systemd restarts should come up stationary. Manual run.py launches do
+        # not set this env var, so bench behavior stays unchanged.
+        self.start_paused = bool(os.environ.get("WAVECAM_START_PAUSED"))
 
         # YOLO is optional + lazily built (so missing torch doesn't kill the rig)
         self.detector = None
@@ -103,7 +107,7 @@ class Pipeline(threading.Thread):
 
     def run(self):
         self.grab.start()
-        if self.cfg.ptz.enabled:
+        if self.cfg.ptz.enabled and not self.start_paused:
             self.owner.request("testbed")
         period = 1.0 / max(1.0, self.cfg.loop.target_fps)
         t_fps = time.time()
@@ -169,7 +173,8 @@ class Pipeline(threading.Thread):
                 has_color=fr.has_color, has_person=fr.has_person, matched=fr.matched,
                 fps=round(fps, 1), connected=self.grab.connected,
                 ptz_enabled=self.cfg.ptz.enabled,
-                cmd=("stop" if cmd.is_stop else f"p{cmd.pan_speed}/t{cmd.tilt_speed}"),
+                cmd=("stop" if cmd.is_stop or self.owner.owner != "testbed"
+                     else f"p{cmd.pan_speed}/t{cmd.tilt_speed}"),
             )
 
             # fps bookkeeping
