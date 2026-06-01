@@ -124,9 +124,13 @@ final class WaveCamClient {
     private(set) var status: WCStatus?
     private(set) var connected: Bool = false
     private(set) var lastError: String?
+    /// Last failed *command* (e.g. safety stop). Kept separate from `lastError` so the
+    /// 1Hz status poll never wipes a failed-KILL message before the operator sees it (review #2).
+    private(set) var lastCommandError: String?
 
     private var mockKilled = false
     private var configuredBaseURL: URL
+    private var pollTask: Task<Void, Never>?
 
     init(mode: Mode = .live,
          baseURL: URL = WaveCamDefaults.baseURL,
@@ -148,6 +152,7 @@ final class WaveCamClient {
         self.baseURL = baseURL
         self.token = normalizedToken(token)
         self.mockFallbackEnabled = mockFallbackEnabled
+        if mode == .live { startPolling() } else { stopPolling() }
     }
 
     // MARK: status
@@ -176,18 +181,50 @@ final class WaveCamClient {
         }
     }
 
+    /// ~1Hz status polling so the HUD reflects live Orin state without a manual
+    /// refresh (review #4). Driven by `configure`: active in `.live`, idle in `.mock`.
+    private func startPolling(interval: Duration = .seconds(1)) {
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refresh()
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
+    }
+
     // MARK: safety (highest priority, always allowed)
 
     func kill(reason: String = "operator") async {
         if mode == .mock { mockKilled = true; await refresh(); return }
-        _ = try? await post("safety/kill", body: ["reason": reason, "source": "ios_native"])
+        do {
+            _ = try await post("safety/kill", body: ["reason": reason, "source": "ios_native"])
+            lastCommandError = nil
+        } catch {
+            lastCommandError = "Safety stop not confirmed by Orin: \(error.localizedDescription)"
+        }
         await refresh()
     }
 
     func resume() async {
         if mode == .mock { mockKilled = false; await refresh(); return }
-        _ = try? await post("safety/resume", body: ["source": "ios_native"])
+        do {
+            _ = try await post("safety/resume", body: ["source": "ios_native"])
+            lastCommandError = nil
+        } catch {
+            lastCommandError = "Resume not confirmed by Orin: \(error.localizedDescription)"
+        }
         await refresh()
+    }
+
+    /// Clear a surfaced command failure once the operator has acknowledged it.
+    func clearCommandError() {
+        lastCommandError = nil
     }
 
     // MARK: ptz (owner-gated on the server)
@@ -285,17 +322,30 @@ final class WaveCamClient {
 
     @discardableResult
     private func post(_ path: String, body: [String: Any]) async throws -> Data {
-        var req = URLRequest(url: baseURL.appending(path: path))
-        req.httpMethod = "POST"
-        req.timeoutInterval = 5
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        authorize(&req)
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: req)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw WaveCamAPIError(statusCode: http.statusCode, data: data)
+        let payload = try JSONSerialization.data(withJSONObject: body)
+        var failoverError: Error?
+        // Mutating POSTs fail over only on *connection* errors. A reached server that
+        // returns an HTTP error propagates immediately -- never re-send to another host
+        // (would risk double-applying a command). Same candidates as getWithFallback.
+        for candidate in apiCandidates() {
+            do {
+                var req = URLRequest(url: candidate.appending(path: path))
+                req.httpMethod = "POST"
+                req.timeoutInterval = 5
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                authorize(&req)
+                req.httpBody = payload
+                let (data, response) = try await URLSession.shared.data(for: req)
+                baseURL = candidate
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw WaveCamAPIError(statusCode: http.statusCode, data: data)
+                }
+                return data
+            } catch let error as URLError {
+                failoverError = error
+            }
         }
-        return data
+        throw failoverError ?? URLError(.cannotConnectToHost)
     }
 }
 
