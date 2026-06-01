@@ -1,0 +1,125 @@
+import SwiftUI
+
+/// Root shell: persistent top bar (brand + connection + KILL), a 5-tab TabView,
+/// and the sticky KILL-latch overlay that covers everything when latched.
+struct ContentView: View {
+    @Environment(WaveCamClient.self) private var client
+    @State private var tab = 0
+
+    var body: some View {
+        ZStack {
+            WC.bg.ignoresSafeArea()
+            VStack(spacing: 0) {
+                TopBar()
+                TabView(selection: $tab) {
+                    LiveView().tag(0).tabItem { Label("Live", systemImage: "viewfinder") }
+                    PTZView().tag(1).tabItem { Label("PTZ", systemImage: "gamecontroller") }
+                    CalibrateView().tag(2).tabItem { Label("Calibrate", systemImage: "scope") }
+                    AgentView().tag(3).tabItem { Label("Agent", systemImage: "cpu") }
+                    DashView().tag(4).tabItem { Label("Dash", systemImage: "square.grid.2x2") }
+                }
+                .tint(WC.brand)
+            }
+            if client.killed {
+                KillLatchOverlay()
+            }
+        }
+        .task { await client.refresh() }
+    }
+}
+
+/// Always-visible across every tab: brand, connection state, and the KILL chip.
+private struct TopBar: View {
+    @Environment(WaveCamClient.self) private var client
+    var body: some View {
+        HStack {
+            HStack(spacing: 8) {
+                Circle().fill(WC.brand).frame(width: 9, height: 9)
+                HStack(spacing: 0) {
+                    Text("WAVE").foregroundStyle(WC.txt)
+                    Text("CAM").foregroundStyle(WC.brand)
+                }
+                .font(.system(size: 16, weight: .bold))
+                .tracking(1)
+            }
+            Spacer()
+            HStack(spacing: 6) {
+                Circle().fill(client.connected ? WC.ok : WC.faint).frame(width: 7, height: 7)
+                Text(client.connected ? "ORIN" : "OFFLINE")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(WC.muted)
+            }
+            .padding(.trailing, 4)
+            Button {
+                Task { await client.kill() }
+            } label: {
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2).fill(WC.kill).frame(width: 9, height: 9)
+                    Text("KILL").font(.system(size: 12, weight: .bold)).tracking(1)
+                }
+                .foregroundStyle(WC.kill)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(WC.kill.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.kill.opacity(0.4)))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(WC.ink)
+    }
+}
+
+/// Full-screen sticky latch shown whenever KILL is active. Bypasses everything.
+struct KillLatchOverlay: View {
+    @Environment(WaveCamClient.self) private var client
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.88).ignoresSafeArea()
+            VStack(spacing: 18) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16).fill(WC.kill.opacity(0.16)).frame(width: 64, height: 64)
+                    RoundedRectangle(cornerRadius: 16).stroke(WC.kill, lineWidth: 2).frame(width: 64, height: 64)
+                    RoundedRectangle(cornerRadius: 5).fill(WC.kill).frame(width: 24, height: 24)
+                }
+                Text("STOP LATCHED")
+                    .font(.system(size: 28, weight: .bold)).tracking(3).foregroundStyle(WC.kill)
+                Text("Pan, tilt & zoom halted. Sticky — stays stopped until you resume.")
+                    .font(.system(size: 13)).foregroundStyle(WC.txt.opacity(0.85))
+                    .multilineTextAlignment(.center).frame(maxWidth: 250)
+                Button {
+                    Task { await client.resume() }
+                } label: {
+                    Text("HOLD TO RESUME")
+                        .font(.system(size: 14, weight: .semibold)).tracking(2).foregroundStyle(WC.ok)
+                        .padding(.horizontal, 26).padding(.vertical, 13)
+                        .overlay(RoundedRectangle(cornerRadius: 13).stroke(WC.ok))
+                }
+            }
+        }
+        .overlay(Rectangle().stroke(WC.kill, lineWidth: 3).ignoresSafeArea())
+    }
+}
+
+/// Shared placeholder used by screens not yet fleshed out.
+struct ScreenStub: View {
+    let title: String
+    let subtitle: String
+    var body: some View {
+        ZStack {
+            WC.bg.ignoresSafeArea()
+            VStack(spacing: 8) {
+                Text(title.uppercased())
+                    .font(.system(size: 22, weight: .bold)).tracking(3).foregroundStyle(WC.txt)
+                Text(subtitle)
+                    .font(.system(size: 12)).foregroundStyle(WC.muted)
+            }
+        }
+    }
+}
+
+#Preview {
+    ContentView()
+        .environment(WaveCamClient(mode: .mock))
+        .preferredColorScheme(.dark)
+}
