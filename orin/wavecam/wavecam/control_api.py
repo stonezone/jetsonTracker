@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .auth import CONFIG, PTZ, READ, SAFETY, install_auth, require, websocket_authorized
-from .ptz_owner import IDLE
+from .ptz_owner import AUTONOMOUS, IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
 from .supervisor import read_health, snapshot_services
 
@@ -39,11 +39,13 @@ class VelocityRequest(BaseModel):
     pan: float = Field(default=0.0, ge=-1.0, le=1.0)
     tilt: float = Field(default=0.0, ge=-1.0, le=1.0)
     zoom: float = Field(default=0.0, ge=-1.0, le=1.0)
+    takeover: bool = False
     deadman_ms: int = Field(default=800, ge=100, le=5000)
     source: str | None = None
 
 
 class PtzStopRequest(BaseModel):
+    hold: bool = True
     source: str | None = None
 
 
@@ -51,6 +53,7 @@ class ZoomRequest(BaseModel):
     requested_owner: str = "manual"
     mode: str = "velocity"
     value: float = Field(default=0.0, ge=-1.0, le=1.0)
+    takeover: bool = False
     deadman_ms: int = Field(default=800, ge=100, le=5000)
     source: str | None = None
 
@@ -127,8 +130,15 @@ def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
 def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/ptz/stop", dependencies=[Depends(require(PTZ))])
-    def ptz_stop(_: PtzStopRequest | None = None):
-        api.stop_ptz()
+    def ptz_stop(req: PtzStopRequest | None = None):
+        api.stop_ptz(hold=req.hold if req else True)
+        api.bump_revision()
+        return api.ok()
+
+    @app.post("/api/v1/ptz/auto", dependencies=[Depends(require(PTZ))])
+    def ptz_auto():
+        if not api.start_autonomous("testbed"):
+            return api.refusal("killed", "KILL is latched; resume before starting auto PTZ.")
         api.bump_revision()
         return api.ok()
 
@@ -138,7 +148,7 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("killed", "KILL is latched; resume before movement commands.")
         if req.requested_owner != "manual":
             return api.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
-        if not api.pipeline.owner.request("manual"):
+        if not api.claim_manual(takeover=req.takeover):
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
         api.send_manual_velocity(req)
@@ -154,13 +164,13 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
         if req.mode != "velocity":
             return api.refusal("invalid_request", "Only mode=velocity is accepted in v1.", 422)
-        if not api.pipeline.owner.request("manual"):
+        if not api.claim_manual(takeover=req.takeover):
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
         api.send_manual_zoom_velocity(req.value)
         if req.value == 0:
             api.cancel_manual_deadman()
-            api.pipeline.owner.release("manual")
+            api.release_manual_owner()
         else:
             api.schedule_manual_deadman(req.deadman_ms)
         api.bump_revision()
@@ -211,6 +221,7 @@ class ControlApiAdapter:
         self._lock = threading.Lock()
         self._revision = 0
         self._manual_deadman: threading.Timer | None = None
+        self._restore_owner_after_manual: str | None = None
 
     @property
     def revision(self) -> int:
@@ -236,18 +247,69 @@ class ControlApiAdapter:
         )
 
     def resume_without_autostart(self) -> None:
+        self._restore_owner_after_manual = None
         self.pipeline.state.killed = False
         self.pipeline.owner.resume()
         if self.pipeline.owner.owner != IDLE:
             self.pipeline.owner.release(self.pipeline.owner.owner)
         self.pipeline.state.set_status(killed=False, state="SEARCHING")
 
-    def stop_ptz(self) -> None:
+    def claim_manual(self, takeover: bool = False) -> bool:
+        if self.pipeline.owner.request("manual"):
+            return True
+        current_owner = self.pipeline.owner.owner
+        if not takeover or current_owner not in AUTONOMOUS:
+            return False
+        self.pipeline.ptz.stop()
+        self.pipeline.ptz.zoom("stop")
+        if not self.pipeline.owner.release(current_owner):
+            return False
+        self._restore_owner_after_manual = current_owner
+        return self.pipeline.owner.request("manual")
+
+    def release_manual_owner(self, restore_autonomous: bool = True) -> None:
+        released = self.pipeline.owner.release("manual")
+        restore_owner = self._restore_owner_after_manual
+        self._restore_owner_after_manual = None
+        if (
+            released
+            and restore_autonomous
+            and restore_owner in AUTONOMOUS
+            and not self.pipeline.owner.killed
+        ):
+            self.pipeline.owner.request(restore_owner)
+
+    def start_autonomous(self, owner: str) -> bool:
         self.cancel_manual_deadman()
         self.pipeline.ptz.stop()
         self.pipeline.ptz.zoom("stop")
-        if self.pipeline.owner.owner == "manual":
-            self.pipeline.owner.release("manual")
+        self._restore_owner_after_manual = None
+        current_owner = self.pipeline.owner.owner
+        if current_owner != IDLE:
+            self.pipeline.owner.release(current_owner)
+        if not self.pipeline.owner.request(owner):
+            return False
+        self.pipeline.state.set_status(killed=False, state="SEARCHING")
+        return True
+
+    def stop_ptz(self, hold: bool = True) -> None:
+        self.cancel_manual_deadman()
+        self.pipeline.ptz.stop()
+        self.pipeline.ptz.zoom("stop")
+        if hold:
+            self.hold_manual_owner()
+        elif self.pipeline.owner.owner == "manual":
+            self.release_manual_owner()
+
+    def hold_manual_owner(self) -> None:
+        current_owner = self.pipeline.owner.owner
+        if current_owner == "manual":
+            return
+        if current_owner in AUTONOMOUS:
+            self._restore_owner_after_manual = current_owner
+            if not self.pipeline.owner.release(current_owner):
+                return
+        self.pipeline.owner.request("manual")
 
     def send_manual_velocity(self, req: VelocityRequest) -> None:
         cfg = self.pipeline.cfg.ptz
@@ -257,7 +319,7 @@ class ControlApiAdapter:
         if pan_dir == PAN_STOP and tilt_dir == TILT_STOP and req.zoom == 0:
             self.pipeline.ptz.stop()
             self.pipeline.ptz.zoom("stop")
-            self.pipeline.owner.release("manual")
+            self.release_manual_owner()
             return
 
         if pan_dir == PAN_STOP and tilt_dir == TILT_STOP:
@@ -294,7 +356,7 @@ class ControlApiAdapter:
         if self.pipeline.owner.owner == "manual":
             self.pipeline.ptz.stop()
             self.pipeline.ptz.zoom("stop")
-            self.pipeline.owner.release("manual")
+            self.release_manual_owner()
             self.bump_revision()
 
     def apply_hot_config(self, patch: Dict[str, Any]) -> JSONResponse | None:
@@ -314,6 +376,8 @@ class ControlApiAdapter:
             "ptz.invert_tilt": lambda: set_bool(cfg.ptz, "invert_tilt", value),
             "fusion.lock_threshold": lambda: set_float(cfg.fusion, "lock_threshold", value, 0.05, 0.95),
             "fusion.unlock_threshold": lambda: set_float(cfg.fusion, "unlock_threshold", value, 0.05, 0.95),
+            "fusion.require_person": lambda: set_bool(cfg.fusion, "require_person", value),
+            "fusion.match_dist": lambda: set_float(cfg.fusion, "match_dist", value, 20.0, 500.0),
             "color.min_area": lambda: set_int(cfg.color, "min_area", value, 20, 4000),
             "web.show_mask": lambda: set_bool(self.pipeline.state, "show_mask", value),
         }
@@ -475,7 +539,10 @@ def map_axis(value: float, cfg, axis: str) -> tuple[int, int]:
         max_speed = int(getattr(cfg, "max_pan_speed", 10))
     else:
         value = -value if getattr(cfg, "invert_tilt", False) else value
-        dirs = (TILT_UP, TILT_DOWN, TILT_STOP)
+        # Manual control values use joystick semantics: positive tilt means
+        # operator requested camera-up. Visual servo image-error semantics are
+        # handled separately in controller.py.
+        dirs = (TILT_DOWN, TILT_UP, TILT_STOP)
         max_speed = int(getattr(cfg, "max_tilt_speed", 8))
 
     if value > 0:

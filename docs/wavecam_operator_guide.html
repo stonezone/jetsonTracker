@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WaveCam Operator Guide</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #081018;
+      --ink: #101a23;
+      --panel: #142230;
+      --panel2: #0d1720;
+      --line: rgba(196, 225, 240, 0.16);
+      --line2: rgba(196, 225, 240, 0.28);
+      --text: #eef7fb;
+      --muted: #91a6b4;
+      --faint: #5d737f;
+      --brand: #ff8a3d;
+      --brand2: #ffb060;
+      --cyan: #46d7ff;
+      --ok: #3ee58f;
+      --warn: #f5c451;
+      --kill: #ff443d;
+      --radius: 18px;
+      --shadow: 0 30px 90px rgba(0, 0, 0, 0.42);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background:
+        radial-gradient(circle at 80% 4%, rgba(255, 138, 61, 0.14), transparent 32rem),
+        radial-gradient(circle at 8% 22%, rgba(70, 215, 255, 0.08), transparent 30rem),
+        linear-gradient(180deg, #081018 0%, #0b131b 42%, #081018 100%);
+      color: var(--text);
+      letter-spacing: 0;
+    }
+
+    a { color: inherit; }
+    code {
+      font-family: var(--mono);
+      color: #d8f4ff;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 0.12rem 0.35rem;
+      border-radius: 6px;
+    }
+
+    .shell { min-height: 100vh; overflow: hidden; }
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem clamp(1rem, 3vw, 3.25rem);
+      background: rgba(8, 16, 24, 0.78);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+    }
+    .brand-dot {
+      width: 0.7rem;
+      height: 0.7rem;
+      border-radius: 50%;
+      background: var(--brand);
+      box-shadow: 0 0 22px rgba(255, 138, 61, 0.75);
+    }
+    .brand span:last-child { color: var(--brand); }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.76rem;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .nav-links a {
+      text-decoration: none;
+      padding: 0.55rem 0.7rem;
+      border-radius: 999px;
+    }
+    .nav-links a:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(28rem, 1.1fr);
+      min-height: calc(100svh - 64px);
+      padding: clamp(2.2rem, 6vw, 6.4rem) clamp(1rem, 5vw, 5rem) clamp(2rem, 5vw, 4rem);
+      gap: clamp(2rem, 5vw, 5rem);
+      align-items: center;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+    }
+    .hero-copy { position: relative; z-index: 2; max-width: 44rem; }
+    .eyeline {
+      color: var(--brand);
+      font: 700 0.78rem/1 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 1.2rem;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(3.4rem, 9vw, 9.4rem);
+      line-height: 0.82;
+      letter-spacing: 0;
+    }
+    .hero-copy p {
+      max-width: 34rem;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.4vw, 1.2rem);
+      line-height: 1.55;
+      margin: 1.5rem 0 2rem;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      min-height: 2.75rem;
+      padding: 0 1.05rem;
+      border-radius: 12px;
+      border: 1px solid var(--line2);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 750;
+      font-size: 0.88rem;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .button.primary {
+      color: #111820;
+      background: var(--brand);
+      border-color: rgba(255, 138, 61, 0.6);
+    }
+    .hero-note {
+      margin-top: 1rem;
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+    }
+
+    .rig-scene {
+      position: relative;
+      min-height: 36rem;
+      border-radius: 28px;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(31, 76, 94, 0.75) 0%, rgba(10, 28, 38, 0.94) 56%, rgba(6, 12, 18, 1) 100%);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      isolation: isolate;
+    }
+    .rig-scene::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(160deg, rgba(255, 138, 61, 0.12), transparent 36%),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 42px),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 42px);
+      opacity: 0.85;
+      z-index: -1;
+    }
+    .moon {
+      position: absolute;
+      top: 2.4rem;
+      right: 3rem;
+      width: 5.8rem;
+      height: 5.8rem;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #fff2d8, #ffd398 54%, rgba(255, 174, 92, 0.1) 70%, transparent 72%);
+      filter: blur(0.2px);
+      opacity: 0.88;
+    }
+    .ocean-lines {
+      position: absolute;
+      inset: 46% 0 0;
+      background:
+        repeating-linear-gradient(176deg, rgba(174, 225, 238, 0.18) 0 2px, transparent 2px 28px);
+      transform: skewY(-2deg);
+      opacity: 0.5;
+    }
+    .tripod {
+      position: absolute;
+      left: 17%;
+      bottom: 4rem;
+      width: 38%;
+      max-width: 22rem;
+      aspect-ratio: 1 / 1.08;
+    }
+    .camera-body {
+      position: absolute;
+      top: 5%;
+      left: 16%;
+      width: 58%;
+      height: 27%;
+      border-radius: 14px;
+      background: linear-gradient(160deg, #dfe9ee, #83939c 46%, #273741 47%, #111c25);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.48);
+    }
+    .camera-lens {
+      position: absolute;
+      right: -18%;
+      top: 27%;
+      width: 36%;
+      height: 48%;
+      border-radius: 9px 40px 40px 9px;
+      background: linear-gradient(90deg, #101820, #1b3442 42%, #071016);
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    .camera-lens::after {
+      content: "";
+      position: absolute;
+      right: 10%;
+      top: 18%;
+      width: 38%;
+      height: 64%;
+      border-radius: 50%;
+      background: radial-gradient(circle, #5ce8ff, #164455 46%, #03070a 66%);
+    }
+    .camera-base {
+      position: absolute;
+      top: 33%;
+      left: 31%;
+      width: 27%;
+      height: 20%;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #2c3f4c, #101922);
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    .tripod .leg {
+      position: absolute;
+      left: 43%;
+      top: 48%;
+      width: 3%;
+      height: 48%;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #708591, #1b2a33);
+      transform-origin: top center;
+    }
+    .tripod .leg:nth-child(3) { transform: rotate(-25deg); left: 41%; }
+    .tripod .leg:nth-child(4) { transform: rotate(28deg); left: 48%; }
+    .tripod .leg:nth-child(5) { transform: rotate(0deg); left: 45%; height: 52%; }
+    .phone {
+      position: absolute;
+      right: 11%;
+      bottom: 7.5rem;
+      width: min(27%, 11rem);
+      aspect-ratio: 0.54;
+      border-radius: 1.4rem;
+      padding: 0.55rem;
+      background: #05090e;
+      border: 1px solid rgba(255,255,255,0.18);
+      box-shadow: 0 26px 70px rgba(0,0,0,0.56);
+    }
+    .phone-screen {
+      width: 100%;
+      height: 100%;
+      border-radius: 1rem;
+      background:
+        linear-gradient(180deg, rgba(70, 215, 255, 0.12), transparent 38%),
+        #0b141d;
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 0.55rem;
+    }
+    .phone-row, .phone-bar {
+      height: 0.48rem;
+      border-radius: 999px;
+      margin-bottom: 0.45rem;
+      background: rgba(255,255,255,0.14);
+    }
+    .phone-bar { width: 70%; background: var(--brand); }
+    .phone-feed {
+      height: 42%;
+      margin: 0.6rem 0;
+      border-radius: 0.7rem;
+      border: 1px solid rgba(70, 215, 255, 0.4);
+      background:
+        linear-gradient(135deg, transparent 46%, rgba(70,215,255,0.5) 47% 49%, transparent 50%),
+        radial-gradient(circle at 55% 50%, rgba(255,138,61,0.7) 0 5%, transparent 7%),
+        #0f2730;
+    }
+    .phone-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.36rem;
+    }
+    .phone-buttons span {
+      display: block;
+      height: 1.25rem;
+      border-radius: 0.42rem;
+      background: rgba(255,255,255,0.12);
+    }
+    .phone-buttons span:first-child { background: var(--ok); }
+    .phone-buttons span:nth-child(2) { background: var(--kill); }
+    .wire {
+      position: absolute;
+      right: 25%;
+      bottom: 7.9rem;
+      width: 23%;
+      height: 9rem;
+      border-bottom: 2px solid rgba(70, 215, 255, 0.65);
+      border-left: 2px solid rgba(70, 215, 255, 0.65);
+      border-radius: 0 0 0 34px;
+      transform: rotate(6deg);
+      opacity: 0.8;
+    }
+    .orin {
+      position: absolute;
+      left: 42%;
+      bottom: 3.2rem;
+      width: 10rem;
+      height: 4.6rem;
+      border-radius: 0.9rem;
+      background: linear-gradient(160deg, #182a35, #0b1219);
+      border: 1px solid var(--line2);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+      padding: 0.8rem;
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      color: var(--muted);
+    }
+    .orin::before {
+      content: "ORIN";
+      display: block;
+      color: var(--cyan);
+      margin-bottom: 0.45rem;
+      letter-spacing: 0.14em;
+    }
+    .hud-card {
+      position: absolute;
+      right: 2rem;
+      top: 2rem;
+      display: grid;
+      gap: 0.45rem;
+      width: min(20rem, 48%);
+      padding: 0.85rem;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 1rem;
+      background: rgba(5, 12, 18, 0.62);
+      backdrop-filter: blur(16px);
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.8rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .hud-row strong { color: var(--text); font-weight: 800; }
+    .hud-row .ok { color: var(--ok); }
+    .hud-row .kill { color: var(--kill); }
+
+    main { padding: 0 clamp(1rem, 5vw, 5rem) 5rem; }
+    section {
+      position: relative;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: clamp(3rem, 7vw, 6.5rem) 0;
+      border-bottom: 1px solid var(--line);
+    }
+    section:last-child { border-bottom: 0; }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.72fr) minmax(18rem, 0.38fr);
+      gap: 2rem;
+      align-items: end;
+      margin-bottom: 2rem;
+    }
+    h2 {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 4.2rem);
+      line-height: 0.96;
+      letter-spacing: 0;
+    }
+    .section-head p, .lead {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 1rem;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 1.2rem;
+    }
+    .panel h3 {
+      margin: 0 0 0.7rem;
+      font-size: 1rem;
+      letter-spacing: 0;
+    }
+    .panel p, .panel li {
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.92rem;
+    }
+    .panel p { margin: 0; }
+    .panel ul, .panel ol { margin: 0; padding-left: 1.05rem; }
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--brand);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.7rem;
+    }
+    .kicker::before {
+      content: "";
+      width: 0.45rem;
+      height: 0.45rem;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      gap: 1.2rem;
+      align-items: stretch;
+    }
+    .flow-lane {
+      display: grid;
+      gap: 0.8rem;
+      counter-reset: step;
+    }
+    .step {
+      position: relative;
+      display: grid;
+      grid-template-columns: 3rem 1fr;
+      gap: 0.9rem;
+      align-items: start;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.04);
+    }
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      display: grid;
+      place-items: center;
+      width: 2.2rem;
+      height: 2.2rem;
+      border-radius: 50%;
+      background: rgba(255, 138, 61, 0.15);
+      color: var(--brand);
+      font-family: var(--mono);
+      font-weight: 800;
+    }
+    .step strong { display: block; margin-bottom: 0.25rem; }
+    .step span { color: var(--muted); line-height: 1.45; font-size: 0.9rem; }
+
+    .state-board {
+      display: grid;
+      gap: 0.65rem;
+      padding: 1.2rem;
+      min-height: 100%;
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, rgba(70,215,255,0.08), transparent),
+        var(--panel2);
+      border: 1px solid var(--line);
+    }
+    .state-row {
+      display: grid;
+      grid-template-columns: 8.5rem 1fr;
+      gap: 1rem;
+      align-items: baseline;
+      padding: 0.85rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .state-row:last-child { border-bottom: 0; }
+    .state-row dt {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+    .state-row dd { margin: 0; color: var(--text); line-height: 1.45; }
+
+    .connection-map {
+      position: relative;
+      min-height: 23rem;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background:
+        radial-gradient(circle at 50% 50%, rgba(70,215,255,0.12), transparent 24rem),
+        #0b141d;
+    }
+    .node {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      width: 10.5rem;
+      min-height: 5.2rem;
+      padding: 0.9rem;
+      border: 1px solid var(--line2);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.055);
+      text-align: center;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.24);
+    }
+    .node strong { display: block; margin-bottom: 0.25rem; }
+    .node span { color: var(--muted); font-family: var(--mono); font-size: 0.72rem; line-height: 1.35; }
+    .n-phone { left: 6%; top: 18%; }
+    .n-orin { left: 39%; top: 36%; }
+    .n-camera { right: 6%; top: 18%; }
+    .line-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .line-svg path {
+      stroke: rgba(70, 215, 255, 0.66);
+      stroke-width: 2;
+      fill: none;
+      stroke-dasharray: 7 9;
+      animation: dash 14s linear infinite;
+    }
+    .line-svg path:nth-child(2) { stroke: rgba(255, 138, 61, 0.7); animation-duration: 18s; }
+    @keyframes dash { to { stroke-dashoffset: -220; } }
+
+    .control-matrix {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.8rem;
+    }
+    .control {
+      min-height: 12rem;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.045);
+    }
+    .control .icon {
+      display: grid;
+      place-items: center;
+      width: 2.5rem;
+      height: 2.5rem;
+      margin-bottom: 1rem;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.08);
+      color: var(--cyan);
+    }
+    .control.kill .icon { color: var(--kill); }
+    .control.stop .icon { color: var(--brand); }
+    .control.start .icon { color: var(--ok); }
+    .control strong { display: block; margin-bottom: 0.45rem; }
+    .control p { margin: 0; color: var(--muted); line-height: 1.45; font-size: 0.88rem; }
+
+    .tuning {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.035);
+    }
+    .tuning th, .tuning td {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      text-align: left;
+      vertical-align: top;
+      font-size: 0.9rem;
+    }
+    .tuning th {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(255,255,255,0.05);
+    }
+    .tuning tr:last-child td { border-bottom: 0; }
+    .tuning td:nth-child(1) { color: var(--text); font-family: var(--mono); white-space: nowrap; }
+    .tuning td { color: var(--muted); line-height: 1.45; }
+
+    .troubleshoot {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 1rem;
+    }
+    .fault-list {
+      display: grid;
+      gap: 0.8rem;
+    }
+    .fault {
+      padding: 1rem;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.04);
+    }
+    .fault strong { display: block; margin-bottom: 0.35rem; }
+    .fault span { color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
+    .callout {
+      padding: clamp(1.2rem, 3vw, 2rem);
+      border-radius: 24px;
+      border: 1px solid rgba(255, 138, 61, 0.28);
+      background:
+        linear-gradient(135deg, rgba(255, 138, 61, 0.14), transparent 48%),
+        rgba(255,255,255,0.04);
+    }
+    .callout h3 { margin: 0 0 1rem; font-size: clamp(1.4rem, 3vw, 2.2rem); }
+    .callout ol { margin: 0; padding-left: 1.2rem; }
+    .callout li { color: var(--muted); margin: 0.7rem 0; line-height: 1.48; }
+
+    .mini-terminal {
+      padding: 1rem;
+      border-radius: 16px;
+      background: #050a0f;
+      border: 1px solid rgba(70,215,255,0.2);
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      color: #cdeefa;
+      line-height: 1.65;
+      overflow: auto;
+    }
+    .mini-terminal .prompt { color: var(--ok); }
+    .mini-terminal .dim { color: var(--faint); }
+
+    .footer {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 2rem 0 5rem;
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      border-top: 1px solid var(--line);
+    }
+
+    .reveal {
+      animation: rise 0.6s ease both;
+    }
+    @keyframes rise {
+      from { opacity: 0.88; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .line-svg path, .reveal { animation: none; }
+    }
+    @media (max-width: 980px) {
+      .hero, .section-head, .workflow, .troubleshoot {
+        grid-template-columns: 1fr;
+      }
+      .hero {
+        min-height: auto;
+        padding-top: 3.5rem;
+      }
+      .rig-scene { min-height: 32rem; }
+      .grid-3, .control-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .nav-links { display: none; }
+    }
+    @media (max-width: 640px) {
+      .hero { padding-inline: 1rem; }
+      main { padding-inline: 1rem; }
+      .rig-scene { min-height: 28rem; border-radius: 22px; }
+      .hud-card { display: none; }
+      .tripod { left: 8%; width: 48%; }
+      .phone { right: 5%; width: 34%; }
+      .orin { left: 34%; width: 8.5rem; }
+      .grid-2, .grid-3, .control-matrix { grid-template-columns: 1fr; }
+      .connection-map { min-height: 31rem; }
+      .node { width: 12rem; }
+      .n-phone { left: 50%; top: 8%; transform: translateX(-50%); }
+      .n-orin { left: 50%; top: 41%; transform: translateX(-50%); }
+      .n-camera { left: 50%; top: 72%; right: auto; transform: translateX(-50%); }
+      .state-row { grid-template-columns: 1fr; gap: 0.25rem; }
+      .tuning { display: block; overflow-x: auto; }
+      .footer { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="nav">
+      <div class="brand" aria-label="WaveCam">
+        <span class="brand-dot"></span>
+        <span>WAVE</span><span>CAM</span>
+      </div>
+      <div class="nav-links" aria-label="Page sections">
+        <a href="#start">Start</a>
+        <a href="#controls">Controls</a>
+        <a href="#states">States</a>
+        <a href="#tuning">Tuning</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div class="hero-copy reveal">
+        <div class="eyeline">Operator guide</div>
+        <h1>Live feed. PTZ hold. Start auto.</h1>
+        <p>Use this sequence when the phone is connected to the Orin, the camera is on Ethernet, and you need to recover, aim, tune, or restart tracking without guessing what owns the camera.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#start">Start sequence</a>
+          <a class="button" href="#troubleshooting">Recover a bad lock</a>
+        </div>
+        <div class="hero-note">Current app tabs: Live, PTZ, Calibrate, Tools, Connect.</div>
+      </div>
+
+      <div class="rig-scene reveal" aria-label="WaveCam rig illustration">
+        <div class="moon"></div>
+        <div class="ocean-lines"></div>
+        <div class="wire"></div>
+        <div class="tripod">
+          <div class="camera-body"><div class="camera-lens"></div></div>
+          <div class="camera-base"></div>
+          <div class="leg"></div>
+          <div class="leg"></div>
+          <div class="leg"></div>
+        </div>
+        <div class="orin">172.20.10.8<br />192.168.100.10<br />:8088</div>
+        <div class="phone">
+          <div class="phone-screen">
+            <div class="phone-bar"></div>
+            <div class="phone-row"></div>
+            <div class="phone-feed"></div>
+            <div class="phone-buttons"><span></span><span></span><span></span><span></span></div>
+          </div>
+        </div>
+        <div class="hud-card">
+          <div class="hud-row"><span>LIVE</span><strong class="ok">ORIN</strong></div>
+          <div class="hud-row"><span>OWNER</span><strong>testbed</strong></div>
+          <div class="hud-row"><span>CMD</span><strong>p0/t0</strong></div>
+          <div class="hud-row"><span>STOP</span><strong class="kill">latched</strong></div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section id="start">
+        <div class="section-head">
+          <div>
+            <div class="kicker">01 Start</div>
+            <h2>The clean start path</h2>
+          </div>
+          <p>Start from known state. The phone can show video while safety is killed; tracking motion only resumes after the latch is cleared and auto PTZ is started.</p>
+        </div>
+
+        <div class="workflow">
+          <div class="flow-lane">
+            <div class="step"><div><strong>Connect the rig.</strong><span>Camera RJ45 to Orin camera LAN. Phone USB-C to Orin tether. Open WaveCam on the phone.</span></div></div>
+            <div class="step"><div><strong>Confirm API path.</strong><span>Connect tab should use <code>http://172.20.10.8:8088/api/v1</code>. LAN fallback is <code>http://192.168.1.155:8088/api/v1</code>.</span></div></div>
+            <div class="step"><div><strong>Check Live.</strong><span>Live should show video. Status should say ORIN when the app can reach the backend.</span></div></div>
+            <div class="step"><div><strong>If STOP LATCHED appears, hold resume.</strong><span>This clears KILL only. It does not automatically restart tracking.</span></div></div>
+            <div class="step"><div><strong>Open PTZ and tap Start Auto.</strong><span>That requests autonomous tracking ownership. The owner should move to <code>testbed</code> and state should become SEARCHING or TRACKING.</span></div></div>
+          </div>
+
+          <dl class="state-board">
+            <div class="state-row"><dt>Do first</dt><dd>Use Emergency Stop if the camera is moving the wrong direction or locking the wrong object.</dd></div>
+            <div class="state-row"><dt>Then</dt><dd>Use Stop PTZ to hold the camera still without latching global safety.</dd></div>
+            <div class="state-row"><dt>Then</dt><dd>Re-aim with joystick if needed. Joystick release is temporary and hands control back unless Stop PTZ is held.</dd></div>
+            <div class="state-row"><dt>Finally</dt><dd>Use Start Auto to let the tracker reacquire the target.</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section id="connection">
+        <div class="section-head">
+          <div>
+            <div class="kicker">02 Link</div>
+            <h2>Phone to Orin to camera</h2>
+          </div>
+          <p>The phone talks only to the Orin API. The Orin owns camera LAN, video ingest, PTZ commands, status, and MJPEG preview.</p>
+        </div>
+
+        <div class="connection-map" aria-label="Connection diagram">
+          <svg class="line-svg" viewBox="0 0 1000 420" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M210 120 C330 150, 360 260, 500 250 C645 242, 690 150, 790 118" />
+            <path d="M500 250 C520 210, 630 170, 790 118" />
+          </svg>
+          <div class="node n-phone"><div><strong>iPhone</strong><span>USB-C tether<br />172.20.10.1</span></div></div>
+          <div class="node n-orin"><div><strong>Jetson Orin</strong><span>Control API<br />172.20.10.8:8088</span></div></div>
+          <div class="node n-camera"><div><strong>PTZ Camera</strong><span>Ethernet<br />192.168.100.88</span></div></div>
+        </div>
+      </section>
+
+      <section id="controls">
+        <div class="section-head">
+          <div>
+            <div class="kicker">03 Controls</div>
+            <h2>What each PTZ control means</h2>
+          </div>
+          <p>The controls are deliberately separated by authority. Safety latch, manual hold, manual nudge, and autonomous tracking are different states.</p>
+        </div>
+
+        <div class="control-matrix">
+          <div class="control kill">
+            <div class="icon">■</div>
+            <strong>Emergency Stop</strong>
+            <p>Global safety latch. Sends pan/tilt stop and zoom stop, drops ownership, and blocks future motion until Resume.</p>
+          </div>
+          <div class="control stop">
+            <div class="icon">■</div>
+            <strong>Stop PTZ</strong>
+            <p>Manual hold. Camera stays stopped and the Stop PTZ button remains highlighted until Start Auto is pressed.</p>
+          </div>
+          <div class="control start">
+            <div class="icon">▶</div>
+            <strong>Start Auto</strong>
+            <p>Requests autonomous tracking ownership. It will refuse while KILL is latched; resume first.</p>
+          </div>
+          <div class="control">
+            <div class="icon">◇</div>
+            <strong>Joystick and zoom</strong>
+            <p>Temporary manual takeover. Release stops movement and restores autonomous owner when there is one.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="states">
+        <div class="section-head">
+          <div>
+            <div class="kicker">04 Readouts</div>
+            <h2>Do not infer. Read the state.</h2>
+          </div>
+          <p>If the camera appears wrong, use the state labels before changing settings. They tell you whether video, safety, PTZ authority, and tracking agree.</p>
+        </div>
+
+        <div class="grid-3">
+          <div class="panel">
+            <h3>Connection</h3>
+            <p><code>ORIN</code> means the app can reach the backend. <code>OFFLINE</code> means the app is not reaching the current base URL.</p>
+          </div>
+          <div class="panel">
+            <h3>Safety</h3>
+            <p><code>KILLED</code> means motion is blocked. The live feed may continue because video preview is not the same as motion authority.</p>
+          </div>
+          <div class="panel">
+            <h3>Owner</h3>
+            <p><code>idle</code> no PTZ writer. <code>manual</code> operator hold/nudge. <code>testbed</code> autonomous tracker owns PTZ.</p>
+          </div>
+          <div class="panel">
+            <h3>Command</h3>
+            <p><code>stop</code> means no pan/tilt command. <code>p#/t#</code> means pan and tilt velocities are being commanded.</p>
+          </div>
+          <div class="panel">
+            <h3>Tracking</h3>
+            <p><code>SEARCHING</code> no lock. <code>TRACKING</code> lock active. Confidence is the fusion score, not proof the right object is selected.</p>
+          </div>
+          <div class="panel">
+            <h3>Live feed</h3>
+            <p>Video comes from <code>/api/v1/preview.mjpeg</code>. A blank feed with ORIN connected is a preview/rendering problem, not necessarily a camera-control problem.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="tuning">
+        <div class="section-head">
+          <div>
+            <div class="kicker">05 Tuning</div>
+            <h2>Tracking trigger and weights</h2>
+          </div>
+          <p>The current iOS app does not expose a full tuning screen yet. Live-safe tuning is available on the Orin web/API path; persistent defaults live in <code>/data/projects/gimbal/wavecam/config.orin.servo.yaml</code>.</p>
+        </div>
+
+        <table class="tuning" aria-label="Tracking tuning keys">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Current default</th>
+              <th>Effect</th>
+              <th>When to change</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>fusion.require_person</td>
+              <td>false</td>
+              <td>Requires person detection before color can lock.</td>
+              <td>Turn on when orange objects like gear, skis, boards, or signs steal the lock.</td>
+            </tr>
+            <tr>
+              <td>fusion.match_dist</td>
+              <td>120</td>
+              <td>Maximum distance between color blob and person box for a validated match.</td>
+              <td>Lower it if nearby objects merge into the target; raise only if person/color alignment is too strict.</td>
+            </tr>
+            <tr>
+              <td>fusion.lock_threshold</td>
+              <td>0.60</td>
+              <td>Score required to enter TRACKING.</td>
+              <td>Raise it when the system locks too easily. Lower it only if it cannot acquire the correct shirt.</td>
+            </tr>
+            <tr>
+              <td>fusion.unlock_threshold</td>
+              <td>0.35</td>
+              <td>Score below which lock drops.</td>
+              <td>Raise it to drop bad locks faster. Keep it below lock_threshold.</td>
+            </tr>
+            <tr>
+              <td>color.min_area</td>
+              <td>60</td>
+              <td>Smallest color blob accepted.</td>
+              <td>Raise it when small orange noise causes false detections.</td>
+            </tr>
+            <tr>
+              <td>detector.conf</td>
+              <td>0.35</td>
+              <td>YOLO person confidence threshold.</td>
+              <td>Raise for fewer person false positives; lower for harder distance/acquisition conditions.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="grid-2" style="margin-top:1rem">
+          <div class="panel">
+            <h3>Hot tuning call</h3>
+            <div class="mini-terminal"><span class="prompt">$</span> curl -X POST http://127.0.0.1:8088/api/v1/config/hot \<br />
+  -H "Content-Type: application/json" \<br />
+  -d '{"patch":{"fusion.require_person":true,"fusion.lock_threshold":0.70}}'</div>
+          </div>
+          <div class="panel">
+            <h3>Persistent config</h3>
+            <p>Use the YAML path for defaults that should survive service restart. Hot config is for live testing without restart.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="troubleshooting">
+        <div class="section-head">
+          <div>
+            <div class="kicker">06 Recovery</div>
+            <h2>Common failures and the fastest safe response</h2>
+          </div>
+          <p>Use Stop PTZ when you want the camera held still but the system still reachable. Use Emergency Stop when physical motion itself is wrong or unsafe.</p>
+        </div>
+
+        <div class="troubleshoot">
+          <div class="fault-list">
+            <div class="fault"><strong>Camera tracks the wrong object.</strong><span>Hit Stop PTZ or Emergency Stop. If orange gear is stealing lock, enable <code>fusion.require_person</code> and consider raising <code>fusion.lock_threshold</code>.</span></div>
+            <div class="fault"><strong>No Live video.</strong><span>Check Local Network permission, Connect tab URL, USB tether, and whether <code>/api/v1/preview.mjpeg</code> returns bytes.</span></div>
+            <div class="fault"><strong>PTZ buttons do nothing.</strong><span>If safety is KILLED, resume first. If owner is not manual/testbed, read the owner field before repeating commands.</span></div>
+            <div class="fault"><strong>Tilt direction is wrong.</strong><span>Use <code>ptz.invert_tilt</code> in hot config or YAML. Current Orin servo config uses <code>true</code>.</span></div>
+          </div>
+
+          <div class="callout">
+            <h3>Wrong target reset</h3>
+            <ol>
+              <li>Tap Emergency Stop if the camera is moving unexpectedly.</li>
+              <li>Hold Resume only when you are ready for commands again.</li>
+              <li>Use PTZ joystick to put the correct target near frame center.</li>
+              <li>Tap Stop PTZ if you want to hold that framing.</li>
+              <li>Apply stricter tuning if false locks repeat.</li>
+              <li>Tap Start Auto and verify owner, state, confidence, and the live frame.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section id="quick-checks">
+        <div class="section-head">
+          <div>
+            <div class="kicker">07 Checks</div>
+            <h2>Shell checks when the app is unclear</h2>
+          </div>
+          <p>These are read-only or safety-stop checks. They are useful when the UI looks stale, frozen, or disconnected.</p>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <h3>Status and safety</h3>
+            <div class="mini-terminal"><span class="prompt">$</span> curl -s http://127.0.0.1:8088/api/v1/status<br />
+<span class="prompt">$</span> curl -X POST http://127.0.0.1:8088/api/v1/safety/kill<br />
+<span class="dim">Expect: state KILLED, owner idle, cmd stop.</span></div>
+          </div>
+          <div class="panel">
+            <h3>Links and video</h3>
+            <div class="mini-terminal"><span class="prompt">$</span> ip -brief addr show enP8p1s0<br />
+<span class="prompt">$</span> ip -brief addr show enx664842e70c66<br />
+<span class="prompt">$</span> timeout 2 curl -s http://127.0.0.1:8088/api/v1/preview.mjpeg | head -c 32 | xxd -p</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>WaveCam Operator Guide</span>
+      <span>Single-file HTML. No external assets.</span>
+    </footer>
+  </div>
+</body>
+</html>

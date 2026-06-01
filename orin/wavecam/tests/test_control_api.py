@@ -5,7 +5,8 @@ import types
 from fastapi.testclient import TestClient
 
 from wavecam.ptz_owner import PtzOwner
-from wavecam.ptz_visca import PAN_RIGHT, TILT_STOP
+from wavecam.control_api import map_axis
+from wavecam.ptz_visca import PAN_RIGHT, TILT_DOWN, TILT_STOP, TILT_UP
 from wavecam.web import build_app
 
 
@@ -205,7 +206,85 @@ def test_api_v1_ptz_velocity_accepts_zoom_only_manual_input():
     assert ("zoom", "tele", 4) in pipe.ptz.calls
 
 
-def test_api_v1_ptz_stop_preserves_autonomous_owner():
+def test_manual_tilt_axis_uses_joystick_semantics():
+    cfg = types.SimpleNamespace(
+        invert_tilt=False,
+        max_tilt_speed=8,
+        min_speed=1,
+        deadzone=0.05,
+    )
+
+    up_dir, up_speed = map_axis(0.5, cfg, "tilt")
+    down_dir, down_speed = map_axis(-0.5, cfg, "tilt")
+
+    assert (up_dir, up_speed) == (TILT_UP, 4)
+    assert (down_dir, down_speed) == (TILT_DOWN, 4)
+
+
+def test_manual_tilt_axis_can_be_physically_inverted():
+    cfg = types.SimpleNamespace(
+        invert_tilt=True,
+        max_tilt_speed=8,
+        min_speed=1,
+        deadzone=0.05,
+    )
+
+    up_dir, up_speed = map_axis(0.5, cfg, "tilt")
+    down_dir, down_speed = map_axis(-0.5, cfg, "tilt")
+
+    assert (up_dir, up_speed) == (TILT_DOWN, 4)
+    assert (down_dir, down_speed) == (TILT_UP, 4)
+
+
+def test_api_v1_ptz_velocity_requires_takeover_to_preempt_autonomous_owner():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    blocked = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "pan": 0.5, "tilt": 0.0},
+    )
+
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "owner_busy"
+    assert pipe.owner.owner == "testbed"
+
+    response = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "takeover": True, "pan": 0.5, "tilt": 0.0},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["status"]["ptz"]["owner"] == "manual"
+    assert pipe.owner.owner == "manual"
+    assert ("stop",) in pipe.ptz.calls
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+    assert ("pan_tilt", 5, 1, PAN_RIGHT, TILT_STOP) in pipe.ptz.calls
+
+
+def test_api_v1_ptz_stop_restores_autonomous_owner_after_takeover():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    response = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "takeover": True, "pan": 0.5, "tilt": 0.0},
+    )
+    assert response.status_code == 200
+    assert pipe.owner.owner == "manual"
+
+    stopped = client.post("/api/v1/ptz/stop", json={"hold": False, "source": "ios_native"})
+
+    assert stopped.status_code == 200
+    assert stopped.json()["status"]["ptz"]["owner"] == "testbed"
+    assert pipe.owner.owner == "testbed"
+
+
+def test_api_v1_ptz_stop_holds_manual_owner_to_block_autonomous_owner():
     client = make_client()
     pipe = client.app.state.pipeline
     assert pipe.owner.request("testbed") is True
@@ -215,18 +294,18 @@ def test_api_v1_ptz_stop_preserves_autonomous_owner():
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["status"]["ptz"]["owner"] == "testbed"
-    assert pipe.owner.owner == "testbed"
+    assert body["status"]["ptz"]["owner"] == "manual"
+    assert pipe.owner.owner == "manual"
     assert ("stop",) in pipe.ptz.calls
     assert ("zoom", "stop", 0) in pipe.ptz.calls
 
 
-def test_api_v1_ptz_stop_releases_manual_owner():
+def test_api_v1_ptz_stop_release_mode_releases_manual_owner():
     client = make_client()
     pipe = client.app.state.pipeline
     assert pipe.owner.request("manual") is True
 
-    response = client.post("/api/v1/ptz/stop", json={"source": "ios_native"})
+    response = client.post("/api/v1/ptz/stop", json={"hold": False, "source": "ios_native"})
 
     assert response.status_code == 200
     body = response.json()
@@ -235,6 +314,35 @@ def test_api_v1_ptz_stop_releases_manual_owner():
     assert pipe.owner.owner == "idle"
     assert ("stop",) in pipe.ptz.calls
     assert ("zoom", "stop", 0) in pipe.ptz.calls
+
+
+def test_api_v1_ptz_auto_starts_tracking_owner_from_manual_hold():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("manual") is True
+
+    response = client.post("/api/v1/ptz/auto", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["status"]["ptz"]["owner"] == "testbed"
+    assert body["status"]["session"]["state"] == "SEARCHING"
+    assert pipe.owner.owner == "testbed"
+    assert ("stop",) in pipe.ptz.calls
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+
+
+def test_api_v1_ptz_auto_refuses_while_killed():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    client.post("/api/v1/safety/kill", json={"reason": "test"})
+    response = client.post("/api/v1/ptz/auto", json={})
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "killed"
+    assert pipe.owner.owner == "idle"
 
 
 def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
@@ -261,6 +369,15 @@ def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
     assert blocked.status_code == 409
     assert blocked.json()["code"] == "owner_busy"
 
+    takeover = client.post(
+        "/api/v1/ptz/zoom",
+        json={"requested_owner": "manual", "takeover": True, "mode": "velocity", "value": 0.5},
+    )
+
+    assert takeover.status_code == 200
+    assert takeover.json()["status"]["ptz"]["owner"] == "manual"
+    assert ("zoom", "tele", 4) in pipe.ptz.calls
+
 
 def test_api_v1_ptz_zoom_refuses_while_killed():
     client = make_client()
@@ -286,6 +403,8 @@ def test_api_v1_config_hot_applies_known_keys_only():
                 "ptz.deadzone": 0.10,
                 "ptz.max_pan_speed": 12,
                 "fusion.lock_threshold": 0.70,
+                "fusion.require_person": True,
+                "fusion.match_dist": 80,
                 "color.min_area": 120,
                 "web.show_mask": False,
             }
@@ -297,6 +416,8 @@ def test_api_v1_config_hot_applies_known_keys_only():
     assert pipe.cfg.ptz.deadzone == 0.10
     assert pipe.cfg.ptz.max_pan_speed == 12
     assert pipe.cfg.fusion.lock_threshold == 0.70
+    assert pipe.cfg.fusion.require_person is True
+    assert pipe.cfg.fusion.match_dist == 80
     assert pipe.cfg.color.min_area == 120
     assert pipe.state.show_mask is False
 
@@ -346,8 +467,14 @@ if __name__ == "__main__":
     test_api_v1_safety_resume_does_not_restart_tracking_owner()
     test_api_v1_ptz_velocity_is_owner_gated_and_normalized()
     test_api_v1_ptz_velocity_accepts_zoom_only_manual_input()
-    test_api_v1_ptz_stop_preserves_autonomous_owner()
-    test_api_v1_ptz_stop_releases_manual_owner()
+    test_manual_tilt_axis_uses_joystick_semantics()
+    test_manual_tilt_axis_can_be_physically_inverted()
+    test_api_v1_ptz_velocity_requires_takeover_to_preempt_autonomous_owner()
+    test_api_v1_ptz_stop_restores_autonomous_owner_after_takeover()
+    test_api_v1_ptz_stop_holds_manual_owner_to_block_autonomous_owner()
+    test_api_v1_ptz_stop_release_mode_releases_manual_owner()
+    test_api_v1_ptz_auto_starts_tracking_owner_from_manual_hold()
+    test_api_v1_ptz_auto_refuses_while_killed()
     test_api_v1_ptz_zoom_endpoint_is_owner_gated()
     test_api_v1_ptz_zoom_refuses_while_killed()
     test_api_v1_config_hot_applies_known_keys_only()

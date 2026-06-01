@@ -10,6 +10,7 @@ struct PTZView: View {
     @State private var knobOffset: CGSize = .zero
     @State private var zoomCommand: Double = 0
     @State private var zoomRepeatTask: Task<Void, Never>?
+    @State private var commandState = PTZCommandState.idle
 
     private let zoomRepeatIntervalNs: UInt64 = 300_000_000
     private var isLandscapeControl: Bool {
@@ -36,6 +37,7 @@ struct PTZView: View {
             joystickCard()
             zoomCard()
             actionRow()
+            PTZControlFeedback(commandState: commandState, lastError: client.lastError)
             PTZEmergencyStopButton()
         }
         .padding(.horizontal, 16)
@@ -54,6 +56,7 @@ struct PTZView: View {
             VStack(spacing: 10) {
                 zoomCard()
                 actionRow()
+                PTZControlFeedback(commandState: commandState, lastError: client.lastError)
                 PTZEmergencyStopButton(compact: true)
             }
             .frame(width: 220)
@@ -72,7 +75,7 @@ struct PTZView: View {
             joystickSize: joystickSize,
             compact: compact,
             onCommand: sendVelocity,
-            onStop: stopPTZ
+            onStop: releaseManualPTZ
         )
     }
 
@@ -85,7 +88,10 @@ struct PTZView: View {
 
     private func actionRow() -> some View {
         PTZActionRow(
-            onStop: stopPTZ,
+            isAuto: commandState == .auto || client.owner.isAutonomousPTZOwner,
+            isStopped: commandState == .held,
+            onStartAuto: startAutoPTZ,
+            onStop: holdPTZ,
             onRefresh: { Task { await client.refresh() } }
         )
     }
@@ -93,26 +99,49 @@ struct PTZView: View {
     private func sendVelocity(pan: Double, tilt: Double) {
         self.pan = pan
         self.tilt = tilt
+        commandState = .manual
         Task { await client.ptzVelocity(pan: pan, tilt: tilt) }
     }
 
-    private func stopPTZ() {
+    private func releaseManualPTZ() {
+        pan = 0
+        tilt = 0
+        knobOffset = .zero
+        if commandState != .held {
+            commandState = .idle
+        }
+        Task { await client.ptzStop(hold: false) }
+    }
+
+    private func holdPTZ() {
         pan = 0
         tilt = 0
         knobOffset = .zero
         zoomCommand = 0
+        commandState = .held
         zoomRepeatTask?.cancel()
         zoomRepeatTask = nil
-        Task {
-            await client.ptzStop()
-            await client.zoom(0)
-        }
+        Task { await client.ptzStop(hold: true) }
+    }
+
+    private func startAutoPTZ() {
+        pan = 0
+        tilt = 0
+        knobOffset = .zero
+        zoomCommand = 0
+        commandState = .auto
+        zoomRepeatTask?.cancel()
+        zoomRepeatTask = nil
+        Task { await client.ptzStartAuto() }
     }
 
     private func updateZoom(_ value: Double) {
         zoomRepeatTask?.cancel()
         zoomRepeatTask = nil
 
+        if value != 0 {
+            commandState = .manual
+        }
         Task { await client.zoom(value) }
         guard value != 0 else { return }
 
@@ -133,6 +162,13 @@ struct PTZView: View {
         zoomCommand = 0
         Task { await client.zoom(0) }
     }
+}
+
+private enum PTZCommandState {
+    case idle
+    case manual
+    case held
+    case auto
 }
 
 private struct PTZHeader: View {
@@ -428,17 +464,27 @@ private struct PTZZoomCard: View {
 }
 
 private struct PTZActionRow: View {
+    let isAuto: Bool
+    let isStopped: Bool
+    let onStartAuto: () -> Void
     let onStop: () -> Void
     let onRefresh: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             Button {
+                onStartAuto()
+            } label: {
+                Label("Start Auto", systemImage: "play.fill")
+            }
+            .buttonStyle(PTZActionButtonStyle(tint: WC.ok, filled: isAuto && !isStopped))
+
+            Button {
                 onStop()
             } label: {
                 Label("Stop PTZ", systemImage: "stop.fill")
             }
-            .buttonStyle(PTZActionButtonStyle(tint: WC.kill, filled: false))
+            .buttonStyle(PTZActionButtonStyle(tint: WC.kill, filled: isStopped))
 
             Button {
                 onRefresh()
@@ -447,6 +493,44 @@ private struct PTZActionRow: View {
             }
             .buttonStyle(PTZActionButtonStyle(tint: WC.ok, filled: false))
         }
+    }
+}
+
+private struct PTZControlFeedback: View {
+    let commandState: PTZCommandState
+    let lastError: String?
+
+    var body: some View {
+        if let lastError {
+            PTZFeedbackPill(text: lastError, color: WC.warn, icon: "exclamationmark.triangle.fill")
+        } else if commandState == .held {
+            PTZFeedbackPill(text: "PTZ held. Tap Start Auto to resume tracking.", color: WC.kill, icon: "stop.fill")
+        } else if commandState == .auto {
+            PTZFeedbackPill(text: "Auto PTZ start requested.", color: WC.ok, icon: "play.fill")
+        }
+    }
+}
+
+private struct PTZFeedbackPill: View {
+    let text: String
+    let color: Color
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .bold))
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(color)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(color.opacity(0.14), in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.35)))
     }
 }
 
@@ -509,5 +593,11 @@ private extension Double {
 
     var signedPTZ: String {
         formatted(.number.sign(strategy: .always()).precision(.fractionLength(2)))
+    }
+}
+
+private extension String {
+    var isAutonomousPTZOwner: Bool {
+        self == "testbed" || self == "vision_follow" || self == "gps_tracker"
     }
 }

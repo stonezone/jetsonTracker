@@ -1,5 +1,5 @@
 import SwiftUI
-import WebKit
+import UIKit
 
 /// Live/Monitor screen: operator preview, tracking HUD, and emergency stop.
 struct LiveView: View {
@@ -100,51 +100,81 @@ private struct FeedBackground: View {
 private struct MJPEGPreviewView: UIViewRepresentable {
     let url: URL
 
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.allowsInlineMediaPlayback = true
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.isOpaque = false
-        webView.backgroundColor = UIColor(Color(hex: 0x0B1218))
-        webView.scrollView.backgroundColor = UIColor(Color(hex: 0x0B1218))
-        webView.scrollView.isScrollEnabled = false
-        webView.loadHTMLString(html(for: url), baseURL: nil)
-        return webView
+    func makeUIView(context: Context) -> UIImageView {
+        let imageView = UIImageView()
+        imageView.backgroundColor = UIColor(Color(hex: 0x0B1218))
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        context.coordinator.start(url: url, imageView: imageView)
+        return imageView
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.loadedURL != url else { return }
-        context.coordinator.loadedURL = url
-        webView.loadHTMLString(html(for: url), baseURL: nil)
+    func updateUIView(_ imageView: UIImageView, context: Context) {
+        context.coordinator.start(url: url, imageView: imageView)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(loadedURL: url)
+        Coordinator()
     }
 
-    final class Coordinator {
-        var loadedURL: URL
+    static func dismantleUIView(_ uiView: UIImageView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
 
-        init(loadedURL: URL) {
-            self.loadedURL = loadedURL
+    final class Coordinator: NSObject, URLSessionDataDelegate {
+        private var loadedURL: URL?
+        private var buffer = Data()
+        private var session: URLSession?
+        private var task: URLSessionDataTask?
+        private weak var imageView: UIImageView?
+
+        func start(url: URL, imageView: UIImageView) {
+            self.imageView = imageView
+            guard loadedURL != url else { return }
+            stop()
+            loadedURL = url
+            let configuration = URLSessionConfiguration.default
+            configuration.timeoutIntervalForRequest = 10
+            let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+            self.session = session
+            task = session.dataTask(with: url)
+            task?.resume()
         }
-    }
 
-    private func html(for url: URL) -> String {
-        """
-        <!doctype html>
-        <html>
-        <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-        html,body{margin:0;width:100%;height:100%;background:#0b1218;overflow:hidden}
-        img{width:100vw;height:100vh;object-fit:cover;display:block}
-        </style>
-        </head>
-        <body><img src="\(url.absoluteString)" alt=""></body>
-        </html>
-        """
+        func stop() {
+            task?.cancel()
+            session?.invalidateAndCancel()
+            task = nil
+            session = nil
+            buffer.removeAll(keepingCapacity: false)
+            loadedURL = nil
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            buffer.append(data)
+            drainFrames()
+        }
+
+        private func drainFrames() {
+            let startMarker = Data([0xff, 0xd8])
+            let endMarker = Data([0xff, 0xd9])
+
+            while
+                let start = buffer.range(of: startMarker),
+                let end = buffer.range(of: endMarker, in: start.upperBound..<buffer.endIndex)
+            {
+                let frame = buffer[start.lowerBound..<end.upperBound]
+                buffer.removeSubrange(buffer.startIndex..<end.upperBound)
+                guard let image = UIImage(data: Data(frame)) else { continue }
+                DispatchQueue.main.async { [weak imageView] in
+                    imageView?.image = image
+                }
+            }
+
+            if buffer.count > 2_000_000 {
+                buffer.removeAll(keepingCapacity: true)
+            }
+        }
     }
 }
 

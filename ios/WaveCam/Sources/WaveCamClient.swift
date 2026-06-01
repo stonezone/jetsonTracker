@@ -194,21 +194,28 @@ final class WaveCamClient {
 
     func ptzVelocity(pan: Double, tilt: Double, zoom: Double = 0) async {
         guard mode == .live else { return }
-        _ = try? await post("ptz/velocity", body: [
-            "requested_owner": "manual", "pan": pan, "tilt": tilt, "zoom": zoom,
+        await sendControl("ptz/velocity", body: [
+            "requested_owner": "manual", "takeover": true,
+            "pan": pan, "tilt": tilt, "zoom": zoom,
             "deadman_ms": 800, "source": "ios_native"
         ])
     }
 
-    func ptzStop() async {
+    func ptzStop(hold: Bool = true) async {
         guard mode == .live else { return }
-        _ = try? await post("ptz/stop", body: ["source": "ios_native"])
+        await sendControl("ptz/stop", body: ["hold": hold, "source": "ios_native"])
+    }
+
+    func ptzStartAuto() async {
+        guard mode == .live else { return }
+        await sendControl("ptz/auto", body: ["source": "ios_native"])
     }
 
     func zoom(_ value: Double) async {
         guard mode == .live else { return }
-        _ = try? await post("ptz/zoom", body: [
-            "requested_owner": "manual", "mode": "velocity", "value": value, "source": "ios_native"
+        await sendControl("ptz/zoom", body: [
+            "requested_owner": "manual", "takeover": true,
+            "mode": "velocity", "value": value, "source": "ios_native"
         ])
     }
 
@@ -267,6 +274,15 @@ final class WaveCamClient {
         }
     }
 
+    private func sendControl(_ path: String, body: [String: Any]) async {
+        do {
+            _ = try await post(path, body: body)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     @discardableResult
     private func post(_ path: String, body: [String: Any]) async throws -> Data {
         var req = URLRequest(url: baseURL.appending(path: path))
@@ -275,7 +291,26 @@ final class WaveCamClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         authorize(&req)
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, _) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw WaveCamAPIError(statusCode: http.statusCode, data: data)
+        }
         return data
+    }
+}
+
+struct WaveCamAPIError: LocalizedError {
+    let statusCode: Int
+    let data: Data
+
+    var errorDescription: String? {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return "HTTP \(statusCode)"
+        }
+        let code = object["code"] as? String
+        let message = object["message"] as? String
+        return [code, message].compactMap(\.self).joined(separator: ": ")
     }
 }
