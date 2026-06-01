@@ -4,20 +4,42 @@ import WebKit
 /// Live/Monitor screen: operator preview, tracking HUD, and emergency stop.
 struct LiveView: View {
     @Environment(WaveCamClient.self) private var client
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var isLandscapeControl: Bool {
+        verticalSizeClass == .compact
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                LiveFeedCard(status: client.status, previewURL: client.previewURL)
-                LiveTelemetryGrid(status: client.status)
-                EmergencyStopButton()
+        Group {
+            if isLandscapeControl {
+                HStack(alignment: .top, spacing: 12) {
+                    LiveFeedCard(status: client.status, previewURL: client.previewURL, height: nil)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 10) {
+                        LiveTelemetryGrid(status: client.status, axis: .vertical)
+                        EmergencyStopButton(compact: true)
+                    }
+                    .frame(width: 190)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+            } else {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        LiveFeedCard(status: client.status, previewURL: client.previewURL)
+                        LiveTelemetryGrid(status: client.status)
+                        EmergencyStopButton()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    .padding(.bottom, 22)
+                }
+                .scrollIndicators(.hidden)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 6)
-            .padding(.bottom, 22)
         }
         .background(WC.bg.ignoresSafeArea())
-        .scrollIndicators(.hidden)
         .task { await client.refresh() }
     }
 }
@@ -25,11 +47,19 @@ struct LiveView: View {
 private struct LiveFeedCard: View {
     let status: WCStatus?
     let previewURL: URL?
+    var height: CGFloat? = 430
 
     private var isLocked: Bool { status?.tracking.locked ?? true }
     private var isRecording: Bool { status?.media?.recording ?? true }
 
     var body: some View {
+        content
+            .clipShape(.rect(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.14)))
+            .shadow(color: .black.opacity(0.32), radius: 24, y: 14)
+    }
+
+    private var feed: some View {
         ZStack {
             FeedBackground(previewURL: previewURL)
             FeedSubjectOverlay(isLocked: isLocked, confidence: status?.tracking.confidence)
@@ -37,10 +67,15 @@ private struct LiveFeedCard: View {
             FeedTopTags(isLocked: isLocked, isRecording: isRecording)
             FeedBottomStrip(status: status)
         }
-        .frame(height: 430)
-        .clipShape(.rect(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.14)))
-        .shadow(color: .black.opacity(0.32), radius: 24, y: 14)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let height {
+            feed.frame(height: height)
+        } else {
+            feed.aspectRatio(16 / 9, contentMode: .fit)
+        }
     }
 }
 
@@ -382,14 +417,30 @@ private struct FeedMetric: View {
 }
 
 private struct LiveTelemetryGrid: View {
+    enum Axis {
+        case horizontal
+        case vertical
+    }
+
     let status: WCStatus?
+    var axis: Axis = .horizontal
 
     var body: some View {
-        HStack(spacing: 8) {
-            StatusPill(title: "OWNER", value: status?.ptz.owner.uppercased() ?? "VISION", color: WC.brand)
-            StatusPill(title: "MODE", value: status?.session.mode?.uppercased() ?? "VISION_GPS", color: WC.ok)
-            StatusPill(title: "PTZ", value: ptzState, color: status?.ptz.enabled == false ? WC.warn : WC.ok)
+        Group {
+            switch axis {
+            case .horizontal:
+                HStack(spacing: 8) { telemetryPills }
+            case .vertical:
+                VStack(spacing: 8) { telemetryPills }
+            }
         }
+    }
+
+    @ViewBuilder
+    private var telemetryPills: some View {
+        StatusPill(title: "OWNER", value: status?.ptz.owner.uppercased() ?? "VISION", color: WC.brand)
+        StatusPill(title: "MODE", value: status?.session.mode?.uppercased() ?? "VISION_GPS", color: WC.ok)
+        StatusPill(title: "PTZ", value: ptzState, color: status?.ptz.enabled == false ? WC.warn : WC.ok)
     }
 
     private var ptzState: String {
@@ -424,6 +475,7 @@ private struct StatusPill: View {
 
 private struct EmergencyStopButton: View {
     @Environment(WaveCamClient.self) private var client
+    var compact = false
 
     var body: some View {
         Button {
@@ -434,13 +486,13 @@ private struct EmergencyStopButton: View {
                     .fill(.white)
                     .frame(width: 13, height: 13)
                 Text("Emergency Stop")
-                    .font(.system(size: 16, weight: .bold))
-                    .tracking(3)
+                    .font(.system(size: compact ? 13 : 16, weight: .bold))
+                    .tracking(compact ? 2 : 3)
                     .textCase(.uppercase)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, compact ? 13 : 16)
             .background(
                 LinearGradient(colors: [Color(hex: 0xFF5247), Color(hex: 0xE22B20)],
                                startPoint: .top,

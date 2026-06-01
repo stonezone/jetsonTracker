@@ -3,41 +3,91 @@ import SwiftUI
 /// Manual PTZ screen: velocity joystick, zoom control, command readout, and safety stop.
 struct PTZView: View {
     @Environment(WaveCamClient.self) private var client
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var pan: Double = 0
     @State private var tilt: Double = 0
     @State private var knobOffset: CGSize = .zero
-    @State private var zoomVelocity: Double = 0
+    @State private var zoomCommand: Double = 0
+    @State private var zoomRepeatTask: Task<Void, Never>?
+
+    private let zoomRepeatIntervalNs: UInt64 = 300_000_000
+    private var isLandscapeControl: Bool {
+        verticalSizeClass == .compact
+    }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                PTZHeader(status: client.status)
-                PTZJoystickCard(
-                    pan: $pan,
-                    tilt: $tilt,
-                    knobOffset: $knobOffset,
-                    owner: client.owner,
-                    onCommand: sendVelocity,
-                    onStop: stopPTZ
-                )
-                PTZZoomCard(zoomVelocity: $zoomVelocity)
-                    .onChange(of: zoomVelocity) { _, newValue in
-                        Task { await client.zoom(newValue) }
-                    }
-                PTZActionRow(
-                    onStop: stopPTZ,
-                    onRefresh: { Task { await client.refresh() } }
-                )
-                PTZEmergencyStopButton()
+            if isLandscapeControl {
+                landscapeControls
+            } else {
+                portraitControls
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 6)
-            .padding(.bottom, 22)
         }
         .background(WC.bg.ignoresSafeArea())
         .scrollIndicators(.hidden)
         .task { await client.refresh() }
+        .onDisappear { stopZoomCommand() }
+    }
+
+    private var portraitControls: some View {
+        VStack(spacing: 12) {
+            PTZHeader(status: client.status)
+            joystickCard()
+            zoomCard()
+            actionRow()
+            PTZEmergencyStopButton()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 22)
+    }
+
+    private var landscapeControls: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 10) {
+                PTZHeader(status: client.status)
+                joystickCard(joystickSize: 176, compact: true)
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 10) {
+                zoomCard()
+                actionRow()
+                PTZEmergencyStopButton(compact: true)
+            }
+            .frame(width: 220)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+    }
+
+    private func joystickCard(joystickSize: CGFloat = 230, compact: Bool = false) -> some View {
+        PTZJoystickCard(
+            pan: $pan,
+            tilt: $tilt,
+            knobOffset: $knobOffset,
+            owner: client.owner,
+            joystickSize: joystickSize,
+            compact: compact,
+            onCommand: sendVelocity,
+            onStop: stopPTZ
+        )
+    }
+
+    private func zoomCard() -> some View {
+        PTZZoomCard(zoomCommand: $zoomCommand)
+            .onChange(of: zoomCommand) { _, newValue in
+                updateZoom(newValue)
+            }
+    }
+
+    private func actionRow() -> some View {
+        PTZActionRow(
+            onStop: stopPTZ,
+            onRefresh: { Task { await client.refresh() } }
+        )
     }
 
     private func sendVelocity(pan: Double, tilt: Double) {
@@ -50,11 +100,38 @@ struct PTZView: View {
         pan = 0
         tilt = 0
         knobOffset = .zero
-        zoomVelocity = 0
+        zoomCommand = 0
+        zoomRepeatTask?.cancel()
+        zoomRepeatTask = nil
         Task {
             await client.ptzStop()
             await client.zoom(0)
         }
+    }
+
+    private func updateZoom(_ value: Double) {
+        zoomRepeatTask?.cancel()
+        zoomRepeatTask = nil
+
+        Task { await client.zoom(value) }
+        guard value != 0 else { return }
+
+        // The backend has a manual deadman timer, so nonzero zoom must be refreshed
+        // while the control remains away from HOLD.
+        zoomRepeatTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: zoomRepeatIntervalNs)
+                guard !Task.isCancelled else { return }
+                await client.zoom(value)
+            }
+        }
+    }
+
+    private func stopZoomCommand() {
+        zoomRepeatTask?.cancel()
+        zoomRepeatTask = nil
+        zoomCommand = 0
+        Task { await client.zoom(0) }
     }
 }
 
@@ -105,32 +182,46 @@ private struct PTZJoystickCard: View {
     @Binding var knobOffset: CGSize
 
     let owner: String
+    var joystickSize: CGFloat = 230
+    var compact = false
     let onCommand: (Double, Double) -> Void
     let onStop: () -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Manual PTZ - release to stop")
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.4)
-                .foregroundStyle(WC.muted)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: compact ? 8 : 12) {
+            HStack {
+                Text("Manual PTZ - release to stop")
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(WC.muted)
+                Spacer()
+                if compact {
+                    Text("OWNER \(owner.uppercased())")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundStyle(WC.brand)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             JoystickPad(
                 pan: $pan,
                 tilt: $tilt,
                 knobOffset: $knobOffset,
+                diameter: joystickSize,
                 onCommand: onCommand,
                 onStop: onStop
             )
 
-            HStack(spacing: 8) {
-                PTZReadoutCell(label: "PAN", value: pan.signedPTZ)
-                PTZReadoutCell(label: "TILT", value: tilt.signedPTZ)
-                PTZReadoutCell(label: "OWNER", value: owner.uppercased(), tint: WC.brand)
+            if !compact {
+                HStack(spacing: 8) {
+                    PTZReadoutCell(label: "PAN", value: pan.signedPTZ)
+                    PTZReadoutCell(label: "TILT", value: tilt.signedPTZ)
+                    PTZReadoutCell(label: "OWNER", value: owner.uppercased(), tint: WC.brand)
+                }
             }
         }
-        .padding(14)
+        .padding(compact ? 12 : 14)
         .background(WC.panel, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
@@ -141,12 +232,14 @@ private struct JoystickPad: View {
     @Binding var tilt: Double
     @Binding var knobOffset: CGSize
 
+    let diameter: CGFloat
     let onCommand: (Double, Double) -> Void
     let onStop: () -> Void
 
-    private let diameter: CGFloat = 230
-    private let commandRadius: CGFloat = 82
     private let deadzone: Double = 0.05
+    private var commandRadius: CGFloat {
+        diameter * 0.3565
+    }
 
     var body: some View {
         ZStack {
@@ -164,15 +257,15 @@ private struct JoystickPad: View {
             Circle()
                 .stroke(style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 .foregroundStyle(Color.white.opacity(0.1))
-                .padding(30)
+                .padding(diameter * 0.13)
             Rectangle()
                 .fill(Color.white.opacity(0.08))
-                .frame(width: 1, height: diameter - 64)
+                .frame(width: 1, height: diameter * 0.72)
             Rectangle()
                 .fill(Color.white.opacity(0.08))
-                .frame(width: diameter - 64, height: 1)
-            JoystickLabels()
-            JoystickNub()
+                .frame(width: diameter * 0.72, height: 1)
+            JoystickLabels(diameter: diameter)
+            JoystickNub(size: diameter * 0.32)
                 .offset(knobOffset)
         }
         .frame(width: diameter, height: diameter)
@@ -206,16 +299,18 @@ private struct JoystickPad: View {
 }
 
 private struct JoystickLabels: View {
+    let diameter: CGFloat
+
     var body: some View {
         ZStack {
             Text("TILT +")
-                .offset(y: -101)
+                .offset(y: -diameter * 0.44)
             Text("TILT -")
-                .offset(y: 101)
+                .offset(y: diameter * 0.44)
             Text("PAN -")
-                .offset(x: -98)
+                .offset(x: -diameter * 0.43)
             Text("PAN +")
-                .offset(x: 98)
+                .offset(x: diameter * 0.43)
         }
         .font(.system(size: 9, weight: .semibold))
         .tracking(1.3)
@@ -224,6 +319,8 @@ private struct JoystickLabels: View {
 }
 
 private struct JoystickNub: View {
+    let size: CGFloat
+
     var body: some View {
         ZStack {
             Circle()
@@ -239,9 +336,9 @@ private struct JoystickNub: View {
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
             Circle()
                 .stroke(Color.white.opacity(0.38), lineWidth: 1)
-                .frame(width: 14, height: 14)
+                .frame(width: size * 0.19, height: size * 0.19)
         }
-        .frame(width: 74, height: 74)
+        .frame(width: size, height: size)
         .shadow(color: WC.brand.opacity(0.45), radius: 18, y: 8)
     }
 }
@@ -271,23 +368,23 @@ private struct PTZReadoutCell: View {
 }
 
 private struct PTZZoomCard: View {
-    @Binding var zoomVelocity: Double
+    @Binding var zoomCommand: Double
 
     var body: some View {
         VStack(spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("ZOOM VELOCITY")
+                    Text("ZOOM")
                         .font(.system(size: 10, weight: .semibold))
                         .tracking(1.4)
                         .foregroundStyle(WC.muted)
-                    Text(zoomVelocityLabel)
+                    Text(zoomCommandLabel)
                         .font(.system(size: 18, weight: .semibold, design: .monospaced))
                         .foregroundStyle(WC.brand)
                 }
                 Spacer()
                 Button {
-                    zoomVelocity = 0
+                    zoomCommand = 0
                 } label: {
                     Image(systemName: "pause.fill")
                         .font(.system(size: 13, weight: .bold))
@@ -297,18 +394,18 @@ private struct PTZZoomCard: View {
                 .foregroundStyle(WC.txt)
                 .background(WC.panel2, in: .rect(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.line))
-                .accessibilityLabel("Stop zoom")
+                .accessibilityLabel("Hold zoom")
             }
 
-            Slider(value: $zoomVelocity, in: -1...1, step: 0.05)
+            Slider(value: $zoomCommand, in: -1...1, step: 0.05)
                 .tint(WC.brand)
 
             HStack {
-                Text("WIDE")
+                Text("OUT")
                 Spacer()
                 Text("HOLD")
                 Spacer()
-                Text("TELE")
+                Text("IN")
             }
             .font(.system(size: 9, weight: .semibold))
             .tracking(1.2)
@@ -319,8 +416,14 @@ private struct PTZZoomCard: View {
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 
-    private var zoomVelocityLabel: String {
-        zoomVelocity.signedPTZ
+    private var zoomCommandLabel: String {
+        if zoomCommand > 0 {
+            return "IN \(zoomCommand.signedPTZ)"
+        }
+        if zoomCommand < 0 {
+            return "OUT \(abs(zoomCommand).formatted(.number.precision(.fractionLength(2))))"
+        }
+        return "HOLD"
     }
 }
 
@@ -367,6 +470,7 @@ private struct PTZActionButtonStyle: ButtonStyle {
 
 private struct PTZEmergencyStopButton: View {
     @Environment(WaveCamClient.self) private var client
+    var compact = false
 
     var body: some View {
         Button {
@@ -376,10 +480,10 @@ private struct PTZEmergencyStopButton: View {
                 Image(systemName: "stop.fill")
                     .font(.system(size: 13, weight: .black))
                 Text("Emergency Stop")
-                    .font(.system(size: 16, weight: .black))
+                    .font(.system(size: compact ? 13 : 16, weight: .black))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, compact ? 13 : 16)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
