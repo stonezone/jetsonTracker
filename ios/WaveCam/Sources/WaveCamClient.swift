@@ -8,10 +8,15 @@ enum WaveCamDefaults {
     static let baseURLKey = "wavecam.baseURL"
     static let tokenKey = "wavecam.authToken"
     static let mockFallbackKey = "wavecam.mockFallbackEnabled"
-    static let legacyBaseURLMigrationKey = "wavecam.didMigrateLegacyLANBaseURL"
 
     static var baseURL: URL {
         URL(string: baseURLString)!
+    }
+
+    static var fallbackBaseURLs: [URL] {
+        [
+            URL(string: legacyLANBaseURLString)
+        ].compactMap(\.self)
     }
 }
 
@@ -121,6 +126,7 @@ final class WaveCamClient {
     private(set) var lastError: String?
 
     private var mockKilled = false
+    private var configuredBaseURL: URL
 
     init(mode: Mode = .live,
          baseURL: URL = WaveCamDefaults.baseURL,
@@ -128,6 +134,7 @@ final class WaveCamClient {
          mockFallbackEnabled: Bool = false) {
         self.mode = mode
         self.baseURL = baseURL
+        self.configuredBaseURL = baseURL
         self.token = token
         self.mockFallbackEnabled = mockFallbackEnabled
     }
@@ -137,6 +144,7 @@ final class WaveCamClient {
 
     func configure(mode: Mode, baseURL: URL, token: String?, mockFallbackEnabled: Bool) {
         self.mode = mode
+        self.configuredBaseURL = baseURL
         self.baseURL = baseURL
         self.token = normalizedToken(token)
         self.mockFallbackEnabled = mockFallbackEnabled
@@ -152,7 +160,7 @@ final class WaveCamClient {
             return
         }
         do {
-            let data = try await get("status")
+            let data = try await getWithFallback("status")
             status = try Self.decoder.decode(WCStatus.self, from: data)
             connected = true
             lastError = nil
@@ -232,12 +240,31 @@ final class WaveCamClient {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func get(_ path: String) async throws -> Data {
-        var req = URLRequest(url: baseURL.appending(path: path))
-        req.timeoutInterval = 5
-        authorize(&req)
-        let (data, _) = try await URLSession.shared.data(for: req)
-        return data
+    private func getWithFallback(_ path: String) async throws -> Data {
+        var lastError: Error?
+        for candidate in apiCandidates() {
+            do {
+                var req = URLRequest(url: candidate.appending(path: path))
+                req.timeoutInterval = 3
+                authorize(&req)
+                let (data, _) = try await URLSession.shared.data(for: req)
+                baseURL = candidate
+                return data
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? URLError(.cannotConnectToHost)
+    }
+
+    private func apiCandidates() -> [URL] {
+        var seen = Set<String>()
+        return ([configuredBaseURL] + WaveCamDefaults.fallbackBaseURLs).filter { url in
+            let key = url.absoluteString
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
+            return true
+        }
     }
 
     @discardableResult

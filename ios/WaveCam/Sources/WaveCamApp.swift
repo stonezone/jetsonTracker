@@ -6,7 +6,6 @@ struct WaveCamApp: App {
     @AppStorage(WaveCamDefaults.baseURLKey) private var baseURLString = WaveCamDefaults.baseURLString
     @AppStorage(WaveCamDefaults.tokenKey) private var token = ""
     @AppStorage(WaveCamDefaults.mockFallbackKey) private var mockFallbackEnabled = false
-    @AppStorage(WaveCamDefaults.legacyBaseURLMigrationKey) private var didMigrateLegacyBaseURL = false
 
     @State private var client = WaveCamClient(mode: .live)
 
@@ -27,10 +26,6 @@ struct WaveCamApp: App {
     }
 
     private func applyStoredSettings() {
-        if !didMigrateLegacyBaseURL && baseURLString == WaveCamDefaults.legacyLANBaseURLString {
-            baseURLString = WaveCamDefaults.baseURLString
-            didMigrateLegacyBaseURL = true
-        }
         let mode = WaveCamClient.Mode(rawValue: modeRaw) ?? .live
         let baseURL = URL(string: baseURLString) ?? WaveCamDefaults.baseURL
         client.configure(

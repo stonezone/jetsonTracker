@@ -246,8 +246,8 @@ class ControlApiAdapter:
         self.cancel_manual_deadman()
         self.pipeline.ptz.stop()
         self.pipeline.ptz.zoom("stop")
-        if self.pipeline.owner.owner != IDLE:
-            self.pipeline.owner.release(self.pipeline.owner.owner)
+        if self.pipeline.owner.owner == "manual":
+            self.pipeline.owner.release("manual")
 
     def send_manual_velocity(self, req: VelocityRequest) -> None:
         cfg = self.pipeline.cfg.ptz

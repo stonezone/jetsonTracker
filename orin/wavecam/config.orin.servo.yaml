@@ -17,7 +17,7 @@ ptz:
   address: 1
   reset_sequence: true
   invert_pan: false
-  invert_tilt: false
+  invert_tilt: true
   deadzone: 0.05
   max_pan_speed: 10
   max_tilt_speed: 12

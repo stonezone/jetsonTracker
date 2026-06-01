@@ -10,7 +10,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: "78725QX6PZ"
     CODE_SIGN_STYLE: Automatic
-    GENERATE_INFOPLIST_FILE: YES
+    GENERATE_INFOPLIST_FILE: NO
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
 targets:
@@ -22,9 +22,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.stonezone.WaveCam
-        INFOPLIST_KEY_CFBundleDisplayName: WaveCam
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "WaveCam connects to the Orin on your local network to control the camera and view the feed."
-        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        INFOPLIST_FILE: Info.plist

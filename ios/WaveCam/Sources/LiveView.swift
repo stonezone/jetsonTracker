@@ -62,8 +62,12 @@ private struct LiveFeedCard: View {
     private var feed: some View {
         ZStack {
             FeedBackground(previewURL: previewURL)
-            FeedSubjectOverlay(isLocked: isLocked, confidence: status?.tracking.confidence)
+            if previewURL == nil {
+                FeedSubjectOverlay(isLocked: isLocked, confidence: status?.tracking.confidence)
+            }
             FeedReticles()
+            FeedAimReticle(status: status)
+            FeedPTZOverlay(status: status)
             FeedTopTags(isLocked: isLocked, isRecording: isRecording)
             FeedBottomStrip(status: status)
         }
@@ -316,6 +320,184 @@ private struct ReticleCorner: View {
             }
             if vertical == .top { Spacer() }
         }
+    }
+}
+
+private struct FeedAimReticle: View {
+    let status: WCStatus?
+
+    private var isMoving: Bool {
+        guard status?.ptz.enabled != false else { return false }
+        guard status?.safety.killed != true else { return false }
+        guard status?.ptz.owner != "idle" else { return false }
+        return status?.ptz.panTiltCmd?.lowercased() != "stop"
+    }
+
+    private var color: Color {
+        isMoving ? WC.brand : Color.white.opacity(0.55)
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(color.opacity(0.72), lineWidth: 1.5)
+                .frame(width: 38, height: 38)
+            Rectangle()
+                .fill(color.opacity(0.76))
+                .frame(width: 1.5, height: 54)
+            Rectangle()
+                .fill(color.opacity(0.76))
+                .frame(width: 54, height: 1.5)
+            Circle()
+                .fill(color)
+                .frame(width: 5, height: 5)
+            Text("AIM")
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(color)
+                .offset(y: 32)
+        }
+        .shadow(color: .black.opacity(0.35), radius: 4)
+    }
+}
+
+private struct FeedPTZOverlay: View {
+    let status: WCStatus?
+
+    private var ptzEnabled: Bool {
+        status?.ptz.enabled != false
+    }
+
+    private var killed: Bool {
+        status?.safety.killed == true
+    }
+
+    private var owner: String {
+        status?.ptz.owner.uppercased() ?? "IDLE"
+    }
+
+    private var command: String {
+        status?.ptz.panTiltCmd?.uppercased() ?? "STOP"
+    }
+
+    private var zoom: String {
+        status?.ptz.zoomState?.uppercased() ?? "HOLD"
+    }
+
+    private var stateText: String {
+        if killed { return "KILLED" }
+        if !ptzEnabled { return "OFF" }
+        if owner == "IDLE" { return "IDLE" }
+        if command == "STOP" { return "HELD" }
+        return "MOVING"
+    }
+
+    private var stateColor: Color {
+        switch stateText {
+        case "MOVING": WC.brand
+        case "KILLED": WC.kill
+        case "OFF", "IDLE": WC.warn
+        default: WC.ok
+        }
+    }
+
+    private var motionLevel: Double {
+        guard stateText == "MOVING" else { return 0 }
+        return min(1, Double(commandSpeed("P") + commandSpeed("T")) / 22.0)
+    }
+
+    var body: some View {
+        VStack {
+            HStack {
+                Spacer()
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Circle().fill(stateColor).frame(width: 7, height: 7)
+                        Text("PTZ \(stateText)")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .tracking(0.7)
+                            .foregroundStyle(stateColor)
+                    }
+                    HStack(spacing: 6) {
+                        PTZOverlayMetric(label: "OWNER", value: owner, color: WC.txt)
+                        PTZOverlayMetric(label: "CMD", value: command, color: stateColor)
+                        PTZOverlayMetric(label: "ZOOM", value: zoom, color: zoom == "HOLD" ? WC.muted : WC.brand)
+                    }
+                }
+                .padding(9)
+                .background(Color.black.opacity(0.64), in: .rect(cornerRadius: 11))
+                .overlay(RoundedRectangle(cornerRadius: 11).stroke(stateColor.opacity(0.4)))
+            }
+            .padding(.top, 48)
+            .padding(.horizontal, 12)
+
+            Spacer()
+
+            HStack {
+                Spacer()
+                PTZMotionScope(level: motionLevel, color: stateColor)
+            }
+            .padding(.trailing, 12)
+            .padding(.bottom, 74)
+        }
+    }
+
+    private func commandSpeed(_ prefix: Character) -> Int {
+        let segments = command.split(separator: "/")
+        guard let segment = segments.first(where: { $0.first == prefix }) else { return 0 }
+        return Int(segment.dropFirst()) ?? 0
+    }
+}
+
+private struct PTZOverlayMetric: View {
+    let label: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 7, weight: .semibold))
+                .tracking(0.9)
+                .foregroundStyle(WC.faint)
+            Text(value)
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.58)
+                .foregroundStyle(color)
+        }
+        .frame(width: 43, alignment: .leading)
+    }
+}
+
+private struct PTZMotionScope: View {
+    let level: Double
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.black.opacity(0.54))
+            Circle()
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                .padding(7)
+            Circle()
+                .trim(from: 0, to: max(0.08, level))
+                .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .padding(7)
+                .opacity(level == 0 ? 0.35 : 1)
+            Image(systemName: "viewfinder")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(color)
+            Text("LOOK")
+                .font(.system(size: 7, weight: .semibold, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(WC.muted)
+                .offset(y: 20)
+        }
+        .frame(width: 62, height: 62)
+        .shadow(color: .black.opacity(0.34), radius: 8, y: 4)
     }
 }
 

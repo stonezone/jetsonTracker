@@ -205,10 +205,26 @@ def test_api_v1_ptz_velocity_accepts_zoom_only_manual_input():
     assert ("zoom", "tele", 4) in pipe.ptz.calls
 
 
-def test_api_v1_ptz_stop_bypasses_owner_and_releases_current_holder():
+def test_api_v1_ptz_stop_preserves_autonomous_owner():
     client = make_client()
     pipe = client.app.state.pipeline
     assert pipe.owner.request("testbed") is True
+
+    response = client.post("/api/v1/ptz/stop", json={"source": "ios_native"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["status"]["ptz"]["owner"] == "testbed"
+    assert pipe.owner.owner == "testbed"
+    assert ("stop",) in pipe.ptz.calls
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+
+
+def test_api_v1_ptz_stop_releases_manual_owner():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("manual") is True
 
     response = client.post("/api/v1/ptz/stop", json={"source": "ios_native"})
 
@@ -330,7 +346,8 @@ if __name__ == "__main__":
     test_api_v1_safety_resume_does_not_restart_tracking_owner()
     test_api_v1_ptz_velocity_is_owner_gated_and_normalized()
     test_api_v1_ptz_velocity_accepts_zoom_only_manual_input()
-    test_api_v1_ptz_stop_bypasses_owner_and_releases_current_holder()
+    test_api_v1_ptz_stop_preserves_autonomous_owner()
+    test_api_v1_ptz_stop_releases_manual_owner()
     test_api_v1_ptz_zoom_endpoint_is_owner_gated()
     test_api_v1_ptz_zoom_refuses_while_killed()
     test_api_v1_config_hot_applies_known_keys_only()
