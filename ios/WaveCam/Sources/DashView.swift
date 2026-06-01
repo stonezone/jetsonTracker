@@ -3,23 +3,27 @@ import WebKit
 
 /// Dashboard screen: native chrome around the Orin dashboard WebView.
 struct DashView: View {
-    private static let dashboardURL = URL(string: "http://192.168.1.155:8080")!
+    @Environment(WaveCamClient.self) private var client
 
     @State private var loadID = UUID()
     @State private var isLoading = true
     @State private var loadFailed = false
 
+    private var dashboardURL: URL {
+        client.baseURL.dashboardURL
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             DashboardChrome(
-                url: Self.dashboardURL,
+                url: dashboardURL,
                 isLoading: isLoading,
                 loadFailed: loadFailed,
                 onReload: reload
             )
             ZStack {
                 DashboardWebView(
-                    url: Self.dashboardURL,
+                    url: dashboardURL,
                     reloadID: loadID,
                     isLoading: $isLoading,
                     loadFailed: $loadFailed
@@ -27,7 +31,7 @@ struct DashView: View {
                 .background(WC.ink)
 
                 if loadFailed {
-                    DashboardFallback(url: Self.dashboardURL, onReload: reload)
+                    DashboardFallback(url: dashboardURL, onReload: reload)
                 } else if isLoading {
                     DashboardLoadingOverlay()
                 }
@@ -111,24 +115,27 @@ private struct DashboardWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.reloadID != reloadID else { return }
+        guard context.coordinator.reloadID != reloadID || context.coordinator.url != url else { return }
         context.coordinator.reloadID = reloadID
+        context.coordinator.url = url
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8))
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isLoading: $isLoading, loadFailed: $loadFailed, reloadID: reloadID)
+        Coordinator(isLoading: $isLoading, loadFailed: $loadFailed, reloadID: reloadID, url: url)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         @Binding private var isLoading: Bool
         @Binding private var loadFailed: Bool
         var reloadID: UUID
+        var url: URL
 
-        init(isLoading: Binding<Bool>, loadFailed: Binding<Bool>, reloadID: UUID) {
+        init(isLoading: Binding<Bool>, loadFailed: Binding<Bool>, reloadID: UUID, url: URL) {
             _isLoading = isLoading
             _loadFailed = loadFailed
             self.reloadID = reloadID
+            self.url = url
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -150,6 +157,19 @@ private struct DashboardWebView: UIViewRepresentable {
             isLoading = false
             loadFailed = true
         }
+    }
+}
+
+private extension URL {
+    var dashboardURL: URL {
+        guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else {
+            return self
+        }
+        components.port = 8080
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        return components.url ?? self
     }
 }
 

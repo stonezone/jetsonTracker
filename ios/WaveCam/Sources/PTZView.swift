@@ -9,9 +9,11 @@ struct PTZView: View {
     @State private var tilt: Double = 0
     @State private var knobOffset: CGSize = .zero
     @State private var zoomCommand: Double = 0
+    @State private var velocityRepeatTask: Task<Void, Never>?
     @State private var zoomRepeatTask: Task<Void, Never>?
     @State private var commandState = PTZCommandState.idle
 
+    private let velocityRepeatIntervalNs: UInt64 = 300_000_000
     private let zoomRepeatIntervalNs: UInt64 = 300_000_000
     private var isLandscapeControl: Bool {
         verticalSizeClass == .compact
@@ -28,7 +30,10 @@ struct PTZView: View {
         .background(WC.bg.ignoresSafeArea())
         .scrollIndicators(.hidden)
         .task { await client.refresh() }
-        .onDisappear { stopZoomCommand() }
+        .onDisappear {
+            stopVelocityRepeat()
+            stopZoomCommand()
+        }
     }
 
     private var portraitControls: some View {
@@ -99,11 +104,18 @@ struct PTZView: View {
     private func sendVelocity(pan: Double, tilt: Double) {
         self.pan = pan
         self.tilt = tilt
-        commandState = .manual
+        let isActive = pan != 0 || tilt != 0
+        commandState = isActive ? .manual : .idle
         Task { await client.ptzVelocity(pan: pan, tilt: tilt) }
+        if isActive {
+            startVelocityRepeat()
+        } else {
+            stopVelocityRepeat()
+        }
     }
 
     private func releaseManualPTZ() {
+        stopVelocityRepeat()
         pan = 0
         tilt = 0
         knobOffset = .zero
@@ -114,6 +126,7 @@ struct PTZView: View {
     }
 
     private func holdPTZ() {
+        stopVelocityRepeat()
         pan = 0
         tilt = 0
         knobOffset = .zero
@@ -125,6 +138,7 @@ struct PTZView: View {
     }
 
     private func startAutoPTZ() {
+        stopVelocityRepeat()
         pan = 0
         tilt = 0
         knobOffset = .zero
@@ -133,6 +147,26 @@ struct PTZView: View {
         zoomRepeatTask?.cancel()
         zoomRepeatTask = nil
         Task { await client.ptzStartAuto() }
+    }
+
+    private func startVelocityRepeat() {
+        guard velocityRepeatTask == nil else { return }
+        velocityRepeatTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: velocityRepeatIntervalNs)
+                guard !Task.isCancelled else { return }
+                guard pan != 0 || tilt != 0 else {
+                    velocityRepeatTask = nil
+                    return
+                }
+                await client.ptzVelocity(pan: pan, tilt: tilt)
+            }
+        }
+    }
+
+    private func stopVelocityRepeat() {
+        velocityRepeatTask?.cancel()
+        velocityRepeatTask = nil
     }
 
     private func updateZoom(_ value: Double) {

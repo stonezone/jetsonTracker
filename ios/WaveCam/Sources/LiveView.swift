@@ -14,10 +14,15 @@ struct LiveView: View {
         Group {
             if isLandscapeControl {
                 HStack(alignment: .top, spacing: 12) {
-                    LiveFeedCard(status: client.status, previewURL: client.previewURL, height: nil)
+                    LiveFeedCard(
+                        status: client.status,
+                        connected: client.connected,
+                        previewURL: client.connected ? client.previewURL : nil,
+                        height: nil
+                    )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     VStack(spacing: 10) {
-                        LiveTelemetryGrid(status: client.status, axis: .vertical)
+                        LiveTelemetryGrid(status: client.status, connected: client.connected, axis: .vertical)
                         EmergencyStopButton(compact: true)
                     }
                     .frame(width: 190)
@@ -28,8 +33,12 @@ struct LiveView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 12) {
-                        LiveFeedCard(status: client.status, previewURL: client.previewURL)
-                        LiveTelemetryGrid(status: client.status)
+                        LiveFeedCard(
+                            status: client.status,
+                            connected: client.connected,
+                            previewURL: client.connected ? client.previewURL : nil
+                        )
+                        LiveTelemetryGrid(status: client.status, connected: client.connected)
                         EmergencyStopButton()
                     }
                     .padding(.horizontal, 16)
@@ -46,11 +55,12 @@ struct LiveView: View {
 
 private struct LiveFeedCard: View {
     let status: WCStatus?
+    let connected: Bool
     let previewURL: URL?
     var height: CGFloat? = 430
 
-    private var isLocked: Bool { status?.tracking.locked ?? true }
-    private var isRecording: Bool { status?.media?.recording ?? true }
+    private var isLocked: Bool { connected && status?.tracking.locked == true }
+    private var isRecording: Bool { connected && status?.media?.recording == true }
 
     var body: some View {
         content
@@ -61,15 +71,15 @@ private struct LiveFeedCard: View {
 
     private var feed: some View {
         ZStack {
-            FeedBackground(previewURL: previewURL)
-            if previewURL == nil {
+            FeedBackground(previewURL: previewURL, connected: connected)
+            if connected && previewURL == nil {
                 FeedSubjectOverlay(isLocked: isLocked, confidence: status?.tracking.confidence)
             }
             FeedReticles()
-            FeedAimReticle(status: status)
-            FeedPTZOverlay(status: status)
-            FeedTopTags(isLocked: isLocked, isRecording: isRecording)
-            FeedBottomStrip(status: status)
+            FeedAimReticle(status: status, connected: connected)
+            FeedPTZOverlay(status: status, connected: connected)
+            FeedTopTags(isLocked: isLocked, isRecording: isRecording, connected: connected)
+            FeedBottomStrip(status: status, connected: connected)
         }
     }
 
@@ -85,13 +95,14 @@ private struct LiveFeedCard: View {
 
 private struct FeedBackground: View {
     let previewURL: URL?
+    let connected: Bool
 
     var body: some View {
         ZStack {
             if let previewURL {
                 MJPEGPreviewView(url: previewURL)
             } else {
-                MockOceanScene(showOfflinePattern: false)
+                MockOceanScene(showOfflinePattern: !connected)
             }
         }
     }
@@ -289,6 +300,11 @@ private struct SurferGlyph: View {
 private struct LockBox: View {
     let confidence: Double?
 
+    private var confidenceText: String {
+        guard let confidence else { return "-" }
+        return confidence.formatted(.number.precision(.fractionLength(2)))
+    }
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6)
@@ -300,7 +316,7 @@ private struct LockBox: View {
                 .frame(width: 11, height: 11)
             HStack(spacing: 4) {
                 Text("CONF")
-                Text(confidence ?? 0.91, format: .number.precision(.fractionLength(2)))
+                Text(confidenceText)
             }
             .font(.system(size: 9, design: .monospaced))
             .foregroundStyle(WC.brand)
@@ -355,8 +371,10 @@ private struct ReticleCorner: View {
 
 private struct FeedAimReticle: View {
     let status: WCStatus?
+    let connected: Bool
 
     private var isMoving: Bool {
+        guard connected else { return false }
         guard status?.ptz.enabled != false else { return false }
         guard status?.safety.killed != true else { return false }
         guard status?.ptz.owner != "idle" else { return false }
@@ -393,28 +411,33 @@ private struct FeedAimReticle: View {
 
 private struct FeedPTZOverlay: View {
     let status: WCStatus?
+    let connected: Bool
 
     private var ptzEnabled: Bool {
-        status?.ptz.enabled != false
+        connected && status?.ptz.enabled != false
     }
 
     private var killed: Bool {
-        status?.safety.killed == true
+        connected && status?.safety.killed == true
     }
 
     private var owner: String {
-        status?.ptz.owner.uppercased() ?? "IDLE"
+        guard connected else { return "-" }
+        return status?.ptz.owner.uppercased() ?? "-"
     }
 
     private var command: String {
-        status?.ptz.panTiltCmd?.uppercased() ?? "STOP"
+        guard connected else { return "-" }
+        return status?.ptz.panTiltCmd?.uppercased() ?? "-"
     }
 
     private var zoom: String {
-        status?.ptz.zoomState?.uppercased() ?? "HOLD"
+        guard connected else { return "-" }
+        return status?.ptz.zoomState?.uppercased() ?? "-"
     }
 
     private var stateText: String {
+        if !connected { return "OFFLINE" }
         if killed { return "KILLED" }
         if !ptzEnabled { return "OFF" }
         if owner == "IDLE" { return "IDLE" }
@@ -426,7 +449,7 @@ private struct FeedPTZOverlay: View {
         switch stateText {
         case "MOVING": WC.brand
         case "KILLED": WC.kill
-        case "OFF", "IDLE": WC.warn
+        case "OFF", "IDLE", "OFFLINE": WC.warn
         default: WC.ok
         }
     }
@@ -534,12 +557,17 @@ private struct PTZMotionScope: View {
 private struct FeedTopTags: View {
     let isLocked: Bool
     let isRecording: Bool
+    let connected: Bool
 
     var body: some View {
         VStack {
             HStack(spacing: 8) {
-                LiveTag(text: isLocked ? "LOCKED" : "SEARCH", color: isLocked ? WC.brand : WC.warn, dot: isLocked)
-                if isRecording {
+                if connected {
+                    LiveTag(text: isLocked ? "LOCKED" : "SEARCH", color: isLocked ? WC.brand : WC.warn, dot: isLocked)
+                } else {
+                    LiveTag(text: "OFFLINE", color: WC.warn, dot: false)
+                }
+                if connected && isRecording {
                     LiveTag(text: "REC", color: WC.kill, dot: true)
                 }
             }
@@ -573,12 +601,22 @@ private struct LiveTag: View {
 
 private struct FeedBottomStrip: View {
     let status: WCStatus?
+    let connected: Bool
+
+    private var stateText: String {
+        guard connected else { return "OFFLINE" }
+        return status?.session.state ?? "-"
+    }
+
+    private var stateColor: Color {
+        connected ? WC.ok : WC.warn
+    }
 
     var body: some View {
         VStack {
             Spacer()
             HStack(spacing: 6) {
-                FeedMetric(label: "STATE", value: status?.session.state ?? "TRACKING", color: WC.ok)
+                FeedMetric(label: "STATE", value: stateText, color: stateColor)
                 FeedMetric(label: "CONF", value: confidenceText, color: WC.brand)
                 FeedMetric(label: "FPS", value: fpsText, color: WC.txt)
                 FeedMetric(label: "GPS", value: distanceText, color: WC.ok)
@@ -588,17 +626,17 @@ private struct FeedBottomStrip: View {
     }
 
     private var confidenceText: String {
-        guard let value = status?.tracking.confidence else { return "0.91" }
+        guard connected, let value = status?.tracking.confidence else { return "-" }
         return value.formatted(.number.precision(.fractionLength(2)))
     }
 
     private var fpsText: String {
-        guard let value = status?.tracking.fps else { return "26.0" }
+        guard connected, let value = status?.tracking.fps else { return "-" }
         return value.formatted(.number.precision(.fractionLength(1)))
     }
 
     private var distanceText: String {
-        guard let meters = status?.gps?.distanceM else { return "148m" }
+        guard connected, let meters = status?.gps?.distanceM else { return "-" }
         return "\(Int(meters.rounded()))m"
     }
 }
@@ -635,6 +673,7 @@ private struct LiveTelemetryGrid: View {
     }
 
     let status: WCStatus?
+    let connected: Bool
     var axis: Axis = .horizontal
 
     var body: some View {
@@ -650,14 +689,15 @@ private struct LiveTelemetryGrid: View {
 
     @ViewBuilder
     private var telemetryPills: some View {
-        StatusPill(title: "OWNER", value: status?.ptz.owner.uppercased() ?? "VISION", color: WC.brand)
-        StatusPill(title: "MODE", value: status?.session.mode?.uppercased() ?? "VISION_GPS", color: WC.ok)
-        StatusPill(title: "PTZ", value: ptzState, color: status?.ptz.enabled == false ? WC.warn : WC.ok)
+        StatusPill(title: "OWNER", value: connected ? (status?.ptz.owner.uppercased() ?? "-") : "-", color: connected ? WC.brand : WC.warn)
+        StatusPill(title: "MODE", value: connected ? (status?.session.mode?.uppercased() ?? "-") : "OFFLINE", color: connected ? WC.ok : WC.warn)
+        StatusPill(title: "PTZ", value: ptzState, color: connected && status?.ptz.enabled != false ? WC.ok : WC.warn)
     }
 
     private var ptzState: String {
+        guard connected else { return "-" }
         if status?.ptz.enabled == false { return "OFF" }
-        return status?.ptz.panTiltCmd?.uppercased() ?? "P4/T0"
+        return status?.ptz.panTiltCmd?.uppercased() ?? "-"
     }
 }
 

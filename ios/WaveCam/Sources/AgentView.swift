@@ -36,37 +36,113 @@ struct AgentView: View {
     }
 
     private func fallbackState(for service: String) -> String {
-        service == "cloudflared" ? "degraded" : "unknown"
+        "unknown"
     }
 
     private func summonDiagnostics() {
-        requestState = .requested
+        Task { await summonDiagnosticsRequest() }
+    }
+
+    @MainActor
+    private func summonDiagnosticsRequest() async {
+        guard client.mode == .live else {
+            requestState = .requested
+            return
+        }
+
+        requestState = .requesting
+        do {
+            var request = URLRequest(url: client.baseURL.appending(path: "agent/summon"))
+            request.httpMethod = "POST"
+            request.timeoutInterval = 5
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if let token = client.token, !token.isEmpty {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "source": "ios_native",
+                "reason": "operator_diagnostics"
+            ])
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                requestState = .failed("No HTTP response from supervisor.")
+                return
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let message = Self.errorMessage(statusCode: http.statusCode, data: data)
+                requestState = .failed(message)
+                return
+            }
+            requestState = .requested
+        } catch {
+            requestState = .failed(error.localizedDescription)
+        }
+        await client.refresh()
+    }
+
+    private static func errorMessage(statusCode: Int, data: Data) -> String {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let message = object["message"] as? String
+        else {
+            return "HTTP \(statusCode)"
+        }
+        return "HTTP \(statusCode): \(message)"
     }
 }
 
 private enum AgentRequestState {
     case idle
+    case requesting
     case requested
+    case failed(String)
 
     var title: String {
         switch self {
         case .idle: "STANDBY"
+        case .requesting: "REQUESTING"
         case .requested: "REQUESTED"
+        case .failed: "FAILED"
         }
     }
 
     var detail: String {
         switch self {
         case .idle: "Ready for diagnostics, logs, config review, and implementation help."
-        case .requested: "Diagnostics request queued for the supervisor lane."
+        case .requesting: "Contacting the supervisor endpoint."
+        case .requested: "Diagnostics request accepted by the supervisor lane."
+        case .failed(let message): message
         }
     }
 
     var tint: Color {
         switch self {
         case .idle: WC.ok
+        case .requesting: WC.warn
         case .requested: WC.brand
+        case .failed: WC.kill
         }
+    }
+
+    var buttonTitle: String {
+        switch self {
+        case .requesting: "Requesting..."
+        default: "Summon Codex"
+        }
+    }
+
+    var buttonIcon: String {
+        switch self {
+        case .requesting: "hourglass"
+        case .failed: "exclamationmark.triangle.fill"
+        default: "terminal.fill"
+        }
+    }
+
+    var isRequesting: Bool {
+        if case .requesting = self { return true }
+        return false
     }
 }
 
@@ -269,13 +345,15 @@ private struct AgentRequestCard: View {
             Button {
                 onSummon()
             } label: {
-                Label("Summon Codex", systemImage: "terminal.fill")
+                Label(state.buttonTitle, systemImage: state.buttonIcon)
                     .font(.system(size: 13, weight: .black))
                     .tracking(1.2)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
             .buttonStyle(.plain)
+            .disabled(state.isRequesting)
+            .opacity(state.isRequesting ? 0.72 : 1)
             .foregroundStyle(WC.brand)
             .background(WC.brand.opacity(0.1), in: .rect(cornerRadius: 14))
             .overlay(
