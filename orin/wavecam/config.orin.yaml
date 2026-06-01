@@ -1,0 +1,70 @@
+# =====================================================================
+# WAVECAM — Orin hardware-verify config.
+# Same schema as config.yaml. Real Prisual on the wired camera LAN.
+# Safe first run: ptz.enabled = false (camera will NOT move).
+# Flip ptz.enabled=true only after detection looks good.
+# =====================================================================
+
+camera:
+  source: "rtsp://192.168.100.88:554/2"   # Prisual sub-stream (wired LAN)
+  use_gstreamer: false
+  codec: "h264"
+  reconnect_sec: 2.0
+
+ptz:
+  enabled: false         # Safe default. Flip true for the servo gate.
+  ip: "192.168.100.88"
+  port: 1259             # VISCA-over-IP UDP (raw, validated)
+  address: 1
+  reset_sequence: true
+  invert_pan: false
+  invert_tilt: false
+  deadzone: 0.08
+  max_pan_speed: 10
+  max_tilt_speed: 8
+  min_speed: 1
+  command_min_interval: 0.05
+
+camera_ai:
+  disable_on_start: false   # first run sends NO CGI (off_path unvalidated; cam AI already off)
+  http_base: "http://192.168.100.88"
+  off_path: "/cgi-bin/ptzctrl.cgi?ptzcmd&aimode&off"   # reconcile + validate before enabling
+
+color:
+  enabled: true
+  min_area: 60
+  max_area: 200000
+  hsv_ranges:
+    red_low_1:  [0,   90, 80]
+    red_high_1: [12, 255, 255]
+    red_low_2:  [170, 90, 80]
+    red_high_2: [180, 255, 255]
+    orange_low: [8,   90, 100]
+    orange_high: [28, 255, 255]
+  morph_kernel: 5
+
+detector:
+  enabled: false         # first run = orange color-only (no YOLO/model dep). Enable
+  model: "yolo26n.pt"    # + point at /data/projects/gimbal/models/yolov8n.engine when ready
+  conf: 0.35
+  imgsz: 640
+  person_class: 0
+  every_n: 3
+  box_ttl_sec: 0.6
+
+fusion:
+  require_person: false
+  match_dist: 120
+  lock_threshold: 0.60
+  unlock_threshold: 0.35
+  ema_alpha: 0.5
+  lost_grace_sec: 0.8
+
+web:
+  host: "0.0.0.0"
+  port: 8088
+  jpeg_quality: 70
+
+loop:
+  target_fps: 25
+  log_every_sec: 5.0

@@ -1,0 +1,199 @@
+"""
+Pipeline: the deterministic loop. capture -> color + (throttled) YOLO -> fusion
+-> visual servo -> VISCA command. Holds thread-safe shared state (latest JPEG,
+status, live-mutable tunables, kill latch) that the web layer reads/writes.
+"""
+from __future__ import annotations
+import threading
+import time
+from typing import Optional
+
+import cv2
+
+from .capture import FrameGrabber
+from .color_detector import ColorDetector
+from .controller import VisualServo, STOP_CMD
+from .fusion import Fusion
+from .overlay import annotate
+from .ptz_owner import PtzOwner
+
+
+class SharedState:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.jpeg: Optional[bytes] = None
+        self.status: dict = {"state": "INIT", "fps": 0.0, "connected": False, "killed": False}
+        self.killed = False
+        self.show_mask = True
+
+    def set_jpeg(self, b: bytes):
+        with self.lock:
+            self.jpeg = b
+
+    def get_jpeg(self) -> Optional[bytes]:
+        with self.lock:
+            return self.jpeg
+
+    def set_status(self, **kw):
+        with self.lock:
+            self.status.update(kw)
+
+    def get_status(self) -> dict:
+        with self.lock:
+            return dict(self.status)
+
+
+class Pipeline(threading.Thread):
+    def __init__(self, cfg, ptz, detector_factory):
+        super().__init__(daemon=True)
+        self.cfg = cfg
+        self.ptz = ptz
+        self.state = SharedState()
+
+        self.grab = FrameGrabber(cfg.camera)
+        self.color = ColorDetector(cfg.color) if cfg.color.enabled else None
+        self.fusion = Fusion(cfg.fusion)
+        self.servo = VisualServo(cfg.ptz)
+        self.owner = PtzOwner()       # single PTZ writer + sticky KILL latch
+
+        # YOLO is optional + lazily built (so missing torch doesn't kill the rig)
+        self.detector = None
+        if cfg.detector.enabled:
+            try:
+                self.detector = detector_factory()
+            except Exception as e:  # pragma: no cover - depends on torch/ultralytics
+                print(f"[pipeline] YOLO disabled (load failed): {e}")
+
+        self._stop = threading.Event()
+        self._last_cmd_key = None
+        self._last_cmd_time = 0.0
+        self._last_boxes = []
+        self._last_boxes_time = 0.0
+        self._frame_i = 0
+
+    def kill(self, on: bool = True):
+        self.state.killed = on
+        if on:
+            self.state.set_status(killed=True, state="KILLED")
+            self.owner.kill()                  # sticky latch + owner -> idle
+            if self.cfg.ptz.enabled:
+                self.ptz.stop()                # immediate pan/tilt stop
+                self.ptz.zoom("stop")          # + zoom stop
+        else:
+            self.state.set_status(killed=False, state="SEARCHING")
+            self.owner.resume()
+            if self.cfg.ptz.enabled:
+                self.owner.request("testbed")  # re-acquire on RESUME
+
+    def _send_cmd(self, cmd):
+        """Rate-limited, de-duped VISCA send. STOP always allowed through."""
+        if not self.cfg.ptz.enabled:
+            return
+        now = time.time()
+        key = cmd.key()
+        changed = key != self._last_cmd_key
+        due = (now - self._last_cmd_time) >= self.cfg.ptz.command_min_interval
+        if changed or (due and not cmd.is_stop):
+            if cmd.is_stop:
+                self.ptz.stop()
+            else:
+                self.ptz.pan_tilt(cmd.pan_speed, cmd.tilt_speed, cmd.pan_dir, cmd.tilt_dir)
+            self._last_cmd_key = key
+            self._last_cmd_time = now
+
+    def run(self):
+        self.grab.start()
+        if self.cfg.ptz.enabled:
+            self.owner.request("testbed")
+        period = 1.0 / max(1.0, self.cfg.loop.target_fps)
+        t_fps = time.time()
+        n_fps = 0
+        fps = 0.0
+        t_log = time.time()
+
+        while not self._stop.is_set():
+            t0 = time.time()
+            frame = self.grab.read()
+            if frame is None:
+                self.state.set_status(state="NO_VIDEO", connected=self.grab.connected)
+                time.sleep(0.1)
+                continue
+
+            h, w = frame.shape[:2]
+            blobs, mask = ([], None)
+            if self.color is not None:
+                blobs, mask = self.color.detect(frame)
+
+            # throttled YOLO; reuse last boxes within TTL
+            persons = None
+            if self.detector is not None:
+                self._frame_i += 1
+                run_yolo = (self._frame_i % max(1, self.cfg.detector.every_n)) == 0
+                if run_yolo:
+                    try:
+                        self._last_boxes = self.detector.detect(frame)
+                        self._last_boxes_time = t0
+                    except Exception as e:  # pragma: no cover
+                        print(f"[pipeline] YOLO inference error: {e}")
+                if (t0 - self._last_boxes_time) <= self.cfg.detector.box_ttl_sec:
+                    persons = self._last_boxes
+
+            fr = self.fusion.update(blobs, persons)
+
+            # control: always compute (for the overlay); SEND only while we own
+            # the PTZ and are not killed.
+            if self.state.killed:
+                cmd = STOP_CMD
+                self._send_cmd(cmd)               # killed -> force stop
+            else:
+                cmd = self.servo.compute(fr.target_xy, (w, h))
+                if self.owner.owner == "testbed":
+                    self._send_cmd(cmd)           # else: not owner -> don't drive
+
+            # render
+            hud = {
+                "fps": fps,
+                "ptz": "ON" if self.cfg.ptz.enabled else "off",
+                "killed": self.state.killed,
+            }
+            annotated = annotate(frame, mask, blobs, persons or [], fr, cmd,
+                                 self.cfg.ptz, hud, show_mask=self.state.show_mask)
+            ok, buf = cv2.imencode(".jpg", annotated,
+                                   [cv2.IMWRITE_JPEG_QUALITY, self.cfg.web.jpeg_quality])
+            if ok:
+                self.state.set_jpeg(buf.tobytes())
+
+            self.state.set_status(
+                state=("KILLED" if self.state.killed else fr.state),
+                conf=fr.conf, locked=fr.locked,
+                has_color=fr.has_color, has_person=fr.has_person, matched=fr.matched,
+                fps=round(fps, 1), connected=self.grab.connected,
+                ptz_enabled=self.cfg.ptz.enabled,
+                cmd=("stop" if cmd.is_stop else f"p{cmd.pan_speed}/t{cmd.tilt_speed}"),
+            )
+
+            # fps bookkeeping
+            n_fps += 1
+            if time.time() - t_fps >= 1.0:
+                fps = n_fps / (time.time() - t_fps)
+                n_fps = 0
+                t_fps = time.time()
+            if time.time() - t_log >= self.cfg.loop.log_every_sec:
+                s = self.state.get_status()
+                print(f"[loop] {s['state']:9s} conf={s.get('conf',0):.2f} "
+                      f"fps={s.get('fps',0):.1f} cmd={s.get('cmd')} "
+                      f"conn={s.get('connected')}")
+                t_log = time.time()
+
+            dt = time.time() - t0
+            if dt < period:
+                time.sleep(period - dt)
+
+        # shutdown
+        if self.cfg.ptz.enabled:
+            self.ptz.stop()
+            self.owner.release("testbed")
+        self.grab.stop()
+
+    def stop(self):
+        self._stop.set()

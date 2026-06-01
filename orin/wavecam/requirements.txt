@@ -1,0 +1,18 @@
+# WAVECAM vision-only testbed
+# --- core ---
+numpy
+pyyaml
+fastapi
+uvicorn[standard]
+pydantic>=2
+
+# --- vision ---
+# On a Jetson (JetPack 6.2.x) prefer the SYSTEM OpenCV (CUDA build) over pip.
+# If you must pip-install on desktop: opencv-python
+opencv-python ; platform_machine != "aarch64"
+
+# --- detector ---
+# Ultralytics pulls torch. DO NOT `pip install torch` blindly on Jetson —
+# use NVIDIA's JetPack 6.2 (cu126) torch wheel, then `pip install ultralytics`.
+# See README. On desktop, plain `pip install ultralytics` is fine.
+ultralytics

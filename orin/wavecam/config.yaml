@@ -1,0 +1,78 @@
+# =====================================================================
+# WAVECAM TESTBED — config
+# Vision-only bring-up: color + YOLO + PTZ visual servo. NO GPS.
+# Safe first run: ptz.enabled = false (camera will NOT move).
+# =====================================================================
+
+camera:
+  # RTSP video source. Use the SUB stream (/2, 640x360) for detection.
+  # source can be: an rtsp url, a file path, or an int (webcam index, e.g. 0)
+  source: "rtsp://192.168.1.50:554/2"     # <-- set to your Prisual sub-stream
+  use_gstreamer: false   # true = Jetson HW decode (nvv4l2decoder); see README
+  codec: "h264"          # h264 | h265  (only used when use_gstreamer: true)
+  reconnect_sec: 2.0     # wait before reopening a dropped RTSP stream
+
+ptz:
+  enabled: false         # <-- START HERE false. Flip true only after detection looks good.
+  ip: "192.168.1.50"     # <-- camera IP
+  port: 1259             # VISCA-over-IP UDP (your cam also answers 52381)
+  address: 1             # VISCA device address (-> 0x81)
+  reset_sequence: true   # send VISCA-over-IP seq reset on startup (harmless if unsupported)
+
+  # --- visual servo (P controller on image error) ---
+  invert_pan: false      # flip if the camera pans the WRONG way
+  invert_tilt: false     # flip if the camera tilts the WRONG way
+  deadzone: 0.08         # fraction of half-frame; inside this = "centered", no motion
+  max_pan_speed: 10      # VISCA pan speed cap 1..24  (conservative for bring-up)
+  max_tilt_speed: 8      # VISCA tilt speed cap 1..20
+  min_speed: 1           # floor when just outside deadzone
+  command_min_interval: 0.05   # s; rate-limit UDP command sends (~20 Hz max)
+
+camera_ai:
+  # Force the camera's ONBOARD auto-track OFF so the Orin owns the loop.
+  # Best-effort HTTP CGI. If your set_aimode endpoint differs, fix it here
+  # (or just confirm AI-track is OFF in the camera web UI before running).
+  disable_on_start: true
+  http_base: "http://192.168.1.50"
+  off_path: "/cgi-bin/ptzctrl.cgi?ptzcmd&aimode&off"   # <-- reconcile with your working CGI
+
+color:
+  # Orange/red jersey. Red wraps the hue circle -> two red bands + one orange band.
+  enabled: true
+  min_area: 60           # px^2; reject tiny specks (raise if glare gives false blobs)
+  max_area: 200000
+  hsv_ranges:
+    red_low_1:  [0,   90, 80]
+    red_high_1: [12, 255, 255]
+    red_low_2:  [170, 90, 80]
+    red_high_2: [180, 255, 255]
+    orange_low: [8,   90, 100]
+    orange_high: [28, 255, 255]
+  morph_kernel: 5        # open/close kernel size to clean the mask
+
+detector:
+  # YOLO26 person validator. .engine (TensorRT, fast) preferred; .pt works too.
+  enabled: true
+  model: "yolo26n.pt"    # or "yolo26n.engine" once built on-device
+  conf: 0.35
+  imgsz: 640
+  person_class: 0        # COCO 'person'
+  every_n: 3             # run YOLO every Nth frame (color runs every frame)
+  box_ttl_sec: 0.6       # reuse last YOLO boxes for this long between YOLO frames
+
+fusion:
+  require_person: false  # false = keep tracking the orange even if YOLO misses a frame
+  match_dist: 120        # px; person box counted as "matching" a color blob within this
+  lock_threshold: 0.60   # conf to acquire lock
+  unlock_threshold: 0.35 # conf to drop lock (hysteresis gap)
+  ema_alpha: 0.5         # target-center smoothing (0=frozen, 1=no smoothing)
+  lost_grace_sec: 0.8    # keep "locked" through brief dropouts
+
+web:
+  host: "0.0.0.0"
+  port: 8088             # open http://<orin-ip>:8088 from your phone/laptop
+  jpeg_quality: 70
+
+loop:
+  target_fps: 25         # main loop cap
+  log_every_sec: 5.0
