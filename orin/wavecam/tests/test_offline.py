@@ -43,7 +43,7 @@ def test_visca_raw():
 
 def test_servo():
     from wavecam.controller import VisualServo
-    from wavecam.ptz_visca import PAN_LEFT, PAN_RIGHT, TILT_UP, TILT_DOWN, PAN_STOP, TILT_STOP
+    from wavecam.ptz_visca import PAN_LEFT, PAN_RIGHT, TILT_UP, TILT_DOWN, TILT_STOP
 
     cfg = types.SimpleNamespace(
         deadzone=0.10, max_pan_speed=10, max_tilt_speed=8, min_speed=1,
