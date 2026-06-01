@@ -62,12 +62,33 @@ Current package state:
   so the microSD can become a removable export card.
 - Do not treat the current SD as disposable. It still provides the known-good boot fallback.
 
-## iPhone USB-C Tether Uplink Recon
+## iPhone USB Tether Uplink
 
 Read-only recon on 2026-06-01. No networking, module loading, service starts, or route changes were made.
 
-Goal: use a USB-C-connected iPhone as a field internet uplink for the Orin, while keeping local camera control on
+Goal: use a USB-connected iPhone as a field internet uplink for the Orin, while keeping local camera control on
 `enP8p1s0` (`192.168.100.10/24`) and the camera at `192.168.100.88`.
+
+Validated bench result on 2026-06-01:
+
+| Check | Result | Meaning |
+|---|---|---|
+| Working physical path | iPhone connected to a USB-A host port | The Orin USB-C port is device/gadget mode, not the right host path for iPhone tethering. |
+| Wrong physical path | iPhone on Orin USB-C made `l4tbr0`/`usb0`/`usb1` change carrier only | That is the Jetson Linux-for-Tegra gadget bridge, not iPhone tethering. |
+| Apple USB device | `lsusb` showed Apple after moving to USB-A host | The phone was actually enumerated by the Orin. |
+| Tether interface | `enx664842e70c66` | Host-side iPhone Ethernet interface created by `ipheth`/NetworkManager. |
+| DHCP address | `172.20.10.8/28` | iPhone Personal Hotspot default DHCP range. |
+| Tether gateway | `172.20.10.1`, default route metric `101` | Tether became the preferred internet route over Wi-Fi metric `600`. |
+| Internet validation | `ip route get 8.8.8.8` used tether; `ping 8.8.8.8` succeeded `2/2`; DNS OK | Phone uplink works for internet. |
+| Camera LAN | `enP8p1s0` remained `192.168.100.10/24`; camera route stayed local | Camera network stayed isolated from the phone uplink. |
+
+Rules from validation:
+
+- Use a USB-A host/data port or equivalent host adapter. Do not use the Orin USB-C device/gadget port for iPhone tethering.
+- Do not run DHCP on `usb0`, `usb1`, or `l4tbr0` for the iPhone. Those are Jetson gadget interfaces.
+- Leave the iPhone hotspot network at its default `172.20.10.0/28`.
+- Do not set the phone/hotspot side to `192.168.100.x`; that collides with the camera LAN.
+- NetworkManager auto-DHCP worked on the host-side `enx...` interface; no persistent manual connection was needed for the bench test.
 
 Validated current state:
 
@@ -85,20 +106,15 @@ Validated current state:
 
 Current conclusion:
 
-- iPhone USB tethering is **unvalidated** on this Orin.
-- The missing piece is not obviously the kernel driver. `ipheth` is present.
-- The earlier failure where no new Ethernet interface appeared is consistent with one of these states:
-  - iPhone Personal Hotspot was off.
-  - The iPhone did not trust the Orin as a host.
-  - The USB-C cable/adapter did not expose data reliably.
-  - `usbmuxd` did not start for the attach event.
-  - NetworkManager did not manage the newly created `ipheth` interface.
+- iPhone USB tethering is **validated** on this Orin when the iPhone is connected to a USB-A host port.
+- The missing piece was not the kernel driver. `ipheth` is present and the working interface appeared after real host-port enumeration.
+- The earlier failure where no new Ethernet interface appeared was the Orin USB-C device/gadget path, not a host tether path.
 - The existing `usb0` and `usb1` interfaces are Jetson USB gadget ports, not proof of iPhone tethering.
 
 Bench validation steps, no persistent changes:
 
 1. On the iPhone, enable **Personal Hotspot** and keep the screen unlocked.
-2. Connect the iPhone to the Orin with a known-good USB-C data cable.
+2. Connect the iPhone to a USB-A host/data port on the Orin, using a known-good data cable or host adapter. Do not use the Orin USB-C device/gadget port.
 3. Accept the **Trust This Computer** prompt on the iPhone if it appears.
 4. On the Orin, run read-only checks:
    ```bash
@@ -112,8 +128,9 @@ Bench validation steps, no persistent changes:
 5. Expected success shape:
    - `lsusb` shows an Apple device.
    - `dmesg` shows the Apple device attaching and `ipheth` binding.
-   - `ip -brief link` shows a new Ethernet-style interface beyond `usb0`/`usb1`.
+   - `ip -brief link` shows a new Ethernet-style interface beyond `usb0`/`usb1`, for example `enx664842e70c66`.
    - NetworkManager can acquire a DHCP address on that new interface.
+   - `ip -brief addr` shows a `172.20.10.x/28` address on that interface.
 6. Verify that camera LAN routing still stays local:
    ```bash
    ip route get 192.168.100.88
@@ -160,7 +177,8 @@ Feasibility:
 
 | Option | Feasibility | Status | Notes |
 |---|---:|---|---|
-| USB-C iPhone tether as Orin field uplink | 6/10 | Unvalidated | Kernel support exists, but attach/trust/NetworkManager behavior must be proven on the bench. |
+| USB-A host-port iPhone tether as Orin field uplink | 8/10 | Validated | Internet worked through `172.20.10.1`; camera LAN stayed on `enP8p1s0`. |
+| Orin USB-C device-port iPhone tether | 2/10 | Wrong path | This only toggles the Jetson gadget bridge (`l4tbr0`/`usb0`/`usb1`); no Apple host enumeration. |
 | Wi-Fi hotspot from iPhone to Orin | 8/10 | Common fallback | Simpler routing; consumes Wi-Fi radio and may be less physically reliable than wired power/data. |
 | Dedicated LTE router/modem for Orin uplink | 8/10 | Recommended fallback | More field-grade than iPhone tethering; simpler to make persistent. |
 | Use iPhone USB only for charging/control, not uplink | 9/10 | Low risk | Keeps network topology simple if LoRa/Meshtastic or Wi-Fi provides the data path. |
