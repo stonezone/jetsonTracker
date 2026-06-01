@@ -1,0 +1,21 @@
+[Unit]
+Description=WaveCam deterministic health supervisor (local-only; observes, never drives the camera)
+After=wavecam.service
+Wants=wavecam.service
+
+[Service]
+Type=simple
+User=zack
+Group=zack
+WorkingDirectory=/data/projects/wavecam-testbed
+# Local-only health watcher. Set WAVECAM_SUPERVISOR_TOKEN when API auth is enabled.
+Environment=WAVECAM_API_BASE=http://127.0.0.1:8088/api/v1
+Environment=WAVECAM_SUPERVISOR_HEALTH=/run/wavecam/supervisor.json
+# Environment=WAVECAM_SUPERVISOR_TOKEN=<supervisor-token>
+ExecStart=/usr/bin/python3 -m wavecam.supervisor
+RuntimeDirectory=wavecam
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
