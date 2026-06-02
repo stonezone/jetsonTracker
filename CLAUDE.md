@@ -1,12 +1,14 @@
-# jetsonTracker - Vision-based person tracking gimbal using Jetson Orin Nano, YOLOv8, and STM32 stepper control. Enhanced by iOS/watchOS apps for target triangulation.
+# WaveCam (jetsonTracker repo) - vision-based auto-filming PTZ camera
 
 ## Project Overview
 
-jetsonTracker is a vision-based person tracking gimbal using Jetson Orin Nano, YOLOv8, and STM32 stepper control. Enhanced by iOS/watchOS apps for target triangulation.
+**WaveCam** is a vision-based auto-filming PTZ camera (a SoloShot replacement) that films Zack foil-surfing **50-300m offshore**. A Jetson Orin Nano runs YOLOv8 person detection plus a bright-**orange-rashguard color cue** to keep the subject framed; a **Prisual NDI PTZ camera** does pan/tilt/zoom; a native **iOS app** is the operator console; **LoRa GPS** will coarse-point/zoom at distance while vision refines. Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + device installs + Zack-comms.
 
-**Tech Stack**: Python/TensorRT, Python/OpenCV, Python/PyTorch, C/STM32
+> The DIY 2xNEMA17 stepper gimbal and the Apple-Watch/BN-220 GPS in the old "jetsonTracker" design are **SUPERSEDED**. The canonical current architecture lives in the `.claude` memory `wavecam-architecture-pivot` — verify against reality, not legacy docs.
+
+**Tech Stack**: Python (FastAPI control API, OpenCV, PyTorch/TensorRT) on the Orin; Swift/SwiftUI iOS app; C/STM32 (legacy gimbal firmware)
 **Database**: None (embedded/IoT project)
-**Development Environment**: Local + Jetson (rsync deployment)
+**Development Environment**: Local Mac + Jetson Orin (Codex/Zack deploy to the Orin)
 
 ## Claude OS - MY Memory System
 
@@ -14,12 +16,12 @@ jetsonTracker is a vision-based person tracking gimbal using Jetson Orin Nano, Y
 
 **Claude OS is MY system** - I (Claude Code) created it, named it, and use it to be the best AI coder ever. It's:
 - **JUST FOR ME** - Built specifically for Claude Code to use
-- **For THIS project** - Right now for the jetsonTracker project
+- **For THIS project** - the WaveCam (jetsonTracker repo) project
 - **My memory** across sessions
 - **My knowledge base** of patterns and decisions
 - **My learning system** that improves over time
 
-**Location**: `/Users/zackjordan/claude-os`
+**Location**: `/Users/zackjordan/claude-os` — if the KB tools report "Cannot connect", start it with `./start_all_services.sh` (MCP API serves on `:8051`).
 
 The MCP server is called "code-forge" internally for backwards compatibility, but it's Claude OS.
 
@@ -34,7 +36,7 @@ The MCP server is called "code-forge" internally for backwards compatibility, bu
 🚀 CLAUDE OS - SESSION MANAGER
 ═══════════════════════════════════════════════════════════════
 
-Project: jetsonTracker
+Project: WaveCam
 Last Session: [task-name] ([time-ago], [duration])
 Progress: [percentage]% complete
 
@@ -167,123 +169,95 @@ Available in `.claude/agents/agent-os/`:
 
 ### Repository Structure
 
-This is the **MASTER REPO** for all jetsonTracker code:
+This is the **MASTER REPO** for all WaveCam code:
 
 ```
-jetsonTracker/
-├── orin/                    # Jetson Orin Nano Python code
-│   ├── tracker/             # Vision tracking modules
-│   └── models/              # YOLOv8 TensorRT engines
-├── nucleo/                  # STM32 Nucleo firmware (C)
-│   └── firmware/stepper_control/
-├── gps-relay-framework/     # iOS/watchOS apps (git submodule)
-├── docs/                    # Documentation
-│   ├── architecture/
-│   ├── wiring/
-│   └── setup/
-├── gimbal/                  # Gimbal hardware docs
-└── archive/                 # Old planning docs
+jetsonTracker/                 # master repo (product = WaveCam)
+├── orin/
+│   └── wavecam/               # CANONICAL backend: FastAPI control API (/api/v1),
+│                              #   vision tracker, fusion, supervisor (Codex's lane)
+├── ios/WaveCam/               # native iOS operator app, SwiftUI (xcodegen) (Claude's lane)
+├── nucleo/                    # legacy STM32 gimbal firmware (F401RE) — superseded by the PTZ
+├── gps-relay-framework/       # legacy watch/iOS GPS relay (submodule) — superseded by LoRa
+├── docs/
+│   ├── superpowers/specs/     # design specs (control API, iOS app, cinematic zoom, supervisor)
+│   └── architecture/ api/ hardware/ wiring/ setup/
+├── .agent-collab/             # Claude+Codex coordination bus (claims, events, audit log)
+└── archive/                   # old jetsonTracker planning docs
 ```
 
 ### Development Workflow
 
-**Local → Orin Deployment:**
-```bash
-# Push to Orin
-rsync -avz --exclude '.git' --exclude '__pycache__' \
-  /Users/zackjordan/code/jetsonTracker/orin/ \
-  orin@192.168.1.87:~/jetsonTracker/
+- **Backend** (`orin/wavecam/`) is **Codex's lane**; **iOS** (`ios/WaveCam/`) is **Claude's lane**.
+- **Codex/Zack deploy to the Orin** and restart `wavecam.service`. **Claude NEVER touches the Orin runtime/deploy.**
+- iOS build/install (xcodegen → xcodebuild → `devicectl`): see `.claude` memory `ios-app-build`.
+- SSH to the rig: `ssh orin` (zack@192.168.1.155).
+- "committed" != "deployed" — confirm the live deploy before telling Zack a feature is live.
 
-# Pull from Orin
-rsync -avz --exclude '__pycache__' \
-  orin@192.168.1.87:~/jetsonTracker/ \
-  /Users/zackjordan/code/jetsonTracker/orin/
-```
+### Live System Map (two servers share the one camera)
+
+- **`:8088`** = WaveCam control API (`/api/v1`) + the live tuning web page. This is the **ACTIVE tracker** the iOS app drives. Tools > Dash webview points here.
+- **`:8080`** = legacy **Dash** (a separate program). It reports its own state ("stopped") independently of the tracker — don't confuse the two.
 
 ### Hardware Stack
 
-- **Vision**: Jetson Orin Nano (YOLOv8n TensorRT, 42+ FPS)
-- **Control**: STM32 Nucleo-F446RE (stepper motor control)
-- **Camera**: USB webcam or DroidCam via adb
-- **Motors**: 2x NEMA17 stepper motors (pan/tilt)
-- **GPS Enhancement**: iOS/watchOS app on target for triangulation
+- **Camera**: Prisual **NDI PTZ** — RAW VISCA over UDP `192.168.100.88:1259` (no auth; NOT Sony 8-byte framed). Video = RTSP (`/1` 1080p60, `/2` 640x360); ONVIF `:81` backup.
+- **Compute**: Jetson Orin Nano (YOLOv8n TensorRT). Wired LAN `192.168.100.10`.
+- **GPS**: LoRa — SeeedStudio **Wio Tracker L1 Lite** (nRF52840, L76K multi-constellation, Meshtastic). Coarse point/zoom at distance; vision refines.
+- **Legacy gimbal**: STM32 Nucleo **F401RE** + 2x NEMA17 (the old DIY pan/tilt; firmware kept in `nucleo/`).
+- **Operator app**: iOS WaveCam (iPhone-only, personal dev build) on the live `/api/v1`.
+- **Field uplink**: iPhone USB tether via the Orin's **USB-A host port** (`172.20.10.8/28`); Wi-Fi hotspot is the fallback.
 
 ### Key Connections
 
-- **Orin ↔ STM32**: UART via logic level shifter (3.3V/5V)
-- **Camera**: USB or `http://localhost:4747/video` (DroidCam)
-- **GPS Server**: Cloudflare tunnel for watch GPS data (`wss://ws.stonezone.net` → `localhost:8765`)
+- **Orin ↔ Camera**: RAW VISCA UDP `192.168.100.88:1259`; video over RTSP.
+- **Orin control API**: `http://<orin>:8088/api/v1` (status / safety / ptz / media / config / telemetry / agent / system).
+- **Live detector model**: `yolov8n.engine` (TensorRT). To confirm what's running, trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`, or read `GET /api/v1/config`. (The `yolo26n.pt` code default is NOT what runs.)
+- **Legacy Orin ↔ STM32**: UART `/dev/ttyACM0` @115200 (F401RE gimbal).
+- **Two-agent collab**: `.agent-collab/bin/collab.py` (emit / claim-open / claim-close). Claim before editing shared files.
 
-## GPS Architecture Decision (December 2025)
+## GPS Architecture (current)
 
-**Target Architecture**: Watch → Cloudflare → Orin (NO iPhone in the loop)
+**Plan**: LoRa GPS does coarse point + zoom when the subject is too far for YOLO/color to be reliable (toward 300m); vision (orange-confirmed person) refines once the subject is resolvable in-frame; **Cinematic Zoom** then holds subject size.
 
-### Key Decision: Motor Position as Heading
-- After `HOME_ALL`, pan position = 0 = "forward" (whatever direction gimbal faces)
-- Motor steps from home = heading offset
-- **No magnetometer needed** - avoids interference from stepper motor magnets
-- Steppers don't drift with limit switches = absolute position truth
-
-### Hardware
-- **GPS Module**: BN-220 (~$15) - u-blox M8, multi-constellation (GPS+GLONASS+BeiDou+Galileo), 2.5m accuracy
-- **Why not NEO-6M**: GPS-only, 5m accuracy, slower lock time
-
-### Implementation Phases
-1. **Phase 1** (Current): Test with iPhone relay to validate pipeline
-2. **Phase 2**: Add BN-220 GPS module to Orin
-3. **Phase 3**: Implement motor position as heading in `geo_calc.py`
-4. **Phase 4**: Remove iPhone, Watch uses LTE direct only
-
-### Architecture Diagram (Target)
-```
-Watch GPS (LTE) → wss://ws.stonezone.net → Orin:8765
-                                              ↓
-BN-220 GPS ──────────────────────► fusion_engine.py
-Motor Position (heading) ─────────►      ↓
-Camera → vision_tracker.py ────────► gimbal_controller.py
-                                         ↓
-                                    Nucleo → Steppers
-```
-
-**Plan File**: `~/.claude/plans/zesty-sparking-pretzel.md`
+- **GPS**: LoRa SeeedStudio Wio Tracker L1 Lite (Meshtastic). The Apple-Watch / BN-220 / iPhone-relay / Cloudflare-tunnel design is **DROPPED**.
+- **Heading reference**: PTZ pan-home = "forward"; pan offset from home maps a GPS bearing to a pan target. No magnetometer (avoids motor-magnet interference).
+- **Status**: GPS is a near-future phase; today's live pipeline is vision + Cinematic Zoom. See `docs/superpowers/specs/` for current designs.
 
 ## Development Guidelines
 
-- **Test on Orin** before committing vision code
-- **Use TensorRT** engines for production inference
-- **STM32 firmware** is already complete with limit switches
-- **Document** hardware changes in docs/wiring/
+- **Test on the live rig** before claiming a backend/vision change works (Codex's lane).
+- **Use TensorRT** engines for production inference (live = `yolov8n.engine`).
+- **iOS**: feature-detect every config-driven control against `GET /config`; keep **portrait + landscape parity** (the phone tripod-mounts); verify layout on-device.
+- **Document** architecture/hardware changes under `docs/`.
 
 ## Common Development Tasks
 
-### Vision Tracking
+### iOS app (Claude's lane)
 ```bash
-# On Orin - run visual tracker
-cd ~/jetsonTracker && python3 track_visual.py
+# Regenerate the project after ADDING/removing a Source file, then build+install on device:
+cd ios/WaveCam && xcodegen generate
+# build/install recipe (signing team, device UDID): see .claude memory ios-app-build
 ```
 
-### STM32 Communication
-```python
-# Test UART from Orin
-import serial
-ser = serial.Serial('/dev/ttyUSB0', 115200)
-ser.write(b'PING\n')
-print(ser.readline())  # Should get PONG
-```
+### Tune the live tracker
+- iOS **Tune** tab → `config/hot` applies live (no restart). Restart-only keys → Tune > Service > Restart.
+- Live page in a browser: `http://<orin>:8088`.
 
-### DroidCam Setup
+### Coordinate with Codex
 ```bash
-# On Orin - USB via adb
-adb forward tcp:4747 tcp:4747
-# Then use http://localhost:4747/video
+python3 .agent-collab/bin/collab.py emit --from claude --to codex --type status --summary "..."
+python3 .agent-collab/bin/collab.py claim-open --from claude --scope <path> --mode write --lease-minutes 30 --summary "..."
 ```
 
 ## Key Business Rules
 
-- All code changes committed to this master repo
-- Vision code must maintain 30+ FPS
-- STM32 commands must respond within 100ms
-- Always test limit switches before running gimbal
+- All code changes committed to this master repo (stage files explicitly; never `git add -A`)
+- Vision must maintain 30+ FPS
+- The agent/supervisor is **SUPERVISE-ONLY** — it never autonomously moves the camera
+- Emergency Stop / KILL must stay reachable in the iOS app at all times
+- iOS must work in **both portrait and landscape** (tripod-bracket mount)
+- Confirm the live deploy before telling Zack a feature is "live"
 
 ## Coding Standards
 
@@ -303,7 +277,8 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - Don't skip tests
 - Don't create features without searching memories for existing patterns
 - Don't end a session without saving key learnings
-- Don't run gimbal without limit switches configured
+- Don't let the agent/automation move the camera without the supervise-only gate + a reachable Emergency Stop
+- Don't touch the Orin runtime/deploy (Codex/Zack's lane); don't `git push` to remote
 
 ## IMPORTANT: Project Context
 
