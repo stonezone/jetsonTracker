@@ -45,7 +45,7 @@ struct PTZView: View {
             joystickCard()
             zoomCard()
             actionRow()
-            PTZControlFeedback(commandState: commandState, lastError: client.lastError)
+            PTZControlFeedback(commandState: commandState, controlError: client.lastControlError)
             EmergencyStopButton()
         }
         .padding(.horizontal, 16)
@@ -64,7 +64,7 @@ struct PTZView: View {
             VStack(spacing: 10) {
                 zoomCard()
                 actionRow()
-                PTZControlFeedback(commandState: commandState, lastError: client.lastError)
+                PTZControlFeedback(commandState: commandState, controlError: client.lastControlError)
                 EmergencyStopButton(style: .compact)
             }
             .frame(width: 220)
@@ -573,11 +573,11 @@ private struct PTZActionRow: View {
 
 private struct PTZControlFeedback: View {
     let commandState: PTZCommandState
-    let lastError: String?
+    let controlError: String?
 
     var body: some View {
-        if let lastError {
-            PTZFeedbackPill(text: lastError, color: WC.warn, icon: "exclamationmark.triangle.fill")
+        if let controlError {
+            PTZFeedbackPill(text: controlError, color: WC.warn, icon: "exclamationmark.triangle.fill")
         } else if commandState == .stopping {
             PTZFeedbackPill(text: "Stopping PTZ...", color: WC.kill, icon: "stop.fill")
         } else if commandState == .startingAuto {
@@ -647,11 +647,5 @@ private extension Double {
 
     var signedPTZ: String {
         formatted(.number.sign(strategy: .always()).precision(.fractionLength(2)))
-    }
-}
-
-private extension String {
-    var isAutonomousPTZOwner: Bool {
-        self == "testbed" || self == "vision_follow" || self == "gps_tracker"
     }
 }

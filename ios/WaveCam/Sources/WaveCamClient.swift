@@ -21,11 +21,17 @@ enum WaveCamDefaults {
 }
 
 extension String {
+    /// Single source of truth for autonomous PTZ owners, shared by the owner label
+    /// and the action-row autonomy check so they cannot drift apart (review #P2-C).
+    static let autonomousPTZOwners: Set<String> = ["vision_follow", "gps_tracker", "testbed"]
+
+    var isAutonomousPTZOwner: Bool { String.autonomousPTZOwners.contains(self) }
+
     /// Operator-friendly PTZ owner label -- hides engine internals like
     /// vision_follow / testbed / gps_tracker behind a single AUTO (review #16).
     var ptzOwnerLabel: String {
+        if isAutonomousPTZOwner { return "AUTO" }
         switch self {
-        case "vision_follow", "gps_tracker", "testbed": return "AUTO"
         case "manual": return "MANUAL"
         case "idle", "": return "IDLE"
         default: return uppercased()
@@ -147,6 +153,9 @@ final class WaveCamClient {
     /// Last failed *command* (e.g. safety stop). Kept separate from `lastError` so the
     /// 1Hz status poll never wipes a failed-KILL message before the operator sees it (review #2).
     private(set) var lastCommandError: String?
+    /// Last failed PTZ/control command. Separate from `lastError` so a transient status-poll
+    /// failure can't paint a false "PTZ failed" banner on the PTZ screen (review #P1-C).
+    private(set) var lastControlError: String?
 
     private var mockKilled = false
     private var configuredBaseURL: URL
@@ -374,14 +383,14 @@ final class WaveCamClient {
             if applyControlResponse(data) == false {
                 return false
             }
-            lastError = nil
+            lastControlError = nil
             return true
         } catch let error as WaveCamAPIError {
             applyStatusIfPresent(error.data)
-            lastError = error.localizedDescription
+            lastControlError = error.localizedDescription
             return false
         } catch {
-            lastError = error.localizedDescription
+            lastControlError = error.localizedDescription
             return false
         }
     }
@@ -398,7 +407,7 @@ final class WaveCamClient {
             refreshAfterLegacyResponse()
         }
         if response.ok == false {
-            lastError = [response.code, response.message].compactMap(\.self).joined(separator: ": ")
+            lastControlError = [response.code, response.message].compactMap(\.self).joined(separator: ": ")
             return false
         }
         return true
