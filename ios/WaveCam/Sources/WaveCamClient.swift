@@ -157,6 +157,8 @@ struct WCConfig: Codable, Sendable {
             var maxPanSpeed: Int
             var maxTiltSpeed: Int
             var ffGain: Double
+            var cinematicZoomEnabled: Bool?
+            var zoomTargetFrac: Double?
         }
         struct Fusion: Codable, Sendable {
             var requirePerson: Bool

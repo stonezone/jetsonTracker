@@ -20,6 +20,9 @@ struct TuneView: View {
     @State private var model: String?
     @State private var restartKeys: [String] = []
     @State private var showRestartConfirm = false
+    @State private var cinematicAvailable = false
+    @State private var cinematicEnabled = false
+    @State private var subjectSize = 0.5
 
     private let presets = ["orange_red", "orange", "blue", "green", "yellow", "pink"]
     private let classes: [(id: Int, name: String)] = [
@@ -59,6 +62,16 @@ struct TuneView: View {
                     sliderRow("Deadband", value: $deadzone, range: 0.02...0.30, step: 0.01, readout: fmt(deadzone), key: "ptz.deadzone")
                     TuneDivider()
                     sliderRow("Feed-forward gain", value: $ffGain, range: 0.0...1.0, step: 0.05, readout: fmt(ffGain), key: "ptz.ff_gain")
+                }
+
+                if cinematicAvailable {
+                    TuneCard(title: "CINEMATIC ZOOM") {
+                        toggleRow("Cinematic zoom (auto-frame)", isOn: $cinematicEnabled, key: "ptz.cinematic_zoom_enabled")
+                        if cinematicEnabled {
+                            TuneDivider()
+                            sliderRow("Subject size", value: $subjectSize, range: 0.2...0.8, step: 0.05, readout: fmt(subjectSize), key: "ptz.zoom_target_frac")
+                        }
+                    }
                 }
 
                 if !restartKeys.isEmpty {
@@ -181,6 +194,11 @@ struct TuneView: View {
         ffGain = cfg.current.ptz.ffGain
         model = cfg.current.detector.model
         restartKeys = cfg.restartRequiredKeys ?? []
+        if let cz = cfg.current.ptz.cinematicZoomEnabled {
+            cinematicAvailable = true
+            cinematicEnabled = cz
+            subjectSize = cfg.current.ptz.zoomTargetFrac ?? 0.5
+        }
         loaded = true
     }
 
