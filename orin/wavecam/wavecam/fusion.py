@@ -28,6 +28,7 @@ if TYPE_CHECKING:                       # type-only: keeps fusion importable cv2
 class FusionResult:
     target_xy: Optional[Tuple[float, float]] = None
     bbox: Optional[Tuple[int, int, int, int]] = None
+    person_bbox: Optional[Tuple[int, int, int, int]] = None
     conf: float = 0.0
     locked: bool = False
     state: str = "SEARCHING"          # SEARCHING | TRACKING | COASTING
@@ -92,33 +93,37 @@ class Fusion:
                 if any(_dist((b.cx, b.cy), _person_center(p)) <= md for b in blobs)]
 
     def _select(self, blobs, persons):
-        """(raw_xy, bbox, conf, matched) by priority + continuity. While tracking,
-        a person near the last target keeps the lock so an unmatched far blob can't
-        steal it; color-blob outranks person-only only for acquisition."""
+        """(raw_xy, bbox, person_bbox, conf, matched) by priority + continuity.
+        While tracking, a person near the last target keeps the lock so an
+        unmatched far blob can't steal it; color-blob outranks person-only only
+        for acquisition."""
         confirmed = self._confirmed(blobs, persons)
         if confirmed:
             p = self._continuity(confirmed, self._person_aim)
-            return self._person_aim(p), _person_xywh(p), 0.5 + 0.5 * p.conf, True
+            bbox = _person_xywh(p)
+            return self._person_aim(p), bbox, bbox, 0.5 + 0.5 * p.conf, True
         if self.cfg.require_person:
-            return None, None, 0.0, False
+            return None, None, None, 0.0, False
         if self._ema is not None and persons:
             p, d = self._nearest_person(persons, self._ema)
             if p is not None and d <= self.cfg.match_dist:
-                return self._person_aim(p), _person_xywh(p), 0.45, False      # locked subject -> sustain
+                bbox = _person_xywh(p)
+                return self._person_aim(p), bbox, bbox, 0.45, False      # locked subject -> sustain
         if blobs:
             b = self._continuity(blobs, lambda x: (x.cx, x.cy))
-            return (b.cx, b.cy), b.bbox, 0.45, False
+            return (b.cx, b.cy), b.bbox, None, 0.45, False
         if persons:
             p = self._continuity(persons, self._person_aim)
-            return self._person_aim(p), _person_xywh(p), 0.2, False
-        return None, None, 0.0, False
+            bbox = _person_xywh(p)
+            return self._person_aim(p), bbox, bbox, 0.2, False
+        return None, None, None, 0.0, False
 
     def update(self, blobs: List[Blob], persons: Optional[List[PersonBox]]) -> FusionResult:
         now = time.time()
         persons = persons or []
         has_color, has_person = len(blobs) > 0, len(persons) > 0
 
-        raw_xy, bbox, conf, matched = self._select(blobs, persons)
+        raw_xy, bbox, person_bbox, conf, matched = self._select(blobs, persons)
 
         if conf >= self.cfg.lock_threshold:
             self._locked = True
@@ -148,6 +153,7 @@ class Fusion:
         return FusionResult(
             target_xy=out_xy,
             bbox=bbox if state != "SEARCHING" else None,
+            person_bbox=person_bbox if state != "SEARCHING" else None,
             conf=round(conf, 3),
             locked=self._locked,
             state=state,

@@ -34,6 +34,10 @@ class PtzCfg:
     command_min_interval: float = 0.05
     ff_gain: float = 0.0
     ff_deadzone_mult: float = 1.5
+    cinematic_zoom_enabled: bool = False
+    zoom_target_frac: float = 0.5
+    zoom_deadband: float = 0.06
+    zoom_max_speed: int = 5
 
 
 @dataclass

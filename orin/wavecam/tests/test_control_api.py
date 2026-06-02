@@ -90,6 +90,7 @@ class DummyPipeline:
         self.owner = PtzOwner()
         self.ptz = DummyPtz()
         self.recorder = DummyRecorder()
+        self.zoom_suppressed = []
         self.restart_calls = []
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
@@ -140,6 +141,9 @@ class DummyPipeline:
 
     def restart_service(self, unit):
         self.restart_calls.append(unit)
+
+    def suppress_cinematic_zoom(self, seconds):
+        self.zoom_suppressed.append(seconds)
 
 
 def make_client():
@@ -422,13 +426,16 @@ def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
 
     pipe.owner.release("manual")
     assert pipe.owner.request("testbed") is True
-    blocked = client.post(
+    override = client.post(
         "/api/v1/ptz/zoom",
         json={"requested_owner": "manual", "mode": "velocity", "value": 0.5},
     )
 
-    assert blocked.status_code == 409
-    assert blocked.json()["code"] == "owner_busy"
+    assert override.status_code == 200
+    assert override.json()["status"]["ptz"]["owner"] == "testbed"
+    assert pipe.owner.owner == "testbed"
+    assert ("zoom", "tele", 4) in pipe.ptz.calls
+    assert pipe.zoom_suppressed
 
     takeover = client.post(
         "/api/v1/ptz/zoom",
@@ -436,7 +443,7 @@ def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
     )
 
     assert takeover.status_code == 200
-    assert takeover.json()["status"]["ptz"]["owner"] == "manual"
+    assert takeover.json()["status"]["ptz"]["owner"] == "testbed"
     assert ("zoom", "tele", 4) in pipe.ptz.calls
 
 
@@ -463,6 +470,10 @@ def test_api_v1_config_hot_applies_known_keys_only():
             "patch": {
                 "ptz.deadzone": 0.10,
                 "ptz.max_pan_speed": 12,
+                "ptz.cinematic_zoom_enabled": True,
+                "ptz.zoom_target_frac": 0.45,
+                "ptz.zoom_deadband": 0.08,
+                "ptz.zoom_max_speed": 4,
                 "fusion.lock_threshold": 0.70,
                 "fusion.require_person": True,
                 "fusion.match_dist": 80,
@@ -480,6 +491,10 @@ def test_api_v1_config_hot_applies_known_keys_only():
     assert response.json()["ok"] is True
     assert pipe.cfg.ptz.deadzone == 0.10
     assert pipe.cfg.ptz.max_pan_speed == 12
+    assert pipe.cfg.ptz.cinematic_zoom_enabled is True
+    assert pipe.cfg.ptz.zoom_target_frac == 0.45
+    assert pipe.cfg.ptz.zoom_deadband == 0.08
+    assert pipe.cfg.ptz.zoom_max_speed == 4
     assert pipe.cfg.fusion.lock_threshold == 0.70
     assert pipe.cfg.fusion.require_person is True
     assert pipe.cfg.fusion.match_dist == 80
@@ -508,8 +523,12 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert response.status_code == 200
     body = response.json()
     assert body["current"]["ptz"]["max_pan_speed"] == 10
+    assert body["current"]["ptz"]["cinematic_zoom_enabled"] is False
+    assert body["current"]["ptz"]["zoom_target_frac"] == 0.5
     assert body["current"]["color"]["preset"] == "orange_red"
     assert "blue" in body["supported"]["color_presets"]
+    assert "ptz.cinematic_zoom_enabled" in body["hot_keys"]
+    assert "ptz.zoom_target_frac" in body["hot_keys"]
     assert "detector.conf" in body["hot_keys"]
     assert "detector.model" in body["restart_required_keys"]
 

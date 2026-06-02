@@ -50,12 +50,14 @@ def check(c, m):
 f = Fusion(_cfg())
 r = f.update([_blob(320, 180)], [_person(322, 182)])
 check(r.matched and r.locked and r.conf >= 0.6, "color-confirmed person locks")
+check(r.person_bbox == (302, 137, 40, 90), "selected person bbox is exposed separately for zoom")
 
 r2 = f.update([_blob(40, 40, area=12000)], [_person(320, 180)])
 check(r2.target_xy[0] > 250 and r2.locked, "locked near-person not stolen by a far blob")
 
 r3 = f.update([_blob(322, 182)], [])
 check(r3.target_xy[0] > 250 and r3.locked, "color-only carries lock through YOLO dropout")
+check(r3.person_bbox is None, "color-only lock carry does not expose color bbox as person bbox")
 
 g = Fusion(_cfg())
 ro = g.update([], [_person(100, 100, 0.9)])

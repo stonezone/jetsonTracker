@@ -71,6 +71,9 @@ class Pipeline(threading.Thread):
         self._stop = threading.Event()
         self._last_cmd_key = None
         self._last_cmd_time = 0.0
+        self._last_zoom_key = None
+        self._last_zoom_time = 0.0
+        self._cinematic_zoom_suppressed_until = 0.0
         self._last_boxes = []
         self._last_boxes_time = 0.0
         self._frame_i = 0
@@ -104,6 +107,62 @@ class Pipeline(threading.Thread):
                 self.ptz.pan_tilt(cmd.pan_speed, cmd.tilt_speed, cmd.pan_dir, cmd.tilt_dir)
             self._last_cmd_key = key
             self._last_cmd_time = now
+
+    def suppress_cinematic_zoom(self, seconds: float) -> None:
+        """Suppress auto-zoom briefly after a manual zoom nudge.
+
+        This deliberately does not touch PTZ owner state, so pan/tilt tracking can
+        continue while the operator rides zoom.
+        """
+        until = time.time() + max(0.0, seconds)
+        self._cinematic_zoom_suppressed_until = max(
+            getattr(self, "_cinematic_zoom_suppressed_until", 0.0),
+            until,
+        )
+
+    def _cinematic_zoom_suppressed(self, now: float | None = None) -> bool:
+        now = time.time() if now is None else now
+        return now < getattr(self, "_cinematic_zoom_suppressed_until", 0.0)
+
+    def _send_zoom(self, direction: str, speed: int = 0) -> None:
+        """Rate-limited, de-duped zoom send. Separate from pan/tilt de-dupe."""
+        if not self.cfg.ptz.enabled:
+            return
+        direction = direction if direction in ("tele", "wide") and speed > 0 else "stop"
+        speed = int(speed) if direction != "stop" else 0
+        now = time.time()
+        key = (direction, speed)
+        changed = key != getattr(self, "_last_zoom_key", None)
+        due = (now - getattr(self, "_last_zoom_time", 0.0)) >= self.cfg.ptz.command_min_interval
+        if changed or (due and direction != "stop"):
+            self.ptz.zoom(direction, speed)
+            self._last_zoom_key = key
+            self._last_zoom_time = now
+
+    def _auto_zoom_is_moving(self) -> bool:
+        return getattr(self, "_last_zoom_key", None) not in (None, ("stop", 0))
+
+    def _maybe_send_cinematic_zoom(self, fr, frame_h: int) -> str | None:
+        if not self.cfg.ptz.enabled:
+            return None
+        if not bool(getattr(self.cfg.ptz, "cinematic_zoom_enabled", False)):
+            if self._auto_zoom_is_moving():
+                self._send_zoom("stop")
+                return "hold"
+            return None
+        if self.owner.owner != "testbed":
+            return None
+        if self._cinematic_zoom_suppressed():
+            return "manual_override"
+        if not getattr(fr, "locked", False):
+            if self._auto_zoom_is_moving():
+                self._send_zoom("stop")
+                return "hold"
+            return None
+
+        direction, speed = self.servo.compute_zoom(getattr(fr, "person_bbox", None), frame_h)
+        self._send_zoom(direction, speed)
+        return "hold" if direction == "stop" else f"{direction}{speed}"
 
     def run(self):
         self.grab.start()
@@ -149,10 +208,14 @@ class Pipeline(threading.Thread):
             if self.state.killed:
                 cmd = STOP_CMD
                 self._send_cmd(cmd)               # killed -> force stop
+                self._send_zoom("stop")
+                zoom_cmd = "hold"
             else:
                 cmd = self.servo.compute(fr.target_xy, (w, h))
+                zoom_cmd = None
                 if self.owner.owner == "testbed":
                     self._send_cmd(cmd)           # else: not owner -> don't drive
+                    zoom_cmd = self._maybe_send_cinematic_zoom(fr, h)
 
             # render
             hud = {
@@ -175,6 +238,7 @@ class Pipeline(threading.Thread):
                 ptz_enabled=self.cfg.ptz.enabled,
                 cmd=("stop" if cmd.is_stop or self.owner.owner != "testbed"
                      else f"p{cmd.pan_speed}/t{cmd.tilt_speed}"),
+                zoom_cmd=zoom_cmd or "hold",
             )
 
             # fps bookkeeping

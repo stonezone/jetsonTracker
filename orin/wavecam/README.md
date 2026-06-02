@@ -60,6 +60,9 @@ Edit `config.yaml`:
   in the YOLO box
 - `ptz.ff_gain` and `ptz.ff_deadzone_mult` → feed-forward lead controls; default
   feed-forward is off, and feed-forward is suppressed near the deadzone
+- `ptz.cinematic_zoom_enabled` → optional person-box auto-zoom; default off.
+  `ptz.zoom_target_frac`, `ptz.zoom_deadband`, and `ptz.zoom_max_speed` tune the
+  subject size and zoom response.
 - leave **`ptz.enabled: false`** for the first run
 
 ---
@@ -93,6 +96,9 @@ in frame and step side-to-side; the camera should follow and re-center.
   live values; persist them in `config.yaml`).
 - jittery / oscillating → raise **Deadband** or **FF deadband mult**, lower max
   speeds, and keep **Feed-forward gain** low/off until the target is stable.
+- optional auto-framing → enable **Cinematic Zoom** only after pan/tilt tracking
+  is stable. It zooms only from a locked YOLO person box and holds zoom on
+  color-only/no-person frames.
 - **KILL** button stops PTZ instantly and latches; **RESUME** re-enables.
 - **Stop PTZ** sends stop and holds manual ownership; **Start Auto** hands PTZ
   back to the tracker.
@@ -107,7 +113,8 @@ in frame and step side-to-side; the camera should follow and re-center.
 | KILL / RESUME | latch PTZ stopped / re-enable |
 | Start Auto | request autonomous PTZ owner `testbed`; refused while KILL is latched |
 | Stop PTZ | durable manual hold; camera stays stopped until Start Auto |
-| Zoom± / Zoom stop | manual zoom velocity commands through the owner gate |
+| Zoom± / Zoom stop | manual zoom velocity commands; during auto tracking, manual zoom suppresses only Cinematic Zoom and leaves pan/tilt owner active |
+| Cinematic Zoom | hot toggle for person-box auto-zoom; default off; subject-size slider maps to `ptz.zoom_target_frac` |
 | Color preset | hot-switch HSV presets: `orange_red`, `orange`, `blue`, `green`, `yellow`, `pink` |
 | YOLO class / confidence / cadence | hot tune the validator trigger without restart |
 | Person aim Y | hot tune where the servo centers inside the person box |
@@ -124,6 +131,14 @@ Example hot patch:
 curl -X POST http://<orin-ip>:8088/api/v1/config/hot \
   -H 'Content-Type: application/json' \
   -d '{"patch":{"color.preset":"blue","fusion.require_person":true,"ptz.ff_deadzone_mult":1.8}}'
+```
+
+Example Cinematic Zoom hot patch:
+
+```bash
+curl -X POST http://<orin-ip>:8088/api/v1/config/hot \
+  -H 'Content-Type: application/json' \
+  -d '{"patch":{"ptz.cinematic_zoom_enabled":true,"ptz.zoom_target_frac":0.45}}'
 ```
 
 Example restart after editing restart-only config:
@@ -147,6 +162,7 @@ cd orin/wavecam
 python -m tests.test_offline
 python -m tests.test_controller_extra
 python -m tests.test_fusion
+python -m tests.test_cinematic_zoom
 python -m tests.test_control_api
 cd ..
 python scripts/test_vision_follow_logic.py
@@ -154,9 +170,9 @@ python scripts/test_vision_follow_logic.py
 
 Checks the RAW VISCA byte sequences (no Sony VISCA-over-IP header — what the
 Prisual uses on UDP 1259), speed clamps + stop, servo direction/speed mapping,
-feed-forward suppression near the deadzone, color/person fusion, Control API hot
-config, and the legacy Vision Follow target picker. Run these before trusting
-the control path.
+feed-forward suppression near the deadzone, color/person fusion, Cinematic Zoom
+gating, Control API hot config, and the legacy Vision Follow target picker. Run
+these before trusting the control path.
 
 ---
 

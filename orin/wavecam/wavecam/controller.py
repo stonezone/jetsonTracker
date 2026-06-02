@@ -103,9 +103,9 @@ class VisualServo:
         Drives the person bbox height toward target_frac of the frame height."""
         if not person_bbox or frame_h <= 0:
             return "stop", 0
-        target = getattr(self.cfg, "target_frac", 0.5)
+        target = getattr(self.cfg, "zoom_target_frac", getattr(self.cfg, "target_frac", 0.5))
         dz = getattr(self.cfg, "zoom_deadband", 0.06)
-        zmax = int(getattr(self.cfg, "zoom_max", 5))
+        zmax = int(getattr(self.cfg, "zoom_max_speed", getattr(self.cfg, "zoom_max", 5)))
         frac = person_bbox[3] / float(frame_h)
         err = target - frac
         if abs(err) <= dz:

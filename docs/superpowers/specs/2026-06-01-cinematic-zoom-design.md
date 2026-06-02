@@ -1,6 +1,7 @@
 # Cinematic Zoom — Design Spec (2026-06-01)
 
-Status: **approved**. iOS controls are committed and feature-detected; backend wiring is pending.
+Status: **implemented in repo**. Default off; live only when
+`ptz.cinematic_zoom_enabled=true`.
 
 ## Goal
 Optional vision-based auto-zoom that holds the tracked subject at a chosen size in
@@ -20,9 +21,9 @@ controls (toggle + Subject-size slider).
 ## Behavior
 - **Enabled + locked on a YOLO person box:** drive tele/wide to bring the person-box height
   toward `zoom_target_frac` of frame height; `zoom_deadband` stops it at target; speed capped
-  by `zoom_max_speed`. Reuses the existing (currently **unwired**) `controller.compute_zoom`.
-- **Color-only / no-person frame:** HOLD zoom (no command). Pan/tilt centering continues; no
-  hunting off the color blob.
+  by `zoom_max_speed`. Uses `controller.compute_zoom`.
+- **Color-only / no-person frame:** HOLD zoom. Pan/tilt centering continues; no hunting off
+  the color blob.
 - **Default OFF** (`ptz.cinematic_zoom_enabled = false`).
 
 ## Backend (Codex) — incorporates his review
@@ -65,4 +66,4 @@ cinematic suppressed → resumes after the window.
 Manual override: **keep pan/tilt auto-tracking running.** Implement the **separate zoom-override
 deadman** — a manual `ptz/zoom` suppresses ONLY cinematic zoom for the deadman window; pan/tilt
 centering continues uninterrupted; cinematic zoom resumes after. (NOT the full owner-suppression.)
-Spec approved — proceeding: Codex = backend wiring; Claude = iOS Tune controls.
+Spec approved and implemented in repo.

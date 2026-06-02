@@ -1005,9 +1005,9 @@
             </tr>
             <tr>
               <td>ptz.cinematic_zoom_enabled / ptz.zoom_target_frac</td>
-              <td>backend pending</td>
+              <td>false / 0.50</td>
               <td>Person-box auto-zoom that keeps the subject near a chosen frame size.</td>
-              <td>iOS Tune controls are committed and feature-detected. They appear only after the backend exposes these keys and wires zoom control.</td>
+              <td>Default off. Enable only after pan/tilt tracking is stable and the lock is on a YOLO person box. Manual zoom suppresses cinematic zoom briefly without stopping pan/tilt tracking.</td>
             </tr>
           </tbody>
         </table>
@@ -1037,7 +1037,7 @@
           <ol>
             <li>Hot tuning does not write back to YAML automatically.</li>
             <li>Restart-only keys still require editing persistent config or the Orin web UI before using the confirmed restart path.</li>
-            <li>Cinematic Zoom is approved and the iOS controls are committed, but backend person-box zoom wiring is not live yet.</li>
+            <li>Cinematic Zoom is backend-wired and default off. It holds zoom on color-only/no-person frames and drives zoom only from a locked YOLO person box.</li>
             <li>The service restart timeout was fixed with a VISCA brake plus fast systemd stop; this is validated, but it is not a graceful TensorRT thread teardown.</li>
           </ol>
         </div>

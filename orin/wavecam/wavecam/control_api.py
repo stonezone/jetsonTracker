@@ -35,6 +35,10 @@ HOT_CONFIG_KEYS = (
     "ptz.ff_deadzone_mult",
     "ptz.invert_pan",
     "ptz.invert_tilt",
+    "ptz.cinematic_zoom_enabled",
+    "ptz.zoom_target_frac",
+    "ptz.zoom_deadband",
+    "ptz.zoom_max_speed",
     "fusion.lock_threshold",
     "fusion.unlock_threshold",
     "fusion.require_person",
@@ -237,10 +241,14 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
         if req.mode != "velocity":
             return api.refusal("invalid_request", "Only mode=velocity is accepted in v1.", 422)
+        if api.pipeline.owner.owner in AUTONOMOUS:
+            api.send_manual_zoom_velocity(req.value, req.deadman_ms)
+            api.bump_revision()
+            return api.ok()
         if not api.claim_manual(takeover=req.takeover):
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
-        api.send_manual_zoom_velocity(req.value)
+        api.send_manual_zoom_velocity(req.value, req.deadman_ms)
         if req.value == 0:
             api.cancel_manual_deadman()
             api.release_manual_owner()
@@ -421,15 +429,19 @@ class ControlApiAdapter:
             self.pipeline.ptz.stop()
         else:
             self.pipeline.ptz.pan_tilt(pan_speed, tilt_speed, pan_dir, tilt_dir)
-        self.send_manual_zoom(req.zoom)
+        self.send_manual_zoom(req.zoom, req.deadman_ms)
 
-    def send_manual_zoom_velocity(self, zoom: float) -> None:
+    def send_manual_zoom_velocity(self, zoom: float, deadman_ms: int = 800) -> None:
         if zoom == 0:
             self.pipeline.ptz.zoom("stop")
             return
-        self.send_manual_zoom(zoom)
+        self.send_manual_zoom(zoom, deadman_ms)
 
-    def send_manual_zoom(self, zoom: float) -> None:
+    def send_manual_zoom(self, zoom: float, deadman_ms: int = 800) -> None:
+        if zoom != 0:
+            suppress = getattr(self.pipeline, "suppress_cinematic_zoom", None)
+            if callable(suppress):
+                suppress(deadman_ms / 1000.0)
         if zoom > 0:
             self.pipeline.ptz.zoom("tele", zoom_speed(zoom))
         elif zoom < 0:
@@ -477,6 +489,12 @@ class ControlApiAdapter:
             ),
             "ptz.invert_pan": lambda: set_bool(cfg.ptz, "invert_pan", value),
             "ptz.invert_tilt": lambda: set_bool(cfg.ptz, "invert_tilt", value),
+            "ptz.cinematic_zoom_enabled": lambda: set_bool(
+                cfg.ptz, "cinematic_zoom_enabled", value
+            ),
+            "ptz.zoom_target_frac": lambda: set_float(cfg.ptz, "zoom_target_frac", value, 0.2, 0.8),
+            "ptz.zoom_deadband": lambda: set_float(cfg.ptz, "zoom_deadband", value, 0.01, 0.30),
+            "ptz.zoom_max_speed": lambda: set_int(cfg.ptz, "zoom_max_speed", value, 1, 7),
             "fusion.lock_threshold": lambda: set_float(cfg.fusion, "lock_threshold", value, 0.05, 0.95),
             "fusion.unlock_threshold": lambda: set_float(cfg.fusion, "unlock_threshold", value, 0.05, 0.95),
             "fusion.require_person": lambda: set_bool(cfg.fusion, "require_person", value),
@@ -690,6 +708,12 @@ def build_config_snapshot(pipeline, revision: int) -> dict:
                 "ff_deadzone_mult": getattr(cfg.ptz, "ff_deadzone_mult", 1.5),
                 "invert_pan": cfg.ptz.invert_pan,
                 "invert_tilt": cfg.ptz.invert_tilt,
+                "cinematic_zoom_enabled": bool(
+                    getattr(cfg.ptz, "cinematic_zoom_enabled", False)
+                ),
+                "zoom_target_frac": getattr(cfg.ptz, "zoom_target_frac", 0.5),
+                "zoom_deadband": getattr(cfg.ptz, "zoom_deadband", 0.06),
+                "zoom_max_speed": getattr(cfg.ptz, "zoom_max_speed", 5),
             },
             "fusion": {
                 "lock_threshold": cfg.fusion.lock_threshold,
@@ -786,7 +810,7 @@ def build_ptz(legacy: dict, pipeline) -> dict:
         "owner": str(legacy.get("owner", IDLE)),
         "enabled": bool(legacy.get("ptz_enabled", cfg_enabled)),
         "pan_tilt_cmd": legacy.get("cmd"),
-        "zoom_state": "hold",
+        "zoom_state": str(legacy.get("zoom_cmd", "hold")),
     }
 
 
