@@ -6,11 +6,14 @@ struct ConnectionView: View {
     @Environment(WaveCamClient.self) private var client
 
     @AppStorage(WaveCamDefaults.modeKey) private var storedMode = WaveCamClient.Mode.live.rawValue
-    @AppStorage(WaveCamDefaults.baseURLKey) private var storedBaseURL = WaveCamDefaults.baseURLString
+    @AppStorage(WaveCamDefaults.baseURLKey) private var storedLegacyBaseURL = WaveCamDefaults.baseURLString
+    @AppStorage(WaveCamDefaults.tetherBaseURLKey) private var storedTetherBaseURL = WaveCamDefaults.tetherBaseURLString
+    @AppStorage(WaveCamDefaults.wifiBaseURLKey) private var storedWifiBaseURL = WaveCamDefaults.wifiBaseURLString
     @AppStorage(WaveCamDefaults.mockFallbackKey) private var storedMockFallback = false
 
     @State private var selectedMode = WaveCamClient.Mode.live
-    @State private var baseURLText = WaveCamDefaults.baseURLString
+    @State private var tetherURLText = WaveCamDefaults.tetherBaseURLString
+    @State private var wifiURLText = WaveCamDefaults.wifiBaseURLString
     @State private var tokenText = ""
     @State private var mockFallbackEnabled = false
     @State private var validationError: String?
@@ -21,12 +24,14 @@ struct ConnectionView: View {
                 ConnectionStatusCard(
                     mode: client.mode,
                     connected: client.connected,
+                    activeRoute: client.activeRoute,
                     baseURL: client.baseURL,
                     lastError: client.lastError
                 )
                 ConnectionFormCard(
                     selectedMode: $selectedMode,
-                    baseURLText: $baseURLText,
+                    tetherURLText: $tetherURLText,
+                    wifiURLText: $wifiURLText,
                     tokenText: $tokenText,
                     mockFallbackEnabled: $mockFallbackEnabled,
                     validationError: validationError,
@@ -46,21 +51,29 @@ struct ConnectionView: View {
 
     private func loadStoredSettings() {
         selectedMode = WaveCamClient.Mode(rawValue: storedMode) ?? .live
-        baseURLText = storedBaseURL
+        let routeTexts = storedRouteTexts()
+        tetherURLText = routeTexts.tether
+        wifiURLText = routeTexts.wifi
         tokenText = KeychainStore.load(account: KeychainStore.tokenAccount) ?? ""
         mockFallbackEnabled = storedMockFallback
         validationError = nil
     }
 
     private func applySettings() {
-        guard let baseURL = URL(string: baseURLText) else {
-            validationError = "Base URL is not valid."
+        guard let tetherBaseURL = URL(string: tetherURLText) else {
+            validationError = "USB tether API URL is not valid."
+            return
+        }
+        guard let wifiBaseURL = URL(string: wifiURLText) else {
+            validationError = "Wi-Fi API URL is not valid."
             return
         }
 
         validationError = nil
         storedMode = selectedMode.rawValue
-        storedBaseURL = baseURL.absoluteString
+        storedLegacyBaseURL = tetherBaseURL.absoluteString
+        storedTetherBaseURL = tetherBaseURL.absoluteString
+        storedWifiBaseURL = wifiBaseURL.absoluteString
         if tokenText.isEmpty {
             KeychainStore.delete(account: KeychainStore.tokenAccount)
         } else {
@@ -69,7 +82,8 @@ struct ConnectionView: View {
         storedMockFallback = mockFallbackEnabled
         client.configure(
             mode: selectedMode,
-            baseURL: baseURL,
+            tetherBaseURL: tetherBaseURL,
+            wifiBaseURL: wifiBaseURL,
             token: tokenText,
             mockFallbackEnabled: mockFallbackEnabled
         )
@@ -78,16 +92,36 @@ struct ConnectionView: View {
 
     private func useDefault() {
         selectedMode = .live
-        baseURLText = WaveCamDefaults.baseURLString
+        tetherURLText = WaveCamDefaults.tetherBaseURLString
+        wifiURLText = WaveCamDefaults.wifiBaseURLString
         tokenText = ""
         mockFallbackEnabled = false
         applySettings()
+    }
+
+    private func storedRouteTexts() -> (tether: String, wifi: String) {
+        var tether = storedTetherBaseURL
+        var wifi = storedWifiBaseURL
+
+        if storedTetherBaseURL == WaveCamDefaults.tetherBaseURLString,
+           storedWifiBaseURL == WaveCamDefaults.wifiBaseURLString,
+           storedLegacyBaseURL != WaveCamDefaults.baseURLString {
+            if storedLegacyBaseURL == WaveCamDefaults.legacyLANBaseURLString ||
+                storedLegacyBaseURL.contains("192.168.") {
+                wifi = storedLegacyBaseURL
+            } else {
+                tether = storedLegacyBaseURL
+            }
+        }
+
+        return (tether: tether, wifi: wifi)
     }
 }
 
 private struct ConnectionStatusCard: View {
     let mode: WaveCamClient.Mode
     let connected: Bool
+    let activeRoute: WaveCamClient.ConnectionRoute
     let baseURL: URL
     let lastError: String?
 
@@ -114,9 +148,14 @@ private struct ConnectionStatusCard: View {
                         .foregroundStyle(stateColor)
                 }
                 Spacer()
-                Image(systemName: connected ? "network" : "network.slash")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(stateColor)
+                VStack(alignment: .trailing, spacing: 6) {
+                    Image(systemName: connected ? "network" : "network.slash")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(stateColor)
+                    Text(activeRoute.label)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(stateColor)
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -141,7 +180,8 @@ private struct ConnectionStatusCard: View {
 
 private struct ConnectionFormCard: View {
     @Binding var selectedMode: WaveCamClient.Mode
-    @Binding var baseURLText: String
+    @Binding var tetherURLText: String
+    @Binding var wifiURLText: String
     @Binding var tokenText: String
     @Binding var mockFallbackEnabled: Bool
 
@@ -159,8 +199,21 @@ private struct ConnectionFormCard: View {
             .pickerStyle(.segmented)
 
             VStack(alignment: .leading, spacing: 6) {
-                FieldLabel("API BASE URL")
-                TextField("http://orin-ip:8088/api/v1", text: $baseURLText)
+                FieldLabel("USB TETHER API")
+                TextField("http://172.20.10.8:8088/api/v1", text: $tetherURLText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(WC.txt)
+                    .padding(12)
+                    .background(WC.bg, in: .rect(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.line))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                FieldLabel("WI-FI / HOTSPOT API")
+                TextField("http://192.168.1.155:8088/api/v1", text: $wifiURLText)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)

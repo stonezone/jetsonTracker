@@ -42,7 +42,7 @@ private struct TopBar: View {
 
     private var connectionText: String {
         if client.mode == .mock { return "MOCK" }
-        return client.connected ? "ORIN" : "OFFLINE"
+        return client.connected ? client.activeRoute.shortLabel : "OFFLINE"
     }
 
     private var connectionColor: Color {

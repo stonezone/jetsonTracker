@@ -2,20 +2,33 @@ import Foundation
 import Observation
 
 enum WaveCamDefaults {
-    static let baseURLString = "http://172.20.10.8:8088/api/v1"
-    static let legacyLANBaseURLString = "http://192.168.1.155:8088/api/v1"
+    static let tetherBaseURLString = "http://172.20.10.8:8088/api/v1"
+    static let wifiBaseURLString = "http://192.168.1.155:8088/api/v1"
+    static let baseURLString = tetherBaseURLString
+    static let legacyLANBaseURLString = wifiBaseURLString
     static let modeKey = "wavecam.mode"
+    /// Legacy single-route key. Kept for migration from older builds.
     static let baseURLKey = "wavecam.baseURL"
+    static let tetherBaseURLKey = "wavecam.tetherBaseURL"
+    static let wifiBaseURLKey = "wavecam.wifiBaseURL"
     static let tokenKey = "wavecam.authToken"
     static let mockFallbackKey = "wavecam.mockFallbackEnabled"
 
     static var baseURL: URL {
-        URL(string: baseURLString)!
+        tetherBaseURL
+    }
+
+    static var tetherBaseURL: URL {
+        URL(string: tetherBaseURLString)!
+    }
+
+    static var wifiBaseURL: URL {
+        URL(string: wifiBaseURLString)!
     }
 
     static var fallbackBaseURLs: [URL] {
         [
-            URL(string: legacyLANBaseURLString)
+            wifiBaseURL
         ].compactMap(\.self)
     }
 }
@@ -178,13 +191,47 @@ final class WaveCamClient {
         var id: String { rawValue }
     }
 
+    enum ConnectionRoute: String, Hashable {
+        case tether
+        case wifi
+        case custom
+        case mock
+        case mockFallback
+        case offline
+
+        var label: String {
+            switch self {
+            case .tether: return "USB TETHER"
+            case .wifi: return "WIFI"
+            case .custom: return "CUSTOM"
+            case .mock: return "MOCK"
+            case .mockFallback: return "MOCK FALLBACK"
+            case .offline: return "OFFLINE"
+            }
+        }
+
+        var shortLabel: String {
+            switch self {
+            case .tether: return "USB"
+            case .wifi: return "WIFI"
+            case .custom: return "CUSTOM"
+            case .mock: return "MOCK"
+            case .mockFallback: return "MOCK"
+            case .offline: return "OFFLINE"
+            }
+        }
+    }
+
     var mode: Mode
     var baseURL: URL
+    var tetherBaseURL: URL
+    var wifiBaseURL: URL
     var token: String?
     var mockFallbackEnabled: Bool
 
     private(set) var status: WCStatus?
     private(set) var connected: Bool = false
+    private(set) var activeRoute: ConnectionRoute = .offline
     private(set) var lastError: String?
     /// Last failed *command* (e.g. safety stop). Kept separate from `lastError` so the
     /// 1Hz status poll never wipes a failed-KILL message before the operator sees it (review #2).
@@ -194,29 +241,50 @@ final class WaveCamClient {
     private(set) var lastControlError: String?
 
     private var mockKilled = false
-    private var configuredBaseURL: URL
     private var pollTask: Task<Void, Never>?
+    private var nextTetherProbeAt = Date.distantPast
+    private let tetherRecheckInterval: TimeInterval = 15
 
     init(mode: Mode = .live,
          baseURL: URL = WaveCamDefaults.baseURL,
+         tetherBaseURL: URL? = nil,
+         wifiBaseURL: URL = WaveCamDefaults.wifiBaseURL,
          token: String? = nil,
          mockFallbackEnabled: Bool = false) {
         self.mode = mode
         self.baseURL = baseURL
-        self.configuredBaseURL = baseURL
+        self.tetherBaseURL = tetherBaseURL ?? baseURL
+        self.wifiBaseURL = wifiBaseURL
         self.token = token
         self.mockFallbackEnabled = mockFallbackEnabled
+        self.activeRoute = mode == .mock ? .mock : .offline
     }
 
     var killed: Bool { status?.safety.killed ?? false }
     var owner: String { status?.ptz.owner ?? "idle" }
 
     func configure(mode: Mode, baseURL: URL, token: String?, mockFallbackEnabled: Bool) {
+        configure(
+            mode: mode,
+            tetherBaseURL: baseURL,
+            wifiBaseURL: WaveCamDefaults.wifiBaseURL,
+            token: token,
+            mockFallbackEnabled: mockFallbackEnabled
+        )
+    }
+
+    func configure(mode: Mode,
+                   tetherBaseURL: URL,
+                   wifiBaseURL: URL,
+                   token: String?,
+                   mockFallbackEnabled: Bool) {
         self.mode = mode
-        self.configuredBaseURL = baseURL
-        self.baseURL = baseURL
+        self.tetherBaseURL = tetherBaseURL
+        self.wifiBaseURL = wifiBaseURL
+        self.baseURL = tetherBaseURL
         self.token = normalizedToken(token)
         self.mockFallbackEnabled = mockFallbackEnabled
+        self.activeRoute = mode == .mock ? .mock : .offline
         if mode == .live { startPolling() } else { stopPolling() }
     }
 
@@ -226,6 +294,7 @@ final class WaveCamClient {
         if mode == .mock {
             status = .mockTracking(killed: mockKilled)
             connected = true
+            activeRoute = .mock
             lastError = nil
             return
         }
@@ -238,10 +307,12 @@ final class WaveCamClient {
             if mockFallbackEnabled {
                 status = .mockTracking(killed: mockKilled)
                 connected = false
+                activeRoute = .mockFallback
                 lastError = "Live API failed; showing mock data: \(error.localizedDescription)"
                 return
             }
             connected = false
+            activeRoute = .offline
             lastError = error.localizedDescription
         }
     }
@@ -425,7 +496,7 @@ final class WaveCamClient {
                 req.timeoutInterval = 3
                 authorize(&req)
                 let (data, _) = try await URLSession.shared.data(for: req)
-                baseURL = candidate
+                markConnected(to: candidate)
                 return data
             } catch {
                 lastError = error
@@ -435,13 +506,41 @@ final class WaveCamClient {
     }
 
     private func apiCandidates() -> [URL] {
+        deduped(candidateOrder())
+    }
+
+    private func candidateOrder(now: Date = Date()) -> [URL] {
+        if activeRoute == .wifi || activeRoute == .custom {
+            if now < nextTetherProbeAt {
+                return [baseURL, tetherBaseURL, wifiBaseURL]
+            }
+            nextTetherProbeAt = now.addingTimeInterval(tetherRecheckInterval)
+        }
+        return [tetherBaseURL, wifiBaseURL]
+    }
+
+    private func deduped(_ urls: [URL]) -> [URL] {
         var seen = Set<String>()
-        return ([configuredBaseURL] + WaveCamDefaults.fallbackBaseURLs).filter { url in
+        return urls.filter { url in
             let key = url.absoluteString
             guard !seen.contains(key) else { return false }
             seen.insert(key)
             return true
         }
+    }
+
+    private func markConnected(to candidate: URL) {
+        baseURL = candidate
+        activeRoute = route(for: candidate)
+        if activeRoute == .tether {
+            nextTetherProbeAt = .distantPast
+        }
+    }
+
+    private func route(for candidate: URL) -> ConnectionRoute {
+        if candidate.absoluteString == tetherBaseURL.absoluteString { return .tether }
+        if candidate.absoluteString == wifiBaseURL.absoluteString { return .wifi }
+        return .custom
     }
 
     @discardableResult
@@ -510,7 +609,7 @@ final class WaveCamClient {
                 authorize(&req)
                 req.httpBody = payload
                 let (data, response) = try await URLSession.shared.data(for: req)
-                baseURL = candidate
+                markConnected(to: candidate)
                 if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                     throw WaveCamAPIError(statusCode: http.statusCode, data: data)
                 }

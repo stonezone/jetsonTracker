@@ -3,7 +3,9 @@ import SwiftUI
 @main
 struct WaveCamApp: App {
     @AppStorage(WaveCamDefaults.modeKey) private var modeRaw = WaveCamClient.Mode.live.rawValue
-    @AppStorage(WaveCamDefaults.baseURLKey) private var baseURLString = WaveCamDefaults.baseURLString
+    @AppStorage(WaveCamDefaults.baseURLKey) private var legacyBaseURLString = WaveCamDefaults.baseURLString
+    @AppStorage(WaveCamDefaults.tetherBaseURLKey) private var tetherBaseURLString = WaveCamDefaults.tetherBaseURLString
+    @AppStorage(WaveCamDefaults.wifiBaseURLKey) private var wifiBaseURLString = WaveCamDefaults.wifiBaseURLString
     @AppStorage(WaveCamDefaults.mockFallbackKey) private var mockFallbackEnabled = false
 
     @State private var client = WaveCamClient(mode: .live)
@@ -27,13 +29,33 @@ struct WaveCamApp: App {
 
     private func applyStoredSettings() {
         let mode = WaveCamClient.Mode(rawValue: modeRaw) ?? .live
-        let baseURL = URL(string: baseURLString) ?? WaveCamDefaults.baseURL
+        let routeURLs = storedRouteURLs()
         let token = KeychainStore.load(account: KeychainStore.tokenAccount) ?? ""
         client.configure(
             mode: mode,
-            baseURL: baseURL,
+            tetherBaseURL: routeURLs.tether,
+            wifiBaseURL: routeURLs.wifi,
             token: token,
             mockFallbackEnabled: mockFallbackEnabled
         )
+    }
+
+    private func storedRouteURLs() -> (tether: URL, wifi: URL) {
+        var tether = URL(string: tetherBaseURLString) ?? WaveCamDefaults.tetherBaseURL
+        var wifi = URL(string: wifiBaseURLString) ?? WaveCamDefaults.wifiBaseURL
+
+        if tetherBaseURLString == WaveCamDefaults.tetherBaseURLString,
+           wifiBaseURLString == WaveCamDefaults.wifiBaseURLString,
+           legacyBaseURLString != WaveCamDefaults.baseURLString,
+           let legacyURL = URL(string: legacyBaseURLString) {
+            if legacyBaseURLString == WaveCamDefaults.legacyLANBaseURLString ||
+                legacyBaseURLString.contains("192.168.") {
+                wifi = legacyURL
+            } else {
+                tether = legacyURL
+            }
+        }
+
+        return (tether: tether, wifi: wifi)
     }
 }
