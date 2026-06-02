@@ -234,6 +234,38 @@ final class WaveCamClient {
         lastCommandError = nil
     }
 
+    // MARK: recording
+
+    func toggleRecording() async {
+        if status?.media?.recording == true {
+            await stopRecording()
+        } else {
+            await startRecording()
+        }
+    }
+
+    func startRecording() async {
+        guard mode == .live else { return }
+        do {
+            _ = try await post("media/record/start", body: ["source": "ios_native"])
+            lastCommandError = nil
+        } catch {
+            lastCommandError = "Recording start not confirmed: \(error.localizedDescription)"
+        }
+        await refresh()
+    }
+
+    func stopRecording() async {
+        guard mode == .live else { return }
+        do {
+            _ = try await post("media/record/stop", body: ["source": "ios_native"])
+            lastCommandError = nil
+        } catch {
+            lastCommandError = "Recording stop not confirmed: \(error.localizedDescription)"
+        }
+        await refresh()
+    }
+
     // MARK: ptz (owner-gated on the server)
 
     @discardableResult

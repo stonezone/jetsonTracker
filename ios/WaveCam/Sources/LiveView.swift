@@ -23,6 +23,7 @@ struct LiveView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     VStack(spacing: 10) {
                         LiveTelemetryGrid(status: client.status, connected: client.connected, axis: .vertical)
+                        RecordButton(compact: true)
                         EmergencyStopButton(style: .compact)
                     }
                     .frame(width: 190)
@@ -39,6 +40,7 @@ struct LiveView: View {
                             previewURL: client.previewURL
                         )
                         LiveTelemetryGrid(status: client.status, connected: client.connected)
+                        RecordButton()
                         EmergencyStopButton()
                     }
                     .padding(.horizontal, 16)
@@ -793,6 +795,40 @@ private struct StatusPill: View {
         .padding(12)
         .background(WC.panel, in: .rect(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.line))
+    }
+}
+
+/// Start/stop the Orin recorder (server: media/record/start|stop). The core
+/// "film" verb, surfaced on the screen the operator watches while filming.
+private struct RecordButton: View {
+    @Environment(WaveCamClient.self) private var client
+    var compact = false
+
+    private var isRecording: Bool { client.status?.media?.recording == true }
+
+    var body: some View {
+        Button {
+            Task { await client.toggleRecording() }
+        } label: {
+            HStack(spacing: 9) {
+                if isRecording {
+                    Circle().fill(WC.kill).frame(width: 10, height: 10)
+                } else {
+                    Image(systemName: "record.circle").font(.system(size: 15, weight: .bold))
+                }
+                Text(isRecording ? "Stop Recording" : "Record")
+                    .font(.system(size: compact ? 13 : 15, weight: .bold))
+            }
+            .foregroundStyle(isRecording ? .black : WC.brand)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.vertical, compact ? 8 : 10)
+            .background(isRecording ? WC.brand : WC.brand.opacity(0.14), in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.brand.opacity(isRecording ? 0 : 0.5)))
+        }
+        .buttonStyle(.plain)
+        .disabled(!client.connected)
+        .opacity(client.connected ? 1 : 0.5)
+        .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
     }
 }
 
