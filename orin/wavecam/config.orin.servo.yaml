@@ -23,6 +23,8 @@ ptz:
   max_tilt_speed: 12
   min_speed: 1
   command_min_interval: 0.05
+  ff_gain: 0.0
+  ff_deadzone_mult: 1.5
 
 camera_ai:
   disable_on_start: false
@@ -31,6 +33,7 @@ camera_ai:
 
 color:
   enabled: true
+  preset: "orange_red"
   min_area: 60
   max_area: 200000
   hsv_ranges:
@@ -58,6 +61,8 @@ fusion:
   unlock_threshold: 0.35
   ema_alpha: 0.5
   lost_grace_sec: 0.8
+  person_aim_x: 0.5
+  person_aim_y: 0.5
 
 web:
   host: "0.0.0.0"

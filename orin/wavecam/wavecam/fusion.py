@@ -40,6 +40,23 @@ def _dist(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _person_xywh(p) -> Tuple[int, int, int, int]:
+    if hasattr(p, "xywh"):
+        return p.xywh
+    return (int(p.x1), int(p.y1), int(p.x2 - p.x1), int(p.y2 - p.y1))
+
+
+def _person_center(p) -> Tuple[float, float]:
+    if hasattr(p, "center"):
+        return p.center
+    x, y, w, h = _person_xywh(p)
+    return (x + w / 2.0, y + h / 2.0)
+
+
 class Fusion:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -57,16 +74,22 @@ class Fusion:
     def _nearest_person(self, persons, xy) -> Tuple[Optional[PersonBox], float]:
         best, best_d = None, 1e9
         for p in persons:
-            d = _dist(p.center, xy)
+            d = _dist(self._person_aim(p), xy)
             if d < best_d:
                 best, best_d = p, d
         return best, best_d
+
+    def _person_aim(self, p) -> Tuple[float, float]:
+        x, y, w, h = _person_xywh(p)
+        ax = _clamp01(float(getattr(self.cfg, "person_aim_x", 0.5)))
+        ay = _clamp01(float(getattr(self.cfg, "person_aim_y", 0.5)))
+        return (x + w * ax, y + h * ay)
 
     def _confirmed(self, blobs, persons):
         """Persons with a color blob within match_dist (orange + YOLO agree)."""
         md = self.cfg.match_dist
         return [p for p in persons
-                if any(_dist((b.cx, b.cy), p.center) <= md for b in blobs)]
+                if any(_dist((b.cx, b.cy), _person_center(p)) <= md for b in blobs)]
 
     def _select(self, blobs, persons):
         """(raw_xy, bbox, conf, matched) by priority + continuity. While tracking,
@@ -74,20 +97,20 @@ class Fusion:
         steal it; color-blob outranks person-only only for acquisition."""
         confirmed = self._confirmed(blobs, persons)
         if confirmed:
-            p = self._continuity(confirmed, lambda x: x.center)
-            return p.center, p.xywh, 0.5 + 0.5 * p.conf, True
+            p = self._continuity(confirmed, self._person_aim)
+            return self._person_aim(p), _person_xywh(p), 0.5 + 0.5 * p.conf, True
         if self.cfg.require_person:
             return None, None, 0.0, False
         if self._ema is not None and persons:
             p, d = self._nearest_person(persons, self._ema)
             if p is not None and d <= self.cfg.match_dist:
-                return p.center, p.xywh, 0.45, False      # locked subject -> sustain
+                return self._person_aim(p), _person_xywh(p), 0.45, False      # locked subject -> sustain
         if blobs:
             b = self._continuity(blobs, lambda x: (x.cx, x.cy))
             return (b.cx, b.cy), b.bbox, 0.45, False
         if persons:
-            p = self._continuity(persons, lambda x: x.center)
-            return p.center, p.xywh, 0.2, False
+            p = self._continuity(persons, self._person_aim)
+            return self._person_aim(p), _person_xywh(p), 0.2, False
         return None, None, 0.0, False
 
     def update(self, blobs: List[Blob], persons: Optional[List[PersonBox]]) -> FusionResult:

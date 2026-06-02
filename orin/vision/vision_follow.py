@@ -22,12 +22,9 @@ import os
 import signal
 import sys
 import time
+from dataclasses import dataclass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from vision.frame_source import RtspFrameSource  # noqa: E402
-from vision.color_detector import detect as color_detect, ColorConfig  # noqa: E402
-from camera_control.visca_backend import ViscaBackend  # noqa: E402
 
 
 def clamp(v, lo, hi):
@@ -67,6 +64,36 @@ def pick_target(persons, colors, last_center=None):
     return None
 
 
+@dataclass
+class FollowControlState:
+    prev_ox: float | None = None
+    prev_oy: float | None = None
+    prev_t: float | None = None
+
+
+def _axis_velocity(err, prev, dt, prop_gain, ff_sign, args):
+    prop = 0.0 if abs(err) < args.deadband else prop_gain * err
+    if args.no_ff or prev is None or dt <= 1e-3 or abs(err - prev) >= 0.45:
+        return prop
+
+    near_band = args.deadband * max(1.0, args.ff_deadband_mult)
+    if abs(err) <= near_band or abs(prev) <= near_band:
+        return prop
+    return prop + ff_sign * args.ff_gain * (err - prev) / dt
+
+
+def compute_follow_velocity(offx, offy, state, args, now=None):
+    """Compute pan/tilt velocity while suppressing feed-forward near deadband."""
+    now = time.time() if now is None else now
+    dt = 0.0 if state.prev_t is None else now - state.prev_t
+
+    pv = _axis_velocity(offx, state.prev_ox, dt, args.kp_pan, 1.0, args)
+    tv = _axis_velocity(offy, state.prev_oy, dt, -args.kp_tilt, -1.0, args)
+
+    state.prev_ox, state.prev_oy, state.prev_t = offx, offy, now
+    return clamp(pv, -args.max_vel, args.max_vel), clamp(tv, -args.max_vel, args.max_vel)
+
+
 def find_model():
     for p in ("/data/projects/gimbal/models/yolov8n.engine",
               "/data/projects/gimbal/models/yolov8n.pt"):
@@ -76,6 +103,10 @@ def find_model():
 
 
 def main():
+    from camera_control.visca_backend import ViscaBackend  # noqa: WPS433
+    from vision.color_detector import ColorConfig, detect as color_detect  # noqa: WPS433
+    from vision.frame_source import RtspFrameSource  # noqa: WPS433
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="192.168.100.88")
     ap.add_argument("--url", default="rtsp://192.168.100.88:554/2")
@@ -88,6 +119,7 @@ def main():
     ap.add_argument("--deadband", type=float, default=0.07)
     ap.add_argument("--max-vel", type=float, default=1.0)
     ap.add_argument("--ff-gain", type=float, default=0.4)
+    ap.add_argument("--ff-deadband-mult", type=float, default=1.5)
     ap.add_argument("--no-ff", action="store_true")
     ap.add_argument("--target-frac", type=float, default=0.55)
     ap.add_argument("--kp-zoom", type=float, default=2.0)
@@ -124,7 +156,7 @@ def main():
     print("[follow] tracking (yolo+color -> pan/tilt + zoom). Ctrl-C/SIGTERM to stop.", flush=True)
 
     last_log, t0 = 0.0, time.time()
-    prev_ox = prev_oy = prev_t = None
+    control_state = FollowControlState()
     last_center = None
     frames = 0
     try:
@@ -149,7 +181,7 @@ def main():
             tgt = pick_target(persons, colors, last_center)
             if tgt is None:
                 cam.stop()
-                prev_ox = prev_oy = prev_t = None
+                control_state = FollowControlState()
                 last_center = None
                 if time.time() - last_log > 1.0:
                     last_log = time.time()
@@ -161,19 +193,7 @@ def main():
             last_center = (cx, cy)
             offx = (cx - w / 2.0) / (w / 2.0)
             offy = (cy - h / 2.0) / (h / 2.0)
-            now = time.time()
-            ffx = ffy = 0.0
-            if not args.no_ff and prev_ox is not None:
-                dt = now - prev_t
-                if dt > 1e-3 and abs(offx - prev_ox) < 0.45 and abs(offy - prev_oy) < 0.45:
-                    ffx = args.ff_gain * (offx - prev_ox) / dt
-                    ffy = -args.ff_gain * (offy - prev_oy) / dt
-            prev_ox, prev_oy, prev_t = offx, offy, now
-
-            prop_x = 0.0 if abs(offx) < args.deadband else args.kp_pan * offx
-            prop_y = 0.0 if abs(offy) < args.deadband else -args.kp_tilt * offy
-            pv = clamp(prop_x + ffx, -args.max_vel, args.max_vel)
-            tv = clamp(prop_y + ffy, -args.max_vel, args.max_vel)
+            pv, tv = compute_follow_velocity(offx, offy, control_state, args)
             cam.pan_tilt_velocity(pv, tv)
 
             frac = bh / h

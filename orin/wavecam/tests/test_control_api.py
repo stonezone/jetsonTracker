@@ -99,8 +99,30 @@ class DummyPipeline:
                 invert_pan=False,
                 invert_tilt=False,
             ),
-            fusion=types.SimpleNamespace(lock_threshold=0.60, unlock_threshold=0.35),
-            color=types.SimpleNamespace(min_area=60),
+            fusion=types.SimpleNamespace(
+                lock_threshold=0.60,
+                unlock_threshold=0.35,
+                require_person=False,
+                match_dist=120,
+                person_aim_x=0.5,
+                person_aim_y=0.5,
+            ),
+            color=types.SimpleNamespace(
+                enabled=True,
+                preset="orange_red",
+                min_area=60,
+                max_area=200000,
+                hsv_ranges={},
+                morph_kernel=5,
+            ),
+            detector=types.SimpleNamespace(
+                enabled=True,
+                conf=0.35,
+                imgsz=640,
+                person_class=0,
+                every_n=3,
+                box_ttl_sec=0.6,
+            ),
             web=types.SimpleNamespace(jpeg_quality=70),
         )
 
@@ -405,7 +427,11 @@ def test_api_v1_config_hot_applies_known_keys_only():
                 "fusion.lock_threshold": 0.70,
                 "fusion.require_person": True,
                 "fusion.match_dist": 80,
+                "fusion.person_aim_y": 0.25,
                 "color.min_area": 120,
+                "color.preset": "blue",
+                "detector.conf": 0.55,
+                "detector.every_n": 2,
                 "web.show_mask": False,
             }
         },
@@ -418,12 +444,35 @@ def test_api_v1_config_hot_applies_known_keys_only():
     assert pipe.cfg.fusion.lock_threshold == 0.70
     assert pipe.cfg.fusion.require_person is True
     assert pipe.cfg.fusion.match_dist == 80
+    assert pipe.cfg.fusion.person_aim_y == 0.25
     assert pipe.cfg.color.min_area == 120
+    assert pipe.cfg.color.preset == "blue"
+    assert "blue_low" in pipe.cfg.color.hsv_ranges
+    assert pipe.cfg.detector.conf == 0.55
+    assert pipe.cfg.detector.every_n == 2
     assert pipe.state.show_mask is False
 
     refused = client.post("/api/v1/config/hot", json={"patch": {"camera.source": "rtsp://x"}})
     assert refused.status_code == 422
     assert refused.json()["code"] == "invalid_request"
+
+    bad_preset = client.post("/api/v1/config/hot", json={"patch": {"color.preset": "ultraviolet"}})
+    assert bad_preset.status_code == 422
+    assert bad_preset.json()["code"] == "invalid_request"
+
+
+def test_api_v1_config_reports_supported_tuning_surface():
+    client = make_client()
+
+    response = client.get("/api/v1/config")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current"]["ptz"]["max_pan_speed"] == 10
+    assert body["current"]["color"]["preset"] == "orange_red"
+    assert "blue" in body["supported"]["color_presets"]
+    assert "detector.conf" in body["hot_keys"]
+    assert "detector.model" in body["restart_required_keys"]
 
 
 def test_api_v1_media_status_reports_recorder_state():
@@ -478,6 +527,7 @@ if __name__ == "__main__":
     test_api_v1_ptz_zoom_endpoint_is_owner_gated()
     test_api_v1_ptz_zoom_refuses_while_killed()
     test_api_v1_config_hot_applies_known_keys_only()
+    test_api_v1_config_reports_supported_tuning_surface()
     test_api_v1_media_status_reports_recorder_state()
     test_api_v1_media_record_start_and_stop_control_recorder()
     print("CONTROL API TESTS PASSED")

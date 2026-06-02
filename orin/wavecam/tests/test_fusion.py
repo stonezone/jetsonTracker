@@ -22,7 +22,8 @@ assert "cv2" not in sys.modules, "fusion must import cv2-free (type-only imports
 
 def _cfg():
     return SimpleNamespace(match_dist=120, require_person=False, lock_threshold=0.60,
-                           unlock_threshold=0.35, ema_alpha=0.5, lost_grace_sec=0.8)
+                           unlock_threshold=0.35, ema_alpha=0.5, lost_grace_sec=0.8,
+                           person_aim_x=0.5, person_aim_y=0.5)
 
 
 def _blob(cx, cy, h=80, area=5000):
@@ -59,5 +60,11 @@ check(r3.target_xy[0] > 250 and r3.locked, "color-only carries lock through YOLO
 g = Fusion(_cfg())
 ro = g.update([], [_person(100, 100, 0.9)])
 check(ro.conf == 0.2 and not ro.locked, "person-only stays weak (no lock)")
+
+head_cfg = _cfg()
+head_cfg.person_aim_y = 0.25
+h = Fusion(head_cfg)
+rh = h.update([_blob(320, 180)], [_person(320, 180)])
+check(rh.target_xy[1] < 170, "person aim y=0.25 targets upper body/head instead of box center")
 
 print("\nALL %d CHECKS PASSED (cv2-free)" % _n)

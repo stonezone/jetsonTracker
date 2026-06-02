@@ -39,6 +39,12 @@ s.compute((400, 180), (W, H))                       # prime _last at ex=0.25
 ff = s.compute((460, 180), (W, H)).pan_speed        # smooth move -> lead applies
 check(ff > _pure_speed((460, 180)), "feed-forward increases speed on steady motion")
 
+# near-center detector jitter must not feed-forward the camera out of the deadzone
+n = VisualServo(SimpleNamespace(ff_gain=0.5, ff_deadzone_mult=1.5, **BASE))
+n.compute((W / 2 + 0.09 * (W / 2), H / 2), (W, H))  # inside deadzone
+near = n.compute((W / 2 - 0.09 * (W / 2), H / 2), (W, H))
+check(near.is_stop, "feed-forward stays suppressed inside the near-deadzone band")
+
 # jump-guard: a detection switch (delta > 0.45) must NOT over-lead -> equals pure-P
 j = VisualServo(SimpleNamespace(ff_gain=0.5, **BASE))
 j.compute((330, 180), (W, H))                       # ex ~ 0.03

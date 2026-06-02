@@ -1,11 +1,8 @@
-"""
-Color detector: orange/red blobs in HSV.
+"""Color detector: HSV blob presets + contour filtering.
 
-Red wraps the hue circle, so we OR two red bands + one orange band. Returns
-candidate blobs (center, area, bbox, fill) sorted largest-first, plus the binary
-mask for the overlay. `fill` = blob area / bbox area, a solidity proxy that lets
-fusion prefer a solid jersey over sparse sun-sparkle; an optional fractional
-area cap rejects a full-frame glare wash.
+The default cue is the orange/red rashguard, but the same detector can track other
+high-saturation marker colors by swapping bounded HSV presets. The detector owns
+only pixel segmentation; fusion decides whether the blob is trusted.
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -13,6 +10,26 @@ from typing import List, Tuple
 
 import cv2
 import numpy as np
+
+from .color_presets import preset_hsv_ranges
+
+
+def hsv_range_bands(hsv_ranges: dict) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Return ordered HSV low/high bands from either legacy or preset keys.
+
+    Accepts keys like ``red_low_1``/``red_high_1`` and
+    ``blue_low``/``blue_high``. The naming convention keeps config readable and
+    avoids a second schema for wraparound colors.
+    """
+    bands = []
+    for low_key in sorted(k for k in hsv_ranges if "_low" in k):
+        high_key = low_key.replace("_low", "_high", 1)
+        if high_key not in hsv_ranges:
+            raise ValueError(f"missing {high_key} for {low_key}")
+        bands.append((np.array(hsv_ranges[low_key]), np.array(hsv_ranges[high_key])))
+    if not bands:
+        raise ValueError("at least one HSV low/high band is required")
+    return bands
 
 
 @dataclass
@@ -31,17 +48,17 @@ class Blob:
 class ColorDetector:
     def __init__(self, cfg):
         self.cfg = cfg
+        if not cfg.hsv_ranges:
+            cfg.hsv_ranges = preset_hsv_ranges(getattr(cfg, "preset", "orange_red"))
         self.update_ranges(cfg.hsv_ranges)
-        k = max(1, int(cfg.morph_kernel))
+        self.update_kernel()
+
+    def update_kernel(self) -> None:
+        k = max(1, int(self.cfg.morph_kernel))
         self._kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
 
     def update_ranges(self, hsv_ranges: dict) -> None:
-        r = hsv_ranges
-        self._bands = [
-            (np.array(r["red_low_1"]), np.array(r["red_high_1"])),
-            (np.array(r["red_low_2"]), np.array(r["red_high_2"])),
-            (np.array(r["orange_low"]), np.array(r["orange_high"])),
-        ]
+        self._bands = hsv_range_bands(hsv_ranges)
 
     def _mask(self, frame_bgr: np.ndarray) -> np.ndarray:
         hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)

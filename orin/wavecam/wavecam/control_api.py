@@ -17,12 +17,72 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .auth import CONFIG, PTZ, READ, SAFETY, install_auth, require, websocket_authorized
+from .color_presets import COLOR_PRESETS, preset_hsv_ranges
 from .ptz_owner import AUTONOMOUS, IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
 from .supervisor import read_health, snapshot_services
 
 
 FrameSource = Callable[[], Any]
+
+HOT_CONFIG_KEYS = (
+    "ptz.deadzone",
+    "ptz.max_pan_speed",
+    "ptz.max_tilt_speed",
+    "ptz.min_speed",
+    "ptz.command_min_interval",
+    "ptz.ff_gain",
+    "ptz.ff_deadzone_mult",
+    "ptz.invert_pan",
+    "ptz.invert_tilt",
+    "fusion.lock_threshold",
+    "fusion.unlock_threshold",
+    "fusion.require_person",
+    "fusion.match_dist",
+    "fusion.person_aim_x",
+    "fusion.person_aim_y",
+    "color.preset",
+    "color.min_area",
+    "color.max_area",
+    "color.morph_kernel",
+    "detector.conf",
+    "detector.imgsz",
+    "detector.person_class",
+    "detector.every_n",
+    "detector.box_ttl_sec",
+    "web.show_mask",
+    "web.jpeg_quality",
+)
+
+RESTART_REQUIRED_KEYS = (
+    "camera.source",
+    "camera.codec",
+    "camera.use_gstreamer",
+    "ptz.enabled",
+    "ptz.ip",
+    "ptz.port",
+    "ptz.address",
+    "ptz.reset_sequence",
+    "camera_ai.disable_on_start",
+    "color.enabled",
+    "detector.enabled",
+    "detector.model",
+    "web.host",
+    "web.port",
+)
+
+YOLO_CLASSES = (
+    {"id": 0, "label": "person"},
+    {"id": 1, "label": "bicycle"},
+    {"id": 2, "label": "car"},
+    {"id": 3, "label": "motorcycle"},
+    {"id": 14, "label": "bird"},
+    {"id": 15, "label": "cat"},
+    {"id": 16, "label": "dog"},
+    {"id": 32, "label": "sports ball"},
+    {"id": 37, "label": "surfboard"},
+    {"id": 41, "label": "cup"},
+)
 
 
 class SafetyKillRequest(BaseModel):
@@ -202,6 +262,10 @@ def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
 
 def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/config", dependencies=[Depends(require(READ))])
+    def config_get():
+        return api.config_snapshot()
+
     @app.post("/api/v1/config/hot", dependencies=[Depends(require(CONFIG))])
     def config_hot(req: HotConfigRequest):
         refusal = api.apply_hot_config(req.patch)
@@ -234,6 +298,9 @@ class ControlApiAdapter:
 
     def status_snapshot(self) -> dict:
         return build_status_snapshot(self.pipeline, self.revision, self.media.status())
+
+    def config_snapshot(self) -> dict:
+        return build_config_snapshot(self.pipeline, self.revision)
 
     def ok(self) -> JSONResponse:
         return JSONResponse(
@@ -372,14 +439,33 @@ class ControlApiAdapter:
             "ptz.deadzone": lambda: set_float(cfg.ptz, "deadzone", value, 0.02, 0.30),
             "ptz.max_pan_speed": lambda: set_int(cfg.ptz, "max_pan_speed", value, 1, 24),
             "ptz.max_tilt_speed": lambda: set_int(cfg.ptz, "max_tilt_speed", value, 1, 20),
+            "ptz.min_speed": lambda: set_int(cfg.ptz, "min_speed", value, 1, 8),
+            "ptz.command_min_interval": lambda: set_float(
+                cfg.ptz, "command_min_interval", value, 0.01, 0.50
+            ),
+            "ptz.ff_gain": lambda: set_float(cfg.ptz, "ff_gain", value, 0.0, 1.0),
+            "ptz.ff_deadzone_mult": lambda: set_float(
+                cfg.ptz, "ff_deadzone_mult", value, 1.0, 4.0
+            ),
             "ptz.invert_pan": lambda: set_bool(cfg.ptz, "invert_pan", value),
             "ptz.invert_tilt": lambda: set_bool(cfg.ptz, "invert_tilt", value),
             "fusion.lock_threshold": lambda: set_float(cfg.fusion, "lock_threshold", value, 0.05, 0.95),
             "fusion.unlock_threshold": lambda: set_float(cfg.fusion, "unlock_threshold", value, 0.05, 0.95),
             "fusion.require_person": lambda: set_bool(cfg.fusion, "require_person", value),
             "fusion.match_dist": lambda: set_float(cfg.fusion, "match_dist", value, 20.0, 500.0),
-            "color.min_area": lambda: set_int(cfg.color, "min_area", value, 20, 4000),
+            "fusion.person_aim_x": lambda: set_float(cfg.fusion, "person_aim_x", value, 0.0, 1.0),
+            "fusion.person_aim_y": lambda: set_float(cfg.fusion, "person_aim_y", value, 0.0, 1.0),
+            "color.preset": lambda: self.apply_color_preset(value),
+            "color.min_area": lambda: set_int(cfg.color, "min_area", value, 1, 500000),
+            "color.max_area": lambda: set_int(cfg.color, "max_area", value, 100, 1000000),
+            "color.morph_kernel": lambda: self.apply_morph_kernel(value),
+            "detector.conf": lambda: set_float(cfg.detector, "conf", value, 0.05, 0.95),
+            "detector.imgsz": lambda: set_int(cfg.detector, "imgsz", value, 160, 1280),
+            "detector.person_class": lambda: set_int(cfg.detector, "person_class", value, 0, 79),
+            "detector.every_n": lambda: set_int(cfg.detector, "every_n", value, 1, 30),
+            "detector.box_ttl_sec": lambda: set_float(cfg.detector, "box_ttl_sec", value, 0.1, 5.0),
             "web.show_mask": lambda: set_bool(self.pipeline.state, "show_mask", value),
+            "web.jpeg_quality": lambda: set_int(cfg.web, "jpeg_quality", value, 30, 95),
         }
         setter = setters.get(key)
         if setter is None:
@@ -387,6 +473,29 @@ class ControlApiAdapter:
         error = setter()
         if error is not None:
             return self.refusal("invalid_request", error, 422)
+        return None
+
+    def apply_color_preset(self, value: Any) -> str | None:
+        if not isinstance(value, str):
+            return "preset must be a string."
+        if value not in COLOR_PRESETS:
+            return f"preset must be one of {', '.join(sorted(COLOR_PRESETS))}."
+        cfg = self.pipeline.cfg.color
+        cfg.preset = value
+        cfg.hsv_ranges = preset_hsv_ranges(value)
+        color = getattr(self.pipeline, "color", None)
+        if color is not None:
+            color.update_ranges(cfg.hsv_ranges)
+        return None
+
+    def apply_morph_kernel(self, value: Any) -> str | None:
+        cfg = self.pipeline.cfg.color
+        error = set_int(cfg, "morph_kernel", value, 1, 31)
+        if error is not None:
+            return error
+        color = getattr(self.pipeline, "color", None)
+        if color is not None:
+            color.update_kernel()
         return None
 
 
@@ -441,6 +550,66 @@ def media_ok(api: ControlApiAdapter, result: dict) -> JSONResponse:
 def make_request_id() -> str:
     ms = int(time.time() * 1000) % 1000
     return f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}.{ms:03d}Z-{uuid.uuid4().hex[:8]}"
+
+
+def build_config_snapshot(pipeline, revision: int) -> dict:
+    cfg = pipeline.cfg
+    return {
+        "revision": revision,
+        "current": {
+            "ptz": {
+                "deadzone": cfg.ptz.deadzone,
+                "max_pan_speed": cfg.ptz.max_pan_speed,
+                "max_tilt_speed": cfg.ptz.max_tilt_speed,
+                "min_speed": getattr(cfg.ptz, "min_speed", 1),
+                "command_min_interval": getattr(cfg.ptz, "command_min_interval", 0.05),
+                "ff_gain": getattr(cfg.ptz, "ff_gain", 0.0),
+                "ff_deadzone_mult": getattr(cfg.ptz, "ff_deadzone_mult", 1.5),
+                "invert_pan": cfg.ptz.invert_pan,
+                "invert_tilt": cfg.ptz.invert_tilt,
+            },
+            "fusion": {
+                "lock_threshold": cfg.fusion.lock_threshold,
+                "unlock_threshold": cfg.fusion.unlock_threshold,
+                "require_person": cfg.fusion.require_person,
+                "match_dist": cfg.fusion.match_dist,
+                "person_aim_x": getattr(cfg.fusion, "person_aim_x", 0.5),
+                "person_aim_y": getattr(cfg.fusion, "person_aim_y", 0.5),
+            },
+            "color": {
+                "enabled": cfg.color.enabled,
+                "preset": getattr(cfg.color, "preset", "orange_red"),
+                "min_area": cfg.color.min_area,
+                "max_area": getattr(cfg.color, "max_area", 200000),
+                "morph_kernel": getattr(cfg.color, "morph_kernel", 5),
+                "hsv_ranges": getattr(cfg.color, "hsv_ranges", {}),
+            },
+            "detector": {
+                "enabled": cfg.detector.enabled,
+                "model": getattr(cfg.detector, "model", None),
+                "conf": cfg.detector.conf,
+                "imgsz": cfg.detector.imgsz,
+                "person_class": cfg.detector.person_class,
+                "every_n": cfg.detector.every_n,
+                "box_ttl_sec": cfg.detector.box_ttl_sec,
+            },
+            "web": {
+                "show_mask": bool(getattr(pipeline.state, "show_mask", False)),
+                "jpeg_quality": cfg.web.jpeg_quality,
+            },
+        },
+        "supported": {
+            "color_presets": sorted(COLOR_PRESETS),
+            "yolo_classes": list(YOLO_CLASSES),
+            "person_aim_y": {
+                "0.20": "head/upper face",
+                "0.35": "upper chest",
+                "0.50": "box center",
+            },
+        },
+        "hot_keys": list(HOT_CONFIG_KEYS),
+        "restart_required_keys": list(RESTART_REQUIRED_KEYS),
+    }
 
 
 def build_status_snapshot(pipeline, revision: int, media: dict | None = None) -> dict:

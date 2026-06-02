@@ -32,6 +32,8 @@ class PtzCfg:
     max_tilt_speed: int = 8
     min_speed: int = 1
     command_min_interval: float = 0.05
+    ff_gain: float = 0.0
+    ff_deadzone_mult: float = 1.5
 
 
 @dataclass
@@ -44,6 +46,7 @@ class CameraAiCfg:
 @dataclass
 class ColorCfg:
     enabled: bool = True
+    preset: str = "orange_red"
     min_area: int = 60
     max_area: int = 200000
     hsv_ranges: dict = field(default_factory=dict)
@@ -69,6 +72,8 @@ class FusionCfg:
     unlock_threshold: float = 0.35
     ema_alpha: float = 0.5
     lost_grace_sec: float = 0.8
+    person_aim_x: float = 0.5
+    person_aim_y: float = 0.5
 
 
 @dataclass

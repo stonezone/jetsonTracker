@@ -49,7 +49,8 @@ class VisualServo:
     def _lead(self, ex: float, ey: float) -> Tuple[float, float]:
         """Feed-forward: bias the error by its inter-frame change so the camera
         anticipates motion. Off when ff_gain is unset/0. A big jump is a detection
-        switch (not real motion), so it skips the lead."""
+        switch (not real motion), so it skips the lead. Near-center jitter is
+        also ignored so feed-forward cannot pull the camera out of deadzone."""
         g = getattr(self.cfg, "ff_gain", 0.0) or 0.0
         last = self._last
         self._last = (ex, ey)
@@ -58,7 +59,10 @@ class VisualServo:
         dex, dey = ex - last[0], ey - last[1]
         if abs(dex) > 0.45 or abs(dey) > 0.45:
             return ex, ey
-        return ex + g * dex, ey + g * dey
+        lead_zone = self.cfg.deadzone * max(1.0, getattr(self.cfg, "ff_deadzone_mult", 1.5))
+        lead_x = 0.0 if abs(ex) <= lead_zone or abs(last[0]) <= lead_zone else g * dex
+        lead_y = 0.0 if abs(ey) <= lead_zone or abs(last[1]) <= lead_zone else g * dey
+        return ex + lead_x, ey + lead_y
 
     def compute(self, target_xy: Optional[Tuple[float, float]],
                 frame_wh: Tuple[int, int]) -> PtzCommand:
