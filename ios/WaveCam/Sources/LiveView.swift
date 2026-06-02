@@ -17,7 +17,7 @@ struct LiveView: View {
                     LiveFeedCard(
                         status: client.status,
                         connected: client.connected,
-                        previewURL: client.connected ? client.previewURL : nil,
+                        previewURL: client.previewURL,
                         height: nil
                     )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -36,7 +36,7 @@ struct LiveView: View {
                         LiveFeedCard(
                             status: client.status,
                             connected: client.connected,
-                            previewURL: client.connected ? client.previewURL : nil
+                            previewURL: client.previewURL
                         )
                         LiveTelemetryGrid(status: client.status, connected: client.connected)
                         EmergencyStopButton()
@@ -144,12 +144,17 @@ private struct MJPEGPreviewView: UIViewRepresentable {
             guard loadedURL != url else { return }
             stop()
             loadedURL = url
+            connect(url: url)
+        }
+
+        private func connect(url: URL) {
             let configuration = URLSessionConfiguration.default
             configuration.timeoutIntervalForRequest = 10
             let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
             self.session = session
-            task = session.dataTask(with: url)
-            task?.resume()
+            let task = session.dataTask(with: url)
+            self.task = task
+            task.resume()
         }
 
         func stop() {
@@ -159,6 +164,22 @@ private struct MJPEGPreviewView: UIViewRepresentable {
             session = nil
             buffer.removeAll(keepingCapacity: false)
             loadedURL = nil
+        }
+
+        // MJPEG has no natural end; on a dropped/finished connection (Orin or
+        // network blip) reconnect after a short backoff so the feed self-heals,
+        // instead of relying on a view teardown driven by the 1Hz status poll.
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            session.finishTasksAndInvalidate()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.session === session, let url = self.loadedURL else { return }
+                self.task = nil
+                self.session = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    guard let self, self.loadedURL == url, self.session == nil else { return }
+                    self.connect(url: url)
+                }
+            }
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
