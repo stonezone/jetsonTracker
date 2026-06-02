@@ -676,7 +676,7 @@ private struct FeedBottomStrip: View {
                 FeedMetric(label: "STATE", value: stateText, color: stateColor)
                 FeedMetric(label: "CONF", value: confidenceText, color: WC.brand)
                 FeedMetric(label: "FPS", value: fpsText, color: WC.txt)
-                FeedMetric(label: "GPS", value: distanceText, color: WC.ok)
+                FeedMetric(label: "GPS", value: distanceText, color: connected ? (gpsStale ? WC.warn : WC.ok) : WC.faint)
             }
             .padding(10)
         }
@@ -692,9 +692,12 @@ private struct FeedBottomStrip: View {
         return value.formatted(.number.precision(.fractionLength(1)))
     }
 
+    private var gpsStale: Bool { status?.gps?.stale == true }
+
     private var distanceText: String {
         guard connected, let meters = status?.gps?.distanceM else { return "-" }
-        return "\(Int(meters.rounded()))m"
+        let distance = "\(Int(meters.rounded()))m"
+        return gpsStale ? "\(distance) !" : distance
     }
 }
 
@@ -749,12 +752,23 @@ private struct LiveTelemetryGrid: View {
         StatusPill(title: "OWNER", value: connected ? (status?.ptz.owner.uppercased() ?? "-") : "-", color: connected ? WC.brand : WC.warn)
         StatusPill(title: "MODE", value: connected ? (status?.session.mode?.uppercased() ?? "-") : "OFFLINE", color: connected ? WC.ok : WC.warn)
         StatusPill(title: "PTZ", value: ptzState, color: connected && status?.ptz.enabled != false ? WC.ok : WC.warn)
+        StatusPill(title: "FREE", value: freeText, color: freeColor)
     }
 
     private var ptzState: String {
         guard connected else { return "-" }
         if status?.ptz.enabled == false { return "OFF" }
         return status?.ptz.panTiltCmd?.uppercased() ?? "-"
+    }
+
+    private var freeText: String {
+        guard connected, let gb = status?.media?.freeGb else { return "-" }
+        return "\(Int(gb.rounded()))GB"
+    }
+
+    private var freeColor: Color {
+        guard connected, let gb = status?.media?.freeGb else { return WC.faint }
+        return gb < 20 ? WC.warn : WC.ok
     }
 }
 
