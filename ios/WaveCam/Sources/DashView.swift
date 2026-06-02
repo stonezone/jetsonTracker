@@ -165,7 +165,7 @@ private extension URL {
         guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else {
             return self
         }
-        components.port = 8080
+        components.port = 8088
         components.path = ""
         components.query = nil
         components.fragment = nil

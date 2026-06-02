@@ -17,6 +17,7 @@ struct TuneView: View {
     @State private var maxTilt = 8.0
     @State private var deadzone = 0.08
     @State private var ffGain = 0.0
+    @State private var model: String?
 
     private let presets = ["orange_red", "orange", "blue", "green", "yellow", "pink"]
     private let classes: [(id: Int, name: String)] = [
@@ -34,6 +35,8 @@ struct TuneView: View {
                     pickerRow("Color preset", selection: $colorPreset, options: presets.map { ($0, $0) }, key: "color.preset")
                     TuneDivider()
                     pickerRow("YOLO target", selection: $yoloClass, options: classes.map { ($0.id, $0.name) }, key: "detector.person_class")
+                    TuneDivider()
+                    infoRow("Model", model ?? "—")
                     TuneDivider()
                     sliderRow("Aim point", value: $aimY, range: 0.2...0.75, step: 0.01, readout: aimLabel(aimY), key: "fusion.person_aim_y")
                 }
@@ -92,6 +95,16 @@ struct TuneView: View {
     }
 
     @ViewBuilder
+    private func infoRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(WC.txt)
+            Spacer()
+            Text(value).font(.system(size: 12, design: .monospaced)).foregroundStyle(WC.muted)
+                .lineLimit(1).truncationMode(.middle)
+        }
+    }
+
+    @ViewBuilder
     private func sliderRow(_ label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double, readout: String, key: String, isInt: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -135,6 +148,7 @@ struct TuneView: View {
         maxTilt = Double(cfg.current.ptz.maxTiltSpeed)
         deadzone = cfg.current.ptz.deadzone
         ffGain = cfg.current.ptz.ffGain
+        model = cfg.current.detector.model
         loaded = true
     }
 

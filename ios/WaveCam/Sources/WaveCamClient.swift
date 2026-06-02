@@ -154,6 +154,7 @@ struct WCConfig: Codable, Sendable {
         struct Detector: Codable, Sendable {
             var conf: Double
             var personClass: Int
+            var model: String?
         }
         struct Web: Codable, Sendable {
             var showMask: Bool
