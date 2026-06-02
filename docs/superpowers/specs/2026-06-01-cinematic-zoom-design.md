@@ -1,6 +1,6 @@
 # Cinematic Zoom — Design Spec (2026-06-01)
 
-Co-designed: Claude (iOS) + Codex (backend). Status: **awaiting Zack's review** before implementation.
+Status: **approved**. iOS controls are committed and feature-detected; backend wiring is pending.
 
 ## Goal
 Optional vision-based auto-zoom that holds the tracked subject at a chosen size in
@@ -34,10 +34,9 @@ controls (toggle + Subject-size slider).
    AND not suppressed by the manual-zoom override.
 3. **Zoom command path:** `ptz.zoom(tele|wide|stop, speed)` with a **separate** rate-limit/de-dupe
    (`_last_zoom_key`/`_last_zoom_time`) — do not reuse pan/tilt `_last_cmd_key`.
-4. **Manual override (recommended):** a separate **zoom-override deadman** timestamp — a manual
+4. **Manual override:** a separate **zoom-override deadman** timestamp — a manual
    `POST /ptz/zoom` suppresses ONLY cinematic zoom for the deadman window; pan/tilt auto-tracking
-   continues; cinematic zoom resumes after. (Simpler alternative: suppress whenever owner≠testbed,
-   but then a manual zoom nudge also pauses tracking. **Open question for Zack** below.)
+   continues; cinematic zoom resumes after. Do not suppress pan/tilt tracking for a manual zoom nudge.
 5. **Config (hot):** `ptz.cinematic_zoom_enabled` (bool, default false) + `ptz.zoom_target_frac`
    (float 0.2–0.8, default 0.5); surface `ptz.zoom_deadband`, `ptz.zoom_max_speed`. Add to the
    hot-config allow-list + `config_snapshot.current.ptz` (+ supported/defaults). Internal aliases
@@ -58,9 +57,9 @@ pipeline loop: if enabled + locked person box + not manual-suppressed → `compu
 cinematic suppressed → resumes after the window.
 
 ## Split
-- **Codex:** all backend (FusionResult.person_bbox, loop wiring, gate, zoom rate-limit,
-  manual-override deadman, config keys + snapshot, tests). Confirmed he'll take it post-approval.
-- **Claude:** iOS Tune controls (toggle + slider, feature-detected).
+- **Backend:** FusionResult.person_bbox, loop wiring, gate, zoom rate-limit,
+  manual-override deadman, config keys + snapshot, tests.
+- **iOS:** Tune controls (toggle + slider, feature-detected).
 
 ## Resolved (Zack, 2026-06-01) — APPROVED
 Manual override: **keep pan/tilt auto-tracking running.** Implement the **separate zoom-override

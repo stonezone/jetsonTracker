@@ -733,7 +733,7 @@
       <div class="hero-copy reveal">
         <div class="eyeline">Operator guide</div>
         <h1>Live feed. PTZ hold. Start auto.</h1>
-        <p>Use this sequence when the phone is connected to the Orin, the camera is on Ethernet, and you need to recover, aim, tune, or restart tracking without guessing what owns the camera.</p>
+        <p>Use this sequence when the phone can reach the Orin over USB tether or Wi-Fi, the camera is on Ethernet, and you need to recover, aim, tune, or restart tracking without guessing what owns the camera.</p>
         <div class="hero-actions">
           <a class="button primary" href="#start">Start sequence</a>
           <a class="button" href="#troubleshooting">Recover a bad lock</a>
@@ -752,7 +752,7 @@
           <div class="leg"></div>
           <div class="leg"></div>
         </div>
-        <div class="orin">172.20.10.8<br />192.168.100.10<br />:8088</div>
+        <div class="orin">172.20.10.8<br />192.168.1.155<br />:8088</div>
         <div class="phone">
           <div class="phone-screen">
             <div class="phone-bar"></div>
@@ -762,7 +762,7 @@
           </div>
         </div>
         <div class="hud-card">
-          <div class="hud-row"><span>LIVE</span><strong class="ok">ORIN</strong></div>
+          <div class="hud-row"><span>LIVE</span><strong class="ok">WIFI</strong></div>
           <div class="hud-row"><span>OWNER</span><strong>testbed</strong></div>
           <div class="hud-row"><span>CMD</span><strong>p0/t0</strong></div>
           <div class="hud-row"><span>STOP</span><strong class="kill">latched</strong></div>
@@ -782,9 +782,9 @@
 
         <div class="workflow">
           <div class="flow-lane">
-            <div class="step"><div><strong>Connect the rig.</strong><span>Camera RJ45 to Orin camera LAN. Phone USB-C to Orin tether. Open WaveCam on the phone.</span></div></div>
-            <div class="step"><div><strong>Confirm API path.</strong><span>Connect tab should use <code>http://172.20.10.8:8088/api/v1</code>. LAN fallback is <code>http://192.168.1.155:8088/api/v1</code>.</span></div></div>
-            <div class="step"><div><strong>Check Live.</strong><span>Live should show video. Status should say ORIN when the app can reach the backend.</span></div></div>
+            <div class="step"><div><strong>Connect the rig.</strong><span>Camera RJ45 to Orin camera LAN. Phone can be USB-C tethered to the Orin or on the same Wi-Fi/hotspot path. Open WaveCam on the phone.</span></div></div>
+            <div class="step"><div><strong>Confirm API route.</strong><span>Connect tab now has two fields: USB tether <code>http://172.20.10.8:8088/api/v1</code> and Wi-Fi/hotspot <code>http://192.168.1.155:8088/api/v1</code>. The app uses the first route that answers and shows <code>USB</code>, <code>WIFI</code>, <code>CUSTOM</code>, or <code>OFFLINE</code>.</span></div></div>
+            <div class="step"><div><strong>Check Live.</strong><span>Live should show video. Top status should say <code>USB</code> or <code>WIFI</code> when the app can reach the backend.</span></div></div>
             <div class="step"><div><strong>If STOP LATCHED appears, hold resume.</strong><span>This clears KILL only. It does not automatically restart tracking.</span></div></div>
             <div class="step"><div><strong>Open PTZ and tap Start Auto.</strong><span>That requests autonomous tracking ownership. The owner should move to <code>testbed</code> and state should become SEARCHING or TRACKING.</span></div></div>
           </div>
@@ -812,8 +812,8 @@
             <path d="M210 120 C330 150, 360 260, 500 250 C645 242, 690 150, 790 118" />
             <path d="M500 250 C520 210, 630 170, 790 118" />
           </svg>
-          <div class="node n-phone"><div><strong>iPhone</strong><span>USB-C tether<br />172.20.10.1</span></div></div>
-          <div class="node n-orin"><div><strong>Jetson Orin</strong><span>Control API<br />172.20.10.8:8088</span></div></div>
+          <div class="node n-phone"><div><strong>iPhone</strong><span>USB-C tether or Wi-Fi<br />route shown in app</span></div></div>
+          <div class="node n-orin"><div><strong>Jetson Orin</strong><span>API 172.20.10.8<br />or 192.168.1.155</span></div></div>
           <div class="node n-camera"><div><strong>PTZ Camera</strong><span>Ethernet<br />192.168.100.88</span></div></div>
         </div>
       </section>
@@ -863,7 +863,7 @@
         <div class="grid-3">
           <div class="panel">
             <h3>Connection</h3>
-            <p><code>ORIN</code> means the app can reach the backend. <code>OFFLINE</code> means the app is not reaching the current base URL.</p>
+            <p><code>USB</code>, <code>WIFI</code>, or <code>CUSTOM</code> means the app can reach the backend on that route. <code>OFFLINE</code> means neither configured route is answering.</p>
           </div>
           <div class="panel">
             <h3>Safety</h3>
@@ -894,7 +894,7 @@
             <div class="kicker">05 Tuning</div>
             <h2>Tracking trigger and weights</h2>
           </div>
-          <p>The Orin web UI at <code>http://192.168.1.155:8088/</code> now exposes the full live tuning surface. The iOS app still treats tuning as an Orin web/API task. Persistent defaults live in <code>/data/projects/gimbal/wavecam/config.orin.servo.yaml</code>.</p>
+          <p>The Orin web UI at <code>http://192.168.1.155:8088/</code> exposes the full live tuning surface. The native Tune tab exposes the common hot controls, restart-only key list, and confirmed Restart WaveCam action. Persistent defaults live in <code>/data/projects/gimbal/wavecam/config.orin.servo.yaml</code>.</p>
         </div>
 
         <table class="tuning" aria-label="Tracking tuning keys">
@@ -1003,6 +1003,12 @@
               <td>Upper pan/tilt velocity limits for the servo.</td>
               <td>Lower when tracking overshoots. Raise only after deadzone and target selection are correct.</td>
             </tr>
+            <tr>
+              <td>ptz.cinematic_zoom_enabled / ptz.zoom_target_frac</td>
+              <td>backend pending</td>
+              <td>Person-box auto-zoom that keeps the subject near a chosen frame size.</td>
+              <td>iOS Tune controls are committed and feature-detected. They appear only after the backend exposes these keys and wires zoom control.</td>
+            </tr>
           </tbody>
         </table>
 
@@ -1030,8 +1036,9 @@
           <h3>Current gaps</h3>
           <ol>
             <li>Hot tuning does not write back to YAML automatically.</li>
-            <li>Restart-only keys still require editing persistent config before using the scheduled restart path.</li>
-            <li>WaveCam service shutdown still needs cleanup; the latest restart required systemd to kill the old process after timeout.</li>
+            <li>Restart-only keys still require editing persistent config or the Orin web UI before using the confirmed restart path.</li>
+            <li>Cinematic Zoom is approved and the iOS controls are committed, but backend person-box zoom wiring is not live yet.</li>
+            <li>The service restart timeout was fixed with a VISCA brake plus fast systemd stop; this is validated, but it is not a graceful TensorRT thread teardown.</li>
           </ol>
         </div>
       </section>
@@ -1048,7 +1055,7 @@
         <div class="troubleshoot">
           <div class="fault-list">
             <div class="fault"><strong>Camera tracks the wrong object.</strong><span>Hit Stop PTZ or Emergency Stop. If orange gear is stealing lock, enable <code>fusion.require_person</code> and consider raising <code>fusion.lock_threshold</code>.</span></div>
-            <div class="fault"><strong>No Live video.</strong><span>Check Local Network permission, Connect tab URL, USB tether, and whether <code>/api/v1/preview.mjpeg</code> returns bytes.</span></div>
+            <div class="fault"><strong>No Live video.</strong><span>Check Local Network permission, active route (<code>USB</code>/<code>WIFI</code>), both Connect tab URLs, and whether <code>/api/v1/preview.mjpeg</code> returns bytes.</span></div>
             <div class="fault"><strong>PTZ buttons do nothing.</strong><span>If safety is KILLED, resume first. If owner is not manual/testbed, read the owner field before repeating commands.</span></div>
             <div class="fault"><strong>Tilt direction is wrong.</strong><span>Use <code>ptz.invert_tilt</code> in the Orin web tuning UI, hot config, or YAML. Current Orin servo config default is <code>false</code>.</span></div>
             <div class="fault"><strong>Camera twitches near center.</strong><span>Raise <code>ptz.deadzone</code> or <code>ptz.ff_deadzone_mult</code>. Leave <code>ptz.ff_gain</code> at <code>0.00</code> unless you are deliberately testing lead compensation.</span></div>
