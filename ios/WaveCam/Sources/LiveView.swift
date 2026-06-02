@@ -22,8 +22,13 @@ struct LiveView: View {
                     )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     VStack(spacing: 10) {
-                        LiveTelemetryGrid(status: client.status, connected: client.connected, axis: .vertical)
-                        RecordButton(compact: true)
+                        ScrollView {
+                            VStack(spacing: 10) {
+                                LiveTelemetryGrid(status: client.status, connected: client.connected, axis: .vertical)
+                                RecordButton(compact: true)
+                            }
+                        }
+                        .scrollIndicators(.hidden)
                         EmergencyStopButton(style: .compact)
                     }
                     .frame(width: 190)
