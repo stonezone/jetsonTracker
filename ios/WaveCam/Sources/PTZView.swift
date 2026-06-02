@@ -249,10 +249,7 @@ private enum PTZCommandState {
 private struct PTZHeader: View {
     let status: WCStatus?
 
-    private var mode: String {
-        let raw = status?.session.mode ?? "manual"
-        return raw == "testbed" ? "vision" : raw   // "testbed" is a backend placeholder (review)
-    }
+    private var mode: String { status?.session.mode ?? "manual" }
     private var state: String { status?.session.state ?? "READY" }
     private var command: String { status?.ptz.panTiltCmd ?? "p0/t0" }
 
