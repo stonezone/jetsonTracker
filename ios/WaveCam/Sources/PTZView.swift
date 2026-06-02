@@ -307,7 +307,7 @@ private struct PTZJoystickCard: View {
                     .foregroundStyle(WC.muted)
                 Spacer()
                 if compact {
-                    Text("OWNER \(owner.uppercased())")
+                    Text("OWNER \(owner.ptzOwnerLabel)")
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
                         .tracking(1.1)
                         .foregroundStyle(WC.brand)
@@ -328,7 +328,7 @@ private struct PTZJoystickCard: View {
                 HStack(spacing: 8) {
                     PTZReadoutCell(label: "PAN", value: pan.signedPTZ)
                     PTZReadoutCell(label: "TILT", value: tilt.signedPTZ)
-                    PTZReadoutCell(label: "OWNER", value: owner.uppercased(), tint: WC.brand)
+                    PTZReadoutCell(label: "OWNER", value: owner.ptzOwnerLabel, tint: WC.brand)
                 }
             }
         }

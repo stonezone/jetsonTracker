@@ -142,7 +142,7 @@ private struct CalibrationStatusStrip: View {
         HStack(spacing: 8) {
             CalibrationMetric(label: "SESSION", value: status?.session.state ?? "READY", tint: WC.ok)
             CalibrationMetric(label: "GPS", value: gpsText, tint: WC.ok)
-            CalibrationMetric(label: "OWNER", value: status?.ptz.owner.uppercased() ?? "IDLE", tint: WC.brand)
+            CalibrationMetric(label: "OWNER", value: status?.ptz.owner.ptzOwnerLabel ?? "IDLE", tint: WC.brand)
         }
     }
 }

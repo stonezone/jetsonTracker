@@ -482,7 +482,7 @@ private struct FeedPTZOverlay: View {
 
     private var owner: String {
         guard connected else { return "-" }
-        return status?.ptz.owner.uppercased() ?? "-"
+        return status?.ptz.owner.ptzOwnerLabel ?? "-"
     }
 
     private var command: String {
@@ -751,7 +751,7 @@ private struct LiveTelemetryGrid: View {
 
     @ViewBuilder
     private var telemetryPills: some View {
-        StatusPill(title: "OWNER", value: connected ? (status?.ptz.owner.uppercased() ?? "-") : "-", color: connected ? WC.brand : WC.warn)
+        StatusPill(title: "OWNER", value: connected ? (status?.ptz.owner.ptzOwnerLabel ?? "-") : "-", color: connected ? WC.brand : WC.warn)
         StatusPill(title: "MODE", value: connected ? (status?.session.mode?.uppercased() ?? "-") : "OFFLINE", color: connected ? WC.ok : WC.warn)
         StatusPill(title: "PTZ", value: ptzState, color: connected && status?.ptz.enabled != false ? WC.ok : WC.warn)
         StatusPill(title: "FREE", value: freeText, color: freeColor)

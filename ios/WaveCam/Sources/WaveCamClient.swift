@@ -20,6 +20,19 @@ enum WaveCamDefaults {
     }
 }
 
+extension String {
+    /// Operator-friendly PTZ owner label -- hides engine internals like
+    /// vision_follow / testbed / gps_tracker behind a single AUTO (review #16).
+    var ptzOwnerLabel: String {
+        switch self {
+        case "vision_follow", "gps_tracker", "testbed": return "AUTO"
+        case "manual": return "MANUAL"
+        case "idle", "": return "IDLE"
+        default: return uppercased()
+        }
+    }
+}
+
 // MARK: - Status models
 // Mirror docs/superpowers/specs/2026-06-01-wavecam-control-api-spec.md  GET /api/v1/status
 
