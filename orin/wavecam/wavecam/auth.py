@@ -34,7 +34,7 @@ SERVICE = "service"
 # `agent` is read-only at the API in v1: Codex acts on-demand and only gains write
 # actions behind the operator's explicit "agent control" gate (not built yet).
 ROLE_ACTIONS: dict[str, frozenset[str]] = {
-    "operator": frozenset({READ, SAFETY, PTZ, CONFIG}),
+    "operator": frozenset({READ, SAFETY, PTZ, CONFIG, SERVICE}),
     "viewer": frozenset({READ}),
     "supervisor": frozenset({READ, SAFETY, CONFIG, SERVICE}),
     "agent": frozenset({READ}),

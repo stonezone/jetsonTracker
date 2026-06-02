@@ -573,6 +573,26 @@ def test_api_v1_system_restart_refuses_duplicate_pending_request():
     assert second.json()["code"] == "restart_pending"
 
 
+def test_api_v1_agent_summon_accepts_request_without_moving_camera():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    response = client.post(
+        "/api/v1/agent/summon",
+        json={"source": "ios_native", "reason": "operator_diagnostics"},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["ok"] is True
+    assert body["action"] == "agent_summon"
+    assert body["accepted"] is True
+    assert body["source"] == "ios_native"
+    assert body["reason"] == "operator_diagnostics"
+    assert body["status"]["ptz"]["owner"] == "idle"
+    assert pipe.ptz.calls == []
+
+
 def test_api_v1_media_status_reports_recorder_state():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -630,6 +650,7 @@ if __name__ == "__main__":
     test_api_v1_system_restart_schedules_restart_when_idle()
     test_api_v1_system_restart_requires_confirmation_while_auto_ptz_active()
     test_api_v1_system_restart_refuses_duplicate_pending_request()
+    test_api_v1_agent_summon_accepts_request_without_moving_camera()
     test_api_v1_media_status_reports_recorder_state()
     test_api_v1_media_record_start_and_stop_control_recorder()
     print("CONTROL API TESTS PASSED")

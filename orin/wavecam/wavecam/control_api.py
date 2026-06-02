@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from .auth import CONFIG, PTZ, READ, SAFETY, install_auth, require, websocket_authorized
+from .auth import CONFIG, PTZ, READ, SAFETY, SERVICE, install_auth, require, websocket_authorized
 from .color_presets import COLOR_PRESETS, preset_hsv_ranges
 from .ptz_owner import AUTONOMOUS, IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
@@ -139,6 +139,11 @@ class RestartRequest(BaseModel):
     delay_seconds: float = Field(default=0.35, ge=0.0, le=5.0)
 
 
+class AgentSummonRequest(BaseModel):
+    source: str | None = Field(default=None, max_length=64)
+    reason: str | None = Field(default=None, max_length=256)
+
+
 def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     adapter = ControlApiAdapter(pipeline, frames)
     app.state.control_api = adapter
@@ -149,6 +154,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_media_routes(app, adapter)
     register_config_routes(app, adapter)
     register_system_routes(app, adapter)
+    register_agent_routes(app, adapter)
 
 
 def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
@@ -286,6 +292,12 @@ def register_system_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/system/restart", dependencies=[Depends(require(CONFIG))])
     def system_restart(req: RestartRequest | None = None):
         return api.request_service_restart(req or RestartRequest())
+
+
+def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.post("/api/v1/agent/summon", dependencies=[Depends(require(SERVICE))])
+    def agent_summon(req: AgentSummonRequest | None = None):
+        return api.request_agent_summon(req or AgentSummonRequest())
 
 
 class ControlApiAdapter:
@@ -541,6 +553,26 @@ class ControlApiAdapter:
             status_code=202,
         )
 
+    def request_agent_summon(self, req: AgentSummonRequest) -> JSONResponse:
+        source = normalized_text(req.source, "unknown", 64)
+        reason = normalized_text(req.reason, "operator_diagnostics", 256)
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "action": "agent_summon",
+                "accepted": True,
+                "source": source,
+                "reason": reason,
+                "message": (
+                    "Agent diagnostics request accepted; no automatic shell, service, "
+                    "or camera movement command was run."
+                ),
+                "status": self.status_snapshot(),
+            },
+            status_code=202,
+        )
+
     @property
     def restart_pending(self) -> bool:
         with self._lock:
@@ -629,6 +661,13 @@ def media_ok(api: ControlApiAdapter, result: dict) -> JSONResponse:
             "status": api.status_snapshot(),
         }
     )
+
+
+def normalized_text(value: str | None, fallback: str, max_len: int) -> str:
+    text = (value or "").strip()
+    if not text:
+        return fallback
+    return text[:max_len]
 
 
 def make_request_id() -> str:

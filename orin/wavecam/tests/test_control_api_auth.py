@@ -54,6 +54,11 @@ def test_operator_allows_read_safety_ptz_config():
         json={"requested_owner": "manual", "pan": 0.2, "tilt": 0.0, "zoom": 0.0},
         headers=hdr("op"),
     ).status_code == 200
+    assert client.post(
+        "/api/v1/agent/summon",
+        json={"source": "test", "reason": "operator_diagnostics"},
+        headers=hdr("op"),
+    ).status_code == 202
 
 
 def test_viewer_can_read_but_not_kill():
@@ -71,6 +76,12 @@ def test_viewer_can_read_but_not_kill():
         headers=hdr("v"),
     )
     assert restart_blocked.status_code == 403
+    summon_blocked = client.post(
+        "/api/v1/agent/summon",
+        json={"source": "test", "reason": "viewer"},
+        headers=hdr("v"),
+    )
+    assert summon_blocked.status_code == 403
 
 
 def test_supervisor_no_direct_ptz_but_config_ok():
@@ -86,6 +97,12 @@ def test_supervisor_no_direct_ptz_but_config_ok():
         headers=hdr("s"),
     )
     assert restart.status_code == 202
+    summon = client.post(
+        "/api/v1/agent/summon",
+        json={"source": "test", "reason": "supervisor"},
+        headers=hdr("s"),
+    )
+    assert summon.status_code == 202
 
 
 def test_agent_is_read_only_in_v1():
@@ -97,6 +114,12 @@ def test_agent_is_read_only_in_v1():
         headers=hdr("a"),
     )
     assert blocked.status_code == 403
+    summon_blocked = client.post(
+        "/api/v1/agent/summon",
+        json={"source": "test", "reason": "agent"},
+        headers=hdr("a"),
+    )
+    assert summon_blocked.status_code == 403
 
 
 def test_load_auth_missing_file_disabled(tmp_path):
