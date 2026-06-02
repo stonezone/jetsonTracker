@@ -127,6 +127,40 @@ extension WCStatus {
     }
 }
 
+/// Subset of GET /api/v1/config we bind in the Tune panel (decoder is convertFromSnakeCase).
+struct WCConfig: Codable, Sendable {
+    var current: Current
+
+    struct Current: Codable, Sendable {
+        var ptz: PTZ
+        var fusion: Fusion
+        var color: ColorCfg
+        var detector: Detector
+        var web: Web
+
+        struct PTZ: Codable, Sendable {
+            var deadzone: Double
+            var maxPanSpeed: Int
+            var maxTiltSpeed: Int
+            var ffGain: Double
+        }
+        struct Fusion: Codable, Sendable {
+            var requirePerson: Bool
+            var personAimY: Double
+        }
+        struct ColorCfg: Codable, Sendable {
+            var preset: String
+        }
+        struct Detector: Codable, Sendable {
+            var conf: Double
+            var personClass: Int
+        }
+        struct Web: Codable, Sendable {
+            var showMask: Bool
+        }
+    }
+}
+
 // MARK: - Client
 
 /// The single seam to the Orin Control API. `.mock` returns canned, locally-mutable
@@ -321,9 +355,27 @@ final class WaveCamClient {
         ])
     }
 
-    func configHot(_ patch: [String: Double]) async {
-        guard mode == .live else { return }
-        _ = try? await post("config/hot", body: ["patch": patch])
+    @discardableResult
+    func configHot(_ patch: [String: Any]) async -> Bool {
+        guard mode == .live else { return false }
+        do {
+            _ = try await post("config/hot", body: ["patch": patch])
+            return true
+        } catch {
+            lastControlError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// GET /api/v1/config -- current tuning values for the Tune panel. nil in mock/offline.
+    func config() async -> WCConfig? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("config")
+            return try Self.decoder.decode(WCConfig.self, from: data)
+        } catch {
+            return nil
+        }
     }
 
     /// MJPEG monitor feed URL (GET /api/v1/preview.mjpeg), nil in mock mode.

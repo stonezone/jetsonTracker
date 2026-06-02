@@ -4,11 +4,12 @@ import SwiftUI
 /// behind iOS's automatic More tab.
 struct ToolsView: View {
     private enum Tool: String, CaseIterable, Hashable {
+        case tune = "Tune"
         case agent = "Agent"
         case dashboard = "Dash"
     }
 
-    @State private var selectedTool = Tool.agent
+    @State private var selectedTool = Tool.tune
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,8 @@ struct ToolsView: View {
             .background(WC.ink)
 
             switch selectedTool {
+            case .tune:
+                TuneView()
             case .agent:
                 AgentView()
             case .dashboard:
