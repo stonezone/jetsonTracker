@@ -251,12 +251,21 @@ private struct PTZHeader: View {
 
     private var mode: String { status?.session.mode ?? "manual" }
     private var state: String { status?.session.state ?? "READY" }
+    private var owner: String { status?.ptz.owner.ptzOwnerLabel ?? "IDLE" }
+    private var ownerColor: Color {
+        switch owner {
+        case "AUTO": return WC.ok
+        case "MANUAL": return WC.warn
+        default: return WC.faint
+        }
+    }
     private var command: String { status?.ptz.panTiltCmd ?? "p0/t0" }
 
     var body: some View {
         HStack(spacing: 8) {
             PTZStatusPill(label: "STATE", value: state, color: state == "KILLED" ? WC.kill : WC.ok)
             PTZStatusPill(label: "MODE", value: mode, color: WC.brand)
+            PTZStatusPill(label: "OWNER", value: owner, color: ownerColor)
             PTZStatusPill(label: "CMD", value: command, color: WC.txt)
         }
     }
@@ -583,9 +592,9 @@ private struct PTZControlFeedback: View {
         } else if commandState == .startingAuto {
             PTZFeedbackPill(text: "Starting Auto PTZ...", color: WC.ok, icon: "play.fill")
         } else if commandState == .held {
-            PTZFeedbackPill(text: "PTZ held. Tap Start Auto to resume tracking.", color: WC.kill, icon: "stop.fill")
+            PTZFeedbackPill(text: "Backend confirms PTZ hold. Tap Start Auto to resume.", color: WC.kill, icon: "stop.fill")
         } else if commandState == .auto {
-            PTZFeedbackPill(text: "Auto PTZ active.", color: WC.ok, icon: "play.fill")
+            PTZFeedbackPill(text: "Backend confirms Auto PTZ.", color: WC.ok, icon: "play.fill")
         }
     }
 }

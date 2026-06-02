@@ -200,19 +200,33 @@ Backup*/
 !orin/README.md
 !orin/*/README.md
 !nucleo/README.md
-!nucleo/**/*.md
+!nucleo/docs/STM32_DRV8825_Wiring_Diagram.md
+!nucleo/docs/hardware-contract.md
 !gimbal/README.md
 
 # GitHub templates - KEEP
 !.github/
 !.github/**/*.md
 
-# =============================================================================
-# End of .gitignore
-# =============================================================================
 docs/.DS_Store
 docs/wiring/.DS_Store
+docs/superpowers/.DS_Store
 
 # Agent collaboration state
 .agent-collab/
 .codex/
+
+# Nucleo local/reference artifacts - keep GitHub limited to current F401 build files.
+nucleo/.DS_Store
+nucleo/**/.DS_Store
+nucleo/_archive/
+nucleo/docs/MORPHO_PINOUT_REFERENCE.md
+nucleo/docs/um1724-stm32-nucleo64-boards-mb1136-stmicroelectronics.pdf
+nucleo/firmware/stepper_control/STM32F446RETX_FLASH.ld
+nucleo/firmware/stepper_control/Startup/startup_stm32f446retx.s
+nucleo/images/ STM32 Nucleo-F401RE-pinout-diagram.jpg
+nucleo/images/ STM32 Nucleo-F401RE-pinout.jpg
+
+# =============================================================================
+# End of .gitignore
+# =============================================================================

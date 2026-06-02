@@ -725,6 +725,7 @@
         <a href="#controls">Controls</a>
         <a href="#states">States</a>
         <a href="#tuning">Tuning</a>
+        <a href="#cinematic">Zoom</a>
         <a href="#troubleshooting">Troubleshooting</a>
       </div>
     </nav>
@@ -1012,6 +1013,19 @@
           </tbody>
         </table>
 
+        <div class="callout" id="cinematic" style="margin-top:1rem">
+          <h3>Cinematic Zoom enable/test flow</h3>
+          <ol>
+            <li>Confirm the app is connected on <code>USB</code> or <code>WIFI</code> and Live shows MJPEG video.</li>
+            <li>Open PTZ, tap Start Auto, and verify backend state first: owner should resolve to autonomous tracking and <code>CMD</code> should reflect backend pan/tilt state.</li>
+            <li>Open Tools &gt; Tune. If the Cinematic Zoom card is not visible, the backend did not expose the zoom config keys; stop and verify <code>/api/v1/config</code>.</li>
+            <li>Enable Cinematic zoom and leave Subject size near <code>0.50</code> for the first pass.</li>
+            <li>Watch Live. Zoom should move only when tracking is locked on a YOLO person box. It should hold on color-only frames, no-lock frames, and inside the zoom deadband.</li>
+            <li>Nudge manual zoom once. Expected result: auto-zoom suppresses briefly, but pan/tilt tracking continues.</li>
+            <li>If framing twitches, locks the wrong subject, or zoom fights the operator, disable Cinematic Zoom and retest pan/tilt before changing zoom thresholds.</li>
+          </ol>
+        </div>
+
         <div class="grid-2" style="margin-top:1rem">
           <div class="panel">
             <h3>Hot tuning call</h3>
@@ -1037,7 +1051,7 @@
           <ol>
             <li>Hot tuning does not write back to YAML automatically.</li>
             <li>Restart-only keys still require editing persistent config or the Orin web UI before using the confirmed restart path.</li>
-            <li>Cinematic Zoom is backend-wired and default off. It holds zoom on color-only/no-person frames and drives zoom only from a locked YOLO person box.</li>
+            <li>Cinematic Zoom is backend-wired and default off. Use the enable/test flow above before making it a persistent default.</li>
             <li>The service restart timeout was fixed with a VISCA brake plus fast systemd stop; this is validated, but it is not a graceful TensorRT thread teardown.</li>
           </ol>
         </div>

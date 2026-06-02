@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WaveCam v2 Current Build Spec</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #081018;
+      --ink: #101a23;
+      --panel: #142230;
+      --panel2: #0d1720;
+      --line: rgba(196, 225, 240, 0.16);
+      --line2: rgba(196, 225, 240, 0.28);
+      --text: #eef7fb;
+      --muted: #91a6b4;
+      --faint: #5d737f;
+      --brand: #ff8a3d;
+      --brand2: #ffb060;
+      --cyan: #46d7ff;
+      --ok: #3ee58f;
+      --warn: #f5c451;
+      --kill: #ff443d;
+      --radius: 18px;
+      --shadow: 0 30px 90px rgba(0, 0, 0, 0.42);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 80% 4%, rgba(255, 138, 61, 0.14), transparent 32rem),
+        radial-gradient(circle at 8% 22%, rgba(70, 215, 255, 0.08), transparent 30rem),
+        linear-gradient(180deg, #081018 0%, #0b131b 42%, #081018 100%);
+      letter-spacing: 0;
+    }
+
+    a { color: inherit; }
+    code {
+      font-family: var(--mono);
+      color: #d8f4ff;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 0.12rem 0.35rem;
+      border-radius: 6px;
+    }
+
+    .shell { min-height: 100vh; overflow: hidden; }
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem clamp(1rem, 3vw, 3.25rem);
+      background: rgba(8, 16, 24, 0.78);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+    }
+    .brand-dot {
+      width: 0.7rem;
+      height: 0.7rem;
+      border-radius: 50%;
+      background: var(--brand);
+      box-shadow: 0 0 22px rgba(255, 138, 61, 0.75);
+    }
+    .brand span:last-child { color: var(--brand); }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font: 0.76rem/1 var(--mono);
+      color: var(--muted);
+    }
+    .nav-links a {
+      text-decoration: none;
+      padding: 0.55rem 0.7rem;
+      border-radius: 999px;
+    }
+    .nav-links a:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(22rem, 1.05fr);
+      min-height: calc(100svh - 64px);
+      padding: clamp(2.2rem, 6vw, 6.4rem) clamp(1rem, 5vw, 5rem) clamp(2rem, 5vw, 4rem);
+      gap: clamp(2rem, 5vw, 5rem);
+      align-items: center;
+      position: relative;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+    }
+    .eyeline {
+      color: var(--brand);
+      font: 700 0.78rem/1 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 1.2rem;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(3.2rem, 8vw, 8.8rem);
+      line-height: 0.84;
+      letter-spacing: 0;
+    }
+    .hero-copy p {
+      max-width: 36rem;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.4vw, 1.2rem);
+      line-height: 1.55;
+      margin: 1.5rem 0 2rem;
+    }
+    .hero-note {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.75rem;
+      padding: 0 1.05rem;
+      border-radius: 12px;
+      border: 1px solid var(--line2);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 750;
+      font-size: 0.88rem;
+    }
+    .button.primary {
+      color: #111820;
+      background: var(--brand);
+      border-color: rgba(255, 138, 61, 0.6);
+    }
+
+    .system-card {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background:
+        linear-gradient(180deg, rgba(31, 76, 94, 0.75) 0%, rgba(10, 28, 38, 0.94) 56%, rgba(6, 12, 18, 1) 100%);
+      box-shadow: var(--shadow);
+      padding: clamp(1rem, 2.5vw, 1.6rem);
+      min-height: 32rem;
+      display: grid;
+      align-content: center;
+      gap: 1rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .system-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(160deg, rgba(255, 138, 61, 0.12), transparent 36%),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 42px),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 42px);
+      opacity: 0.85;
+      pointer-events: none;
+    }
+    .system-row {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 7rem 1fr;
+      gap: 1rem;
+      align-items: center;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(8, 16, 24, 0.7);
+    }
+    .system-row b {
+      color: var(--brand2);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .system-row span {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    main { padding: 0 clamp(1rem, 5vw, 5rem) 4rem; }
+    section {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: clamp(2.5rem, 6vw, 5.5rem) 0;
+      border-bottom: 1px solid var(--line);
+      scroll-margin-top: 5rem;
+    }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.8fr) minmax(18rem, 0.58fr);
+      gap: clamp(1rem, 4vw, 4rem);
+      align-items: end;
+      margin-bottom: 1.4rem;
+    }
+    .section-head p,
+    .panel p,
+    .callout p,
+    td {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .kicker {
+      color: var(--brand);
+      font: 700 0.78rem/1 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.7rem;
+    }
+    h2 {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 4.6rem);
+      line-height: 0.95;
+      letter-spacing: 0;
+    }
+    h3 {
+      margin: 0 0 0.65rem;
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .grid-2, .grid-3, .grid-4 {
+      display: grid;
+      gap: 1rem;
+    }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .panel, .callout {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(20, 34, 48, 0.78);
+      padding: 1rem;
+    }
+    .callout {
+      border-color: rgba(255, 138, 61, 0.38);
+      background: linear-gradient(180deg, rgba(255, 138, 61, 0.11), rgba(20, 34, 48, 0.78));
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      border: 1px solid var(--line2);
+      border-radius: 999px;
+      padding: 0.3rem 0.55rem;
+      font: 700 0.68rem/1 var(--mono);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.75rem;
+    }
+    .status.ok { color: var(--ok); border-color: rgba(62, 229, 143, 0.38); background: rgba(62, 229, 143, 0.08); }
+    .status.warn { color: var(--warn); border-color: rgba(245, 196, 81, 0.4); background: rgba(245, 196, 81, 0.08); }
+    .status.stop { color: var(--kill); border-color: rgba(255, 68, 61, 0.38); background: rgba(255, 68, 61, 0.08); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: rgba(20, 34, 48, 0.72);
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 0.85rem;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      color: var(--text);
+      font: 700 0.72rem/1.2 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    tr:last-child td { border-bottom: 0; }
+    .mono { font-family: var(--mono); }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .kill { color: var(--kill); }
+    .mini-terminal {
+      overflow-x: auto;
+      white-space: nowrap;
+      border: 1px solid rgba(70, 215, 255, 0.2);
+      border-radius: 14px;
+      background: #050a0f;
+      color: #d8f4ff;
+      font: 0.78rem/1.65 var(--mono);
+      padding: 0.9rem;
+    }
+    .prompt { color: var(--brand); }
+
+    ol, ul {
+      color: var(--muted);
+      line-height: 1.55;
+      padding-left: 1.2rem;
+      margin: 0.5rem 0 0;
+    }
+    li { margin: 0.3rem 0; }
+    .footer {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 1.6rem 0 2.4rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      color: var(--faint);
+      font: 0.78rem/1.3 var(--mono);
+    }
+
+    @media (max-width: 900px) {
+      .hero, .section-head, .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+      .hero { min-height: auto; }
+      .nav { align-items: flex-start; flex-direction: column; }
+      .nav-links { flex-wrap: wrap; }
+      .system-card { min-height: auto; }
+      .system-row { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+      .footer { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="nav">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span>WAVE</span><span>CAM</span>
+      </div>
+      <div class="nav-links" aria-label="Page sections">
+        <a href="#truth">Truth</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#app">App</a>
+        <a href="#api">API</a>
+        <a href="#zoom">Cinematic Zoom</a>
+        <a href="#ship">Ship State</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div class="hero-copy">
+        <div class="eyeline">Current build spec - 2026-06-02</div>
+        <h1>WaveCam v2.</h1>
+        <p>WaveCam is now a phone-controlled Jetson Orin tracking stack: the iPhone selects USB tether or Wi-Fi, the Orin owns camera LAN, MJPEG preview, PTZ, tuning, restart, safety, and status, and the camera remains the actuator.</p>
+        <div class="button-row">
+          <a class="button primary" href="#truth">Current truth</a>
+          <a class="button" href="#zoom">Zoom flow</a>
+        </div>
+        <div class="hero-note">Scope: product-facing architecture and operator-relevant implementation truth. No stale roadmap pivots.</div>
+      </div>
+
+      <div class="system-card" aria-label="WaveCam current system summary">
+        <div class="system-row"><b>iPhone</b><span>Native WaveCam app: Live, PTZ, Calibrate, Tools, Connect. It tries USB tether first, then Wi-Fi/hotspot, and labels the active route.</span></div>
+        <div class="system-row"><b>Orin</b><span>FastAPI backend on <code>:8088</code>, MJPEG preview, hot config, safety, PTZ commands, status polling, restart control, and camera Ethernet routing.</span></div>
+        <div class="system-row"><b>Camera</b><span>Prisual PTZ at <code>192.168.100.88</code> on the Orin camera LAN. Controlled through VISCA path from the Orin, not directly by the phone.</span></div>
+        <div class="system-row"><b>State</b><span>Operators read backend status: route, safety, owner, command, tracking state, confidence, zoom state, and service health.</span></div>
+      </div>
+    </header>
+
+    <main>
+      <section id="truth">
+        <div class="section-head">
+          <div>
+            <div class="kicker">01 Truth</div>
+            <h2>Current system state</h2>
+          </div>
+          <p>This file replaces the older engineering draft. It tracks the current WaveCam phone-control stack, including route-aware connection, backend-confirmed PTZ state, native tuning, service restart, and Cinematic Zoom.</p>
+        </div>
+
+        <div class="grid-3">
+          <div class="panel"><div class="status ok">Validated</div><h3>Backend package</h3><p>Cinematic Zoom backend code is deployed in the Orin WaveCam service and exposes config keys through <code>/api/v1/config</code>. Defaults remain off.</p></div>
+          <div class="panel"><div class="status ok">Implemented</div><h3>Route-aware iPhone app</h3><p>Connect tab stores USB tether and Wi-Fi/hotspot API URLs. Status polling chooses the first reachable route and labels <code>USB</code>, <code>WIFI</code>, <code>CUSTOM</code>, or <code>OFFLINE</code>.</p></div>
+          <div class="panel"><div class="status ok">Implemented</div><h3>PTZ authority UI</h3><p>PTZ controls read backend <code>owner</code> and <code>pan_tilt_cmd</code>. Stop PTZ and Start Auto use backend response status rather than blind local assumptions.</p></div>
+          <div class="panel"><div class="status ok">Implemented</div><h3>Native Tune tab</h3><p>Tools &gt; Tune exposes hot config for target selection, detector confidence, person requirement, mask display, pan/tilt motion, and feature-detected Cinematic Zoom controls.</p></div>
+          <div class="panel"><div class="status warn">Default off</div><h3>Cinematic Zoom</h3><p>Auto-zoom is enabled only by config. It drives zoom from a locked YOLO person box, holds on color-only frames, and manual zoom suppresses auto-zoom briefly without stopping pan/tilt tracking.</p></div>
+          <div class="panel"><div class="status warn">Separate lane</div><h3>Nucleo firmware</h3><p>The tracked Nucleo F401 stepper firmware and wiring docs are retained as hardware reference. New untracked alternate-board/reference files are local archive material, not GitHub payload.</p></div>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <div class="section-head">
+          <div>
+            <div class="kicker">02 Architecture</div>
+            <h2>One control path</h2>
+          </div>
+          <p>The phone never talks to the PTZ camera directly. The Orin is the only runtime authority for camera video, PTZ movement, safety state, and tuning.</p>
+        </div>
+
+        <table aria-label="WaveCam architecture">
+          <thead><tr><th>Layer</th><th>Current role</th><th>Notes</th><th>Feasibility</th></tr></thead>
+          <tbody>
+            <tr><td>iPhone app</td><td>Operator UI, route selection, preview, PTZ controls, calibration, tuning, restart.</td><td>Uses <code>WaveCamClient</code> to poll and command the Orin API.</td><td>9/10</td></tr>
+            <tr><td>Jetson Orin</td><td>Backend, tracking loop, VISCA/PTZ bridge, MJPEG preview, config, safety.</td><td>Current center of gravity. Avoid live mutations unless validated and low-risk.</td><td>9/10</td></tr>
+            <tr><td>Prisual PTZ</td><td>Actuator and video source.</td><td>Camera LAN is isolated behind the Orin. App route changes do not change the camera subnet.</td><td>8/10</td></tr>
+            <tr><td>GPS/vision fusion</td><td>Tracking source and target selection.</td><td>Vision lock drives PTZ; GPS is a cue/source lane, not a replacement for backend status.</td><td>7/10</td></tr>
+            <tr><td>Agent collaboration</td><td>Coordination, docs, reviews, controlled handoffs.</td><td>Partner data is advisory until locally verified. Claims are required before writes.</td><td>8/10</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="network">
+        <div class="section-head">
+          <div>
+            <div class="kicker">03 Network</div>
+            <h2>Two phone routes, one backend</h2>
+          </div>
+          <p>The app can work while the Orin is USB tethered to the phone or when the Orin is a Wi-Fi/hotspot client with a static address.</p>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <h3>USB tether route</h3>
+            <p>Default API: <code>http://172.20.10.8:8088/api/v1</code>. This is used when the phone is plugged into the Orin and the tether interface is reachable.</p>
+          </div>
+          <div class="panel">
+            <h3>Wi-Fi/hotspot route</h3>
+            <p>Default API: <code>http://192.168.1.155:8088/api/v1</code>. This is used when the Orin is on Wi-Fi/hotspot and the phone can reach that static address.</p>
+          </div>
+        </div>
+        <div class="callout" style="margin-top:1rem">
+          <h3>Routing rule</h3>
+          <p>Polling tries configured candidates and updates <code>activeRoute</code> from the responding URL. When Wi-Fi/custom is active, the app periodically probes tether again so plugging the phone back in can restore the USB path without a rebuild.</p>
+        </div>
+      </section>
+
+      <section id="app">
+        <div class="section-head">
+          <div>
+            <div class="kicker">04 App</div>
+            <h2>Native UX surfaces</h2>
+          </div>
+          <p>The current first-screen product is the operator app, not a landing page. The app must make backend truth visible and keep motion controls separate from safety controls.</p>
+        </div>
+
+        <div class="grid-3">
+          <div class="panel"><h3>Live</h3><p>MJPEG preview from <code>/api/v1/preview.mjpeg</code>, route label, PTZ overlay, owner, command, zoom state, tracking status, confidence, recording status, and safety latch.</p></div>
+          <div class="panel"><h3>PTZ</h3><p>Joystick, zoom slider, backend state pills, Stop PTZ, Start Auto, Refresh, and Emergency Stop. Manual commands use server owner gating.</p></div>
+          <div class="panel"><h3>Calibrate</h3><p>Structured field workflow for feed, PTZ link, GPS source, storage, safety latch, alignment, and lock validation.</p></div>
+          <div class="panel"><h3>Tools</h3><p>Contains Tune. Future tools should stay operational and compact; avoid explanatory marketing panels in the app.</p></div>
+          <div class="panel"><h3>Tune</h3><p>Hot config controls plus Service restart UI. Cinematic Zoom controls appear only when the backend exposes the config keys.</p></div>
+          <div class="panel"><h3>Connect</h3><p>Live/mock mode, USB tether URL, Wi-Fi/hotspot URL, optional token, mock fallback, route status, Apply, Refresh, and Reset to defaults.</p></div>
+        </div>
+      </section>
+
+      <section id="api">
+        <div class="section-head">
+          <div>
+            <div class="kicker">05 API</div>
+            <h2>Backend contract</h2>
+          </div>
+          <p>Commands return structured control responses when possible. The iPhone applies embedded <code>status</code> immediately, then the one-second poll keeps the UI fresh.</p>
+        </div>
+
+        <table aria-label="WaveCam API">
+          <thead><tr><th>Endpoint</th><th>Use</th><th>Operator effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/v1/status</code></td><td>Live truth source.</td><td>Route, safety, owner, command, tracking, GPS, media, services, and network status.</td></tr>
+            <tr><td><code>GET /api/v1/config</code></td><td>Load Tune controls.</td><td>Exposes current config and restart-only key list.</td></tr>
+            <tr><td><code>POST /api/v1/config/hot</code></td><td>Apply live tuning.</td><td>Changes supported hot keys without service restart.</td></tr>
+            <tr><td><code>POST /api/v1/system/restart</code></td><td>Restart WaveCam service.</td><td>Requires <code>confirm_moving=true</code> when PTZ can be active; stops PTZ before restart.</td></tr>
+            <tr><td><code>GET /api/v1/preview.mjpeg</code></td><td>Native live feed.</td><td>Video can remain available even when motion is killed.</td></tr>
+            <tr><td><code>POST /api/v1/ptz/velocity</code></td><td>Manual pan/tilt.</td><td>Temporary manual owner with deadman refresh.</td></tr>
+            <tr><td><code>POST /api/v1/ptz/zoom</code></td><td>Manual zoom.</td><td>Suppresses Cinematic Zoom briefly; pan/tilt tracking can continue.</td></tr>
+            <tr><td><code>POST /api/v1/ptz/stop</code></td><td>Manual hold.</td><td>Stops pan/tilt/zoom and can hold owner as manual.</td></tr>
+            <tr><td><code>POST /api/v1/ptz/auto</code></td><td>Autonomous tracking ownership.</td><td>Start Auto highlights only when backend owner resolves to an autonomous owner.</td></tr>
+            <tr><td><code>POST /api/v1/safety/kill</code></td><td>Global motion stop.</td><td>Blocks movement until Resume.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="zoom">
+        <div class="section-head">
+          <div>
+            <div class="kicker">06 Cinematic Zoom</div>
+            <h2>Auto-frame, default off</h2>
+          </div>
+          <p>Cinematic Zoom is a bounded zoom policy, not a second tracker. It uses locked YOLO person boxes and leaves pan/tilt authority alone.</p>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <h3>Enable path</h3>
+            <ol>
+              <li>Connect on USB or Wi-Fi and verify Live feed.</li>
+              <li>Open PTZ, tap Start Auto, and verify owner moves to autonomous state.</li>
+              <li>Open Tools &gt; Tune. Confirm the Cinematic Zoom card is visible.</li>
+              <li>Enable <code>ptz.cinematic_zoom_enabled</code> and start with <code>ptz.zoom_target_frac=0.50</code>.</li>
+              <li>Watch the Live overlay: zoom should move only from a locked person box, then return to hold inside the deadband.</li>
+            </ol>
+          </div>
+          <div class="panel">
+            <h3>Failure rules</h3>
+            <ul>
+              <li>No person box: zoom holds.</li>
+              <li>No lock: zoom holds.</li>
+              <li>Manual zoom nudge: auto-zoom suppresses briefly, pan/tilt tracking continues.</li>
+              <li>Bad framing or twitching: disable the toggle and retest pan/tilt first.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top:1rem">
+          <div class="panel">
+            <h3>Enable by shell</h3>
+            <div class="mini-terminal"><span class="prompt">$</span> curl -X POST http://127.0.0.1:8088/api/v1/config/hot \<br />
+  -H "Content-Type: application/json" \<br />
+  -d '{"patch":{"ptz.cinematic_zoom_enabled":true,"ptz.zoom_target_frac":0.50}}'</div>
+          </div>
+          <div class="panel">
+            <h3>Disable by shell</h3>
+            <div class="mini-terminal"><span class="prompt">$</span> curl -X POST http://127.0.0.1:8088/api/v1/config/hot \<br />
+  -H "Content-Type: application/json" \<br />
+  -d '{"patch":{"ptz.cinematic_zoom_enabled":false}}'</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="safety">
+        <div class="section-head">
+          <div>
+            <div class="kicker">07 Safety</div>
+            <h2>Controls are separated</h2>
+          </div>
+          <p>Stop PTZ is not Emergency Stop. Restart is not Resume. The operator has to read state before repeating commands.</p>
+        </div>
+
+        <div class="grid-4">
+          <div class="panel"><div class="status stop">Emergency</div><h3>Kill</h3><p>Global latch. Stops motion and blocks future motion until Resume.</p></div>
+          <div class="panel"><div class="status warn">Hold</div><h3>Stop PTZ</h3><p>Manual hold. Keeps the backend reachable and the live feed available.</p></div>
+          <div class="panel"><div class="status ok">Auto</div><h3>Start Auto</h3><p>Requests autonomous owner. Refuses while killed.</p></div>
+          <div class="panel"><div class="status warn">Restart</div><h3>Service</h3><p>Stops PTZ and restarts WaveCam service; used after restart-only config changes.</p></div>
+        </div>
+      </section>
+
+      <section id="ship">
+        <div class="section-head">
+          <div>
+            <div class="kicker">08 Ship State</div>
+            <h2>What is repo-current</h2>
+          </div>
+          <p>Keep the GitHub repo limited to current build artifacts and durable docs. Local hardware scratch, alternate board references, build products, and generated workspace state stay ignored or archived locally.</p>
+        </div>
+
+        <table aria-label="Current repository payload">
+          <thead><tr><th>Area</th><th>Keep in repo</th><th>Keep out of repo</th><th>Confidence</th></tr></thead>
+          <tbody>
+            <tr><td>WaveCam docs</td><td>Product catalog, operator guide, current v2 spec, specs that explain shipped behavior.</td><td>Old scratch pages and stale roadmap-only drafts.</td><td>High</td></tr>
+            <tr><td>iOS app</td><td>Source files and package metadata required to build the WaveCam app.</td><td>DerivedData, archives, screenshots unless deliberately documented.</td><td>High</td></tr>
+            <tr><td>Orin backend</td><td>WaveCam service source, tests, README, config schema behavior.</td><td>Live secrets, model binaries, TensorRT engines, runtime logs.</td><td>High</td></tr>
+            <tr><td>Nucleo</td><td>Tracked F401 stepper firmware and durable wiring docs/images already in repo.</td><td>F446 alternate linker/startup files, vendor PDFs, duplicate pinout JPGs, CubeIDE metadata, debug outputs.</td><td>High</td></tr>
+            <tr><td>Collaboration</td><td>Protocol tool state only while actively coordinating.</td><td>Secrets, long logs, old high-token chatter, hooks changes unless explicitly authorized.</td><td>High</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>WaveCam v2 Current Build Spec</span>
+      <span>Single-file HTML. No external assets.</span>
+    </footer>
+  </div>
+</body>
+</html>
