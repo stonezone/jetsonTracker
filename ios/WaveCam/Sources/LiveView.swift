@@ -138,6 +138,9 @@ private struct MJPEGPreviewView: UIViewRepresentable {
         private var session: URLSession?
         private var task: URLSessionDataTask?
         private weak var imageView: UIImageView?
+        private var lastFrameAt = Date.distantPast
+        private var watchdogWorkItem: DispatchWorkItem?
+        private let stallTimeout: TimeInterval = 3.0
 
         func start(url: URL, imageView: UIImageView) {
             self.imageView = imageView
@@ -154,10 +157,14 @@ private struct MJPEGPreviewView: UIViewRepresentable {
             self.session = session
             let task = session.dataTask(with: url)
             self.task = task
+            lastFrameAt = Date()
+            scheduleWatchdog()
             task.resume()
         }
 
         func stop() {
+            watchdogWorkItem?.cancel()
+            watchdogWorkItem = nil
             task?.cancel()
             session?.invalidateAndCancel()
             task = nil
@@ -182,6 +189,33 @@ private struct MJPEGPreviewView: UIViewRepresentable {
             }
         }
 
+        private func scheduleWatchdog() {
+            watchdogWorkItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                self?.restartIfStalled()
+            }
+            watchdogWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + stallTimeout, execute: item)
+        }
+
+        private func restartIfStalled() {
+            guard let url = loadedURL, session != nil else { return }
+            if Date().timeIntervalSince(lastFrameAt) >= stallTimeout {
+                reconnect(url: url)
+                return
+            }
+            scheduleWatchdog()
+        }
+
+        private func reconnect(url: URL) {
+            task?.cancel()
+            session?.invalidateAndCancel()
+            task = nil
+            session = nil
+            buffer.removeAll(keepingCapacity: true)
+            connect(url: url)
+        }
+
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
             buffer.append(data)
             drainFrames()
@@ -198,7 +232,9 @@ private struct MJPEGPreviewView: UIViewRepresentable {
                 let frame = buffer[start.lowerBound..<end.upperBound]
                 buffer.removeSubrange(buffer.startIndex..<end.upperBound)
                 guard let image = UIImage(data: Data(frame)) else { continue }
-                DispatchQueue.main.async { [weak imageView] in
+                DispatchQueue.main.async { [weak self, weak imageView] in
+                    self?.lastFrameAt = Date()
+                    self?.scheduleWatchdog()
                     imageView?.image = image
                 }
             }

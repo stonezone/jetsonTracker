@@ -34,6 +34,9 @@ struct PTZView: View {
             stopVelocityRepeat()
             stopZoomCommand()
         }
+        .onChange(of: client.status?.revision) { _, _ in
+            syncCommandStateWithBackend()
+        }
     }
 
     private var portraitControls: some View {
@@ -93,8 +96,8 @@ struct PTZView: View {
 
     private func actionRow() -> some View {
         PTZActionRow(
-            isAuto: commandState == .auto || client.owner.isAutonomousPTZOwner,
-            isStopped: commandState == .held,
+            isAuto: commandState.isAutoActive || client.owner.isAutonomousPTZOwner,
+            isStopped: commandState.isStopActive || backendHeldStop,
             onStartAuto: startAutoPTZ,
             onStop: holdPTZ,
             onRefresh: { Task { await client.refresh() } }
@@ -131,10 +134,14 @@ struct PTZView: View {
         tilt = 0
         knobOffset = .zero
         zoomCommand = 0
-        commandState = .held
+        commandState = .stopping
         zoomRepeatTask?.cancel()
         zoomRepeatTask = nil
-        Task { await client.ptzStop(hold: true) }
+        Task { @MainActor in
+            let accepted = await client.ptzStop(hold: true)
+            commandState = accepted ? .held : .idle
+            syncCommandStateWithBackend()
+        }
     }
 
     private func startAutoPTZ() {
@@ -143,10 +150,30 @@ struct PTZView: View {
         tilt = 0
         knobOffset = .zero
         zoomCommand = 0
-        commandState = .auto
+        commandState = .startingAuto
         zoomRepeatTask?.cancel()
         zoomRepeatTask = nil
-        Task { await client.ptzStartAuto() }
+        Task { @MainActor in
+            let accepted = await client.ptzStartAuto()
+            commandState = accepted ? .auto : .idle
+            syncCommandStateWithBackend()
+        }
+    }
+
+    private var backendHeldStop: Bool {
+        guard let ptz = client.status?.ptz else { return false }
+        return ptz.owner == "manual" && ptz.panTiltCmd?.lowercased() == "stop"
+    }
+
+    private func syncCommandStateWithBackend() {
+        guard !commandState.isPending else { return }
+        if client.owner.isAutonomousPTZOwner {
+            commandState = .auto
+        } else if backendHeldStop {
+            commandState = .held
+        } else if commandState == .auto || commandState == .held {
+            commandState = .idle
+        }
     }
 
     private func startVelocityRepeat() {
@@ -203,6 +230,20 @@ private enum PTZCommandState {
     case manual
     case held
     case auto
+    case stopping
+    case startingAuto
+
+    var isPending: Bool {
+        self == .stopping || self == .startingAuto
+    }
+
+    var isAutoActive: Bool {
+        self == .auto || self == .startingAuto
+    }
+
+    var isStopActive: Bool {
+        self == .held || self == .stopping
+    }
 }
 
 private struct PTZHeader: View {
@@ -537,10 +578,14 @@ private struct PTZControlFeedback: View {
     var body: some View {
         if let lastError {
             PTZFeedbackPill(text: lastError, color: WC.warn, icon: "exclamationmark.triangle.fill")
+        } else if commandState == .stopping {
+            PTZFeedbackPill(text: "Stopping PTZ...", color: WC.kill, icon: "stop.fill")
+        } else if commandState == .startingAuto {
+            PTZFeedbackPill(text: "Starting Auto PTZ...", color: WC.ok, icon: "play.fill")
         } else if commandState == .held {
             PTZFeedbackPill(text: "PTZ held. Tap Start Auto to resume tracking.", color: WC.kill, icon: "stop.fill")
         } else if commandState == .auto {
-            PTZFeedbackPill(text: "Auto PTZ start requested.", color: WC.ok, icon: "play.fill")
+            PTZFeedbackPill(text: "Auto PTZ active.", color: WC.ok, icon: "play.fill")
         }
     }
 }

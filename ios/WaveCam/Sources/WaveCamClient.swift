@@ -80,6 +80,13 @@ struct WCStatus: Codable, Sendable {
     }
 }
 
+private struct WCControlResponse: Codable, Sendable {
+    var ok: Bool?
+    var code: String?
+    var message: String?
+    var status: WCStatus?
+}
+
 extension WCStatus {
     /// Canned snapshot for mock mode + SwiftUI previews.
     static func mockTracking(killed: Bool = false) -> WCStatus {
@@ -229,28 +236,32 @@ final class WaveCamClient {
 
     // MARK: ptz (owner-gated on the server)
 
-    func ptzVelocity(pan: Double, tilt: Double, zoom: Double = 0) async {
-        guard mode == .live else { return }
-        await sendControl("ptz/velocity", body: [
+    @discardableResult
+    func ptzVelocity(pan: Double, tilt: Double, zoom: Double = 0) async -> Bool {
+        guard mode == .live else { return false }
+        return await sendControl("ptz/velocity", body: [
             "requested_owner": "manual", "takeover": true,
             "pan": pan, "tilt": tilt, "zoom": zoom,
             "deadman_ms": 800, "source": "ios_native"
         ])
     }
 
-    func ptzStop(hold: Bool = true) async {
-        guard mode == .live else { return }
-        await sendControl("ptz/stop", body: ["hold": hold, "source": "ios_native"])
+    @discardableResult
+    func ptzStop(hold: Bool = true) async -> Bool {
+        guard mode == .live else { return false }
+        return await sendControl("ptz/stop", body: ["hold": hold, "source": "ios_native"])
     }
 
-    func ptzStartAuto() async {
-        guard mode == .live else { return }
-        await sendControl("ptz/auto", body: ["source": "ios_native"])
+    @discardableResult
+    func ptzStartAuto() async -> Bool {
+        guard mode == .live else { return false }
+        return await sendControl("ptz/auto", body: ["source": "ios_native"])
     }
 
-    func zoom(_ value: Double) async {
-        guard mode == .live else { return }
-        await sendControl("ptz/zoom", body: [
+    @discardableResult
+    func zoom(_ value: Double) async -> Bool {
+        guard mode == .live else { return false }
+        return await sendControl("ptz/zoom", body: [
             "requested_owner": "manual", "takeover": true,
             "mode": "velocity", "value": value, "source": "ios_native"
         ])
@@ -311,12 +322,53 @@ final class WaveCamClient {
         }
     }
 
-    private func sendControl(_ path: String, body: [String: Any]) async {
+    @discardableResult
+    private func sendControl(_ path: String, body: [String: Any]) async -> Bool {
         do {
-            _ = try await post(path, body: body)
+            let data = try await post(path, body: body)
+            if applyControlResponse(data) == false {
+                return false
+            }
             lastError = nil
+            return true
+        } catch let error as WaveCamAPIError {
+            applyStatusIfPresent(error.data)
+            lastError = error.localizedDescription
+            return false
         } catch {
             lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    private func applyControlResponse(_ data: Data) -> Bool {
+        guard let response = try? Self.decoder.decode(WCControlResponse.self, from: data) else {
+            refreshAfterLegacyResponse()
+            return true
+        }
+        if let status = response.status {
+            self.status = status
+            connected = true
+        } else {
+            refreshAfterLegacyResponse()
+        }
+        if response.ok == false {
+            lastError = [response.code, response.message].compactMap(\.self).joined(separator: ": ")
+            return false
+        }
+        return true
+    }
+
+    private func applyStatusIfPresent(_ data: Data) {
+        guard let response = try? Self.decoder.decode(WCControlResponse.self, from: data),
+              let status = response.status else { return }
+        self.status = status
+        connected = true
+    }
+
+    private func refreshAfterLegacyResponse() {
+        Task { [weak self] in
+            await self?.refresh()
         }
     }
 
