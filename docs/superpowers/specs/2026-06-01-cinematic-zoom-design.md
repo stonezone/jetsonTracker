@@ -62,6 +62,8 @@ cinematic suppressed → resumes after the window.
   manual-override deadman, config keys + snapshot, tests). Confirmed he'll take it post-approval.
 - **Claude:** iOS Tune controls (toggle + slider, feature-detected).
 
-## Open question for Zack (review)
-Manual override during a manual zoom nudge: **keep pan/tilt auto-tracking running** (separate
-zoom-deadman — recommended, better for filming) vs **pause all auto briefly** (simpler)?
+## Resolved (Zack, 2026-06-01) — APPROVED
+Manual override: **keep pan/tilt auto-tracking running.** Implement the **separate zoom-override
+deadman** — a manual `ptz/zoom` suppresses ONLY cinematic zoom for the deadman window; pan/tilt
+centering continues uninterrupted; cinematic zoom resumes after. (NOT the full owner-suppression.)
+Spec approved — proceeding: Codex = backend wiring; Claude = iOS Tune controls.
