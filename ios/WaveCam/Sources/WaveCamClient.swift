@@ -130,6 +130,7 @@ extension WCStatus {
 /// Subset of GET /api/v1/config we bind in the Tune panel (decoder is convertFromSnakeCase).
 struct WCConfig: Codable, Sendable {
     var current: Current
+    var restartRequiredKeys: [String]?
 
     struct Current: Codable, Sendable {
         var ptz: PTZ
@@ -376,6 +377,20 @@ final class WaveCamClient {
             return try Self.decoder.decode(WCConfig.self, from: data)
         } catch {
             return nil
+        }
+    }
+
+    /// POST /api/v1/system/restart -- stops PTZ + restarts the vision service (confirm_moving).
+    @discardableResult
+    func systemRestart() async -> Bool {
+        guard mode == .live else { return false }
+        do {
+            _ = try await post("system/restart", body: ["reason": "ios_native", "confirm_moving": true])
+            lastCommandError = nil
+            return true
+        } catch {
+            lastCommandError = "Restart not confirmed: \(error.localizedDescription)"
+            return false
         }
     }
 

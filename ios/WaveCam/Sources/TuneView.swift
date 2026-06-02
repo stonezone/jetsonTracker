@@ -18,6 +18,8 @@ struct TuneView: View {
     @State private var deadzone = 0.08
     @State private var ffGain = 0.0
     @State private var model: String?
+    @State private var restartKeys: [String] = []
+    @State private var showRestartConfirm = false
 
     private let presets = ["orange_red", "orange", "blue", "green", "yellow", "pink"]
     private let classes: [(id: Int, name: String)] = [
@@ -59,7 +61,30 @@ struct TuneView: View {
                     sliderRow("Feed-forward gain", value: $ffGain, range: 0.0...1.0, step: 0.05, readout: fmt(ffGain), key: "ptz.ff_gain")
                 }
 
-                Text("Changes apply live (no restart). Camera/model changes that need a restart aren't shown here yet.")
+                if !restartKeys.isEmpty {
+                    TuneCard(title: "SERVICE") {
+                        Text("Restart-only settings (change on the Orin web UI, then restart):")
+                            .font(.system(size: 11)).foregroundStyle(WC.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(restartKeys.joined(separator: ", "))
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(WC.faint)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button {
+                            showRestartConfirm = true
+                        } label: {
+                            Label("Restart WaveCam", systemImage: "arrow.clockwise.circle")
+                                .font(.system(size: 14, weight: .bold))
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .foregroundStyle(WC.warn)
+                                .background(WC.warn.opacity(0.12), in: .rect(cornerRadius: 13))
+                                .overlay(RoundedRectangle(cornerRadius: 13).stroke(WC.warn.opacity(0.6)))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(client.mode != .live)
+                    }
+                }
+
+                Text("Tuning changes apply live (no restart). Restart-only keys are under Service.")
                     .font(.system(size: 11)).foregroundStyle(WC.faint)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -70,6 +95,12 @@ struct TuneView: View {
         .background(WC.bg.ignoresSafeArea())
         .scrollIndicators(.hidden)
         .task { await load() }
+        .alert("Restart WaveCam?", isPresented: $showRestartConfirm) {
+            Button("Restart", role: .destructive) { Task { await client.systemRestart() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Stops PTZ and restarts the vision service. The live feed drops for a few seconds.")
+        }
     }
 
     @ViewBuilder private var header: some View {
@@ -149,6 +180,7 @@ struct TuneView: View {
         deadzone = cfg.current.ptz.deadzone
         ffGain = cfg.current.ptz.ffGain
         model = cfg.current.detector.model
+        restartKeys = cfg.restartRequiredKeys ?? []
         loaded = true
     }
 
