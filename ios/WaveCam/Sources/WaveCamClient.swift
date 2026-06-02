@@ -26,11 +26,6 @@ enum WaveCamDefaults {
         URL(string: wifiBaseURLString)!
     }
 
-    static var fallbackBaseURLs: [URL] {
-        [
-            wifiBaseURL
-        ].compactMap(\.self)
-    }
 }
 
 extension String {
@@ -497,10 +492,18 @@ final class WaveCamClient {
                 var req = URLRequest(url: candidate.appending(path: path))
                 req.timeoutInterval = 3
                 authorize(&req)
-                let (data, _) = try await URLSession.shared.data(for: req)
+                let (data, response) = try await URLSession.shared.data(for: req)
                 markConnected(to: candidate)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw WaveCamAPIError(statusCode: http.statusCode, data: data)
+                }
                 return data
+            } catch let error as WaveCamAPIError {
+                throw error
             } catch {
+                if let urlError = error as? URLError, !urlError.isRouteFailoverAllowed {
+                    throw error
+                }
                 lastError = error
             }
         }
@@ -567,7 +570,8 @@ final class WaveCamClient {
     private func applyControlResponse(_ data: Data) -> Bool {
         guard let response = try? Self.decoder.decode(WCControlResponse.self, from: data) else {
             refreshAfterLegacyResponse()
-            return true
+            lastControlError = "Control response was not parseable."
+            return false
         }
         if let status = response.status {
             self.status = status
@@ -575,7 +579,16 @@ final class WaveCamClient {
         } else {
             refreshAfterLegacyResponse()
         }
-        if response.ok == false {
+        guard let ok = response.ok else {
+            lastControlError = [response.code, response.message]
+                .compactMap(\.self)
+                .joined(separator: ": ")
+            if lastControlError?.isEmpty != false {
+                lastControlError = "Control response did not confirm success."
+            }
+            return false
+        }
+        if ok == false {
             lastControlError = [response.code, response.message].compactMap(\.self).joined(separator: ": ")
             return false
         }
@@ -616,11 +629,26 @@ final class WaveCamClient {
                     throw WaveCamAPIError(statusCode: http.statusCode, data: data)
                 }
                 return data
+            } catch let error as WaveCamAPIError {
+                throw error
             } catch let error as URLError {
+                guard error.isRouteFailoverAllowed else { throw error }
                 failoverError = error
             }
         }
         throw failoverError ?? URLError(.cannotConnectToHost)
+    }
+}
+
+private extension URLError {
+    var isRouteFailoverAllowed: Bool {
+        switch code {
+        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+             .networkConnectionLost, .notConnectedToInternet:
+            return true
+        default:
+            return false
+        }
     }
 }
 

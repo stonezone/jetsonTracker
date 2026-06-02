@@ -20,15 +20,25 @@ struct PTZView: View {
     }
 
     var body: some View {
-        ScrollView {
+        ZStack(alignment: .bottomTrailing) {
+            ScrollView {
+                if isLandscapeControl {
+                    landscapeControls
+                } else {
+                    portraitControls
+                }
+            }
+            .safeAreaPadding(.bottom, isLandscapeControl ? 60 : 0)
+            .scrollIndicators(.hidden)
+
             if isLandscapeControl {
-                landscapeControls
-            } else {
-                portraitControls
+                EmergencyStopButton(style: .compact)
+                    .frame(width: 220)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
             }
         }
         .background(WC.bg.ignoresSafeArea())
-        .scrollIndicators(.hidden)
         .task { await client.refresh() }
         .onDisappear {
             stopVelocityRepeat()
@@ -65,7 +75,6 @@ struct PTZView: View {
                 zoomCard()
                 actionRow()
                 PTZControlFeedback(commandState: commandState, controlError: client.lastControlError)
-                EmergencyStopButton(style: .compact)
             }
             .frame(width: 220)
         }
@@ -119,6 +128,7 @@ struct PTZView: View {
 
     private func releaseManualPTZ() {
         stopVelocityRepeat()
+        resetZoomCommand(sendStop: false)
         pan = 0
         tilt = 0
         knobOffset = .zero
@@ -133,10 +143,8 @@ struct PTZView: View {
         pan = 0
         tilt = 0
         knobOffset = .zero
-        zoomCommand = 0
+        resetZoomCommand(sendStop: false)
         commandState = .stopping
-        zoomRepeatTask?.cancel()
-        zoomRepeatTask = nil
         Task { @MainActor in
             let accepted = await client.ptzStop(hold: true)
             commandState = accepted ? .held : .idle
@@ -149,10 +157,8 @@ struct PTZView: View {
         pan = 0
         tilt = 0
         knobOffset = .zero
-        zoomCommand = 0
+        resetZoomCommand(sendStop: false)
         commandState = .startingAuto
-        zoomRepeatTask?.cancel()
-        zoomRepeatTask = nil
         Task { @MainActor in
             let accepted = await client.ptzStartAuto()
             commandState = accepted ? .auto : .idle
@@ -218,10 +224,16 @@ struct PTZView: View {
     }
 
     private func stopZoomCommand() {
+        resetZoomCommand(sendStop: true)
+    }
+
+    private func resetZoomCommand(sendStop: Bool) {
         zoomRepeatTask?.cancel()
         zoomRepeatTask = nil
         zoomCommand = 0
-        Task { await client.zoom(0) }
+        if sendStop {
+            Task { await client.zoom(0) }
+        }
     }
 }
 
@@ -541,7 +553,7 @@ private struct PTZZoomCard: View {
             return "IN \(zoomCommand.signedPTZ)"
         }
         if zoomCommand < 0 {
-            return "OUT \(abs(zoomCommand).formatted(.number.precision(.fractionLength(2))))"
+            return "OUT \(zoomCommand.signedPTZ)"
         }
         return "HOLD"
     }
