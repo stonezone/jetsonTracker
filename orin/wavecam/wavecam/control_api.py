@@ -20,7 +20,7 @@ from .auth import CONFIG, PTZ, READ, SAFETY, install_auth, require, websocket_au
 from .color_presets import COLOR_PRESETS, preset_hsv_ranges
 from .ptz_owner import AUTONOMOUS, IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
-from .supervisor import read_health, snapshot_services
+from .supervisor import read_health, restart_systemd_unit, snapshot_services
 
 
 FrameSource = Callable[[], Any]
@@ -133,6 +133,12 @@ class HotConfigRequest(BaseModel):
     persist: bool = False
 
 
+class RestartRequest(BaseModel):
+    reason: str | None = None
+    confirm_moving: bool = False
+    delay_seconds: float = Field(default=0.35, ge=0.0, le=5.0)
+
+
 def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     adapter = ControlApiAdapter(pipeline, frames)
     app.state.control_api = adapter
@@ -142,6 +148,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_ptz_routes(app, adapter)
     register_media_routes(app, adapter)
     register_config_routes(app, adapter)
+    register_system_routes(app, adapter)
 
 
 def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
@@ -275,6 +282,12 @@ def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         return api.ok()
 
 
+def register_system_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.post("/api/v1/system/restart", dependencies=[Depends(require(CONFIG))])
+    def system_restart(req: RestartRequest | None = None):
+        return api.request_service_restart(req or RestartRequest())
+
+
 class ControlApiAdapter:
     """Small state holder for /api/v1 command behavior."""
 
@@ -286,6 +299,9 @@ class ControlApiAdapter:
         self._revision = 0
         self._manual_deadman: threading.Timer | None = None
         self._restore_owner_after_manual: str | None = None
+        self._restart_timer: threading.Timer | None = None
+        self._restart_pending = False
+        self._restart_unit = "wavecam.service"
 
     @property
     def revision(self) -> int:
@@ -497,6 +513,74 @@ class ControlApiAdapter:
         if color is not None:
             color.update_kernel()
         return None
+
+    def request_service_restart(self, req: RestartRequest) -> JSONResponse:
+        if self.restart_pending:
+            return self.refusal(
+                "restart_pending",
+                "A WaveCam restart request is already pending.",
+            )
+        if self.restart_requires_confirmation() and not req.confirm_moving:
+            return self.refusal(
+                "restart_confirmation_required",
+                "Camera control is active; retry with confirm_moving=true to stop PTZ and restart.",
+            )
+        self.prepare_for_restart()
+        self.schedule_service_restart(req.delay_seconds)
+        self.bump_revision()
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "action": "restart",
+                "unit": self._restart_unit,
+                "scheduled": True,
+                "delay_seconds": req.delay_seconds,
+                "status": self.status_snapshot(),
+            },
+            status_code=202,
+        )
+
+    @property
+    def restart_pending(self) -> bool:
+        with self._lock:
+            return self._restart_pending
+
+    def restart_requires_confirmation(self) -> bool:
+        if self.pipeline.owner.killed:
+            return False
+        return self.pipeline.owner.owner != IDLE
+
+    def prepare_for_restart(self) -> None:
+        self.cancel_manual_deadman()
+        self._restore_owner_after_manual = None
+        self.pipeline.ptz.stop()
+        self.pipeline.ptz.zoom("stop")
+        current_owner = self.pipeline.owner.owner
+        if current_owner != IDLE:
+            self.pipeline.owner.release(current_owner)
+        self.pipeline.state.set_status(state="RESTARTING", cmd="stop")
+
+    def schedule_service_restart(self, delay_seconds: float) -> None:
+        with self._lock:
+            self._restart_pending = True
+        timer = threading.Timer(delay_seconds, self.run_service_restart)
+        timer.daemon = True
+        with self._lock:
+            self._restart_timer = timer
+        timer.start()
+
+    def run_service_restart(self) -> None:
+        try:
+            restart = getattr(self.pipeline, "restart_service", None)
+            if callable(restart):
+                restart(self._restart_unit)
+            else:
+                restart_systemd_unit(self._restart_unit)
+        finally:
+            with self._lock:
+                self._restart_pending = False
+                self._restart_timer = None
 
 
 class MediaAdapter:

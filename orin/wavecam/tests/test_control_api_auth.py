@@ -65,6 +65,12 @@ def test_viewer_can_read_but_not_kill():
     assert blocked.json()["code"] == "forbidden"
     record_blocked = client.post("/api/v1/media/record/start", json={}, headers=hdr("v"))
     assert record_blocked.status_code == 403
+    restart_blocked = client.post(
+        "/api/v1/system/restart",
+        json={"reason": "viewer"},
+        headers=hdr("v"),
+    )
+    assert restart_blocked.status_code == 403
 
 
 def test_supervisor_no_direct_ptz_but_config_ok():
@@ -74,6 +80,12 @@ def test_supervisor_no_direct_ptz_but_config_ok():
     assert ok.status_code == 200
     record = client.post("/api/v1/media/record/start", json={}, headers=hdr("s"))
     assert record.status_code == 200
+    restart = client.post(
+        "/api/v1/system/restart",
+        json={"reason": "supervisor", "delay_seconds": 0.0},
+        headers=hdr("s"),
+    )
+    assert restart.status_code == 202
 
 
 def test_agent_is_read_only_in_v1():

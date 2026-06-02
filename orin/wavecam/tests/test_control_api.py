@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import types
+import time
 
 from fastapi.testclient import TestClient
 
@@ -89,6 +90,7 @@ class DummyPipeline:
         self.owner = PtzOwner()
         self.ptz = DummyPtz()
         self.recorder = DummyRecorder()
+        self.restart_calls = []
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
                 enabled=True,
@@ -136,9 +138,21 @@ class DummyPipeline:
             self.owner.resume()
             self.owner.request("testbed")
 
+    def restart_service(self, unit):
+        self.restart_calls.append(unit)
+
 
 def make_client():
     return TestClient(build_app(DummyPipeline()))
+
+
+def wait_until(predicate, timeout_sec=0.5):
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
 
 
 def test_api_v1_status_maps_legacy_state_to_release_contract():
@@ -500,6 +514,65 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert "detector.model" in body["restart_required_keys"]
 
 
+def test_api_v1_system_restart_schedules_restart_when_idle():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    response = client.post(
+        "/api/v1/system/restart",
+        json={"reason": "test", "delay_seconds": 0.0},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["ok"] is True
+    assert body["action"] == "restart"
+    assert body["unit"] == "wavecam.service"
+    assert body["status"]["session"]["state"] == "RESTARTING"
+    assert ("stop",) in pipe.ptz.calls
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+    assert wait_until(lambda: pipe.restart_calls == ["wavecam.service"])
+
+
+def test_api_v1_system_restart_requires_confirmation_while_auto_ptz_active():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    blocked = client.post("/api/v1/system/restart", json={"reason": "test"})
+
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "restart_confirmation_required"
+    assert pipe.restart_calls == []
+
+    confirmed = client.post(
+        "/api/v1/system/restart",
+        json={"reason": "confirmed", "confirm_moving": True, "delay_seconds": 0.0},
+    )
+
+    assert confirmed.status_code == 202
+    assert confirmed.json()["ok"] is True
+    assert confirmed.json()["status"]["ptz"]["owner"] == "idle"
+    assert wait_until(lambda: pipe.restart_calls == ["wavecam.service"])
+
+
+def test_api_v1_system_restart_refuses_duplicate_pending_request():
+    client = make_client()
+
+    first = client.post(
+        "/api/v1/system/restart",
+        json={"reason": "first", "delay_seconds": 0.25},
+    )
+    second = client.post(
+        "/api/v1/system/restart",
+        json={"reason": "second", "delay_seconds": 0.25},
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert second.json()["code"] == "restart_pending"
+
+
 def test_api_v1_media_status_reports_recorder_state():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -554,6 +627,9 @@ if __name__ == "__main__":
     test_api_v1_ptz_zoom_refuses_while_killed()
     test_api_v1_config_hot_applies_known_keys_only()
     test_api_v1_config_reports_supported_tuning_surface()
+    test_api_v1_system_restart_schedules_restart_when_idle()
+    test_api_v1_system_restart_requires_confirmation_while_auto_ptz_active()
+    test_api_v1_system_restart_refuses_duplicate_pending_request()
     test_api_v1_media_status_reports_recorder_state()
     test_api_v1_media_record_start_and_stop_control_recorder()
     print("CONTROL API TESTS PASSED")

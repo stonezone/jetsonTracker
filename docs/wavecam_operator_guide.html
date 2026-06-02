@@ -1017,13 +1017,20 @@
             <h3>Persistent config</h3>
             <p>Use the YAML path for defaults that should survive service restart. Hot config is for live testing without restart; it is not persisted automatically yet.</p>
           </div>
+          <div class="panel">
+            <h3>Scheduled restart</h3>
+            <div class="mini-terminal"><span class="prompt">$</span> curl -X POST http://127.0.0.1:8088/api/v1/system/restart \<br />
+  -H "Content-Type: application/json" \<br />
+  -d '{"reason":"applied structural config","confirm_moving":true}'</div>
+            <p>This returns 202, stops PTZ, marks the session RESTARTING, and then asks systemd to restart wavecam.service. If PTZ is active and confirm_moving is not true, the API refuses the request.</p>
+          </div>
         </div>
 
         <div class="callout" style="margin-top:1rem">
           <h3>Current gaps</h3>
           <ol>
             <li>Hot tuning does not write back to YAML automatically.</li>
-            <li>The native iOS app does not yet have a dedicated tuning screen for these controls.</li>
+            <li>Restart-only keys still require editing persistent config before using the scheduled restart path.</li>
             <li>WaveCam service shutdown still needs cleanup; the latest restart required systemd to kill the old process after timeout.</li>
           </ol>
         </div>

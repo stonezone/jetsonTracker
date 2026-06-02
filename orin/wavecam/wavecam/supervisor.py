@@ -9,8 +9,8 @@ Design constraints (match the supervisor-layer design + option c):
   running in the field with no uplink.
 - NEVER touches VISCA / motors: all camera authority stays in the WaveCam core.
   This process only observes and publishes; it is not in the real-time loop.
-- Restart/config actions are intentionally OUT of v1; this is the always-on
-  health watcher. Gated lifecycle actions come later behind the operator gate.
+- The health watcher remains observe-only. The Control API may use the narrow
+  restart helper below after its own auth, confirmation, and PTZ-stop gates pass.
 """
 from __future__ import annotations
 
@@ -113,6 +113,21 @@ def systemd_state(unit: str) -> str:
         return (result.stdout.strip() or result.stderr.strip() or "unknown")
     except (OSError, subprocess.SubprocessError):
         return "unknown"
+
+
+def restart_systemd_unit(unit: str = "wavecam.service") -> None:
+    """Ask systemd to restart one known unit without invoking a shell."""
+    if unit != "wavecam.service":
+        raise ValueError("Only wavecam.service restart is supported.")
+    command = ["systemctl", "restart", unit]
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        command = ["sudo", "-n", *command]
+    subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 def write_health(path: str, health: dict) -> None:

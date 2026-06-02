@@ -116,6 +116,7 @@ in frame and step side-to-side; the camera should follow and re-center.
 | `GET /status` | JSON state |
 | `GET /api/v1/config` | current config, supported presets/classes, hot keys, restart-only keys |
 | `POST /api/v1/config/hot` | live-safe config patch; no restart |
+| `POST /api/v1/system/restart` | CONFIG-scoped scheduled `wavecam.service` restart for restart-only changes |
 
 Example hot patch:
 
@@ -124,6 +125,18 @@ curl -X POST http://<orin-ip>:8088/api/v1/config/hot \
   -H 'Content-Type: application/json' \
   -d '{"patch":{"color.preset":"blue","fusion.require_person":true,"ptz.ff_deadzone_mult":1.8}}'
 ```
+
+Example restart after editing restart-only config:
+
+```bash
+curl -X POST http://<orin-ip>:8088/api/v1/system/restart \
+  -H 'Content-Type: application/json' \
+  -d '{"reason":"applied structural config","confirm_moving":true}'
+```
+
+If a PTZ owner is active, the restart request is refused until
+`confirm_moving:true` is supplied. A confirmed restart stops PTZ, sets status to
+`RESTARTING`, returns `202`, then asks systemd to restart `wavecam.service`.
 
 ---
 
