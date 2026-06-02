@@ -50,6 +50,8 @@ struct EmergencyStopButton: View {
             .padding(.vertical, 7)
             .background(WC.kill.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.kill.opacity(0.4)))
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
     }
 }

@@ -78,7 +78,7 @@ private struct DashboardChrome: View {
             } label: {
                 Image(systemName: isLoading ? "hourglass" : "arrow.clockwise")
                     .font(.system(size: 13, weight: .bold))
-                    .frame(width: 36, height: 34)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
             .foregroundStyle(loadFailed ? WC.warn : WC.ok)

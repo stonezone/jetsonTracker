@@ -210,14 +210,14 @@ private struct ConnectionFormCard: View {
 
                 Button(action: onRefresh) {
                     Image(systemName: "arrow.clockwise")
-                        .frame(width: 40)
+                        .frame(width: 44)
                 }
                 .buttonStyle(ConnectionButtonStyle(tint: WC.brand, filled: false))
                 .accessibilityLabel("Refresh status")
 
                 Button(action: onUseDefault) {
                     Image(systemName: "arrow.uturn.backward")
-                        .frame(width: 40)
+                        .frame(width: 44)
                 }
                 .buttonStyle(ConnectionButtonStyle(tint: WC.muted, filled: false))
                 .accessibilityLabel("Use default connection")
@@ -255,6 +255,7 @@ private struct ConnectionButtonStyle: ButtonStyle {
             .padding(.vertical, 12)
             .background((filled ? tint : WC.panel2).opacity(configuration.isPressed ? 0.72 : 1), in: .rect(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13).stroke(tint.opacity(filled ? 0 : 0.7)))
+            .frame(minHeight: 44)
     }
 }
 

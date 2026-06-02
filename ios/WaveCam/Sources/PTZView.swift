@@ -499,7 +499,7 @@ private struct PTZZoomCard: View {
                 } label: {
                     Image(systemName: "pause.fill")
                         .font(.system(size: 13, weight: .bold))
-                        .frame(width: 38, height: 34)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(WC.txt)
