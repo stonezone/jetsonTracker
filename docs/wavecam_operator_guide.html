@@ -894,7 +894,7 @@
             <div class="kicker">05 Tuning</div>
             <h2>Tracking trigger and weights</h2>
           </div>
-          <p>The current iOS app does not expose a full tuning screen yet. Live-safe tuning is available on the Orin web/API path; persistent defaults live in <code>/data/projects/gimbal/wavecam/config.orin.servo.yaml</code>.</p>
+          <p>The Orin web UI at <code>http://192.168.1.155:8088/</code> now exposes the full live tuning surface. The iOS app still treats tuning as an Orin web/API task. Persistent defaults live in <code>/data/projects/gimbal/wavecam/config.orin.servo.yaml</code>.</p>
         </div>
 
         <table class="tuning" aria-label="Tracking tuning keys">
@@ -908,6 +908,12 @@
           </thead>
           <tbody>
             <tr>
+              <td>color.preset</td>
+              <td>orange_red</td>
+              <td>HSV preset used by the color detector.</td>
+              <td>Switch first when the field marker changes color. Supported presets: <code>orange_red</code>, <code>orange</code>, <code>blue</code>, <code>green</code>, <code>yellow</code>, <code>pink</code>.</td>
+            </tr>
+            <tr>
               <td>fusion.require_person</td>
               <td>false</td>
               <td>Requires person detection before color can lock.</td>
@@ -918,6 +924,12 @@
               <td>120</td>
               <td>Maximum distance between color blob and person box for a validated match.</td>
               <td>Lower it if nearby objects merge into the target; raise only if person/color alignment is too strict.</td>
+            </tr>
+            <tr>
+              <td>fusion.person_aim_y</td>
+              <td>0.50</td>
+              <td>Vertical aim point inside the YOLO person box.</td>
+              <td>Lower toward <code>0.35</code> for upper-body framing. Lower further only after checking tilt response.</td>
             </tr>
             <tr>
               <td>fusion.lock_threshold</td>
@@ -938,10 +950,58 @@
               <td>Raise it when small orange noise causes false detections.</td>
             </tr>
             <tr>
+              <td>color.max_area</td>
+              <td>200000</td>
+              <td>Largest color blob accepted.</td>
+              <td>Lower it if glare, walls, or a large warm surface floods the mask.</td>
+            </tr>
+            <tr>
+              <td>color.morph_kernel</td>
+              <td>5</td>
+              <td>Mask cleanup size.</td>
+              <td>Raise slightly for noisy speckles; lower if the real marker gets eroded.</td>
+            </tr>
+            <tr>
               <td>detector.conf</td>
               <td>0.35</td>
               <td>YOLO person confidence threshold.</td>
               <td>Raise for fewer person false positives; lower for harder distance/acquisition conditions.</td>
+            </tr>
+            <tr>
+              <td>detector.person_class</td>
+              <td>0</td>
+              <td>YOLO class used as the validator trigger.</td>
+              <td>Keep <code>0</code> for person tracking. Other classes are exposed for testing, not proven field defaults.</td>
+            </tr>
+            <tr>
+              <td>detector.every_n</td>
+              <td>3</td>
+              <td>Runs YOLO every N frames and reuses boxes between runs.</td>
+              <td>Lower for faster validation at higher compute cost; raise if CPU/GPU load becomes a problem.</td>
+            </tr>
+            <tr>
+              <td>ptz.deadzone</td>
+              <td>0.05</td>
+              <td>Center hold region where pan/tilt should stop.</td>
+              <td>Raise when the camera jitters near center. Lower only when it feels too lazy around center.</td>
+            </tr>
+            <tr>
+              <td>ptz.ff_gain</td>
+              <td>0.00</td>
+              <td>Optional feed-forward lead on moving targets.</td>
+              <td>Leave off until normal tracking is stable. Increase carefully if the camera lags a fast target.</td>
+            </tr>
+            <tr>
+              <td>ptz.ff_deadzone_mult</td>
+              <td>1.5</td>
+              <td>Suppresses feed-forward inside/near the deadzone.</td>
+              <td>Raise if small detection noise still causes left/right/up/down twitching.</td>
+            </tr>
+            <tr>
+              <td>ptz.max_pan_speed / ptz.max_tilt_speed</td>
+              <td>10 / 12</td>
+              <td>Upper pan/tilt velocity limits for the servo.</td>
+              <td>Lower when tracking overshoots. Raise only after deadzone and target selection are correct.</td>
             </tr>
           </tbody>
         </table>
@@ -951,12 +1011,21 @@
             <h3>Hot tuning call</h3>
             <div class="mini-terminal"><span class="prompt">$</span> curl -X POST http://127.0.0.1:8088/api/v1/config/hot \<br />
   -H "Content-Type: application/json" \<br />
-  -d '{"patch":{"fusion.require_person":true,"fusion.lock_threshold":0.70}}'</div>
+  -d '{"patch":{"color.preset":"blue","fusion.require_person":true,"ptz.ff_deadzone_mult":1.8}}'</div>
           </div>
           <div class="panel">
             <h3>Persistent config</h3>
-            <p>Use the YAML path for defaults that should survive service restart. Hot config is for live testing without restart.</p>
+            <p>Use the YAML path for defaults that should survive service restart. Hot config is for live testing without restart; it is not persisted automatically yet.</p>
           </div>
+        </div>
+
+        <div class="callout" style="margin-top:1rem">
+          <h3>Current gaps</h3>
+          <ol>
+            <li>Hot tuning does not write back to YAML automatically.</li>
+            <li>The native iOS app does not yet have a dedicated tuning screen for these controls.</li>
+            <li>WaveCam service shutdown still needs cleanup; the latest restart required systemd to kill the old process after timeout.</li>
+          </ol>
         </div>
       </section>
 
@@ -974,7 +1043,8 @@
             <div class="fault"><strong>Camera tracks the wrong object.</strong><span>Hit Stop PTZ or Emergency Stop. If orange gear is stealing lock, enable <code>fusion.require_person</code> and consider raising <code>fusion.lock_threshold</code>.</span></div>
             <div class="fault"><strong>No Live video.</strong><span>Check Local Network permission, Connect tab URL, USB tether, and whether <code>/api/v1/preview.mjpeg</code> returns bytes.</span></div>
             <div class="fault"><strong>PTZ buttons do nothing.</strong><span>If safety is KILLED, resume first. If owner is not manual/testbed, read the owner field before repeating commands.</span></div>
-            <div class="fault"><strong>Tilt direction is wrong.</strong><span>Use <code>ptz.invert_tilt</code> in hot config or YAML. Current Orin servo config uses <code>true</code>.</span></div>
+            <div class="fault"><strong>Tilt direction is wrong.</strong><span>Use <code>ptz.invert_tilt</code> in the Orin web tuning UI, hot config, or YAML. Current Orin servo config default is <code>false</code>.</span></div>
+            <div class="fault"><strong>Camera twitches near center.</strong><span>Raise <code>ptz.deadzone</code> or <code>ptz.ff_deadzone_mult</code>. Leave <code>ptz.ff_gain</code> at <code>0.00</code> unless you are deliberately testing lead compensation.</span></div>
           </div>
 
           <div class="callout">
