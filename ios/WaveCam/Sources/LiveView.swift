@@ -805,30 +805,41 @@ private struct RecordButton: View {
     var compact = false
 
     private var isRecording: Bool { client.status?.media?.recording == true }
+    private var segmentName: String? { client.status?.media?.segmentName }
 
     var body: some View {
-        Button {
-            Task { await client.toggleRecording() }
-        } label: {
-            HStack(spacing: 9) {
-                if isRecording {
-                    Circle().fill(WC.kill).frame(width: 10, height: 10)
-                } else {
-                    Image(systemName: "record.circle").font(.system(size: 15, weight: .bold))
+        VStack(spacing: 4) {
+            Button {
+                Task { await client.toggleRecording() }
+            } label: {
+                HStack(spacing: 9) {
+                    if isRecording {
+                        Circle().fill(WC.kill).frame(width: 10, height: 10)
+                    } else {
+                        Image(systemName: "record.circle").font(.system(size: 15, weight: .bold))
+                    }
+                    Text(isRecording ? "Stop Recording" : "Record")
+                        .font(.system(size: compact ? 13 : 15, weight: .bold))
                 }
-                Text(isRecording ? "Stop Recording" : "Record")
-                    .font(.system(size: compact ? 13 : 15, weight: .bold))
+                .foregroundStyle(isRecording ? .black : WC.brand)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, compact ? 8 : 10)
+                .background(isRecording ? WC.brand : WC.brand.opacity(0.14), in: .rect(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.brand.opacity(isRecording ? 0 : 0.5)))
             }
-            .foregroundStyle(isRecording ? .black : WC.brand)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .padding(.vertical, compact ? 8 : 10)
-            .background(isRecording ? WC.brand : WC.brand.opacity(0.14), in: .rect(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.brand.opacity(isRecording ? 0 : 0.5)))
+            .buttonStyle(.plain)
+            .disabled(!client.connected)
+            .opacity(client.connected ? 1 : 0.5)
+            .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
+
+            if isRecording, let segmentName {
+                Text(segmentName)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(WC.muted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(!client.connected)
-        .opacity(client.connected ? 1 : 0.5)
-        .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
     }
 }
 
