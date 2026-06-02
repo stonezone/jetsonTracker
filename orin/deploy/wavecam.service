@@ -22,11 +22,12 @@ Environment=PYTHONPATH=/data/projects/gimbal/wavecam
 ExecStart=/usr/bin/python3 /data/projects/gimbal/wavecam/run.py /data/projects/gimbal/wavecam/config.orin.servo.yaml
 Restart=always
 RestartSec=2
-KillSignal=SIGINT
-# TensorRT teardown can report SIGABRT after the Python finally block runs.
-# Treat that shutdown signal as clean so deliberate systemctl stop is not red.
-SuccessExitStatus=SIGINT SIGTERM SIGABRT
-TimeoutStopSec=10
+ExecStop=/usr/bin/python3 /data/projects/gimbal/wavecam/tools/ptz_stop_once.py 192.168.100.88 1259
+KillSignal=SIGKILL
+# TensorRT/PyTorch worker threads do not unwind reliably on stop. Send a narrow
+# VISCA brake first, then let systemd kill the service instead of waiting.
+SuccessExitStatus=SIGINT SIGTERM SIGABRT SIGKILL
+TimeoutStopSec=3
 ExecStopPost=/usr/bin/python3 /data/projects/gimbal/wavecam/tools/ptz_stop_once.py 192.168.100.88 1259
 StandardOutput=journal
 StandardError=journal

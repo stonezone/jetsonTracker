@@ -12,19 +12,60 @@ Bring-up order (see README):
      (if it moves the wrong way, flip invert_pan/invert_tilt via the UI or config)
 """
 from __future__ import annotations
+import os
+import signal
 import sys
 
-import uvicorn
 
-from wavecam.config import load_config
-from wavecam.ptz_visca import ViscaIP, NullPtz
-from wavecam.camera_http import disable_onboard_ai
-from wavecam.pipeline import Pipeline
-from wavecam.recorder import Recorder, RecorderConfig, main_stream_from_detection_source
-from wavecam.web import build_app
+def shutdown_pipeline(pipe, ptz, join_timeout: float = 3.0, force_exit: bool = False) -> None:
+    try:
+        pipe.stop()
+        join = getattr(pipe, "join", None)
+        if callable(join):
+            join(timeout=join_timeout)
+    finally:
+        try:
+            ptz.stop()
+        finally:
+            ptz.close()
+
+    if force_exit:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+
+
+def handle_shutdown_signal(signum, pipe, ptz, state: dict, force_exit: bool) -> None:
+    if state.get("handled"):
+        if force_exit:
+            os._exit(128 + int(signum))
+        raise SystemExit(128 + int(signum))
+    state["handled"] = True
+    shutdown_pipeline(pipe, ptz, force_exit=force_exit)
+    raise SystemExit(0)
+
+
+def install_shutdown_handlers(pipe, ptz, force_exit: bool) -> dict:
+    state = {"handled": False}
+
+    def _handler(signum, _frame):
+        handle_shutdown_signal(signum, pipe, ptz, state, force_exit)
+
+    signal.signal(signal.SIGINT, _handler)
+    signal.signal(signal.SIGTERM, _handler)
+    return state
 
 
 def main():
+    import uvicorn
+
+    from wavecam.camera_http import disable_onboard_ai
+    from wavecam.config import load_config
+    from wavecam.pipeline import Pipeline
+    from wavecam.ptz_visca import NullPtz, ViscaIP
+    from wavecam.recorder import Recorder, RecorderConfig, main_stream_from_detection_source
+    from wavecam.web import build_app
+
     cfg_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
     cfg = load_config(cfg_path)
 
@@ -55,12 +96,13 @@ def main():
 
     app = build_app(pipe)
     print(f"[run] open the console:  http://<this-host>:{cfg.web.port}/")
+    force_exit = bool(os.environ.get("WAVECAM_FORCE_EXIT_AFTER_CLEANUP"))
+    shutdown_state = install_shutdown_handlers(pipe, ptz, force_exit=force_exit)
     try:
         uvicorn.run(app, host=cfg.web.host, port=cfg.web.port, log_level="warning")
     finally:
-        pipe.stop()
-        ptz.stop()
-        ptz.close()
+        if not shutdown_state["handled"]:
+            shutdown_pipeline(pipe, ptz, force_exit=force_exit)
 
 
 if __name__ == "__main__":
