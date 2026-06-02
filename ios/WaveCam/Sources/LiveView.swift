@@ -23,7 +23,7 @@ struct LiveView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     VStack(spacing: 10) {
                         LiveTelemetryGrid(status: client.status, connected: client.connected, axis: .vertical)
-                        EmergencyStopButton(compact: true)
+                        EmergencyStopButton(style: .compact)
                     }
                     .frame(width: 190)
                 }
@@ -722,38 +722,6 @@ private struct StatusPill: View {
         .padding(12)
         .background(WC.panel, in: .rect(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.line))
-    }
-}
-
-private struct EmergencyStopButton: View {
-    @Environment(WaveCamClient.self) private var client
-    var compact = false
-
-    var body: some View {
-        Button {
-            Task { await client.kill() }
-        } label: {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(.white)
-                    .frame(width: 13, height: 13)
-                Text("Emergency Stop")
-                    .font(.system(size: compact ? 13 : 16, weight: .bold))
-                    .tracking(compact ? 2 : 3)
-                    .textCase(.uppercase)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, compact ? 13 : 16)
-            .background(
-                LinearGradient(colors: [Color(hex: 0xFF5247), Color(hex: 0xE22B20)],
-                               startPoint: .top,
-                               endPoint: .bottom),
-                in: .rect(cornerRadius: 16)
-            )
-            .shadow(color: WC.kill.opacity(0.48), radius: 24, y: 10)
-        }
-        .buttonStyle(.plain)
     }
 }
 

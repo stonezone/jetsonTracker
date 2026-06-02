@@ -69,19 +69,7 @@ private struct TopBar: View {
                     .foregroundStyle(WC.muted)
             }
             .padding(.trailing, 4)
-            Button {
-                Task { await client.kill() }
-            } label: {
-                HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 2).fill(WC.kill).frame(width: 9, height: 9)
-                    Text("KILL").font(.system(size: 12, weight: .bold)).tracking(1)
-                }
-                .foregroundStyle(WC.kill)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(WC.kill.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.kill.opacity(0.4)))
-            }
+            EmergencyStopButton(style: .chip)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

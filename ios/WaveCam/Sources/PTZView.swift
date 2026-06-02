@@ -43,7 +43,7 @@ struct PTZView: View {
             zoomCard()
             actionRow()
             PTZControlFeedback(commandState: commandState, lastError: client.lastError)
-            PTZEmergencyStopButton()
+            EmergencyStopButton()
         }
         .padding(.horizontal, 16)
         .padding(.top, 6)
@@ -62,7 +62,7 @@ struct PTZView: View {
                 zoomCard()
                 actionRow()
                 PTZControlFeedback(commandState: commandState, lastError: client.lastError)
-                PTZEmergencyStopButton(compact: true)
+                EmergencyStopButton(style: .compact)
             }
             .frame(width: 220)
         }
@@ -583,31 +583,6 @@ private struct PTZActionButtonStyle: ButtonStyle {
             .background(filled ? tint : WC.panel2, in: .rect(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(filled ? tint.opacity(0.7) : WC.line))
             .opacity(configuration.isPressed ? 0.74 : 1)
-    }
-}
-
-private struct PTZEmergencyStopButton: View {
-    @Environment(WaveCamClient.self) private var client
-    var compact = false
-
-    var body: some View {
-        Button {
-            Task { await client.kill() }
-        } label: {
-            HStack(spacing: 9) {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 13, weight: .black))
-                Text("Emergency Stop")
-                    .font(.system(size: compact ? 13 : 16, weight: .black))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, compact ? 13 : 16)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .background(WC.kill, in: .rect(cornerRadius: 16))
-        .shadow(color: WC.kill.opacity(0.25), radius: 18, y: 8)
-        .accessibilityLabel("Emergency stop")
     }
 }
 
