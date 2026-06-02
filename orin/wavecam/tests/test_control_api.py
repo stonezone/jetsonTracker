@@ -149,6 +149,7 @@ def test_api_v1_status_maps_legacy_state_to_release_contract():
     assert response.status_code == 200
     body = response.json()
     assert body["session"]["state"] == "TRACKING"
+    assert body["session"]["mode"] == "vision"
     assert body["safety"]["killed"] is False
     assert body["ptz"]["owner"] == "idle"
     assert body["ptz"]["enabled"] is True
@@ -157,6 +158,30 @@ def test_api_v1_status_maps_legacy_state_to_release_contract():
     assert body["media"]["recording"] is False
     assert body["media"]["free_gb"] == 123.4
     assert isinstance(body["revision"], int)
+
+
+def test_api_v1_status_reports_pipeline_gps_snapshot_when_available():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.gps_status = lambda: {
+        "source": "watch",
+        "target_age_sec": 0.8,
+        "base_age_sec": 5.2,
+        "distance_m": 184.2,
+        "bearing_deg": 247.1,
+        "stale": False,
+    }
+
+    response = client.get("/api/v1/status")
+
+    assert response.status_code == 200
+    gps = response.json()["gps"]
+    assert gps["source"] == "watch"
+    assert gps["target_age_sec"] == 0.8
+    assert gps["base_age_sec"] == 5.2
+    assert gps["distance_m"] == 184.2
+    assert gps["bearing_deg"] == 247.1
+    assert gps["stale"] is False
 
 
 def test_api_v1_safety_resume_does_not_restart_tracking_owner():
@@ -513,6 +538,7 @@ def test_api_v1_media_record_start_and_stop_control_recorder():
 
 if __name__ == "__main__":
     test_api_v1_status_maps_legacy_state_to_release_contract()
+    test_api_v1_status_reports_pipeline_gps_snapshot_when_available()
     test_api_v1_safety_resume_does_not_restart_tracking_owner()
     test_api_v1_ptz_velocity_is_owner_gated_and_normalized()
     test_api_v1_ptz_velocity_accepts_zoom_only_manual_input()

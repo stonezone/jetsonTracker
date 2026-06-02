@@ -617,11 +617,11 @@ def build_status_snapshot(pipeline, revision: int, media: dict | None = None) ->
     return {
         "revision": revision,
         "time_unix_ms": int(time.time() * 1000),
-        "session": build_session(legacy),
+        "session": build_session(legacy, pipeline),
         "safety": build_safety(legacy),
         "ptz": build_ptz(legacy, pipeline),
         "tracking": build_tracking(legacy),
-        "gps": unknown_gps(),
+        "gps": build_gps(pipeline, legacy),
         "media": media if media is not None else unknown_media(),
         "services": snapshot_services(read_health()),
         "network": build_network(legacy),
@@ -634,12 +634,19 @@ def merged_status(pipeline) -> dict:
     return status
 
 
-def build_session(legacy: dict) -> dict:
+def build_session(legacy: dict, pipeline=None) -> dict:
     return {
         "state": str(legacy.get("state", "UNKNOWN")),
-        "mode": "testbed",
+        "mode": session_mode(legacy, pipeline),
         "started_at_unix_ms": None,
     }
+
+
+def session_mode(legacy: dict, pipeline=None) -> str:
+    mode = legacy.get("mode") or getattr(pipeline, "mode", None)
+    if mode:
+        return str(mode)
+    return "vision"
 
 
 def build_safety(legacy: dict) -> dict:
@@ -669,6 +676,61 @@ def build_tracking(legacy: dict) -> dict:
         "has_color": bool(legacy.get("has_color", False)),
         "has_person": bool(legacy.get("has_person", False)),
         "matched": bool(legacy.get("matched", False)),
+    }
+
+
+def build_gps(pipeline, legacy: dict) -> dict:
+    status = unknown_gps()
+    source = gps_snapshot_source(pipeline, legacy)
+    if source is None:
+        return status
+    status.update(normalize_gps(source))
+    return status
+
+
+def gps_snapshot_source(pipeline, legacy: dict):
+    legacy_gps = legacy.get("gps")
+    if isinstance(legacy_gps, dict):
+        return legacy_gps
+
+    gps_status = getattr(pipeline, "gps_status", None)
+    if callable(gps_status):
+        return gps_status()
+
+    gps = getattr(pipeline, "gps", None)
+    if gps is None:
+        return None
+    for method_name in ("status", "get_status"):
+        method = getattr(gps, method_name, None)
+        if callable(method):
+            return method()
+    get_fix = getattr(gps, "get_fix", None)
+    if callable(get_fix):
+        return gps_fix_snapshot(get_fix())
+    return None
+
+
+def gps_fix_snapshot(fix) -> dict | None:
+    if fix is None:
+        return None
+    return {
+        "source": getattr(fix, "src", None),
+        "target_age_sec": getattr(fix, "age_sec", None),
+        "base_age_sec": None,
+        "distance_m": None,
+        "bearing_deg": getattr(fix, "course", None),
+        "stale": False,
+    }
+
+
+def normalize_gps(status: dict) -> dict:
+    return {
+        "source": status.get("source"),
+        "target_age_sec": status.get("target_age_sec", status.get("target_age_s")),
+        "base_age_sec": status.get("base_age_sec", status.get("base_age_s")),
+        "distance_m": status.get("distance_m"),
+        "bearing_deg": status.get("bearing_deg"),
+        "stale": bool(status.get("stale", False)),
     }
 
 
