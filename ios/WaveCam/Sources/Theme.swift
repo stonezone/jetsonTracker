@@ -15,6 +15,7 @@ enum WC {
     static let ok     = Color(hex: 0x37D6C2)   // healthy telemetry
     static let warn   = Color(hex: 0xFFB020)
     static let kill   = Color(hex: 0xFF3B30)   // emergency-stop only
+    static let deep   = Color(hex: 0x0B1218)   // video / web backdrop
 }
 
 extension Color {

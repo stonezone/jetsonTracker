@@ -106,8 +106,8 @@ private struct DashboardWebView: UIViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
-        webView.scrollView.backgroundColor = UIColor(Color(hex: 0x0B1218))
-        webView.backgroundColor = UIColor(Color(hex: 0x0B1218))
+        webView.scrollView.backgroundColor = UIColor(WC.deep)
+        webView.backgroundColor = UIColor(WC.deep)
         webView.isOpaque = false
         webView.allowsBackForwardNavigationGestures = false
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8))

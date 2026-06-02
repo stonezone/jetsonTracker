@@ -113,7 +113,7 @@ private struct MJPEGPreviewView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIImageView {
         let imageView = UIImageView()
-        imageView.backgroundColor = UIColor(Color(hex: 0x0B1218))
+        imageView.backgroundColor = UIColor(WC.deep)
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         context.coordinator.start(url: url, imageView: imageView)
