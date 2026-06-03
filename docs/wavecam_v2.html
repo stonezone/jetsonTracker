@@ -350,6 +350,33 @@
       table { display: block; overflow-x: auto; }
       .footer { flex-direction: column; }
     }
+
+    /* Orchestrated load reveal + card micro-interaction (motion-safe). */
+    @media (prefers-reduced-motion: no-preference) {
+      @keyframes wc-rise {
+        from { opacity: 0; transform: translateY(16px); }
+        to   { opacity: 1; transform: none; }
+      }
+      .nav { animation: wc-rise 0.5s ease both; }
+      .eyeline, .hero-copy h1, .hero-copy p, .button-row, .hero-note, .system-card {
+        animation: wc-rise 0.72s cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      .system-card { animation-delay: 0.18s; }
+      .hero-copy h1 { animation-delay: 0.06s; }
+      .hero-copy p { animation-delay: 0.14s; }
+      .button-row { animation-delay: 0.22s; }
+      .hero-note { animation-delay: 0.30s; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+    .panel, .callout {
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .panel:hover, .callout:hover {
+      transform: translateY(-2px);
+      border-color: var(--line2);
+    }
   </style>
 </head>
 <body>
