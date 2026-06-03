@@ -25,7 +25,10 @@ struct TuneView: View {
     @State private var cinematicEnabled = false
     @State private var subjectSize = 0.5
 
-    private let presets = ["orange_red", "orange", "blue", "green", "yellow", "pink"]
+    private let presets: [(id: String, name: String)] = [
+        ("orange_red", "Orange / red (rashguard)"), ("orange", "Orange"),
+        ("blue", "Blue"), ("green", "Green"), ("yellow", "Yellow"), ("pink", "Pink"),
+    ]
     private let classes: [(id: Int, name: String)] = [
         (0, "person"), (1, "bicycle"), (2, "car"), (3, "motorcycle"),
         (14, "bird"), (15, "cat"), (16, "dog"), (32, "sports ball"),
@@ -38,7 +41,8 @@ struct TuneView: View {
                 header
 
                 TuneCard(title: "TARGET") {
-                    pickerRow("Color preset", selection: $colorPreset, options: presets.map { ($0, $0) }, key: "color.preset")
+                    pickerRow("Color preset", selection: $colorPreset, options: presets.map { ($0.id, $0.name) }, key: "color.preset")
+                    tuneCaption("Match the subject's color. Your orange rashguard → Orange / red. Other presets chase that color instead, so the camera won't lock onto you.")
                     TuneDivider()
                     pickerRow("YOLO target", selection: $yoloClass, options: classes.map { ($0.id, $0.name) }, key: "detector.person_class")
                     TuneDivider()
@@ -51,6 +55,7 @@ struct TuneView: View {
                     sliderRow("YOLO confidence", value: $conf, range: 0.05...0.95, step: 0.05, readout: fmt(conf), key: "detector.conf")
                     TuneDivider()
                     toggleRow("Require YOLO person", isOn: $requirePerson, key: "fusion.require_person")
+                    tuneCaption("Off: track the color cue even when YOLO can't make out a person — best when you're far offshore. On: only lock onto a confirmed person (you'll lose lock at distance).")
                     TuneDivider()
                     toggleRow("Show detection mask", isOn: $showMask, key: "web.show_mask")
                 }
@@ -171,6 +176,14 @@ struct TuneView: View {
         }
         .tint(WC.ok)
         .onChange(of: isOn.wrappedValue) { _, v in send([key: v]) }
+    }
+
+    @ViewBuilder
+    private func tuneCaption(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(WC.faint)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func fmt(_ v: Double) -> String { v.formatted(.number.precision(.fractionLength(2))) }

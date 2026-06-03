@@ -86,6 +86,7 @@ private struct LiveFeedCard: View {
             FeedAimReticle(status: status, connected: connected)
             FeedPTZOverlay(status: status, connected: connected)
             FeedTopTags(isLocked: isLocked, isRecording: isRecording, connected: connected)
+            FeedLockReason(status: status, connected: connected)
             FeedBottomStrip(status: status, connected: connected)
         }
     }
@@ -660,6 +661,45 @@ private struct LiveTag: View {
         .padding(.vertical, 5)
         .background(Color.black.opacity(0.58), in: .rect(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(color.opacity(0.48)))
+    }
+}
+
+/// Plain-English reason the camera isn't locked, shown under the top tags.
+/// Built only from real tracking fields; silent when locked, offline, or
+/// the backend doesn't report the color/person components.
+private struct FeedLockReason: View {
+    let status: WCStatus?
+    let connected: Bool
+
+    var body: some View {
+        if let reason {
+            VStack {
+                Text(reason.text)
+                    .font(.system(size: 10, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(reason.color)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.62), in: .rect(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(reason.color.opacity(0.45)))
+                    .frame(maxWidth: 280)
+                    .padding(.top, 44)
+                Spacer()
+            }
+        }
+    }
+
+    private var reason: (text: String, color: Color)? {
+        guard connected, let t = status?.tracking else { return nil }
+        if status?.safety.killed == true { return ("STOPPED · Resume to track", WC.kill) }
+        if t.locked { return nil }
+        if t.hasColor == nil && t.hasPerson == nil { return ("Searching…", WC.muted) }
+        let hasColor = t.hasColor ?? false
+        let hasPerson = t.hasPerson ?? false
+        if !hasColor && !hasPerson { return ("No target — does Color preset match the subject?", WC.warn) }
+        if hasColor && !hasPerson { return ("Color seen · no YOLO person", WC.muted) }
+        if !hasColor && hasPerson { return ("Person seen · no color match", WC.muted) }
+        return ("Acquiring…", WC.muted)
     }
 }
 
