@@ -113,6 +113,12 @@ class PtzStopRequest(BaseModel):
     source: str | None = None
 
 
+class PtzHomeRequest(BaseModel):
+    requested_owner: str = "manual"
+    takeover: bool = False
+    source: str | None = None
+
+
 class ZoomRequest(BaseModel):
     requested_owner: str = "manual"
     mode: str = "velocity"
@@ -217,6 +223,20 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def ptz_auto():
         if not api.start_autonomous("testbed"):
             return api.refusal("killed", "KILL is latched; resume before starting auto PTZ.")
+        api.bump_revision()
+        return api.ok()
+
+    @app.post("/api/v1/ptz/home", dependencies=[Depends(require(PTZ))])
+    def ptz_home(req: PtzHomeRequest | None = None):
+        req = req or PtzHomeRequest()
+        if api.pipeline.owner.killed:
+            return api.refusal("killed", "KILL is latched; resume before movement commands.")
+        if req.requested_owner != "manual":
+            return api.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
+        if not api.claim_manual(takeover=req.takeover):
+            return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
+
+        api.home_ptz()
         api.bump_revision()
         return api.ok()
 
@@ -429,6 +449,15 @@ class ControlApiAdapter:
                 self.hold_manual_owner()
             elif self.pipeline.owner.owner == "manual":
                 self.release_manual_owner()
+
+    def home_ptz(self) -> None:
+        with self._lock:
+            self.cancel_manual_deadman()
+            self.cancel_zoom_deadman()
+            self._manual_pan_tilt_active = False
+            self.pipeline.ptz.stop()
+            self.pipeline.ptz.zoom("stop")
+            self.pipeline.ptz.home()
 
     def hold_manual_owner(self) -> None:
         with self._lock:
@@ -854,6 +883,7 @@ def build_config_snapshot(pipeline, revision: int) -> dict:
         },
         "supported": {
             "color_presets": sorted(COLOR_PRESETS),
+            "ptz_home": callable(getattr(getattr(pipeline, "ptz", None), "home", None)),
             "yolo_classes": list(YOLO_CLASSES),
             "person_aim_y": {
                 "0.20": "head/upper face",

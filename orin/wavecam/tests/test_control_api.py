@@ -50,6 +50,9 @@ class DummyPtz:
     def pan_tilt(self, pan_speed, tilt_speed, pan_dir, tilt_dir):
         self.calls.append(("pan_tilt", pan_speed, tilt_speed, pan_dir, tilt_dir))
 
+    def home(self):
+        self.calls.append(("home",))
+
 
 class DummyRecorder:
     def __init__(self):
@@ -439,6 +442,39 @@ def test_api_v1_ptz_auto_refuses_while_killed():
     assert pipe.owner.owner == "idle"
 
 
+def test_api_v1_ptz_home_is_owner_gated_and_kill_respecting():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    blocked = client.post("/api/v1/ptz/home", json={})
+
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "owner_busy"
+    assert ("home",) not in pipe.ptz.calls
+    assert pipe.owner.owner == "testbed"
+
+    takeover = client.post(
+        "/api/v1/ptz/home",
+        json={"requested_owner": "manual", "takeover": True, "source": "ios_native"},
+    )
+
+    assert takeover.status_code == 200
+    assert takeover.json()["ok"] is True
+    assert takeover.json()["status"]["ptz"]["owner"] == "manual"
+    assert ("stop",) in pipe.ptz.calls
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+    assert ("home",) in pipe.ptz.calls
+
+    client.post("/api/v1/safety/kill", json={"reason": "test"})
+    calls_after_kill = list(pipe.ptz.calls)
+    killed = client.post("/api/v1/ptz/home", json={"takeover": True})
+
+    assert killed.status_code == 409
+    assert killed.json()["code"] == "killed"
+    assert pipe.ptz.calls == calls_after_kill
+
+
 def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -654,6 +690,7 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert "blue" in body["supported"]["color_presets"]
     assert "ptz.cinematic_zoom_enabled" in body["hot_keys"]
     assert "ptz.zoom_target_frac" in body["hot_keys"]
+    assert body["supported"]["ptz_home"] is True
     assert "detector.conf" in body["hot_keys"]
     assert "detector.model" in body["restart_required_keys"]
 
@@ -874,6 +911,7 @@ if __name__ == "__main__":
     test_api_v1_ptz_stop_release_mode_releases_manual_owner()
     test_api_v1_ptz_auto_starts_tracking_owner_from_manual_hold()
     test_api_v1_ptz_auto_refuses_while_killed()
+    test_api_v1_ptz_home_is_owner_gated_and_kill_respecting()
     test_api_v1_ptz_zoom_endpoint_is_owner_gated()
     test_api_v1_zoom_stop_does_not_release_manual_owner_while_pan_tilt_active()
     test_api_v1_ptz_zoom_refuses_while_killed()
