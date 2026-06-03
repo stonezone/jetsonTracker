@@ -12,6 +12,7 @@ struct PTZView: View {
     @State private var velocityRepeatTask: Task<Void, Never>?
     @State private var zoomRepeatTask: Task<Void, Never>?
     @State private var commandState = PTZCommandState.idle
+    @State private var refusalText: String?
 
     private let velocityRepeatIntervalNs: UInt64 = 300_000_000
     private let zoomRepeatIntervalNs: UInt64 = 300_000_000
@@ -55,7 +56,7 @@ struct PTZView: View {
             joystickCard()
             zoomCard()
             actionRow()
-            PTZControlFeedback(commandState: commandState, controlError: client.lastControlError)
+            PTZControlFeedback(commandState: commandState, controlError: client.lastControlError, refusalText: refusalText)
             EmergencyStopButton()
         }
         .padding(.horizontal, 16)
@@ -74,7 +75,7 @@ struct PTZView: View {
             VStack(spacing: 10) {
                 zoomCard()
                 actionRow()
-                PTZControlFeedback(commandState: commandState, controlError: client.lastControlError)
+                PTZControlFeedback(commandState: commandState, controlError: client.lastControlError, refusalText: refusalText)
             }
             .frame(width: 220)
         }
@@ -118,6 +119,7 @@ struct PTZView: View {
         self.pan = pan
         self.tilt = tilt
         let isActive = pan != 0 || tilt != 0
+        if isActive { refusalText = nil }
         commandState = isActive ? .manual : .idle
         Task { await client.ptzVelocity(pan: pan, tilt: tilt) }
         if isActive {
@@ -145,10 +147,12 @@ struct PTZView: View {
         tilt = 0
         knobOffset = .zero
         resetZoomCommand(sendStop: false)
+        refusalText = nil
         commandState = .stopping
         Task { @MainActor in
             let accepted = await client.ptzStop(hold: true)
             commandState = accepted ? .held : .idle
+            if !accepted { refusalText = "Stop PTZ not confirmed by the camera." }
             syncCommandStateWithBackend()
         }
     }
@@ -159,10 +163,16 @@ struct PTZView: View {
         tilt = 0
         knobOffset = .zero
         resetZoomCommand(sendStop: false)
+        refusalText = nil
         commandState = .startingAuto
         Task { @MainActor in
             let accepted = await client.ptzStartAuto()
             commandState = accepted ? .auto : .idle
+            if !accepted {
+                refusalText = client.killed
+                    ? "Resume first — camera is stopped (Emergency Stop latched)."
+                    : "Start Auto refused — PTZ is busy or unavailable."
+            }
             syncCommandStateWithBackend()
         }
     }
@@ -617,10 +627,13 @@ private struct PTZActionRow: View {
 private struct PTZControlFeedback: View {
     let commandState: PTZCommandState
     let controlError: String?
+    let refusalText: String?
 
     var body: some View {
         if let controlError {
             PTZFeedbackPill(text: controlError, color: WC.warn, icon: "exclamationmark.triangle.fill")
+        } else if let refusalText {
+            PTZFeedbackPill(text: refusalText, color: WC.warn, icon: "exclamationmark.triangle.fill")
         } else if commandState == .stopping {
             PTZFeedbackPill(text: "Stopping PTZ...", color: WC.kill, icon: "stop.fill")
         } else if commandState == .startingAuto {
