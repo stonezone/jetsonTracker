@@ -237,6 +237,10 @@ final class WaveCamClient {
     /// failure can't paint a false "PTZ failed" banner on the PTZ screen (review #P1-C).
     private(set) var lastControlError: String?
 
+    /// Optimistic local KILL latch: set the instant the operator hits Emergency Stop so the
+    /// latch overlay appears immediately, before the ~1Hz poll round-trips (review: optimistic KILL).
+    private(set) var optimisticKilled = false
+
     private var mockKilled = false
     private var pollTask: Task<Void, Never>?
     private var nextTetherProbeAt = Date.distantPast
@@ -258,6 +262,12 @@ final class WaveCamClient {
     }
 
     var killed: Bool { status?.safety.killed ?? false }
+    /// What the UI treats as latched: the confirmed rig latch OR an operator stop we've
+    /// issued but not yet confirmed. Fail-safe — stays latched until resume clears it.
+    var effectiveKilled: Bool { optimisticKilled || killed }
+    /// True only when the live API failed and we're substituting mock telemetry (NOT
+    /// deliberate mock mode), so the UI can warn loudly that the feed is fake. (review H2)
+    var isShowingMockData: Bool { mode != .mock && activeRoute == .mockFallback }
     var owner: String { status?.ptz.owner ?? "idle" }
 
     func configure(mode: Mode, baseURL: URL, token: String?, mockFallbackEnabled: Bool) {
@@ -300,6 +310,7 @@ final class WaveCamClient {
             status = try Self.decoder.decode(WCStatus.self, from: data)
             connected = true
             lastError = nil
+            if status?.safety.killed == true { optimisticKilled = false }
         } catch {
             if mockFallbackEnabled {
                 status = .mockTracking(killed: mockKilled)
@@ -334,6 +345,7 @@ final class WaveCamClient {
     // MARK: safety (highest priority, always allowed)
 
     func kill(reason: String = "operator") async {
+        optimisticKilled = true
         if mode == .mock { mockKilled = true; await refresh(); return }
         do {
             _ = try await post("safety/kill", body: ["reason": reason, "source": "ios_native"])
@@ -345,6 +357,7 @@ final class WaveCamClient {
     }
 
     func resume() async {
+        optimisticKilled = false
         if mode == .mock { mockKilled = false; await refresh(); return }
         do {
             _ = try await post("safety/resume", body: ["source": "ios_native"])
@@ -645,14 +658,23 @@ final class WaveCamClient {
 
 private extension URLError {
     var isReadRouteFailoverAllowed: Bool {
-        if code == .timedOut { return true }
-        return isWriteRouteFailoverAllowed
+        // Reads are idempotent, so failing over after a post-send drop is harmless.
+        switch code {
+        case .timedOut, .networkConnectionLost, .notConnectedToInternet:
+            return true
+        default:
+            return isWriteRouteFailoverAllowed
+        }
     }
 
     var isWriteRouteFailoverAllowed: Bool {
+        // Mutating POSTs fail over ONLY on pre-connection errors, where the server
+        // provably never received the request. .timedOut / .networkConnectionLost /
+        // .notConnectedToInternet can fire AFTER the server already acted, so retrying
+        // to the other host would double-apply non-idempotent commands like
+        // media/record/* or config/hot. (review C2)
         switch code {
-        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
-             .networkConnectionLost, .notConnectedToInternet:
+        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
             return true
         default:
             return false

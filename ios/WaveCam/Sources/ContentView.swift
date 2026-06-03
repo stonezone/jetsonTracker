@@ -11,6 +11,7 @@ struct ContentView: View {
             WC.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 TopBar()
+                if client.isShowingMockData { MockDataBanner() }
                 TabView(selection: $tab) {
                     LiveView().tag(0).tabItem { Label("Live", systemImage: "viewfinder") }
                     PTZView().tag(1).tabItem { Label("PTZ", systemImage: "gamecontroller") }
@@ -20,7 +21,7 @@ struct ContentView: View {
                 }
                 .tint(WC.brand)
             }
-            if client.killed {
+            if client.effectiveKilled {
                 KillLatchOverlay()
             }
         }
@@ -74,6 +75,25 @@ private struct TopBar: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(WC.ink)
+    }
+}
+
+/// Loud, unmissable warning shown whenever the live API is down and the HUD is
+/// substituting mock telemetry — so the operator can never mistake fake data for the
+/// real rig (which could mean the camera is NOT recording/tracking). (review H2)
+private struct MockDataBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text("OFFLINE — SHOWING MOCK DATA · real camera state unknown")
+                .font(.system(size: 11, weight: .bold)).tracking(0.5)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.black)
+        .padding(.horizontal, 14).padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WC.warn)
     }
 }
 
