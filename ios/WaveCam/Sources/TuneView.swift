@@ -21,6 +21,7 @@ struct TuneView: View {
     @State private var model: String?
     @State private var restartKeys: [String] = []
     @State private var showRestartConfirm = false
+    @State private var configError: String?
     @State private var cinematicAvailable = false
     @State private var cinematicEnabled = false
     @State private var subjectSize = 0.5
@@ -39,6 +40,11 @@ struct TuneView: View {
         ScrollView {
             VStack(spacing: 12) {
                 header
+
+                if let configError {
+                    TuneNotice(configError, tint: WC.kill)
+                        .onTapGesture { self.configError = nil }
+                }
 
                 TuneCard(title: "TARGET") {
                     pickerRow("Color preset", selection: $colorPreset, options: presets.map { ($0.id, $0.name) }, key: "color.preset")
@@ -221,7 +227,13 @@ struct TuneView: View {
 
     private func send(_ patch: [String: Any]) {
         guard loaded, client.mode == .live else { return }
-        Task { await client.configHot(patch) }
+        Task {
+            if await client.configHot(patch) {
+                configError = nil
+            } else {
+                configError = "Setting not applied: \(client.lastControlError ?? "rejected by the Orin"). Tap to dismiss."
+            }
+        }
     }
 }
 
