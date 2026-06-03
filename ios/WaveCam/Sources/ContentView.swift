@@ -94,17 +94,44 @@ struct KillLatchOverlay: View {
                 Text("Pan, tilt & zoom halted. Sticky — stays stopped until you resume.")
                     .font(.system(size: 13)).foregroundStyle(WC.txt.opacity(0.85))
                     .multilineTextAlignment(.center).frame(maxWidth: 250)
-                Button {
-                    Task { await client.resume() }
-                } label: {
-                    Text("HOLD TO RESUME")
-                        .font(.system(size: 14, weight: .semibold)).tracking(2).foregroundStyle(WC.ok)
-                        .padding(.horizontal, 26).padding(.vertical, 13)
-                        .overlay(RoundedRectangle(cornerRadius: 13).stroke(WC.ok))
-                }
+                HoldToResumeButton { Task { await client.resume() } }
             }
         }
         .overlay(Rectangle().stroke(WC.kill, lineWidth: 3).ignoresSafeArea())
+    }
+}
+
+/// Resume from a KILL latch requires a deliberate ~1.2s hold, not a single tap,
+/// so an accidental touch can't clear a safety stop. The bar fills as you hold.
+private struct HoldToResumeButton: View {
+    var action: () -> Void
+    @State private var pressing = false
+    private let holdDuration: Double = 1.2
+
+    var body: some View {
+        Text(pressing ? "KEEP HOLDING…" : "HOLD TO RESUME")
+            .font(.system(size: 14, weight: .semibold)).tracking(2).foregroundStyle(WC.ok)
+            .padding(.horizontal, 26).padding(.vertical, 13)
+            .frame(minHeight: 44)
+            .background(alignment: .leading) {
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: 13)
+                        .fill(WC.ok.opacity(0.18))
+                        .frame(width: pressing ? geo.size.width : 0)
+                        .animation(.linear(duration: pressing ? holdDuration : 0.18), value: pressing)
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(WC.ok))
+            .clipShape(RoundedRectangle(cornerRadius: 13))
+            .contentShape(Rectangle())
+            .onLongPressGesture(minimumDuration: holdDuration) {
+                action()
+            } onPressingChanged: { isPressing in
+                pressing = isPressing
+            }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Hold to resume")
+            .accessibilityHint("Press and hold to clear the emergency stop")
     }
 }
 

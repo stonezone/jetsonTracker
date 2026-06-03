@@ -66,7 +66,8 @@ enum KeychainStore {
             return
         }
         if load(account: tokenAccount) == nil {
-            save(legacy, account: tokenAccount)
+            // Don't drop the legacy token unless it's safely in the Keychain.
+            guard save(legacy, account: tokenAccount) else { return }
         }
         defaults.removeObject(forKey: legacyDefaultsKey)
     }

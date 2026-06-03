@@ -7,6 +7,7 @@ struct TuneView: View {
     @Environment(WaveCamClient.self) private var client
 
     @State private var loaded = false
+    @State private var loading = false
     @State private var colorPreset = "orange_red"
     @State private var yoloClass = 0
     @State private var aimY = 0.5
@@ -181,6 +182,9 @@ struct TuneView: View {
     }
 
     private func load() async {
+        guard !loaded, !loading else { return }
+        loading = true
+        defer { loading = false }
         guard let cfg = await client.config() else { return }
         colorPreset = cfg.current.color.preset
         yoloClass = cfg.current.detector.personClass

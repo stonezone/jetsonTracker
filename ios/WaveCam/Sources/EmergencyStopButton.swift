@@ -36,7 +36,7 @@ struct EmergencyStopButton: View {
                     .font(.system(size: compact ? 13 : 16, weight: .black))
             }
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.vertical, compact ? 13 : 16)
             .background(WC.kill, in: .rect(cornerRadius: 16))
             .shadow(color: WC.kill.opacity(0.25), radius: 18, y: 8)

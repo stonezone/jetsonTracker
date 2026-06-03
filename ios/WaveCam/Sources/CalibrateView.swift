@@ -3,11 +3,11 @@ import SwiftUI
 /// Calibration wizard: preflight, base lock, heading, tilt, zoom/FOV, and dry-run.
 struct CalibrateView: View {
     @Environment(WaveCamClient.self) private var client
-    @State private var activeStepID = CalibrationStep.heading.id
-    @State private var capturedStepIDs: Set<Int> = [CalibrationStep.preflight.id, CalibrationStep.baseLock.id]
+    @State private var activeStepID = CalibrationStep.preflight.id
+    @State private var capturedStepIDs: Set<Int> = []
 
     private var activeStep: CalibrationStep {
-        CalibrationStep.all.first { $0.id == activeStepID } ?? .heading
+        CalibrationStep.all.first { $0.id == activeStepID } ?? .preflight
     }
 
     var body: some View {
@@ -22,7 +22,7 @@ struct CalibrateView: View {
                 CalibrationActiveCard(
                     step: activeStep,
                     canGoBack: activeStepID > CalibrationStep.preflight.id,
-                    canGoForward: activeStepID < CalibrationStep.dryRun.id,
+                    canGoForward: activeStepID < CalibrationStep.dryRun.id && capturedStepIDs.contains(activeStepID),
                     isCaptured: capturedStepIDs.contains(activeStepID),
                     onBack: moveBack,
                     onCapture: captureActiveStep,
@@ -371,7 +371,7 @@ private struct CalibrationButtonStyle: ButtonStyle {
             .lineLimit(1)
             .minimumScaleFactor(0.62)
             .foregroundStyle(filled ? Color.black : tint)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.vertical, 12)
             .background(filled ? tint : WC.panel2, in: .rect(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13).stroke(filled ? tint.opacity(0.7) : WC.line))
