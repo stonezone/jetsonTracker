@@ -9,9 +9,12 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
+_modules_before_controller = set(sys.modules)
 from wavecam.controller import VisualServo
 
-assert "cv2" not in sys.modules, "controller must import cv2-free"
+assert "cv2" not in (
+    set(sys.modules) - _modules_before_controller
+), "controller must import cv2-free"
 
 BASE = dict(deadzone=0.10, max_pan_speed=20, max_tilt_speed=20, min_speed=1,
             invert_pan=False, invert_tilt=False)

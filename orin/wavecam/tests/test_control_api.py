@@ -219,6 +219,35 @@ def test_api_v1_safety_resume_does_not_restart_tracking_owner():
     assert pipe.owner.owner == "idle"
 
 
+def test_api_v1_safety_kill_cancels_manual_deadman_before_resume():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    moving = client.post(
+        "/api/v1/ptz/velocity",
+        json={
+            "requested_owner": "manual",
+            "pan": 0.5,
+            "tilt": 0.0,
+            "deadman_ms": 100,
+        },
+    )
+    assert moving.status_code == 200
+    assert pipe.owner.owner == "manual"
+
+    killed = client.post("/api/v1/safety/kill", json={"reason": "deadman_cancel"})
+    assert killed.status_code == 200
+    resumed = client.post("/api/v1/safety/resume", json={"source": "test"})
+    assert resumed.status_code == 200
+
+    calls_after_resume = list(pipe.ptz.calls)
+    time.sleep(0.16)
+
+    assert pipe.owner.owner == "idle"
+    assert pipe.owner.killed is False
+    assert pipe.ptz.calls == calls_after_resume
+
+
 def test_api_v1_safety_kill_stops_active_recording():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -533,6 +562,32 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert "detector.model" in body["restart_required_keys"]
 
 
+def test_api_v1_cinematic_zoom_hot_config_round_trips_in_snapshot():
+    client = make_client()
+
+    before = client.get("/api/v1/config").json()
+    applied = client.post(
+        "/api/v1/config/hot",
+        json={
+            "patch": {
+                "ptz.cinematic_zoom_enabled": True,
+                "ptz.zoom_target_frac": 0.44,
+                "ptz.zoom_deadband": 0.09,
+                "ptz.zoom_max_speed": 3,
+            }
+        },
+    )
+    after = client.get("/api/v1/config").json()
+
+    assert applied.status_code == 200
+    assert applied.json()["ok"] is True
+    assert after["revision"] == before["revision"] + 1
+    assert after["current"]["ptz"]["cinematic_zoom_enabled"] is True
+    assert after["current"]["ptz"]["zoom_target_frac"] == 0.44
+    assert after["current"]["ptz"]["zoom_deadband"] == 0.09
+    assert after["current"]["ptz"]["zoom_max_speed"] == 3
+
+
 def test_api_v1_system_restart_schedules_restart_when_idle():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -652,6 +707,8 @@ if __name__ == "__main__":
     test_api_v1_status_maps_legacy_state_to_release_contract()
     test_api_v1_status_reports_pipeline_gps_snapshot_when_available()
     test_api_v1_safety_resume_does_not_restart_tracking_owner()
+    test_api_v1_safety_kill_cancels_manual_deadman_before_resume()
+    test_api_v1_safety_kill_stops_active_recording()
     test_api_v1_ptz_velocity_is_owner_gated_and_normalized()
     test_api_v1_ptz_velocity_accepts_zoom_only_manual_input()
     test_manual_tilt_axis_uses_joystick_semantics()
@@ -666,6 +723,7 @@ if __name__ == "__main__":
     test_api_v1_ptz_zoom_refuses_while_killed()
     test_api_v1_config_hot_applies_known_keys_only()
     test_api_v1_config_reports_supported_tuning_surface()
+    test_api_v1_cinematic_zoom_hot_config_round_trips_in_snapshot()
     test_api_v1_system_restart_schedules_restart_when_idle()
     test_api_v1_system_restart_requires_confirmation_while_auto_ptz_active()
     test_api_v1_system_restart_refuses_duplicate_pending_request()

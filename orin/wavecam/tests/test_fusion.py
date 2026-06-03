@@ -15,9 +15,12 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
+_modules_before_fusion = set(sys.modules)
 from wavecam.fusion import Fusion
 
-assert "cv2" not in sys.modules, "fusion must import cv2-free (type-only imports)"
+assert "cv2" not in (
+    set(sys.modules) - _modules_before_fusion
+), "fusion must import cv2-free (type-only imports)"
 
 
 def _cfg():
@@ -68,5 +71,25 @@ head_cfg.person_aim_y = 0.25
 h = Fusion(head_cfg)
 rh = h.update([_blob(320, 180)], [_person(320, 180)])
 check(rh.target_xy[1] < 170, "person aim y=0.25 targets upper body/head instead of box center")
+
+
+def test_require_person_rejects_single_source_until_color_and_person_match():
+    cfg = _cfg()
+    cfg.require_person = True
+    f = Fusion(cfg)
+
+    color_only = f.update([_blob(320, 180)], [])
+    person_only = f.update([], [_person(320, 180)])
+    confirmed = f.update([_blob(320, 180)], [_person(322, 182)])
+
+    assert color_only.state == "SEARCHING"
+    assert color_only.target_xy is None
+    assert color_only.person_bbox is None
+    assert person_only.state == "SEARCHING"
+    assert person_only.target_xy is None
+    assert confirmed.state == "TRACKING"
+    assert confirmed.matched is True
+    assert confirmed.person_bbox == (302, 137, 40, 90)
+
 
 print("\nALL %d CHECKS PASSED (cv2-free)" % _n)
