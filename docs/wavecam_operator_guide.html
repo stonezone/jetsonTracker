@@ -1008,7 +1008,7 @@
               <td>ptz.cinematic_zoom_enabled / ptz.zoom_target_frac</td>
               <td>false / 0.50</td>
               <td>Person-box auto-zoom that keeps the subject near a chosen frame size.</td>
-              <td>Default off. Enable only after pan/tilt tracking is stable and the lock is on a YOLO person box. Manual zoom suppresses cinematic zoom briefly without stopping pan/tilt tracking.</td>
+              <td>Default off. Enable only after pan/tilt tracking is stable and the lock is on a YOLO person box. Manual zoom suppresses cinematic zoom briefly without stopping pan/tilt tracking, and the backend sends a zoom stop when the deadman expires.</td>
             </tr>
           </tbody>
         </table>
@@ -1021,7 +1021,7 @@
             <li>Open Tools &gt; Tune. If the Cinematic Zoom card is not visible, the backend did not expose the zoom config keys; stop and verify <code>/api/v1/config</code>.</li>
             <li>Enable Cinematic zoom and leave Subject size near <code>0.50</code> for the first pass.</li>
             <li>Watch Live. Zoom should move only when tracking is locked on a YOLO person box. It should hold on color-only frames, no-lock frames, and inside the zoom deadband.</li>
-            <li>Nudge manual zoom once. Expected result: auto-zoom suppresses briefly, but pan/tilt tracking continues.</li>
+            <li>Nudge manual zoom once. Expected result: auto-zoom suppresses briefly, pan/tilt tracking continues, and zoom stops when the server deadman expires.</li>
             <li>If framing twitches, locks the wrong subject, or zoom fights the operator, disable Cinematic Zoom and retest pan/tilt before changing zoom thresholds.</li>
           </ol>
         </div>
@@ -1035,7 +1035,7 @@
           </div>
           <div class="panel">
             <h3>Persistent config</h3>
-            <p>Use the YAML path for defaults that should survive service restart. Hot config is for live testing without restart; it is not persisted automatically yet.</p>
+            <p>Use the YAML path for defaults that should survive service restart. Hot config is for live testing without restart; it validates the full patch before mutation, rejects stale <code>revision</code>, and rejects <code>persist:true</code>.</p>
           </div>
           <div class="panel">
             <h3>Scheduled restart</h3>
@@ -1049,7 +1049,7 @@
         <div class="callout" style="margin-top:1rem">
           <h3>Current gaps</h3>
           <ol>
-            <li>Hot tuning does not write back to YAML automatically.</li>
+            <li>Hot tuning does not write back to YAML automatically; <code>persist:true</code> is rejected instead of ignored.</li>
             <li>Restart-only keys still require editing persistent config or the Orin web UI before using the confirmed restart path.</li>
             <li>Cinematic Zoom is backend-wired and default off. Use the enable/test flow above before making it a persistent default.</li>
             <li>The service restart timeout was fixed with a VISCA brake plus fast systemd stop; this is validated, but it is not a graceful TensorRT thread teardown.</li>

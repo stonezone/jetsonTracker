@@ -113,16 +113,16 @@ in frame and step side-to-side; the camera should follow and re-center.
 | KILL / RESUME | latch PTZ stopped / re-enable |
 | Start Auto | request autonomous PTZ owner `testbed`; refused while KILL is latched |
 | Stop PTZ | durable manual hold; camera stays stopped until Start Auto |
-| Zoom± / Zoom stop | manual zoom velocity commands; during auto tracking, manual zoom suppresses only Cinematic Zoom and leaves pan/tilt owner active |
+| Zoom± / Zoom stop | manual zoom velocity commands with a server deadman; during auto tracking, manual zoom suppresses only Cinematic Zoom and leaves pan/tilt owner active |
 | Cinematic Zoom | hot toggle for person-box auto-zoom; default off; subject-size slider maps to `ptz.zoom_target_frac` |
 | Color preset | hot-switch HSV presets: `orange_red`, `orange`, `blue`, `green`, `yellow`, `pink` |
 | YOLO class / confidence / cadence | hot tune the validator trigger without restart |
 | Person aim Y | hot tune where the servo centers inside the person box |
 | PTZ tuning | hot tune deadband, feed-forward gain, feed-forward deadband multiplier, speeds, inversion |
 | Mask / JPEG quality | hot tune overlay and preview quality |
-| `GET /status` | JSON state |
+| `GET /api/v1/status` | JSON state |
 | `GET /api/v1/config` | current config, supported presets/classes, hot keys, restart-only keys |
-| `POST /api/v1/config/hot` | live-safe config patch; no restart |
+| `POST /api/v1/config/hot` | live-safe atomic config patch; no restart; optional stale `revision` is rejected and `persist=true` is unsupported |
 | `POST /api/v1/system/restart` | CONFIG-scoped scheduled `wavecam.service` restart for restart-only changes |
 
 Example hot patch:
@@ -132,6 +132,10 @@ curl -X POST http://<orin-ip>:8088/api/v1/config/hot \
   -H 'Content-Type: application/json' \
   -d '{"patch":{"color.preset":"blue","fusion.require_person":true,"ptz.ff_deadzone_mult":1.8}}'
 ```
+
+Hot config validates the whole batch before mutating live state. Invalid keys,
+invalid values, stale `revision`, or `persist:true` leave the live config and
+revision unchanged.
 
 Example Cinematic Zoom hot patch:
 
@@ -164,6 +168,7 @@ python -m tests.test_controller_extra
 python -m tests.test_fusion
 python -m tests.test_cinematic_zoom
 python -m tests.test_control_api
+python -m pytest tests -q
 cd ..
 python scripts/test_vision_follow_logic.py
 ```
