@@ -476,6 +476,29 @@ def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
     assert ("zoom", "tele", 4) in pipe.ptz.calls
 
 
+def test_api_v1_ptz_zoom_under_autonomous_owner_deadman_stops_zoom():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    response = client.post(
+        "/api/v1/ptz/zoom",
+        json={
+            "requested_owner": "manual",
+            "mode": "velocity",
+            "value": 0.5,
+            "deadman_ms": 100,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"]["ptz"]["owner"] == "testbed"
+    assert ("zoom", "tele", 4) in pipe.ptz.calls
+    time.sleep(0.16)
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+    assert pipe.owner.owner == "testbed"
+
+
 def test_api_v1_ptz_zoom_refuses_while_killed():
     client = make_client()
 
@@ -560,6 +583,27 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert "ptz.zoom_target_frac" in body["hot_keys"]
     assert "detector.conf" in body["hot_keys"]
     assert "detector.model" in body["restart_required_keys"]
+
+
+def test_api_v1_config_hot_invalid_batch_does_not_mutate_or_bump_revision():
+    client = make_client()
+
+    before = client.get("/api/v1/config").json()
+    refused = client.post(
+        "/api/v1/config/hot",
+        json={
+            "patch": {
+                "ptz.deadzone": 0.11,
+                "camera.source": "rtsp://x",
+            }
+        },
+    )
+    after = client.get("/api/v1/config").json()
+
+    assert refused.status_code == 422
+    assert refused.json()["code"] == "invalid_request"
+    assert after["revision"] == before["revision"]
+    assert after["current"]["ptz"]["deadzone"] == before["current"]["ptz"]["deadzone"]
 
 
 def test_api_v1_cinematic_zoom_hot_config_round_trips_in_snapshot():

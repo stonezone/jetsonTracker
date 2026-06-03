@@ -195,6 +195,7 @@ def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         api.pipeline.kill(True)
         api.media.stop_for_safety()
         api.cancel_manual_deadman()
+        api.cancel_zoom_deadman()
         api.bump_revision()
         return api.ok()
 
@@ -243,6 +244,10 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("invalid_request", "Only mode=velocity is accepted in v1.", 422)
         if api.pipeline.owner.owner in AUTONOMOUS:
             api.send_manual_zoom_velocity(req.value, req.deadman_ms)
+            if req.value == 0:
+                api.cancel_zoom_deadman()
+            else:
+                api.schedule_zoom_deadman(req.deadman_ms)
             api.bump_revision()
             return api.ok()
         if not api.claim_manual(takeover=req.takeover):
@@ -318,6 +323,7 @@ class ControlApiAdapter:
         self._lock = threading.Lock()
         self._revision = 0
         self._manual_deadman: threading.Timer | None = None
+        self._zoom_deadman: threading.Timer | None = None
         self._restore_owner_after_manual: str | None = None
         self._restart_timer: threading.Timer | None = None
         self._restart_pending = False
@@ -350,6 +356,7 @@ class ControlApiAdapter:
         )
 
     def resume_without_autostart(self) -> None:
+        self.cancel_zoom_deadman()
         self._restore_owner_after_manual = None
         self.pipeline.state.killed = False
         self.pipeline.owner.resume()
@@ -384,6 +391,7 @@ class ControlApiAdapter:
 
     def start_autonomous(self, owner: str) -> bool:
         self.cancel_manual_deadman()
+        self.cancel_zoom_deadman()
         self.pipeline.ptz.stop()
         self.pipeline.ptz.zoom("stop")
         self._restore_owner_after_manual = None
@@ -397,6 +405,7 @@ class ControlApiAdapter:
 
     def stop_ptz(self, hold: bool = True) -> None:
         self.cancel_manual_deadman()
+        self.cancel_zoom_deadman()
         self.pipeline.ptz.stop()
         self.pipeline.ptz.zoom("stop")
         if hold:
@@ -459,6 +468,23 @@ class ControlApiAdapter:
             self._manual_deadman.cancel()
             self._manual_deadman = None
 
+    def schedule_zoom_deadman(self, deadman_ms: int) -> None:
+        self.cancel_zoom_deadman()
+        timer = threading.Timer(deadman_ms / 1000.0, self.zoom_deadman_expired)
+        timer.daemon = True
+        self._zoom_deadman = timer
+        timer.start()
+
+    def cancel_zoom_deadman(self) -> None:
+        if self._zoom_deadman is not None:
+            self._zoom_deadman.cancel()
+            self._zoom_deadman = None
+
+    def zoom_deadman_expired(self) -> None:
+        self.pipeline.ptz.zoom("stop")
+        self._zoom_deadman = None
+        self.bump_revision()
+
     def manual_deadman_expired(self) -> None:
         if self.pipeline.owner.owner == "manual":
             self.pipeline.ptz.stop()
@@ -468,50 +494,54 @@ class ControlApiAdapter:
 
     def apply_hot_config(self, patch: Dict[str, Any]) -> JSONResponse | None:
         for key, value in patch.items():
-            refusal = self.apply_hot_key(key, value)
+            refusal = self.apply_hot_key(key, value, dry_run=True)
+            if refusal is not None:
+                return refusal
+        for key, value in patch.items():
+            refusal = self.apply_hot_key(key, value, dry_run=False)
             if refusal is not None:
                 return refusal
         return None
 
-    def apply_hot_key(self, key: str, value: Any) -> JSONResponse | None:
+    def apply_hot_key(self, key: str, value: Any, dry_run: bool = False) -> JSONResponse | None:
         cfg = self.pipeline.cfg
         setters = {
-            "ptz.deadzone": lambda: set_float(cfg.ptz, "deadzone", value, 0.02, 0.30),
-            "ptz.max_pan_speed": lambda: set_int(cfg.ptz, "max_pan_speed", value, 1, 24),
-            "ptz.max_tilt_speed": lambda: set_int(cfg.ptz, "max_tilt_speed", value, 1, 20),
-            "ptz.min_speed": lambda: set_int(cfg.ptz, "min_speed", value, 1, 8),
+            "ptz.deadzone": lambda: set_float(cfg.ptz, "deadzone", value, 0.02, 0.30, dry_run=dry_run),
+            "ptz.max_pan_speed": lambda: set_int(cfg.ptz, "max_pan_speed", value, 1, 24, dry_run=dry_run),
+            "ptz.max_tilt_speed": lambda: set_int(cfg.ptz, "max_tilt_speed", value, 1, 20, dry_run=dry_run),
+            "ptz.min_speed": lambda: set_int(cfg.ptz, "min_speed", value, 1, 8, dry_run=dry_run),
             "ptz.command_min_interval": lambda: set_float(
-                cfg.ptz, "command_min_interval", value, 0.01, 0.50
+                cfg.ptz, "command_min_interval", value, 0.01, 0.50, dry_run=dry_run
             ),
-            "ptz.ff_gain": lambda: set_float(cfg.ptz, "ff_gain", value, 0.0, 1.0),
+            "ptz.ff_gain": lambda: set_float(cfg.ptz, "ff_gain", value, 0.0, 1.0, dry_run=dry_run),
             "ptz.ff_deadzone_mult": lambda: set_float(
-                cfg.ptz, "ff_deadzone_mult", value, 1.0, 4.0
+                cfg.ptz, "ff_deadzone_mult", value, 1.0, 4.0, dry_run=dry_run
             ),
-            "ptz.invert_pan": lambda: set_bool(cfg.ptz, "invert_pan", value),
-            "ptz.invert_tilt": lambda: set_bool(cfg.ptz, "invert_tilt", value),
+            "ptz.invert_pan": lambda: set_bool(cfg.ptz, "invert_pan", value, dry_run=dry_run),
+            "ptz.invert_tilt": lambda: set_bool(cfg.ptz, "invert_tilt", value, dry_run=dry_run),
             "ptz.cinematic_zoom_enabled": lambda: set_bool(
-                cfg.ptz, "cinematic_zoom_enabled", value
+                cfg.ptz, "cinematic_zoom_enabled", value, dry_run=dry_run
             ),
-            "ptz.zoom_target_frac": lambda: set_float(cfg.ptz, "zoom_target_frac", value, 0.2, 0.8),
-            "ptz.zoom_deadband": lambda: set_float(cfg.ptz, "zoom_deadband", value, 0.01, 0.30),
-            "ptz.zoom_max_speed": lambda: set_int(cfg.ptz, "zoom_max_speed", value, 1, 7),
-            "fusion.lock_threshold": lambda: set_float(cfg.fusion, "lock_threshold", value, 0.05, 0.95),
-            "fusion.unlock_threshold": lambda: set_float(cfg.fusion, "unlock_threshold", value, 0.05, 0.95),
-            "fusion.require_person": lambda: set_bool(cfg.fusion, "require_person", value),
-            "fusion.match_dist": lambda: set_float(cfg.fusion, "match_dist", value, 20.0, 500.0),
-            "fusion.person_aim_x": lambda: set_float(cfg.fusion, "person_aim_x", value, 0.0, 1.0),
-            "fusion.person_aim_y": lambda: set_float(cfg.fusion, "person_aim_y", value, 0.0, 1.0),
-            "color.preset": lambda: self.apply_color_preset(value),
-            "color.min_area": lambda: set_int(cfg.color, "min_area", value, 1, 500000),
-            "color.max_area": lambda: set_int(cfg.color, "max_area", value, 100, 1000000),
-            "color.morph_kernel": lambda: self.apply_morph_kernel(value),
-            "detector.conf": lambda: set_float(cfg.detector, "conf", value, 0.05, 0.95),
-            "detector.imgsz": lambda: set_int(cfg.detector, "imgsz", value, 160, 1280),
-            "detector.person_class": lambda: set_int(cfg.detector, "person_class", value, 0, 79),
-            "detector.every_n": lambda: set_int(cfg.detector, "every_n", value, 1, 30),
-            "detector.box_ttl_sec": lambda: set_float(cfg.detector, "box_ttl_sec", value, 0.1, 5.0),
-            "web.show_mask": lambda: set_bool(self.pipeline.state, "show_mask", value),
-            "web.jpeg_quality": lambda: set_int(cfg.web, "jpeg_quality", value, 30, 95),
+            "ptz.zoom_target_frac": lambda: set_float(cfg.ptz, "zoom_target_frac", value, 0.2, 0.8, dry_run=dry_run),
+            "ptz.zoom_deadband": lambda: set_float(cfg.ptz, "zoom_deadband", value, 0.01, 0.30, dry_run=dry_run),
+            "ptz.zoom_max_speed": lambda: set_int(cfg.ptz, "zoom_max_speed", value, 1, 7, dry_run=dry_run),
+            "fusion.lock_threshold": lambda: set_float(cfg.fusion, "lock_threshold", value, 0.05, 0.95, dry_run=dry_run),
+            "fusion.unlock_threshold": lambda: set_float(cfg.fusion, "unlock_threshold", value, 0.05, 0.95, dry_run=dry_run),
+            "fusion.require_person": lambda: set_bool(cfg.fusion, "require_person", value, dry_run=dry_run),
+            "fusion.match_dist": lambda: set_float(cfg.fusion, "match_dist", value, 20.0, 500.0, dry_run=dry_run),
+            "fusion.person_aim_x": lambda: set_float(cfg.fusion, "person_aim_x", value, 0.0, 1.0, dry_run=dry_run),
+            "fusion.person_aim_y": lambda: set_float(cfg.fusion, "person_aim_y", value, 0.0, 1.0, dry_run=dry_run),
+            "color.preset": lambda: self.apply_color_preset(value, dry_run=dry_run),
+            "color.min_area": lambda: set_int(cfg.color, "min_area", value, 1, 500000, dry_run=dry_run),
+            "color.max_area": lambda: set_int(cfg.color, "max_area", value, 100, 1000000, dry_run=dry_run),
+            "color.morph_kernel": lambda: self.apply_morph_kernel(value, dry_run=dry_run),
+            "detector.conf": lambda: set_float(cfg.detector, "conf", value, 0.05, 0.95, dry_run=dry_run),
+            "detector.imgsz": lambda: set_int(cfg.detector, "imgsz", value, 160, 1280, dry_run=dry_run),
+            "detector.person_class": lambda: set_int(cfg.detector, "person_class", value, 0, 79, dry_run=dry_run),
+            "detector.every_n": lambda: set_int(cfg.detector, "every_n", value, 1, 30, dry_run=dry_run),
+            "detector.box_ttl_sec": lambda: set_float(cfg.detector, "box_ttl_sec", value, 0.1, 5.0, dry_run=dry_run),
+            "web.show_mask": lambda: set_bool(self.pipeline.state, "show_mask", value, dry_run=dry_run),
+            "web.jpeg_quality": lambda: set_int(cfg.web, "jpeg_quality", value, 30, 95, dry_run=dry_run),
         }
         setter = setters.get(key)
         if setter is None:
@@ -521,11 +551,13 @@ class ControlApiAdapter:
             return self.refusal("invalid_request", error, 422)
         return None
 
-    def apply_color_preset(self, value: Any) -> str | None:
+    def apply_color_preset(self, value: Any, dry_run: bool = False) -> str | None:
         if not isinstance(value, str):
             return "preset must be a string."
         if value not in COLOR_PRESETS:
             return f"preset must be one of {', '.join(sorted(COLOR_PRESETS))}."
+        if dry_run:
+            return None
         cfg = self.pipeline.cfg.color
         cfg.preset = value
         cfg.hsv_ranges = preset_hsv_ranges(value)
@@ -534,11 +566,13 @@ class ControlApiAdapter:
             color.update_ranges(cfg.hsv_ranges)
         return None
 
-    def apply_morph_kernel(self, value: Any) -> str | None:
+    def apply_morph_kernel(self, value: Any, dry_run: bool = False) -> str | None:
         cfg = self.pipeline.cfg.color
-        error = set_int(cfg, "morph_kernel", value, 1, 31)
+        error = set_int(cfg, "morph_kernel", value, 1, 31, dry_run=dry_run)
         if error is not None:
             return error
+        if dry_run:
+            return None
         color = getattr(self.pipeline, "color", None)
         if color is not None:
             color.update_kernel()
@@ -603,6 +637,7 @@ class ControlApiAdapter:
 
     def prepare_for_restart(self) -> None:
         self.cancel_manual_deadman()
+        self.cancel_zoom_deadman()
         self._restore_owner_after_manual = None
         self.pipeline.ptz.stop()
         self.pipeline.ptz.zoom("stop")
@@ -939,30 +974,47 @@ def zoom_speed(value: float) -> int:
     return max(1, min(7, int(round(value * 7))))
 
 
-def set_float(target: Any, attr: str, value: Any, lo: float, hi: float) -> str | None:
+def set_float(
+    target: Any,
+    attr: str,
+    value: Any,
+    lo: float,
+    hi: float,
+    dry_run: bool = False,
+) -> str | None:
     try:
         parsed = float(value)
     except (TypeError, ValueError):
         return f"{attr} must be a number."
     if parsed < lo or parsed > hi:
         return f"{attr} must be between {lo} and {hi}."
-    setattr(target, attr, parsed)
+    if not dry_run:
+        setattr(target, attr, parsed)
     return None
 
 
-def set_int(target: Any, attr: str, value: Any, lo: int, hi: int) -> str | None:
+def set_int(
+    target: Any,
+    attr: str,
+    value: Any,
+    lo: int,
+    hi: int,
+    dry_run: bool = False,
+) -> str | None:
     try:
         parsed = int(value)
     except (TypeError, ValueError):
         return f"{attr} must be an integer."
     if parsed < lo or parsed > hi:
         return f"{attr} must be between {lo} and {hi}."
-    setattr(target, attr, parsed)
+    if not dry_run:
+        setattr(target, attr, parsed)
     return None
 
 
-def set_bool(target: Any, attr: str, value: Any) -> str | None:
+def set_bool(target: Any, attr: str, value: Any, dry_run: bool = False) -> str | None:
     if not isinstance(value, bool):
         return f"{attr} must be a boolean."
-    setattr(target, attr, value)
+    if not dry_run:
+        setattr(target, attr, value)
     return None

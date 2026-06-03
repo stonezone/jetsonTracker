@@ -44,6 +44,41 @@ def test_bad_token_rejected():
     assert r.json()["code"] == "unauthorized"
 
 
+def test_legacy_mutation_routes_require_token_when_auth_enabled():
+    client = client_with_auth(True, {"op": "operator"})
+    cases = [
+        ("post", "/kill", {}),
+        ("post", "/resume", {}),
+        ("post", "/ptz/stop", {}),
+        ("post", "/ptz/zin", {}),
+        ("post", "/ptz/zout", {}),
+        ("post", "/ptz/zstop", {}),
+        ("post", "/tune", {"deadzone": 0.1}),
+    ]
+
+    for method, path, body in cases:
+        response = getattr(client, method)(path, json=body)
+        assert response.status_code == 401, path
+        assert response.json()["code"] == "unauthorized"
+
+
+def test_operator_can_use_legacy_mutation_routes_when_auth_enabled():
+    client = client_with_auth(True, {"op": "operator"})
+    cases = [
+        ("post", "/kill", {}),
+        ("post", "/resume", {}),
+        ("post", "/ptz/stop", {}),
+        ("post", "/ptz/zin", {}),
+        ("post", "/ptz/zout", {}),
+        ("post", "/ptz/zstop", {}),
+        ("post", "/tune", {"deadzone": 0.1}),
+    ]
+
+    for method, path, body in cases:
+        response = getattr(client, method)(path, json=body, headers=hdr("op"))
+        assert response.status_code == 200, path
+
+
 def test_operator_allows_read_safety_ptz_config():
     client = client_with_auth(True, {"op": "operator"})
     assert client.get("/api/v1/status", headers=hdr("op")).status_code == 200

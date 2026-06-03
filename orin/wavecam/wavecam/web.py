@@ -10,10 +10,11 @@ Web layer (FastAPI): the operator console for solo bring-up.
 from __future__ import annotations
 import time
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
+from .auth import CONFIG, PTZ, SAFETY, require
 from .control_api import register_control_api
 
 
@@ -279,17 +280,17 @@ def build_app(pipeline) -> FastAPI:
         s.update(pipeline.owner.state())      # expose owner + sticky kill latch
         return JSONResponse(s)
 
-    @app.post("/kill")
+    @app.post("/kill", dependencies=[Depends(require(SAFETY))])
     def kill():
         pipeline.kill(True)
         return {"killed": True}
 
-    @app.post("/resume")
+    @app.post("/resume", dependencies=[Depends(require(SAFETY))])
     def resume():
         pipeline.kill(False)
         return {"killed": False}
 
-    @app.post("/ptz/stop")
+    @app.post("/ptz/stop", dependencies=[Depends(require(PTZ))])
     def ptz_stop():
         # STOP: halt pan/tilt AND zoom, and release the current owner (pause
         # autonomous) WITHOUT clearing the kill latch.
@@ -298,26 +299,26 @@ def build_app(pipeline) -> FastAPI:
         pipeline.owner.release(pipeline.owner.owner)
         return {"ok": True, "owner": pipeline.owner.owner}
 
-    @app.post("/ptz/zin")
+    @app.post("/ptz/zin", dependencies=[Depends(require(PTZ))])
     def ptz_zin():
         if pipeline.owner.killed:
             return {"ok": False, "blocked": "killed"}
         pipeline.ptz.zoom("tele")
         return {"ok": True}
 
-    @app.post("/ptz/zout")
+    @app.post("/ptz/zout", dependencies=[Depends(require(PTZ))])
     def ptz_zout():
         if pipeline.owner.killed:
             return {"ok": False, "blocked": "killed"}
         pipeline.ptz.zoom("wide")
         return {"ok": True}
 
-    @app.post("/ptz/zstop")
+    @app.post("/ptz/zstop", dependencies=[Depends(require(PTZ))])
     def ptz_zstop():
         pipeline.ptz.zoom("stop")
         return {"ok": True}
 
-    @app.post("/tune")
+    @app.post("/tune", dependencies=[Depends(require(CONFIG))])
     def tune(t: Tune):
         patch = tune_patch(t)
         if not patch:
