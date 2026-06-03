@@ -18,6 +18,8 @@ from .fusion import Fusion
 from .overlay import annotate
 from .ptz_owner import PtzOwner
 
+DEFAULT_STOP_RESEND_INTERVAL_SEC = 0.25
+
 
 class SharedState:
     def __init__(self):
@@ -100,7 +102,12 @@ class Pipeline(threading.Thread):
         key = cmd.key()
         changed = key != self._last_cmd_key
         due = (now - self._last_cmd_time) >= self.cfg.ptz.command_min_interval
-        if changed or (due and not cmd.is_stop):
+        stop_due = (
+            cmd.is_stop
+            and (now - self._last_cmd_time)
+            >= getattr(self.cfg.ptz, "stop_resend_interval", DEFAULT_STOP_RESEND_INTERVAL_SEC)
+        )
+        if changed or (due and not cmd.is_stop) or stop_due:
             if cmd.is_stop:
                 self.ptz.stop()
             else:
@@ -134,7 +141,12 @@ class Pipeline(threading.Thread):
         key = (direction, speed)
         changed = key != getattr(self, "_last_zoom_key", None)
         due = (now - getattr(self, "_last_zoom_time", 0.0)) >= self.cfg.ptz.command_min_interval
-        if changed or (due and direction != "stop"):
+        stop_due = (
+            direction == "stop"
+            and (now - getattr(self, "_last_zoom_time", 0.0))
+            >= getattr(self.cfg.ptz, "stop_resend_interval", DEFAULT_STOP_RESEND_INTERVAL_SEC)
+        )
+        if changed or (due and direction != "stop") or stop_due:
             self.ptz.zoom(direction, speed)
             self._last_zoom_key = key
             self._last_zoom_time = now
@@ -153,6 +165,8 @@ class Pipeline(threading.Thread):
         if self.owner.owner != "testbed":
             return None
         if self._cinematic_zoom_suppressed():
+            if self._auto_zoom_is_moving():
+                self._send_zoom("stop")
             return "manual_override"
         if not getattr(fr, "locked", False):
             if self._auto_zoom_is_moving():

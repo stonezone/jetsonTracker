@@ -499,6 +499,34 @@ def test_api_v1_ptz_zoom_under_autonomous_owner_deadman_stops_zoom():
     assert pipe.owner.owner == "testbed"
 
 
+def test_api_v1_zoom_stop_does_not_release_manual_owner_while_pan_tilt_active():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    moving = client.post(
+        "/api/v1/ptz/velocity",
+        json={
+            "requested_owner": "manual",
+            "pan": 0.5,
+            "tilt": 0.0,
+            "zoom": 0.0,
+            "deadman_ms": 250,
+        },
+    )
+    assert moving.status_code == 200
+    assert pipe.owner.owner == "manual"
+
+    zoom_stop = client.post(
+        "/api/v1/ptz/zoom",
+        json={"requested_owner": "manual", "mode": "velocity", "value": 0.0},
+    )
+
+    assert zoom_stop.status_code == 200
+    assert zoom_stop.json()["status"]["ptz"]["owner"] == "manual"
+    assert pipe.owner.owner == "manual"
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+
+
 def test_api_v1_ptz_zoom_refuses_while_killed():
     client = make_client()
 
@@ -510,6 +538,51 @@ def test_api_v1_ptz_zoom_refuses_while_killed():
 
     assert response.status_code == 409
     assert response.json()["code"] == "killed"
+
+
+def test_legacy_resume_does_not_autostart_tracking_owner():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    client.post("/kill", json={})
+    response = client.post("/resume", json={})
+
+    assert response.status_code == 200
+    assert response.json()["killed"] is False
+    assert pipe.owner.killed is False
+    assert pipe.owner.owner == "idle"
+
+
+def test_legacy_zoom_routes_use_owner_gate_and_deadman():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("gps_tracker") is True
+
+    response = client.post("/ptz/zin", json={})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert pipe.owner.owner == "gps_tracker"
+    assert ("zoom", "tele", 4) in pipe.ptz.calls
+    assert pipe.zoom_suppressed
+
+
+def test_stale_manual_deadman_generation_cannot_release_newer_owner():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    api = client.app.state.control_api
+    assert pipe.owner.request("manual") is True
+
+    old_generation = api.schedule_manual_deadman(250)
+    api.cancel_manual_deadman()
+    pipe.owner.release("manual")
+    assert pipe.owner.request("manual") is True
+    new_generation = api.schedule_manual_deadman(250)
+
+    api.manual_deadman_expired(old_generation)
+
+    assert new_generation != old_generation
+    assert pipe.owner.owner == "manual"
 
 
 def test_api_v1_config_hot_applies_known_keys_only():
@@ -802,7 +875,11 @@ if __name__ == "__main__":
     test_api_v1_ptz_auto_starts_tracking_owner_from_manual_hold()
     test_api_v1_ptz_auto_refuses_while_killed()
     test_api_v1_ptz_zoom_endpoint_is_owner_gated()
+    test_api_v1_zoom_stop_does_not_release_manual_owner_while_pan_tilt_active()
     test_api_v1_ptz_zoom_refuses_while_killed()
+    test_legacy_resume_does_not_autostart_tracking_owner()
+    test_legacy_zoom_routes_use_owner_gate_and_deadman()
+    test_stale_manual_deadman_generation_cannot_release_newer_owner()
     test_api_v1_config_hot_applies_known_keys_only()
     test_api_v1_config_reports_supported_tuning_surface()
     test_api_v1_cinematic_zoom_hot_config_round_trips_in_snapshot()

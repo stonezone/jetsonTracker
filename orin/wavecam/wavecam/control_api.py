@@ -255,8 +255,9 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
         api.send_manual_zoom_velocity(req.value, req.deadman_ms)
         if req.value == 0:
-            api.cancel_manual_deadman()
-            api.release_manual_owner()
+            if not api.manual_pan_tilt_active:
+                api.cancel_manual_deadman()
+                api.release_manual_owner()
         else:
             api.schedule_manual_deadman(req.deadman_ms)
         api.bump_revision()
@@ -323,10 +324,13 @@ class ControlApiAdapter:
         self.pipeline = pipeline
         self.frames = frames
         self.media = MediaAdapter(getattr(pipeline, "recorder", None))
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._revision = 0
         self._manual_deadman: threading.Timer | None = None
         self._zoom_deadman: threading.Timer | None = None
+        self._manual_deadman_generation = 0
+        self._zoom_deadman_generation = 0
+        self._manual_pan_tilt_active = False
         self._restore_owner_after_manual: str | None = None
         self._restart_timer: threading.Timer | None = None
         self._restart_pending = False
@@ -359,141 +363,191 @@ class ControlApiAdapter:
         )
 
     def resume_without_autostart(self) -> None:
-        self.cancel_zoom_deadman()
-        self._restore_owner_after_manual = None
-        self.pipeline.state.killed = False
-        self.pipeline.owner.resume()
-        if self.pipeline.owner.owner != IDLE:
-            self.pipeline.owner.release(self.pipeline.owner.owner)
-        self.pipeline.state.set_status(killed=False, state="SEARCHING")
+        with self._lock:
+            self.cancel_manual_deadman()
+            self.cancel_zoom_deadman()
+            self._restore_owner_after_manual = None
+            self._manual_pan_tilt_active = False
+            self.pipeline.state.killed = False
+            self.pipeline.owner.resume()
+            if self.pipeline.owner.owner != IDLE:
+                self.pipeline.owner.release(self.pipeline.owner.owner)
+            self.pipeline.state.set_status(killed=False, state="SEARCHING")
 
     def claim_manual(self, takeover: bool = False) -> bool:
-        if self.pipeline.owner.request("manual"):
-            return True
-        current_owner = self.pipeline.owner.owner
-        if not takeover or current_owner not in AUTONOMOUS:
-            return False
-        self.pipeline.ptz.stop()
-        self.pipeline.ptz.zoom("stop")
-        if not self.pipeline.owner.release(current_owner):
-            return False
-        self._restore_owner_after_manual = current_owner
-        return self.pipeline.owner.request("manual")
+        with self._lock:
+            if self.pipeline.owner.request("manual"):
+                return True
+            current_owner = self.pipeline.owner.owner
+            if not takeover or current_owner not in AUTONOMOUS:
+                return False
+            self.pipeline.ptz.stop()
+            self.pipeline.ptz.zoom("stop")
+            if not self.pipeline.owner.release(current_owner):
+                return False
+            self._restore_owner_after_manual = current_owner
+            return self.pipeline.owner.request("manual")
 
     def release_manual_owner(self, restore_autonomous: bool = True) -> None:
-        released = self.pipeline.owner.release("manual")
-        restore_owner = self._restore_owner_after_manual
-        self._restore_owner_after_manual = None
-        if (
-            released
-            and restore_autonomous
-            and restore_owner in AUTONOMOUS
-            and not self.pipeline.owner.killed
-        ):
-            self.pipeline.owner.request(restore_owner)
+        with self._lock:
+            released = self.pipeline.owner.release("manual")
+            restore_owner = self._restore_owner_after_manual
+            self._restore_owner_after_manual = None
+            self._manual_pan_tilt_active = False
+            if (
+                released
+                and restore_autonomous
+                and restore_owner in AUTONOMOUS
+                and not self.pipeline.owner.killed
+            ):
+                self.pipeline.owner.request(restore_owner)
 
     def start_autonomous(self, owner: str) -> bool:
-        self.cancel_manual_deadman()
-        self.cancel_zoom_deadman()
-        self.pipeline.ptz.stop()
-        self.pipeline.ptz.zoom("stop")
-        self._restore_owner_after_manual = None
-        current_owner = self.pipeline.owner.owner
-        if current_owner != IDLE:
-            self.pipeline.owner.release(current_owner)
-        if not self.pipeline.owner.request(owner):
-            return False
-        self.pipeline.state.set_status(killed=False, state="SEARCHING")
-        return True
+        with self._lock:
+            self.cancel_manual_deadman()
+            self.cancel_zoom_deadman()
+            self.pipeline.ptz.stop()
+            self.pipeline.ptz.zoom("stop")
+            self._restore_owner_after_manual = None
+            self._manual_pan_tilt_active = False
+            current_owner = self.pipeline.owner.owner
+            if current_owner != IDLE:
+                self.pipeline.owner.release(current_owner)
+            if not self.pipeline.owner.request(owner):
+                return False
+            self.pipeline.state.set_status(killed=False, state="SEARCHING")
+            return True
 
     def stop_ptz(self, hold: bool = True) -> None:
-        self.cancel_manual_deadman()
-        self.cancel_zoom_deadman()
-        self.pipeline.ptz.stop()
-        self.pipeline.ptz.zoom("stop")
-        if hold:
-            self.hold_manual_owner()
-        elif self.pipeline.owner.owner == "manual":
-            self.release_manual_owner()
+        with self._lock:
+            self.cancel_manual_deadman()
+            self.cancel_zoom_deadman()
+            self._manual_pan_tilt_active = False
+            self.pipeline.ptz.stop()
+            self.pipeline.ptz.zoom("stop")
+            if hold:
+                self.hold_manual_owner()
+            elif self.pipeline.owner.owner == "manual":
+                self.release_manual_owner()
 
     def hold_manual_owner(self) -> None:
-        current_owner = self.pipeline.owner.owner
-        if current_owner == "manual":
-            return
-        if current_owner in AUTONOMOUS:
-            self._restore_owner_after_manual = current_owner
-            if not self.pipeline.owner.release(current_owner):
+        with self._lock:
+            current_owner = self.pipeline.owner.owner
+            if current_owner == "manual":
                 return
-        self.pipeline.owner.request("manual")
+            if current_owner in AUTONOMOUS:
+                self._restore_owner_after_manual = current_owner
+                if not self.pipeline.owner.release(current_owner):
+                    return
+            self.pipeline.owner.request("manual")
 
     def send_manual_velocity(self, req: VelocityRequest) -> None:
-        cfg = self.pipeline.cfg.ptz
-        pan_dir, pan_speed = map_axis(req.pan, cfg, "pan")
-        tilt_dir, tilt_speed = map_axis(req.tilt, cfg, "tilt")
+        with self._lock:
+            cfg = self.pipeline.cfg.ptz
+            pan_dir, pan_speed = map_axis(req.pan, cfg, "pan")
+            tilt_dir, tilt_speed = map_axis(req.tilt, cfg, "tilt")
+            pan_tilt_active = pan_dir != PAN_STOP or tilt_dir != TILT_STOP
 
-        if pan_dir == PAN_STOP and tilt_dir == TILT_STOP and req.zoom == 0:
-            self.pipeline.ptz.stop()
-            self.pipeline.ptz.zoom("stop")
-            self.release_manual_owner()
-            return
+            if not pan_tilt_active and req.zoom == 0:
+                self._manual_pan_tilt_active = False
+                self.pipeline.ptz.stop()
+                self.pipeline.ptz.zoom("stop")
+                self.release_manual_owner()
+                return
 
-        if pan_dir == PAN_STOP and tilt_dir == TILT_STOP:
-            self.pipeline.ptz.stop()
-        else:
-            self.pipeline.ptz.pan_tilt(pan_speed, tilt_speed, pan_dir, tilt_dir)
-        self.send_manual_zoom(req.zoom, req.deadman_ms)
+            if pan_tilt_active:
+                self.pipeline.ptz.pan_tilt(pan_speed, tilt_speed, pan_dir, tilt_dir)
+            else:
+                self.pipeline.ptz.stop()
+            self._manual_pan_tilt_active = pan_tilt_active
+            self.send_manual_zoom(req.zoom, req.deadman_ms)
 
     def send_manual_zoom_velocity(self, zoom: float, deadman_ms: int = 800) -> None:
-        if zoom == 0:
-            self.pipeline.ptz.zoom("stop")
-            return
-        self.send_manual_zoom(zoom, deadman_ms)
+        with self._lock:
+            if zoom == 0:
+                self.pipeline.ptz.zoom("stop")
+                return
+            self.send_manual_zoom(zoom, deadman_ms)
 
     def send_manual_zoom(self, zoom: float, deadman_ms: int = 800) -> None:
-        if zoom != 0:
-            suppress = getattr(self.pipeline, "suppress_cinematic_zoom", None)
-            if callable(suppress):
-                suppress(deadman_ms / 1000.0)
-        if zoom > 0:
-            self.pipeline.ptz.zoom("tele", zoom_speed(zoom))
-        elif zoom < 0:
-            self.pipeline.ptz.zoom("wide", zoom_speed(-zoom))
+        with self._lock:
+            if zoom != 0:
+                suppress = getattr(self.pipeline, "suppress_cinematic_zoom", None)
+                if callable(suppress):
+                    suppress(deadman_ms / 1000.0)
+            if zoom > 0:
+                self.pipeline.ptz.zoom("tele", zoom_speed(zoom))
+            elif zoom < 0:
+                self.pipeline.ptz.zoom("wide", zoom_speed(-zoom))
 
-    def schedule_manual_deadman(self, deadman_ms: int) -> None:
-        self.cancel_manual_deadman()
-        timer = threading.Timer(deadman_ms / 1000.0, self.manual_deadman_expired)
-        timer.daemon = True
-        self._manual_deadman = timer
-        timer.start()
+    @property
+    def manual_pan_tilt_active(self) -> bool:
+        with self._lock:
+            return self._manual_pan_tilt_active
+
+    def schedule_manual_deadman(self, deadman_ms: int) -> int:
+        with self._lock:
+            self.cancel_manual_deadman()
+            self._manual_deadman_generation += 1
+            generation = self._manual_deadman_generation
+            timer = threading.Timer(
+                deadman_ms / 1000.0,
+                self.manual_deadman_expired,
+                args=(generation,),
+            )
+            timer.daemon = True
+            self._manual_deadman = timer
+            timer.start()
+            return generation
 
     def cancel_manual_deadman(self) -> None:
-        if self._manual_deadman is not None:
-            self._manual_deadman.cancel()
-            self._manual_deadman = None
+        with self._lock:
+            self._manual_deadman_generation += 1
+            if self._manual_deadman is not None:
+                self._manual_deadman.cancel()
+                self._manual_deadman = None
 
-    def schedule_zoom_deadman(self, deadman_ms: int) -> None:
-        self.cancel_zoom_deadman()
-        timer = threading.Timer(deadman_ms / 1000.0, self.zoom_deadman_expired)
-        timer.daemon = True
-        self._zoom_deadman = timer
-        timer.start()
+    def schedule_zoom_deadman(self, deadman_ms: int) -> int:
+        with self._lock:
+            self.cancel_zoom_deadman()
+            self._zoom_deadman_generation += 1
+            generation = self._zoom_deadman_generation
+            timer = threading.Timer(
+                deadman_ms / 1000.0,
+                self.zoom_deadman_expired,
+                args=(generation,),
+            )
+            timer.daemon = True
+            self._zoom_deadman = timer
+            timer.start()
+            return generation
 
     def cancel_zoom_deadman(self) -> None:
-        if self._zoom_deadman is not None:
-            self._zoom_deadman.cancel()
-            self._zoom_deadman = None
+        with self._lock:
+            self._zoom_deadman_generation += 1
+            if self._zoom_deadman is not None:
+                self._zoom_deadman.cancel()
+                self._zoom_deadman = None
 
-    def zoom_deadman_expired(self) -> None:
-        self.pipeline.ptz.zoom("stop")
-        self._zoom_deadman = None
-        self.bump_revision()
-
-    def manual_deadman_expired(self) -> None:
-        if self.pipeline.owner.owner == "manual":
-            self.pipeline.ptz.stop()
+    def zoom_deadman_expired(self, generation: int | None = None) -> None:
+        with self._lock:
+            if generation is not None and generation != self._zoom_deadman_generation:
+                return
             self.pipeline.ptz.zoom("stop")
-            self.release_manual_owner()
+            self._zoom_deadman = None
             self.bump_revision()
+
+    def manual_deadman_expired(self, generation: int | None = None) -> None:
+        with self._lock:
+            if generation is not None and generation != self._manual_deadman_generation:
+                return
+            self._manual_deadman = None
+            if self.pipeline.owner.owner == "manual":
+                self.pipeline.ptz.stop()
+                self.pipeline.ptz.zoom("stop")
+                self._manual_pan_tilt_active = False
+                self.release_manual_owner()
+                self.bump_revision()
 
     def apply_hot_config(self, patch: Dict[str, Any]) -> JSONResponse | None:
         for key, value in patch.items():

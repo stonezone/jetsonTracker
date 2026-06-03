@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from .auth import CONFIG, PTZ, SAFETY, require
 from .control_api import register_control_api
+from .ptz_owner import AUTONOMOUS
 
 
 PAGE = """<!doctype html><html><head><meta charset=utf-8>
@@ -287,7 +288,8 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/resume", dependencies=[Depends(require(SAFETY))])
     def resume():
-        pipeline.kill(False)
+        app.state.control_api.resume_without_autostart()
+        app.state.control_api.bump_revision()
         return {"killed": False}
 
     @app.post("/ptz/stop", dependencies=[Depends(require(PTZ))])
@@ -301,22 +303,39 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/ptz/zin", dependencies=[Depends(require(PTZ))])
     def ptz_zin():
-        if pipeline.owner.killed:
-            return {"ok": False, "blocked": "killed"}
-        pipeline.ptz.zoom("tele")
-        return {"ok": True}
+        return legacy_zoom(0.5)
 
     @app.post("/ptz/zout", dependencies=[Depends(require(PTZ))])
     def ptz_zout():
-        if pipeline.owner.killed:
-            return {"ok": False, "blocked": "killed"}
-        pipeline.ptz.zoom("wide")
-        return {"ok": True}
+        return legacy_zoom(-0.5)
 
     @app.post("/ptz/zstop", dependencies=[Depends(require(PTZ))])
     def ptz_zstop():
-        pipeline.ptz.zoom("stop")
-        return {"ok": True}
+        return legacy_zoom(0.0)
+
+    def legacy_zoom(value: float):
+        api = app.state.control_api
+        if pipeline.owner.killed:
+            return JSONResponse({"ok": False, "blocked": "killed"}, status_code=409)
+        if pipeline.owner.owner in AUTONOMOUS:
+            api.send_manual_zoom_velocity(value)
+            if value == 0:
+                api.cancel_zoom_deadman()
+            else:
+                api.schedule_zoom_deadman(800)
+            api.bump_revision()
+            return {"ok": True, "owner": pipeline.owner.owner}
+        if not api.claim_manual(takeover=False):
+            return JSONResponse({"ok": False, "blocked": "owner_busy"}, status_code=409)
+        api.send_manual_zoom_velocity(value)
+        if value == 0:
+            if not api.manual_pan_tilt_active:
+                api.cancel_manual_deadman()
+                api.release_manual_owner()
+        else:
+            api.schedule_manual_deadman(800)
+        api.bump_revision()
+        return {"ok": True, "owner": pipeline.owner.owner}
 
     @app.post("/tune", dependencies=[Depends(require(CONFIG))])
     def tune(t: Tune):

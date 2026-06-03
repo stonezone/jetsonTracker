@@ -129,6 +129,19 @@ def test_manual_zoom_suppression_preserves_pan_tilt_owner():
     assert pipe.ptz.calls == []
 
 
+def test_manual_zoom_suppression_stops_active_cinematic_zoom():
+    pipe = make_pipeline()
+    pipe._maybe_send_cinematic_zoom(tracking((0, 0, 40, 90)), 360)
+    pipe.ptz.calls.clear()
+
+    pipe.suppress_cinematic_zoom(1.0)
+    result = pipe._maybe_send_cinematic_zoom(tracking((0, 0, 40, 90)), 360)
+
+    assert result == "manual_override"
+    assert pipe.owner.owner == "testbed"
+    assert pipe.ptz.calls == [("zoom", "stop", 0)]
+
+
 def test_cinematic_zoom_uses_separate_rate_limit():
     pipe = make_pipeline()
 
@@ -145,5 +158,6 @@ if __name__ == "__main__":
     test_cinematic_zoom_requires_locked_target()
     test_cinematic_zoom_stops_when_lock_drops_after_active_zoom()
     test_manual_zoom_suppression_preserves_pan_tilt_owner()
+    test_manual_zoom_suppression_stops_active_cinematic_zoom()
     test_cinematic_zoom_uses_separate_rate_limit()
     print("CINEMATIC ZOOM TESTS PASSED")
