@@ -294,6 +294,9 @@ def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
     @app.post("/api/v1/config/hot", dependencies=[Depends(require(CONFIG))])
     def config_hot(req: HotConfigRequest):
+        refusal = api.validate_hot_config_request(req)
+        if refusal is not None:
+            return refusal
         refusal = api.apply_hot_config(req.patch)
         if refusal is not None:
             return refusal
@@ -501,6 +504,21 @@ class ControlApiAdapter:
             refusal = self.apply_hot_key(key, value, dry_run=False)
             if refusal is not None:
                 return refusal
+        return None
+
+    def validate_hot_config_request(self, req: HotConfigRequest) -> JSONResponse | None:
+        if req.persist:
+            return self.refusal(
+                "invalid_request",
+                "persist=true is not supported by hot config in v1.",
+                422,
+            )
+        if req.revision is not None and req.revision != self.revision:
+            return self.refusal(
+                "revision_conflict",
+                "Hot config revision is stale; refresh /api/v1/config and retry.",
+                409,
+            )
         return None
 
     def apply_hot_key(self, key: str, value: Any, dry_run: bool = False) -> JSONResponse | None:

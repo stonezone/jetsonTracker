@@ -606,6 +606,44 @@ def test_api_v1_config_hot_invalid_batch_does_not_mutate_or_bump_revision():
     assert after["current"]["ptz"]["deadzone"] == before["current"]["ptz"]["deadzone"]
 
 
+def test_api_v1_config_hot_rejects_stale_revision_without_mutating():
+    client = make_client()
+
+    before = client.get("/api/v1/config").json()
+    response = client.post(
+        "/api/v1/config/hot",
+        json={
+            "revision": before["revision"] + 10,
+            "patch": {"ptz.deadzone": 0.11},
+        },
+    )
+    after = client.get("/api/v1/config").json()
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "revision_conflict"
+    assert after["revision"] == before["revision"]
+    assert after["current"]["ptz"]["deadzone"] == before["current"]["ptz"]["deadzone"]
+
+
+def test_api_v1_config_hot_rejects_persist_without_mutating():
+    client = make_client()
+
+    before = client.get("/api/v1/config").json()
+    response = client.post(
+        "/api/v1/config/hot",
+        json={
+            "persist": True,
+            "patch": {"ptz.deadzone": 0.11},
+        },
+    )
+    after = client.get("/api/v1/config").json()
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "invalid_request"
+    assert after["revision"] == before["revision"]
+    assert after["current"]["ptz"]["deadzone"] == before["current"]["ptz"]["deadzone"]
+
+
 def test_api_v1_cinematic_zoom_hot_config_round_trips_in_snapshot():
     client = make_client()
 
