@@ -18,7 +18,7 @@ Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + d
 - [x] **Cinematic Zoom** (vision auto-zoom-to-frame, **default off**, gated by `ptz.cinematic_zoom_enabled`) — shipped + deployed
 - [x] **Supervisor** layer + systemd `wavecam.service` (watchdog, auto-resume on restart); `system/restart` endpoint
 - [x] Optional bearer auth + role gate (operator/viewer/supervisor/agent), **default-off** so it can't break the live app
-- [x] **iOS app** (`ios/WaveCam/`): 5 tabs (Live / PTZ / Calibrate / Tools[Tune+Agent+Dash] / Connect), Emergency Stop, Keychain token, feature-detection against `GET /config` — built + installed on Zack's iPhone
+- [x] **iOS app** (`ios/WaveCam/`): 5 tabs (Live / PTZ / Calibrate / Tools[Tune+Agent+Web] / Connect), Emergency Stop, Keychain token, feature-detection against `GET /config` — built + installed on Zack's iPhone
 - [x] Live model on the Orin = **`yolov8n.engine`** (TensorRT)
 
 ### In Progress
@@ -31,10 +31,10 @@ Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + d
 - [ ] **YOLO26 TensorRT engine** export (maintenance window) — code default `yolo26n.pt` is not built/loaded; live = `yolov8n.engine`
 - [ ] Deferred iOS polish: full Dynamic Type, landscape 2-column for Calibrate/Connect, auth 401/403 routing
 
-## Live System Map (two servers share the one camera)
+## Live System Map
 
-- **`:8088`** — WaveCam control API (`/api/v1`) + live tuning page. The **active tracker** the iOS app drives.
-- **`:8080`** — legacy **Dash** (separate program); reports its own "stopped" state independently. Don't confuse the two.
+- **`:8088`** — WaveCam control API (`/api/v1`) + live web control page. The **active tracker** the iOS app drives.
+- **`:8080`** — retired legacy Dash service. It should stay stopped/disabled.
 
 ## Connection Info
 

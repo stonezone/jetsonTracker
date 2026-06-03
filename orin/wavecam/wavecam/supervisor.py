@@ -1,8 +1,8 @@
 """Deterministic WaveCam supervisor.
 
 Polls the LOCAL Control API (``/api/v1/status`` on 127.0.0.1) and systemd unit
-states, then publishes a compact health snapshot to a JSON file that the dashboard
-and the iOS Agent panel can surface.
+states, then publishes a compact health snapshot to a JSON file that the iOS
+Agent panel and WaveCam web UI can surface.
 
 Design constraints (match the supervisor-layer design + option c):
 - LOCAL ONLY: talks to 127.0.0.1 and ``systemctl`` -- no internet, so it keeps
@@ -23,7 +23,7 @@ import urllib.request
 from dataclasses import dataclass
 
 DEFAULT_API = "http://127.0.0.1:8088/api/v1"
-DEFAULT_UNITS = ("wavecam.service", "gps-server.service", "dashboard.service", "cloudflared.service")
+DEFAULT_UNITS = ("wavecam.service", "gps-server.service", "cloudflared.service")
 DEFAULT_HEALTH_PATH = "/run/wavecam/supervisor.json"
 DEFAULT_INTERVAL_SEC = 2.0
 
@@ -31,7 +31,6 @@ DEFAULT_INTERVAL_SEC = 2.0
 SNAPSHOT_SERVICE_NAMES = {
     "wavecam": "wavecam.service",
     "gps_server": "gps-server.service",
-    "dashboard": "dashboard.service",
     "cloudflared": "cloudflared.service",
 }
 

@@ -107,6 +107,7 @@ struct PTZView: View {
         PTZActionRow(
             isAuto: commandState.isAutoActive || client.owner.isAutonomousPTZOwner,
             isStopped: commandState.isStopActive || backendHeldStop,
+            compact: isLandscapeControl,
             onStartAuto: startAutoPTZ,
             onStop: holdPTZ,
             onRefresh: { Task { await client.refresh() } }
@@ -562,33 +563,54 @@ private struct PTZZoomCard: View {
 private struct PTZActionRow: View {
     let isAuto: Bool
     let isStopped: Bool
+    var compact = false
     let onStartAuto: () -> Void
     let onStop: () -> Void
     let onRefresh: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button {
-                onStartAuto()
-            } label: {
-                Label("Start Auto", systemImage: "play.fill")
+        Group {
+            if compact {
+                VStack(spacing: 8) {
+                    startAutoButton
+                    stopButton
+                    refreshButton
+                }
+            } else {
+                HStack(spacing: 8) {
+                    startAutoButton
+                    stopButton
+                    refreshButton
+                }
             }
-            .buttonStyle(PTZActionButtonStyle(tint: WC.ok, filled: isAuto && !isStopped))
-
-            Button {
-                onStop()
-            } label: {
-                Label("Stop PTZ", systemImage: "stop.fill")
-            }
-            .buttonStyle(PTZActionButtonStyle(tint: WC.kill, filled: isStopped))
-
-            Button {
-                onRefresh()
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(PTZActionButtonStyle(tint: WC.ok, filled: false))
         }
+    }
+
+    private var startAutoButton: some View {
+        Button {
+            onStartAuto()
+        } label: {
+            Label("Start Auto", systemImage: "play.fill")
+        }
+        .buttonStyle(PTZActionButtonStyle(tint: WC.ok, filled: isAuto && !isStopped))
+    }
+
+    private var stopButton: some View {
+        Button {
+            onStop()
+        } label: {
+            Label("Stop PTZ", systemImage: "stop.fill")
+        }
+        .buttonStyle(PTZActionButtonStyle(tint: WC.kill, filled: isStopped))
+    }
+
+    private var refreshButton: some View {
+        Button {
+            onRefresh()
+        } label: {
+            Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .buttonStyle(PTZActionButtonStyle(tint: WC.ok, filled: false))
     }
 }
 

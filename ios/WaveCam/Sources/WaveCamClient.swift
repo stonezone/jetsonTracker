@@ -129,7 +129,7 @@ extension WCStatus {
                        distanceM: 148.2, bearingDeg: 247.1, stale: false),
             media: .init(recording: true, segmentName: "20260601-123000.mp4", freeGb: 377.8),
             services: ["wavecam": "running", "supervisor": "running", "gps_server": "running",
-                       "dashboard": "running", "cloudflared": "degraded"],
+                       "cloudflared": "degraded"],
             network: .init(cameraLan: true, uplink: true, cloudflare: true)
         )
     }
@@ -501,7 +501,7 @@ final class WaveCamClient {
             } catch let error as WaveCamAPIError {
                 throw error
             } catch {
-                if let urlError = error as? URLError, !urlError.isRouteFailoverAllowed {
+                if let urlError = error as? URLError, !urlError.isReadRouteFailoverAllowed {
                     throw error
                 }
                 lastError = error
@@ -551,6 +551,9 @@ final class WaveCamClient {
     @discardableResult
     private func sendControl(_ path: String, body: [String: Any]) async -> Bool {
         do {
+            if !connected {
+                await refresh()
+            }
             let data = try await post(path, body: body)
             if applyControlResponse(data) == false {
                 return false
@@ -632,7 +635,7 @@ final class WaveCamClient {
             } catch let error as WaveCamAPIError {
                 throw error
             } catch let error as URLError {
-                guard error.isRouteFailoverAllowed else { throw error }
+                guard error.isWriteRouteFailoverAllowed else { throw error }
                 failoverError = error
             }
         }
@@ -641,7 +644,12 @@ final class WaveCamClient {
 }
 
 private extension URLError {
-    var isRouteFailoverAllowed: Bool {
+    var isReadRouteFailoverAllowed: Bool {
+        if code == .timedOut { return true }
+        return isWriteRouteFailoverAllowed
+    }
+
+    var isWriteRouteFailoverAllowed: Bool {
         switch code {
         case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
              .networkConnectionLost, .notConnectedToInternet:

@@ -41,10 +41,9 @@ Read-only recon on 2026-06-01 shows the OS root is already on NVMe, but the boot
 Current service state during recon:
 
 - `gps-server.service`: active on `:8765`
-- `dashboard.service`: active on `:8080`
+- `dashboard.service`: retired legacy `:8080` dashboard; should remain stopped/disabled
 - `cloudflared.service`: active
-- WaveCam servo runner: active as `python3 run.py config.orin.servo.yaml` from `/data/projects/wavecam-testbed`, listening on `:8088`
-- No `wavecam.service` unit exists yet; the servo runner is a process, not a managed systemd service.
+- `wavecam.service`: active on `:8088`
 
 Current package state:
 
@@ -171,7 +170,7 @@ If the iPhone interface appears but stays unmanaged:
 4. Only make NetworkManager changes persistent after a bench test proves:
    - iPhone internet works.
    - Camera LAN still reaches `192.168.100.88`.
-   - `cloudflared`, dashboard, and WaveCam still work after reconnect and reboot.
+   - `cloudflared` and WaveCam still work after reconnect and reboot.
 
 Feasibility:
 
@@ -216,7 +215,7 @@ Do this when the system is not actively tracking or recording.
    ```bash
    mkdir -p /data/backups
    tar -C /data/projects -czf /data/backups/gimbal-$(date +%Y%m%d-%H%M%S).tgz gimbal
-   systemctl list-unit-files 'gps-server*' 'dashboard*' 'cloudflared*' > /data/backups/systemd-units-$(date +%Y%m%d-%H%M%S).txt
+   systemctl list-unit-files 'gps-server*' 'wavecam*' 'cloudflared*' > /data/backups/systemd-units-$(date +%Y%m%d-%H%M%S).txt
    ```
 4. Refresh package metadata and review before upgrading:
    ```bash
@@ -246,10 +245,10 @@ Do this when the system is not actively tracking or recording.
    ```
 10. Verify after reboot:
    ```bash
-   systemctl is-active gps-server cloudflared dashboard
+   systemctl is-active gps-server cloudflared wavecam
    ip -brief addr show enP8p1s0
    ip route get 192.168.100.88
-   curl -s http://localhost:8080/api/session
+   curl -s http://localhost:8088/api/v1/status
    cd /data/projects/gimbal
    python3 scripts/test_color_detector.py
    python3 scripts/test_vision_follow_logic.py
@@ -279,7 +278,7 @@ This is the safer Jetson-supported path if a full backup/restore window is accep
 7. Confirm `/` and `/boot/efi` are both on NVMe.
 8. Shut down, remove the microSD, and boot again.
 9. If SD-free boot succeeds, restore project data and services.
-10. Keep the old SD untouched until the restored system passes camera, GPS, dashboard, and recording tests.
+10. Keep the old SD untouched until the restored system passes camera, GPS, WaveCam web/API, and recording tests.
 
 ### Alternative Path: In-Place NVMe EFI Conversion
 
@@ -312,7 +311,7 @@ Bench-only checklist:
 16. Boot without the microSD.
 17. If boot fails, reinsert the untouched SD and boot from the SD entry in UEFI.
 18. If SD-free boot succeeds, repartition/format the microSD as an export card.
-19. Add a dashboard action later: copy completed recording segments from `/data/recordings` to the
+19. Add a WaveCam action later: copy completed recording segments from `/data/recordings` to the
    removable microSD, then unmount/eject.
 
 Do not remove the microSD yet. Current state still mounts `/boot/efi` from it, and `BootCurrent`

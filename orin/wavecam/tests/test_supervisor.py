@@ -20,15 +20,13 @@ def test_service_ok():
 
 def test_build_health_api_up():
     status = {"session": {"state": "TRACKING"}, "safety": {"killed": False}}
-    health = build_health(
-        True, status, {"wavecam.service": "active", "dashboard.service": "inactive"}, 1000
-    )
+    health = build_health(True, status, {"wavecam.service": "active", "cloudflared.service": "inactive"}, 1000)
     assert health["supervisor"] == "running"
     assert health["api_ok"] is True
     assert health["session_state"] == "TRACKING"
     assert health["killed"] is False
     assert health["services"]["wavecam.service"]["ok"] is True
-    assert health["services"]["dashboard.service"]["ok"] is False
+    assert health["services"]["cloudflared.service"]["ok"] is False
     assert health["all_services_ok"] is False
     assert health["checked_at_unix_ms"] == 1000
 
@@ -61,8 +59,7 @@ def test_write_health_atomic_roundtrip(tmp_path):
 def test_snapshot_services_no_health_is_all_unknown():
     services = snapshot_services(None)
     assert services == {
-        "wavecam": "unknown", "gps_server": "unknown", "dashboard": "unknown",
-        "cloudflared": "unknown", "supervisor": "unknown",
+        "wavecam": "unknown", "gps_server": "unknown", "cloudflared": "unknown", "supervisor": "unknown",
     }
 
 
@@ -77,7 +74,7 @@ def test_snapshot_services_maps_units_to_short_names():
     services = snapshot_services(health)
     assert services["wavecam"] == "active"
     assert services["gps_server"] == "inactive"
-    assert services["dashboard"] == "unknown"  # absent from health -> unknown
+    assert "dashboard" not in services
     assert services["supervisor"] == "running"
 
 

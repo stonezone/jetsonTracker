@@ -14,8 +14,8 @@ Meshtastic GPS.
    - Orin address: `192.168.100.10/24`
    - Camera address: `192.168.100.88`
    - No gateway on the camera LAN interface.
-3. Dashboard is reachable from the phone: `http://<orin-wifi-ip>:8080`.
-4. Dashboard Network panel shows:
+3. WaveCam web control is reachable from the phone: `http://<orin-wifi-ip>:8088`.
+4. WaveCam status/network panel shows:
    - camera LAN has `192.168.100.10`
    - camera `192.168.100.88` is reachable
    - internet/uplink is on Wi-Fi or USB tether, not on camera LAN
@@ -24,7 +24,7 @@ Meshtastic GPS.
 
 ## Basic Run
 
-1. Open the dashboard.
+1. Open the WaveCam web control page or the iOS Live tab.
 2. Confirm the `/2` live preview is updating.
 3. Use manual PTZ to put yourself near frame center.
 4. Press **Start Follow** in the Vision Follow card.
@@ -52,13 +52,13 @@ Meshtastic GPS.
 - **Oscillating pan/tilt:** lower follow gain or add deadband before increasing zoom.
 - **Zoom hunts:** verify status is not rapidly flipping between `src=yolo` and `src=none`.
 - **Locks onto another object:** move other orange/red objects out of frame for the first test.
-- **Follow says started then stops:** open the Follow status/log card. The dashboard reports early
+- **Follow says started then stops:** open the status/log card. The WaveCam web UI reports early
   subprocess exit code and recent lines.
 - **No preview:** verify RTSP `/2` from the Orin and camera LAN routing before debugging vision.
 
 ## Evidence To Capture
 
-- Screenshot of dashboard while following.
+- Screenshot of WaveCam web UI while following.
 - Short recording of the camera following a walk/jog path.
 - Follow log lines showing `src`, offset, size, pan/tilt command, and zoom behavior.
 - Any failure mode with exact status line and whether the camera was wide or zoomed.
@@ -69,5 +69,5 @@ Meshtastic GPS.
 - Target remains mostly centered at wide view.
 - Zoom tightens only when YOLO has a stable person box.
 - Stop returns pan/tilt to start and leaves the camera in a usable wide view.
-- Dashboard reports failures clearly enough to decide whether the issue is vision, PTZ, network,
+- WaveCam reports failures clearly enough to decide whether the issue is vision, PTZ, network,
   or process startup.

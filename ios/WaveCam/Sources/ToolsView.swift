@@ -6,7 +6,7 @@ struct ToolsView: View {
     private enum Tool: String, CaseIterable, Hashable {
         case tune = "Tune"
         case agent = "Agent"
-        case dashboard = "Dash"
+        case dashboard = "Web"
     }
 
     @State private var selectedTool = Tool.tune

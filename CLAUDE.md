@@ -194,10 +194,10 @@ jetsonTracker/                 # master repo (product = WaveCam)
 - SSH to the rig: `ssh orin` (zack@192.168.1.155).
 - "committed" != "deployed" — confirm the live deploy before telling Zack a feature is live.
 
-### Live System Map (two servers share the one camera)
+### Live System Map
 
-- **`:8088`** = WaveCam control API (`/api/v1`) + the live tuning web page. This is the **ACTIVE tracker** the iOS app drives. Tools > Dash webview points here.
-- **`:8080`** = legacy **Dash** (a separate program). It reports its own state ("stopped") independently of the tracker — don't confuse the two.
+- **`:8088`** = WaveCam control API (`/api/v1`) + the live tuning web page. This is the **ACTIVE tracker** the iOS app drives. Tools > Web points here.
+- **`:8080`** = retired legacy Dash service. It should stay stopped/disabled; do not re-enable it.
 
 ### Hardware Stack
 

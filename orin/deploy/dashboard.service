@@ -1,6 +1,6 @@
-# JetsonTracker operator dashboard (health/GPS/PTZ/logs).
-# Install: sudo bash /data/projects/gimbal/deploy/install_dashboard_service.sh
-# Then open http://<orin-ip>:8080
+# RETIRED legacy :8080 operator dashboard.
+# Keep this file only as historical reference. Do not install it; use
+# wavecam.service on http://<orin-ip>:8088 instead.
 [Unit]
 Description=JetsonTracker operator dashboard
 After=network-online.target gps-server.service

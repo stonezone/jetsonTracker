@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Orin operator dashboard (MVP): health, GPS, PTZ read-back, logs.
+"""Retired legacy Orin operator dashboard.
 
-Stdlib http.server only (zero new deps). Reuses GPSClient (live GPS) and
-ViscaBackend (PTZ read-back). Serves a mobile-first page + a small JSON API on
-0.0.0.0:8080. LAN/tunnel only for now — add Cloudflare Access + auth before
-exposing state-changing endpoints remotely (none yet; this MVP is read-only).
-
-  python3 dashboard/dashboard.py        # then open http://<orin>:8080
+Use wavecam.service instead. It serves the current WaveCam web UI and API on
+port 8088. This file is retained only as an archival reference for the old
+standalone http.server implementation.
 """
 
 import json
@@ -31,7 +28,15 @@ from tracker_runner import TrackerRunner  # noqa: E402
 from media.streamer import Streamer  # noqa: E402
 from follow_runner import FollowRunner  # noqa: E402
 
-PORT = int(os.environ.get("DASH_PORT", "8080"))
+if __name__ == "__main__" and os.environ.get("ALLOW_RETIRED_DASHBOARD") != "1":
+    sys.stderr.write(
+        "orin/dashboard/dashboard.py is retired. "
+        "Use wavecam.service on port 8088 instead. "
+        "Set ALLOW_RETIRED_DASHBOARD=1 only for archival local inspection.\n"
+    )
+    raise SystemExit(2)
+
+PORT = int(os.environ.get("DASH_PORT", "8090"))
 CAMERA_HOST = os.environ.get("CAMERA_HOST", "192.168.100.88")
 SERVICES = ["gps-server", "cloudflared", "tracker", "recorder", "streamer", "dashboard"]
 

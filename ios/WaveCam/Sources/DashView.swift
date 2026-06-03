@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 
-/// Dashboard screen: native chrome around the Orin dashboard WebView.
+/// Web control screen: native chrome around the Orin WaveCam web UI on :8088.
 struct DashView: View {
     @Environment(WaveCamClient.self) private var client
 
@@ -36,7 +36,6 @@ struct DashView: View {
                     DashboardLoadingOverlay()
                 }
             }
-            .clipShape(.rect(cornerRadius: 0))
         }
         .background(WC.bg.ignoresSafeArea())
     }
@@ -84,7 +83,7 @@ private struct DashboardChrome: View {
             .foregroundStyle(loadFailed ? WC.warn : WC.ok)
             .background(WC.panel2, in: .rect(cornerRadius: 11))
             .overlay(RoundedRectangle(cornerRadius: 11).stroke(WC.line))
-            .accessibilityLabel("Reload dashboard")
+            .accessibilityLabel("Reload WaveCam web control")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -178,7 +177,7 @@ private struct DashboardLoadingOverlay: View {
         VStack(spacing: 14) {
             ProgressView()
                 .tint(WC.ok)
-            Text("CONNECTING TO ORIN DASHBOARD")
+            Text("CONNECTING TO WAVECAM WEB")
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(WC.muted)
@@ -199,7 +198,7 @@ private struct DashboardFallback: View {
                     Image(systemName: "network.slash")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(WC.warn)
-                    Text("DASHBOARD UNREACHABLE")
+                    Text("WAVECAM WEB UNREACHABLE")
                         .font(.system(size: 18, weight: .black))
                         .tracking(1.5)
                         .foregroundStyle(WC.warn)
@@ -219,7 +218,7 @@ private struct DashboardFallback: View {
                 Button {
                     onReload()
                 } label: {
-                    Label("Retry Dashboard", systemImage: "arrow.clockwise")
+                    Label("Retry Web Control", systemImage: "arrow.clockwise")
                         .font(.system(size: 14, weight: .bold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -240,7 +239,7 @@ private struct DashboardMiniGrid: View {
         VStack(spacing: 11) {
             HStack(spacing: 11) {
                 DashboardMiniPanel(label: "APP SHELL", value: "READY", tint: WC.ok)
-                DashboardMiniPanel(label: "WEB DASH", value: "OFFLINE", tint: WC.warn)
+                DashboardMiniPanel(label: "WEB CONTROL", value: "OFFLINE", tint: WC.warn)
             }
             HStack(spacing: 11) {
                 DashboardMiniPanel(label: "LOCAL API", value: "CHECK", tint: WC.txt)
@@ -282,7 +281,7 @@ private struct DashboardRetryHint: View {
                 .font(.system(size: 9, weight: .semibold))
                 .tracking(1.3)
                 .foregroundStyle(WC.faint)
-            Text("Dashboard loads when the phone can reach the Orin web UI on the local network.")
+            Text("Web control loads when the phone can reach the Orin web UI on the local network.")
                 .font(.system(size: 12))
                 .foregroundStyle(WC.muted)
                 .fixedSize(horizontal: false, vertical: true)
