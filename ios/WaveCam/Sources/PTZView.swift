@@ -5,17 +5,8 @@ struct PTZView: View {
     @Environment(WaveCamClient.self) private var client
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
-    @State private var pan: Double = 0
-    @State private var tilt: Double = 0
-    @State private var knobOffset: CGSize = .zero
-    @State private var zoomCommand: Double = 0
-    @State private var velocityRepeatTask: Task<Void, Never>?
-    @State private var zoomRepeatTask: Task<Void, Never>?
-    @State private var commandState = PTZCommandState.idle
-    @State private var refusalText: String?
+    @State private var controller = PTZManualController()
 
-    private let velocityRepeatIntervalNs: UInt64 = 300_000_000
-    private let zoomRepeatIntervalNs: UInt64 = 300_000_000
     private var isLandscapeControl: Bool {
         verticalSizeClass == .compact
     }
@@ -41,12 +32,9 @@ struct PTZView: View {
         }
         .background(WC.bg.ignoresSafeArea())
         .task { await client.refresh() }
-        .onDisappear {
-            stopVelocityRepeat()
-            stopZoomCommand()
-        }
+        .onDisappear { controller.cleanup(client: client) }
         .onChange(of: client.status?.revision) { _, _ in
-            syncCommandStateWithBackend()
+            controller.syncCommandState(with: client)
         }
     }
 
@@ -56,7 +44,7 @@ struct PTZView: View {
             joystickCard()
             zoomCard()
             actionRow()
-            PTZControlFeedback(commandState: commandState, controlError: client.lastControlError, refusalText: refusalText)
+            PTZControlFeedback(commandState: controller.commandState, controlError: client.lastControlError, refusalText: controller.refusalText)
             EmergencyStopButton()
         }
         .padding(.horizontal, 16)
@@ -75,7 +63,7 @@ struct PTZView: View {
             VStack(spacing: 10) {
                 zoomCard()
                 actionRow()
-                PTZControlFeedback(commandState: commandState, controlError: client.lastControlError, refusalText: refusalText)
+                PTZControlFeedback(commandState: controller.commandState, controlError: client.lastControlError, refusalText: controller.refusalText)
             }
             .frame(width: 220)
         }
@@ -86,186 +74,33 @@ struct PTZView: View {
 
     private func joystickCard(joystickSize: CGFloat = 230, compact: Bool = false) -> some View {
         PTZJoystickCard(
-            pan: $pan,
-            tilt: $tilt,
-            knobOffset: $knobOffset,
+            pan: controller.pan,
+            tilt: controller.tilt,
+            knobOffset: Binding(get: { controller.knobOffset }, set: { controller.knobOffset = $0 }),
             owner: client.owner,
             joystickSize: joystickSize,
             compact: compact,
-            onCommand: sendVelocity,
-            onStop: releaseManualPTZ
+            onCommand: { p, t in controller.sendVelocity(pan: p, tilt: t, client: client) },
+            onStop: { controller.releaseManualPTZ(client: client) }
         )
     }
 
     private func zoomCard() -> some View {
-        PTZZoomCard(zoomCommand: $zoomCommand)
-            .onChange(of: zoomCommand) { _, newValue in
-                updateZoom(newValue)
-            }
+        PTZZoomCard(zoomCommand: Binding(
+            get: { controller.zoomCommand },
+            set: { controller.updateZoom($0, client: client) }
+        ))
     }
 
     private func actionRow() -> some View {
         PTZActionRow(
-            isAuto: commandState.isAutoActive || client.owner.isAutonomousPTZOwner,
-            isStopped: commandState.isStopActive || backendHeldStop,
+            isAuto: controller.commandState.isAutoActive || client.owner.isAutonomousPTZOwner,
+            isStopped: controller.commandState.isStopActive || controller.backendHeldStop(client: client),
             compact: isLandscapeControl,
-            onStartAuto: startAutoPTZ,
-            onStop: holdPTZ,
+            onStartAuto: { controller.startAutoPTZ(client: client) },
+            onStop: { controller.holdPTZ(client: client) },
             onRefresh: { Task { await client.refresh() } }
         )
-    }
-
-    private func sendVelocity(pan: Double, tilt: Double) {
-        self.pan = pan
-        self.tilt = tilt
-        let isActive = pan != 0 || tilt != 0
-        if isActive { refusalText = nil }
-        commandState = isActive ? .manual : .idle
-        Task { await client.ptzVelocity(pan: pan, tilt: tilt) }
-        if isActive {
-            startVelocityRepeat()
-        } else {
-            stopVelocityRepeat()
-        }
-    }
-
-    private func releaseManualPTZ() {
-        stopVelocityRepeat()
-        resetZoomCommand(sendStop: false)
-        pan = 0
-        tilt = 0
-        knobOffset = .zero
-        if commandState != .held {
-            commandState = .idle
-        }
-        Task { await client.ptzStop(hold: false) }
-    }
-
-    private func holdPTZ() {
-        stopVelocityRepeat()
-        pan = 0
-        tilt = 0
-        knobOffset = .zero
-        resetZoomCommand(sendStop: false)
-        refusalText = nil
-        commandState = .stopping
-        Task { @MainActor in
-            let accepted = await client.ptzStop(hold: true)
-            commandState = accepted ? .held : .idle
-            if !accepted { refusalText = "Stop PTZ not confirmed by the camera." }
-            syncCommandStateWithBackend()
-        }
-    }
-
-    private func startAutoPTZ() {
-        stopVelocityRepeat()
-        pan = 0
-        tilt = 0
-        knobOffset = .zero
-        resetZoomCommand(sendStop: false)
-        refusalText = nil
-        commandState = .startingAuto
-        Task { @MainActor in
-            let accepted = await client.ptzStartAuto()
-            commandState = accepted ? .auto : .idle
-            if !accepted {
-                refusalText = client.killed
-                    ? "Resume first — camera is stopped (Emergency Stop latched)."
-                    : "Start Auto refused — PTZ is busy or unavailable."
-            }
-            syncCommandStateWithBackend()
-        }
-    }
-
-    private var backendHeldStop: Bool {
-        guard let ptz = client.status?.ptz else { return false }
-        return ptz.owner == "manual" && ptz.panTiltCmd?.lowercased() == "stop"
-    }
-
-    private func syncCommandStateWithBackend() {
-        guard !commandState.isPending else { return }
-        if client.owner.isAutonomousPTZOwner {
-            commandState = .auto
-        } else if backendHeldStop {
-            commandState = .held
-        } else if commandState == .auto || commandState == .held {
-            commandState = .idle
-        }
-    }
-
-    private func startVelocityRepeat() {
-        guard velocityRepeatTask == nil else { return }
-        velocityRepeatTask = Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: velocityRepeatIntervalNs)
-                guard !Task.isCancelled else { return }
-                guard pan != 0 || tilt != 0 else {
-                    velocityRepeatTask = nil
-                    return
-                }
-                await client.ptzVelocity(pan: pan, tilt: tilt)
-            }
-        }
-    }
-
-    private func stopVelocityRepeat() {
-        velocityRepeatTask?.cancel()
-        velocityRepeatTask = nil
-    }
-
-    private func updateZoom(_ value: Double) {
-        zoomRepeatTask?.cancel()
-        zoomRepeatTask = nil
-
-        if value != 0 {
-            commandState = .manual
-        }
-        Task { await client.zoom(value) }
-        guard value != 0 else { return }
-
-        // The backend has a manual deadman timer, so nonzero zoom must be refreshed
-        // while the control remains away from HOLD.
-        zoomRepeatTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: zoomRepeatIntervalNs)
-                guard !Task.isCancelled else { return }
-                await client.zoom(value)
-            }
-        }
-    }
-
-    private func stopZoomCommand() {
-        resetZoomCommand(sendStop: true)
-    }
-
-    private func resetZoomCommand(sendStop: Bool) {
-        zoomRepeatTask?.cancel()
-        zoomRepeatTask = nil
-        zoomCommand = 0
-        if sendStop {
-            Task { await client.zoom(0) }
-        }
-    }
-}
-
-private enum PTZCommandState {
-    case idle
-    case manual
-    case held
-    case auto
-    case stopping
-    case startingAuto
-
-    var isPending: Bool {
-        self == .stopping || self == .startingAuto
-    }
-
-    var isAutoActive: Bool {
-        self == .auto || self == .startingAuto
-    }
-
-    var isStopActive: Bool {
-        self == .held || self == .stopping
     }
 }
 
@@ -320,8 +155,10 @@ private struct PTZStatusPill: View {
 }
 
 private struct PTZJoystickCard: View {
-    @Binding var pan: Double
-    @Binding var tilt: Double
+    // pan/tilt are display-only values read from the controller for the readout cells.
+    // JoystickPad owns its own drag-local state and reports new values via onCommand.
+    let pan: Double
+    let tilt: Double
     @Binding var knobOffset: CGSize
 
     let owner: String
@@ -348,8 +185,6 @@ private struct PTZJoystickCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             JoystickPad(
-                pan: $pan,
-                tilt: $tilt,
                 knobOffset: $knobOffset,
                 diameter: joystickSize,
                 onCommand: onCommand,
@@ -370,26 +205,31 @@ private struct PTZJoystickCard: View {
     }
 }
 
-private struct JoystickPad: View {
-    @Binding var pan: Double
-    @Binding var tilt: Double
+struct JoystickPad: View {
     @Binding var knobOffset: CGSize
 
     let diameter: CGFloat
     let onCommand: (Double, Double) -> Void
     let onStop: () -> Void
+    /// When set, tapping or long-pressing the center nub fires this handler.
+    var onHome: (() -> Void)? = nil
+    /// When true, the pad background uses reduced-opacity gradients for feed overlay use.
+    var semiTransparent: Bool = false
 
     private let deadzone: Double = 0.05
     private var commandRadius: CGFloat {
         diameter * 0.3565
     }
+    private var nubSize: CGFloat { diameter * 0.32 }
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [Color(hex: 0x1A2730), Color(hex: 0x0E161D)],
+                        colors: semiTransparent
+                            ? [Color(hex: 0x1A2730, alpha: 0.75), Color(hex: 0x0E161D, alpha: 0.75)]
+                            : [Color(hex: 0x1A2730), Color(hex: 0x0E161D)],
                         center: .center,
                         startRadius: 8,
                         endRadius: 118
@@ -408,13 +248,13 @@ private struct JoystickPad: View {
                 .fill(Color.white.opacity(0.08))
                 .frame(width: diameter * 0.72, height: 1)
             JoystickLabels(diameter: diameter)
-            JoystickNub(size: diameter * 0.32)
+            JoystickNub(size: nubSize, onHome: onHome)
                 .offset(knobOffset)
         }
         .frame(width: diameter, height: diameter)
         .contentShape(Circle())
         .gesture(
-            DragGesture(minimumDistance: 0)
+            DragGesture(minimumDistance: onHome != nil ? 4 : 0)
                 .onChanged { value in update(location: value.location) }
                 .onEnded { _ in reset() }
         )
@@ -428,14 +268,10 @@ private struct JoystickPad: View {
 
         let nextPan = Double(clamped.width / commandRadius).zeroed(deadzone: deadzone)
         let nextTilt = Double(-clamped.height / commandRadius).zeroed(deadzone: deadzone)
-        pan = nextPan
-        tilt = nextTilt
         onCommand(nextPan, nextTilt)
     }
 
     private func reset() {
-        pan = 0
-        tilt = 0
         knobOffset = .zero
         onStop()
     }
@@ -463,6 +299,7 @@ private struct JoystickLabels: View {
 
 private struct JoystickNub: View {
     let size: CGFloat
+    var onHome: (() -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -477,12 +314,26 @@ private struct JoystickNub: View {
                 )
             Circle()
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
-            Circle()
-                .stroke(Color.white.opacity(0.38), lineWidth: 1)
-                .frame(width: size * 0.19, height: size * 0.19)
+            if onHome != nil {
+                // Home affordance ring + icon (only shown in overlay/home-capable mode)
+                Circle()
+                    .stroke(Color.white.opacity(0.55), lineWidth: 1.5)
+                    .frame(width: size * 0.26, height: size * 0.26)
+                Image(systemName: "house")
+                    .font(.system(size: size * 0.18, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.72))
+            } else {
+                Circle()
+                    .stroke(Color.white.opacity(0.38), lineWidth: 1)
+                    .frame(width: size * 0.19, height: size * 0.19)
+            }
         }
         .frame(width: size, height: size)
         .shadow(color: WC.brand.opacity(0.45), radius: 18, y: 8)
+        .onTapGesture { onHome?() }
+        .onLongPressGesture(minimumDuration: 0.4) { onHome?() }
+        .accessibilityLabel(onHome != nil ? "Home camera" : "Joystick nub")
+        .accessibilityHint(onHome != nil ? "Tap or hold to return camera to home position" : "")
     }
 }
 
@@ -510,7 +361,7 @@ private struct PTZReadoutCell: View {
     }
 }
 
-private struct PTZZoomCard: View {
+struct PTZZoomCard: View {
     @Binding var zoomCommand: Double
 
     var body: some View {
@@ -570,7 +421,7 @@ private struct PTZZoomCard: View {
     }
 }
 
-private struct PTZActionRow: View {
+struct PTZActionRow: View {
     let isAuto: Bool
     let isStopped: Bool
     var compact = false
@@ -624,7 +475,7 @@ private struct PTZActionRow: View {
     }
 }
 
-private struct PTZControlFeedback: View {
+struct PTZControlFeedback: View {
     let commandState: PTZCommandState
     let controlError: String?
     let refusalText: String?
@@ -646,7 +497,7 @@ private struct PTZControlFeedback: View {
     }
 }
 
-private struct PTZFeedbackPill: View {
+struct PTZFeedbackPill: View {
     let text: String
     let color: Color
     let icon: String
@@ -669,7 +520,7 @@ private struct PTZFeedbackPill: View {
     }
 }
 
-private struct PTZActionButtonStyle: ButtonStyle {
+struct PTZActionButtonStyle: ButtonStyle {
     let tint: Color
     let filled: Bool
 

@@ -138,7 +138,15 @@ extension WCStatus {
 /// Subset of GET /api/v1/config we bind in the Tune panel (decoder is convertFromSnakeCase).
 struct WCConfig: Codable, Sendable {
     var current: Current
+    var supported: Supported?
     var restartRequiredKeys: [String]?
+
+    /// Feature flags advertised by the backend's `supported` block in GET /api/v1/config.
+    /// Unknown flags default to nil (absent = unsupported). iOS must never assume a flag is
+    /// true without confirmation — a missing key means the endpoint or feature is absent.
+    struct Supported: Codable, Sendable {
+        var ptzHome: Bool?
+    }
 
     struct Current: Codable, Sendable {
         var ptz: PTZ
@@ -427,6 +435,17 @@ final class WaveCamClient {
     func ptzStartAuto() async -> Bool {
         guard mode == .live else { return false }
         return await sendControl("ptz/auto", body: ["source": "ios_native"])
+    }
+
+    /// POST /api/v1/ptz/home — VISCA pan/tilt-to-home. Owner-gated; KILL-rejected by the server.
+    /// Returns false if the backend refuses (killed, owner_busy, or not connected).
+    /// iOS must feature-detect via WCConfig.supported.ptzHome before calling.
+    @discardableResult
+    func ptzHome() async -> Bool {
+        guard mode == .live else { return false }
+        return await sendControl("ptz/home", body: [
+            "requested_owner": "manual", "takeover": true, "source": "ios_native"
+        ])
     }
 
     @discardableResult

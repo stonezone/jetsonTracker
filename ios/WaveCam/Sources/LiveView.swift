@@ -116,7 +116,7 @@ private struct FeedBackground: View {
     }
 }
 
-private struct MJPEGPreviewView: UIViewRepresentable {
+struct MJPEGPreviewView: UIViewRepresentable {
     let url: URL
 
     func makeUIView(context: Context) -> UIImageView {
@@ -390,7 +390,7 @@ private struct LockBox: View {
     }
 }
 
-private struct FeedReticles: View {
+struct FeedReticles: View {
     var body: some View {
         ZStack {
             ReticleCorner(horizontal: .leading, vertical: .top)
@@ -402,7 +402,7 @@ private struct FeedReticles: View {
     }
 }
 
-private struct ReticleCorner: View {
+struct ReticleCorner: View {
     enum Horizontal { case leading, trailing }
     enum Vertical { case top, bottom }
 
@@ -434,7 +434,7 @@ private struct ReticleCorner: View {
     }
 }
 
-private struct FeedAimReticle: View {
+struct FeedAimReticle: View {
     let status: WCStatus?
     let connected: Bool
 
@@ -474,7 +474,7 @@ private struct FeedAimReticle: View {
     }
 }
 
-private struct FeedPTZOverlay: View {
+struct FeedPTZOverlay: View {
     let status: WCStatus?
     let connected: Bool
 
@@ -567,7 +567,7 @@ private struct FeedPTZOverlay: View {
     }
 }
 
-private struct PTZOverlayMetric: View {
+struct PTZOverlayMetric: View {
     let label: String
     let value: String
     let color: Color
@@ -619,7 +619,7 @@ private struct PTZMotionScope: View {
     }
 }
 
-private struct FeedTopTags: View {
+struct FeedTopTags: View {
     let isLocked: Bool
     let isRecording: Bool
     let connected: Bool
@@ -642,7 +642,7 @@ private struct FeedTopTags: View {
     }
 }
 
-private struct LiveTag: View {
+struct LiveTag: View {
     let text: String
     let color: Color
     let dot: Bool
@@ -667,7 +667,7 @@ private struct LiveTag: View {
 /// Plain-English reason the camera isn't locked, shown under the top tags.
 /// Built only from real tracking fields; silent when locked, offline, or
 /// the backend doesn't report the color/person components.
-private struct FeedLockReason: View {
+struct FeedLockReason: View {
     let status: WCStatus?
     let connected: Bool
 
@@ -845,7 +845,7 @@ private struct StatusPill: View {
 
 /// Start/stop the Orin recorder (server: media/record/start|stop). The core
 /// "film" verb, surfaced on the screen the operator watches while filming.
-private struct RecordButton: View {
+struct RecordButton: View {
     @Environment(WaveCamClient.self) private var client
     var compact = false
 
