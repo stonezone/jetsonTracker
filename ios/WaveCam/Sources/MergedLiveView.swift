@@ -64,7 +64,6 @@ struct MergedLiveView: View {
                 isFullscreen: isFullscreen,
                 homeSupported: homeSupported,
                 controller: controller,
-                onFullscreen: { withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = true } },
                 onAutoToggle: toggleAuto,
                 onHome: handleHome
             )
@@ -86,7 +85,6 @@ struct MergedLiveView: View {
                 isFullscreen: isFullscreen,
                 homeSupported: homeSupported,
                 controller: controller,
-                onFullscreen: { withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = true } },
                 onAutoToggle: toggleAuto,
                 onHome: handleHome
             )
@@ -99,24 +97,13 @@ struct MergedLiveView: View {
     // MARK: - Fullscreen
 
     private var fullscreenLayout: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .topTrailing) {
             feedCard(fullscreen: true)
                 .ignoresSafeArea()
 
-            // Exit affordance — top-left
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = false }
-            } label: {
-                Image(systemName: "arrow.down.right.and.arrow.up.left")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(WC.txt)
-                    .frame(width: 40, height: 40)
-                    .background(Color.black.opacity(0.55), in: .rect(cornerRadius: WCRadius.xs))
-                    .overlay(RoundedRectangle(cornerRadius: WCRadius.xs).stroke(WC.line))
-            }
-            .buttonStyle(.plain)
-            .padding(WCSpace.md)
-            .accessibilityLabel("Exit fullscreen")
+            // Exit — top-right, same toggle/position as the in-feed control
+            fullscreenToggleButton
+                .padding(WCSpace.md)
 
             // Floating STOP — always reachable in fullscreen (safety invariant)
             VStack {
@@ -142,13 +129,14 @@ struct MergedLiveView: View {
                 .padding(.leading, WCSpace.md)
                 .padding(.bottom, WCSpace.md)
 
-            // Lock chip — top-left HUD
+            // Top HUD row — lock chip (left) + fullscreen toggle (right)
             VStack {
-                HStack {
+                HStack(alignment: .top) {
                     GlassLockChip(status: client.status, connected: client.connected)
-                        .padding(WCSpace.md)
                     Spacer()
+                    fullscreenToggleButton
                 }
+                .padding(WCSpace.md)
                 Spacer()
             }
 
@@ -231,6 +219,23 @@ struct MergedLiveView: View {
         controller.ptzHome(client: client)
     }
 
+    /// Fullscreen enter/exit toggle — lives on the feed's top-right corner so it's always
+    /// in one consistent, obvious spot (and frees the rail for a usable zoom slider).
+    private var fullscreenToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { isFullscreen.toggle() }
+        } label: {
+            Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(WC.txt)
+                .frame(width: 44, height: 44)
+                .background(Color.black.opacity(0.55), in: .rect(cornerRadius: WCRadius.sm))
+                .overlay(RoundedRectangle(cornerRadius: WCRadius.sm).stroke(WC.line))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isFullscreen ? "Exit fullscreen" : "Fullscreen")
+    }
+
     private func showToast(_ text: String) {
         withAnimation(.spring(duration: 0.3)) {
             toastMessage = text
@@ -248,7 +253,6 @@ private struct LiveControlRail: View {
     let isFullscreen: Bool
     let homeSupported: Bool
     let controller: PTZManualController
-    let onFullscreen: () -> Void
     let onAutoToggle: () -> Void
     let onHome: () -> Void
 
@@ -278,17 +282,8 @@ private struct LiveControlRail: View {
     private var verticalRail: some View {
         GlassSurface(cornerRadius: WCRadius.md, tinted: true) {
             VStack(spacing: WCSpace.sm) {
-                // Fullscreen toggle
-                GlassIconButton(
-                    systemImage: "arrow.up.left.and.arrow.down.right",
-                    state: .normal,
-                    action: onFullscreen
-                )
-                .accessibilityLabel("Fullscreen")
-
-                Divider().background(Color.white.opacity(0.18))
-
-                // Zoom — vertical spring-to-center slider, fills available space
+                // Zoom — vertical spring-to-center slider; fills available space but keeps a
+                // usable minimum so it can't collapse in the height-constrained landscape rail.
                 GlassZoomSlider(
                     zoomCommand: Binding(
                         get: { controller.zoomCommand },
@@ -297,7 +292,7 @@ private struct LiveControlRail: View {
                     onRelease: { controller.stopZoomCommand(client: client) },
                     axis: .vertical
                 )
-                .frame(maxHeight: .infinity)
+                .frame(minHeight: 96, maxHeight: .infinity)
 
                 Divider().background(Color.white.opacity(0.18))
 
@@ -338,14 +333,6 @@ private struct LiveControlRail: View {
     private var horizontalDock: some View {
         GlassSurface(cornerRadius: WCRadius.md, tinted: true) {
             HStack(spacing: WCSpace.sm) {
-                // Fullscreen
-                GlassIconButton(
-                    systemImage: "arrow.up.left.and.arrow.down.right",
-                    state: .normal,
-                    action: onFullscreen
-                )
-                .accessibilityLabel("Fullscreen")
-
                 // Zoom — horizontal spring-to-center slider
                 GlassZoomSlider(
                     zoomCommand: Binding(
