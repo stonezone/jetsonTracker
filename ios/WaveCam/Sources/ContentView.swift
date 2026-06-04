@@ -14,11 +14,10 @@ struct ContentView: View {
                 if client.isShowingMockData { MockDataBanner() }
                 TabView(selection: $tab) {
                     MergedLiveView().tag(0).tabItem { Label("Live", systemImage: "viewfinder") }
-                    PTZView().tag(1).tabItem { Label("PTZ", systemImage: "gamecontroller") }
-                    CalibrateView().tag(2).tabItem { Label("Calibrate", systemImage: "scope") }
-                    ToolsView().tag(3).tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
-                    ConnectionView().tag(4).tabItem { Label("Connect", systemImage: "network") }
-                    MediaView().tag(5).tabItem { Label("Media", systemImage: "play.rectangle.on.rectangle") }
+                    CalibrateView().tag(1).tabItem { Label("Calibrate", systemImage: "scope") }
+                    ToolsView().tag(2).tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
+                    ConnectionView().tag(3).tabItem { Label("Connect", systemImage: "network") }
+                    MediaView().tag(4).tabItem { Label("Media", systemImage: "play.rectangle.on.rectangle") }
                 }
                 .tint(WC.brand)
             }
