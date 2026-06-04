@@ -147,6 +147,7 @@ struct WCConfig: Codable, Sendable {
     struct Supported: Codable, Sendable {
         var ptzHome: Bool?
         var presets: Bool?
+        var logs: Bool?
     }
 
     struct Current: Codable, Sendable {
@@ -332,6 +333,27 @@ struct WCMediaFile: Codable, Sendable, Identifiable {
 private struct WCMediaListResponse: Codable, Sendable {
     var ok: Bool?
     var files: [WCMediaFile]
+}
+
+// MARK: - Log models
+
+/// One log line returned by GET /api/v1/logs.
+/// Field names decoded via .convertFromSnakeCase.
+struct WCLogLine: Codable, Sendable, Identifiable {
+    var tsUnixMs: Int
+    var level: String
+    var source: String
+    var message: String
+
+    /// Stable row identity: timestamp-ms + source prevents collisions between two lines
+    /// at the same millisecond from different sources.
+    var id: String { "\(tsUnixMs)-\(source)" }
+
+    var timestamp: Date { Date(timeIntervalSince1970: Double(tsUnixMs) / 1000) }
+}
+
+private struct WCLogsResponse: Codable, Sendable {
+    var lines: [WCLogLine]
 }
 
 // MARK: - Client
@@ -870,6 +892,76 @@ final class WaveCamClient {
             ]
         ),
     ]
+
+    // MARK: logs (read-only; feature-detected on supported.logs)
+
+    /// GET /api/v1/logs — returns canned lines in mock mode for offline demos;
+    /// nil on network/server error in live mode.
+    /// `level` is passed as a query param (nil = no filter); `limit` caps the result count.
+    func logs(level: String? = nil, limit: Int = 200) async -> [WCLogLine]? {
+        if mode == .mock { return Self.mockLogLines }
+        var components = URLComponents(url: baseURL.appending(path: "logs"), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = [URLQueryItem(name: "limit", value: "\(limit)")]
+        if let level { queryItems.append(URLQueryItem(name: "level", value: level)) }
+        components?.queryItems = queryItems
+        guard let url = components?.url else { return nil }
+        do {
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 5
+            authorize(&req)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                return nil
+            }
+            let decoded = try Self.decoder.decode(WCLogsResponse.self, from: data)
+            return decoded.lines
+        } catch {
+            return nil
+        }
+    }
+
+    /// POST /api/v1/agent/summon — requests an on-demand diagnostic pass from the supervisor.
+    /// Returns true when the server accepts the request (2xx). In mock mode always returns true.
+    func summonAgent() async -> Bool {
+        if mode == .mock { return true }
+        do {
+            _ = try await post("agent/summon", body: [
+                "source": "ios_native",
+                "reason": "operator_diagnostics"
+            ])
+            return true
+        } catch {
+            lastCommandError = "Summon not accepted: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    // 12 canned log lines across all levels for mock/offline demos.
+    private static let mockLogLines: [WCLogLine] = {
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        let lines: [(offset: Int, level: String, source: String, message: String)] = [
+            (0,    "INFO",  "supervisor",  "Supervisor started, PID 3812"),
+            (800,  "DEBUG", "tracker",     "YOLO engine loaded: yolov8n.engine"),
+            (1600, "INFO",  "tracker",     "Vision pipeline started at 30 FPS"),
+            (2400, "DEBUG", "ptz",         "VISCA handshake OK — cam 192.168.100.88:1259"),
+            (3200, "INFO",  "gps",         "LoRa GPS locked: 4 sats, dist 148m"),
+            (4000, "DEBUG", "tracker",     "Color match: orange 0.87, person 0.93"),
+            (4800, "WARN",  "ptz",         "Pan speed clamped to max (18) — high tracking error"),
+            (5600, "INFO",  "tracker",     "Subject LOCKED — confidence 0.91"),
+            (6400, "DEBUG", "media",       "Segment rolled: 20260603-141500.mp4"),
+            (7200, "INFO",  "api",         "POST /api/v1/config/hot applied 2 keys"),
+            (8000, "WARN",  "cloudflared", "Tunnel reconnect — attempt 1/3"),
+            (8800, "ERROR", "cloudflared", "Tunnel failed after 3 attempts — uplink degraded"),
+        ]
+        return lines.map { line in
+            WCLogLine(
+                tsUnixMs: now - (12000 - line.offset),
+                level: line.level,
+                source: line.source,
+                message: line.message
+            )
+        }
+    }()
 
     // MARK: media (read-only; guard mode == .live like config())
 
