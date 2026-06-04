@@ -1,18 +1,14 @@
 import SwiftUI
 
-/// Merged Live + PTZ operator screen.
+/// Live operator screen — Glass Rail redesign (2026-06-03).
 ///
-/// The live MJPEG feed fills the available space with the manual joystick
-/// overlaid in the bottom-right corner, semi-transparent, so Zack can frame
-/// the shot while controlling the camera. The Emergency Stop is always visible
-/// via the TopBar chip; the fullscreen toggle keeps all PTZ controls overlaid.
+/// Full-bleed MJPEG feed with a single Liquid Glass control rail:
+/// - Landscape: rail pinned to the right edge (~62pt), full height.
+/// - Portrait:  rail becomes a horizontal glass dock at the bottom.
+/// - Fullscreen: rail/dock hidden; floating STOP chip stays reachable; root TopBar KILL
+///   chip is always present regardless.
 ///
-/// Portrait: feed 16:9, joystick+action strip below/overlaid, zoom strip below.
-/// Landscape (verticalSizeClass == .compact): feed fills width, joystick + controls
-/// overlaid at the bottom-right.
-///
-/// Home gesture: tap or long-press the joystick center ring. Feature-detected
-/// against WCConfig.supported.ptzHome — absent flag = silent no-op with hint.
+/// All PTZ command logic lives in PTZManualController (untouched).
 struct MergedLiveView: View {
     @Environment(WaveCamClient.self) private var client
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -20,10 +16,15 @@ struct MergedLiveView: View {
     @State private var controller = PTZManualController()
     @State private var isFullscreen = false
     @State private var config: WCConfig?
-    @State private var showHomeUnavailableHint = false
+
+    // Toast state — bound to GlassToast; set from lastControlError / refusalText
+    @State private var toastMessage: String?
 
     private var isLandscape: Bool { verticalSizeClass == .compact }
     private var homeSupported: Bool { config?.supported?.ptzHome == true }
+    private var isAutoActive: Bool {
+        controller.commandState.isAutoActive || client.owner.isAutonomousPTZOwner
+    }
 
     var body: some View {
         Group {
@@ -37,189 +38,148 @@ struct MergedLiveView: View {
         }
         .background(WC.bg.ignoresSafeArea())
         .task { await client.refresh() }
-        .task {
-            config = await client.config()
-        }
+        .task { config = await client.config() }
         .onDisappear { controller.cleanup(client: client) }
         .onChange(of: client.status?.revision) { _, _ in
             controller.syncCommandState(with: client)
         }
-    }
-
-    // MARK: - Portrait
-
-    private var portraitLayout: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                feedWithOverlay(height: 430)
-                VStack(spacing: 10) {
-                    mergedZoomCard()
-                    mergedActionRow(compact: false)
-                    RecordButton()
-                    PTZControlFeedback(
-                        commandState: controller.commandState,
-                        controlError: client.lastControlError,
-                        refusalText: controller.refusalText
-                    )
-                    if showHomeUnavailableHint {
-                        homeUnavailablePill
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 22)
-            }
+        // Surface errors as toasts; prefer refusal text over generic error
+        .onChange(of: controller.refusalText) { _, new in
+            if let text = new { showToast(text) }
         }
-        .scrollIndicators(.hidden)
+        .onChange(of: client.lastControlError) { _, new in
+            if let text = new { showToast(text) }
+        }
     }
 
     // MARK: - Landscape
 
     private var landscapeLayout: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Feed takes remaining width; overlaid joystick + fullscreen icon inside
-            feedWithOverlay(height: nil)
+            feedLayer
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // Right sidebar: zoom + action + record + feedback
-            VStack(spacing: 8) {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        mergedZoomCard()
-                        mergedActionRow(compact: true)
-                        RecordButton(compact: true)
-                        PTZControlFeedback(
-                            commandState: controller.commandState,
-                            controlError: client.lastControlError,
-                            refusalText: controller.refusalText
-                        )
-                        if showHomeUnavailableHint {
-                            homeUnavailablePill
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
-                EmergencyStopButton(style: .compact)
-            }
-            .frame(width: 190)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            LiveControlRail(
+                isLandscape: true,
+                isAutoActive: isAutoActive,
+                isFullscreen: isFullscreen,
+                homeSupported: homeSupported,
+                controller: controller,
+                onFullscreen: { withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = true } },
+                onAutoToggle: toggleAuto,
+                onHome: handleHome
+            )
+            .frame(width: 62)
+            .padding(.vertical, WCSpace.sm)
+            .padding(.trailing, WCSpace.sm)
         }
-        .padding(.leading, 14)
+    }
+
+    // MARK: - Portrait
+
+    private var portraitLayout: some View {
+        VStack(spacing: 0) {
+            feedLayer
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            LiveControlRail(
+                isLandscape: false,
+                isAutoActive: isAutoActive,
+                isFullscreen: isFullscreen,
+                homeSupported: homeSupported,
+                controller: controller,
+                onFullscreen: { withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = true } },
+                onAutoToggle: toggleAuto,
+                onHome: handleHome
+            )
+            .padding(.horizontal, WCSpace.sm)
+            .padding(.bottom, WCSpace.sm)
+            .padding(.top, WCSpace.xs)
+        }
     }
 
     // MARK: - Fullscreen
 
     private var fullscreenLayout: some View {
-        ZStack {
-            // Feed fills screen
-            feedCard(height: nil)
+        ZStack(alignment: .topLeading) {
+            feedCard(fullscreen: true)
                 .ignoresSafeArea()
 
-            // Overlaid controls
+            // Exit affordance — top-left
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = false }
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(WC.txt)
+                    .frame(width: 40, height: 40)
+                    .background(Color.black.opacity(0.55), in: .rect(cornerRadius: WCRadius.xs))
+                    .overlay(RoundedRectangle(cornerRadius: WCRadius.xs).stroke(WC.line))
+            }
+            .buttonStyle(.plain)
+            .padding(WCSpace.md)
+            .accessibilityLabel("Exit fullscreen")
+
+            // Floating STOP — always reachable in fullscreen (safety invariant)
             VStack {
-                HStack {
-                    // Exit fullscreen top-left
-                    fullscreenToggleButton
-                    Spacer()
-                    PTZControlFeedback(
-                        commandState: controller.commandState,
-                        controlError: client.lastControlError,
-                        refusalText: controller.refusalText
-                    )
-                    .frame(maxWidth: 200)
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-
                 Spacer()
-
-                HStack(alignment: .bottom, spacing: 12) {
-                    // Zoom strip + record bottom-left
-                    VStack(spacing: 8) {
-                        RecordButton(compact: true)
-                            .frame(maxWidth: 200)
-                        PTZZoomCard(zoomCommand: Binding(
-                            get: { controller.zoomCommand },
-                            set: { controller.updateZoom($0, client: client) }
-                        ))
-                        .frame(maxWidth: 200)
-                    }
-
+                HStack {
                     Spacer()
-
-                    // Joystick bottom-right
-                    overlaidJoystick(size: 190)
+                    EmergencyStopButton(style: .compact)
+                        .frame(width: 200)
+                        .padding(WCSpace.md)
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 16)
             }
         }
     }
 
-    // MARK: - Feed with overlaid joystick
+    // MARK: - Feed layer (feed + floating joystick + HUD chips + toast)
 
-    /// Feed card (with all existing overlay HUD elements) plus the transparent
-    /// joystick overlaid bottom-right and the fullscreen toggle top-right.
-    @ViewBuilder
-    private func feedWithOverlay(height: CGFloat?) -> some View {
-        ZStack(alignment: .bottomTrailing) {
-            feedCard(height: height)
+    private var feedLayer: some View {
+        ZStack(alignment: .bottomLeading) {
+            feedCard(fullscreen: false)
 
-            // Joystick overlay, bottom-right, semi-transparent
-            overlaidJoystick(size: isLandscape ? 160 : 180)
-                .padding(.trailing, 10)
-                .padding(.bottom, 14)
+            // Joystick — bottom-left over feed, semi-transparent
+            overlaidJoystick(size: isLandscape ? 156 : 172)
+                .padding(.leading, WCSpace.md)
+                .padding(.bottom, WCSpace.md)
 
-            // Fullscreen toggle, top-right inside the feed
+            // Lock chip — top-left HUD
             VStack {
                 HStack {
+                    GlassLockChip(status: client.status, connected: client.connected)
+                        .padding(WCSpace.md)
                     Spacer()
-                    if !isLandscape {
-                        fullscreenToggleButton
-                            .padding(.top, 10)
-                            .padding(.trailing, 10)
-                    }
                 }
                 Spacer()
             }
+
+            // Error/refusal toast — bottom, above joystick row
+            GlassToast(message: $toastMessage)
         }
     }
 
-    // MARK: - Feed card (reusing LiveView's exact feed components)
+    // MARK: - Feed card
 
-    @ViewBuilder
-    private func feedCard(height: CGFloat?) -> some View {
-        let feed = ZStack {
-            // Feed or mock ocean
-            if let previewURL = client.previewURL {
-                MJPEGPreviewView(url: previewURL)
+    private func feedCard(fullscreen: Bool) -> some View {
+        ZStack {
+            if let url = client.previewURL {
+                MJPEGPreviewView(url: url)
             } else {
-                mergedMockFeed
+                mockFeed
             }
-            // HUD overlays from LiveView (now internal)
             FeedReticles()
             FeedAimReticle(status: client.status, connected: client.connected)
-            FeedPTZOverlay(status: client.status, connected: client.connected)
-            FeedTopTags(
-                isLocked: client.connected && client.status?.tracking.locked == true,
-                isRecording: client.connected && client.status?.media?.recording == true,
-                connected: client.connected
-            )
             FeedLockReason(status: client.status, connected: client.connected)
         }
-        .clipShape(.rect(cornerRadius: isFullscreen ? 0 : 20))
-        .overlay(isFullscreen ? nil : RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.14)))
+        .clipShape(.rect(cornerRadius: fullscreen ? 0 : WCRadius.lg))
+        .overlay(
+            fullscreen ? nil :
+            RoundedRectangle(cornerRadius: WCRadius.lg)
+                .stroke(Color.white.opacity(0.14))
+        )
         .shadow(color: .black.opacity(0.32), radius: 24, y: 14)
-
-        if let height {
-            feed.frame(height: height)
-        } else {
-            feed.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
     }
 
-    private var mergedMockFeed: some View {
+    private var mockFeed: some View {
         ZStack {
             LinearGradient(
                 colors: [Color(hex: 0x16344A), Color(hex: 0x1B4A5A), Color(hex: 0x0F3A44), Color(hex: 0x0A2630)],
@@ -230,120 +190,355 @@ struct MergedLiveView: View {
                 Image(systemName: "wifi.slash")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(WC.muted)
-                    .padding(14)
-                    .background(Color.black.opacity(0.45), in: .rect(cornerRadius: 16))
+                    .padding(WCSpace.md)
+                    .background(Color.black.opacity(0.45), in: .rect(cornerRadius: WCRadius.md))
             }
         }
     }
 
-    // MARK: - Overlaid joystick
+    // MARK: - Joystick overlay
 
-    /// Semi-transparent joystick that overlays the feed. The center nub gets
-    /// tap + long-press for home (feature-detected via JoystickPad.onHome param).
     private func overlaidJoystick(size: CGFloat) -> some View {
         JoystickPad(
-            knobOffset: Binding(get: { controller.knobOffset }, set: { controller.knobOffset = $0 }),
+            knobOffset: Binding(
+                get: { controller.knobOffset },
+                set: { controller.knobOffset = $0 }
+            ),
             diameter: size,
             onCommand: { p, t in controller.sendVelocity(pan: p, tilt: t, client: client) },
             onStop: { controller.releaseManualPTZ(client: client) },
-            onHome: handleHomeGesture,
+            onHome: handleHome,
             semiTransparent: true
         )
         .opacity(0.82)
     }
 
-    private func handleHomeGesture() {
+    // MARK: - Actions
+
+    private func toggleAuto() {
+        if isAutoActive {
+            controller.holdPTZ(client: client)
+        } else {
+            controller.startAutoPTZ(client: client)
+        }
+    }
+
+    private func handleHome() {
         guard homeSupported else {
-            showHomeUnavailableHint = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                showHomeUnavailableHint = false
-            }
+            showToast("Home unavailable — /ptz/home not yet supported by the backend")
             return
         }
         controller.ptzHome(client: client)
     }
 
-    // MARK: - Action row (reusing PTZActionRow)
+    private func showToast(_ text: String) {
+        withAnimation(.spring(duration: 0.3)) {
+            toastMessage = text
+        }
+    }
+}
 
-    private func mergedActionRow(compact: Bool) -> some View {
-        PTZActionRow(
-            isAuto: controller.commandState.isAutoActive || client.owner.isAutonomousPTZOwner,
-            isStopped: controller.commandState.isStopActive || controller.backendHeldStop(client: client),
-            compact: compact,
-            onStartAuto: { controller.startAutoPTZ(client: client) },
-            onStop: { controller.holdPTZ(client: client) },
-            onRefresh: { Task { await client.refresh() } }
+// MARK: - LiveControlRail
+
+/// The unified Liquid Glass control panel. Adapts between a vertical rail (landscape)
+/// and a horizontal dock (portrait).
+private struct LiveControlRail: View {
+    let isLandscape: Bool
+    let isAutoActive: Bool
+    let isFullscreen: Bool
+    let homeSupported: Bool
+    let controller: PTZManualController
+    let onFullscreen: () -> Void
+    let onAutoToggle: () -> Void
+    let onHome: () -> Void
+
+    @Environment(WaveCamClient.self) private var client
+
+    var body: some View {
+        if #available(iOS 26, *) {
+            GlassEffectContainer {
+                railContent
+            }
+        } else {
+            railContent
+        }
+    }
+
+    @ViewBuilder
+    private var railContent: some View {
+        if isLandscape {
+            verticalRail
+        } else {
+            horizontalDock
+        }
+    }
+
+    // MARK: Landscape — vertical rail (right edge, ~62pt wide)
+
+    private var verticalRail: some View {
+        GlassSurface(cornerRadius: WCRadius.md, tinted: true) {
+            VStack(spacing: WCSpace.sm) {
+                // Fullscreen toggle
+                GlassIconButton(
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    state: .normal,
+                    action: onFullscreen
+                )
+                .accessibilityLabel("Fullscreen")
+
+                Divider().background(Color.white.opacity(0.18))
+
+                // Zoom — vertical spring-to-center slider, fills available space
+                GlassZoomSlider(
+                    zoomCommand: Binding(
+                        get: { controller.zoomCommand },
+                        set: { controller.updateZoom($0, client: client) }
+                    ),
+                    onRelease: { controller.stopZoomCommand(client: client) },
+                    axis: .vertical
+                )
+                .frame(maxHeight: .infinity)
+
+                Divider().background(Color.white.opacity(0.18))
+
+                // AUTO toggle
+                GlassIconButton(
+                    systemImage: isAutoActive ? "viewfinder.circle.fill" : "viewfinder.circle",
+                    state: isAutoActive ? .active : .normal,
+                    action: onAutoToggle
+                )
+                .accessibilityLabel(isAutoActive ? "Stop auto tracking" : "Start auto tracking")
+
+                // REC
+                RecordButton(compact: true)
+                    .frame(width: 44)
+
+                // HOME
+                GlassIconButton(
+                    systemImage: "house",
+                    state: .normal,
+                    disabled: !homeSupported,
+                    action: onHome
+                )
+                .accessibilityLabel(homeSupported ? "Camera home" : "Home unavailable")
+
+                Spacer(minLength: WCSpace.sm)
+
+                // STOP — always at bottom, distinct red, pinned
+                EmergencyStopButton(style: .compact)
+                    .frame(width: 44, height: 44)
+                    .clipShape(.rect(cornerRadius: WCRadius.xs))
+            }
+            .padding(WCSpace.sm)
+        }
+    }
+
+    // MARK: Portrait — horizontal dock (bottom)
+
+    private var horizontalDock: some View {
+        GlassSurface(cornerRadius: WCRadius.md, tinted: true) {
+            HStack(spacing: WCSpace.sm) {
+                // Fullscreen
+                GlassIconButton(
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    state: .normal,
+                    action: onFullscreen
+                )
+                .accessibilityLabel("Fullscreen")
+
+                // Zoom — horizontal spring-to-center slider
+                GlassZoomSlider(
+                    zoomCommand: Binding(
+                        get: { controller.zoomCommand },
+                        set: { controller.updateZoom($0, client: client) }
+                    ),
+                    onRelease: { controller.stopZoomCommand(client: client) },
+                    axis: .horizontal
+                )
+                .frame(maxWidth: .infinity)
+
+                // AUTO toggle
+                GlassIconButton(
+                    systemImage: isAutoActive ? "viewfinder.circle.fill" : "viewfinder.circle",
+                    state: isAutoActive ? .active : .normal,
+                    action: onAutoToggle
+                )
+                .accessibilityLabel(isAutoActive ? "Stop auto tracking" : "Start auto tracking")
+
+                // REC
+                RecordButton(compact: true)
+                    .frame(width: 44)
+
+                // HOME
+                GlassIconButton(
+                    systemImage: "house",
+                    state: .normal,
+                    disabled: !homeSupported,
+                    action: onHome
+                )
+                .accessibilityLabel(homeSupported ? "Camera home" : "Home unavailable")
+
+                // STOP — pinned end, red
+                EmergencyStopButton(style: .compact)
+                    .frame(width: 44, height: 44)
+                    .clipShape(.rect(cornerRadius: WCRadius.xs))
+            }
+            .padding(WCSpace.sm)
+        }
+    }
+}
+
+// MARK: - GlassZoomSlider
+
+/// Velocity-based spring-to-center zoom slider.
+///
+/// Center = stop (zoom command = 0). Displacement toward tele/wide sets proportional
+/// speed. Releasing snaps back to center and fires `onRelease` (which sends stop).
+/// Reuses `PTZManualController.updateZoom` / `stopZoomCommand` — no new command logic.
+private struct GlassZoomSlider: View {
+    enum Axis { case vertical, horizontal }
+
+    @Binding var zoomCommand: Double
+    let onRelease: () -> Void
+    let axis: Axis
+
+    @State private var isDragging = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let trackLength = axis == .vertical ? geo.size.height : geo.size.width
+
+            ZStack {
+                // Track background
+                Capsule()
+                    .fill(Color.white.opacity(0.10))
+                    .frame(
+                        width:  axis == .vertical ? 6 : nil,
+                        height: axis == .vertical ? nil : 6
+                    )
+
+                // Active fill from center toward displacement
+                activeFill(trackLength: trackLength)
+
+                // Knob — circle, springs back to center on release
+                knob(trackLength: trackLength)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 2)
+                    .onChanged { value in
+                        isDragging = true
+                        let raw = axis == .vertical
+                            ? -value.translation.height / (trackLength / 2)
+                            : value.translation.width / (trackLength / 2)
+                        // Clamp to -1…1, map to zoom velocity
+                        let clamped = max(-1.0, min(1.0, raw))
+                        zoomCommand = clamped
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                            zoomCommand = 0
+                        }
+                        onRelease()
+                    }
+            )
+        }
+        .frame(
+            width:  axis == .vertical ? 32 : nil,
+            height: axis == .vertical ? nil : 32
         )
     }
 
-    // MARK: - Zoom card passthrough
-
-    private func mergedZoomCard() -> some View {
-        PTZZoomCard(zoomCommand: Binding(
-            get: { controller.zoomCommand },
-            set: { controller.updateZoom($0, client: client) }
-        ))
+    @ViewBuilder
+    private func activeFill(trackLength: CGFloat) -> some View {
+        let displacement = CGFloat(zoomCommand) * (trackLength / 2)
+        if axis == .vertical {
+            Capsule()
+                .fill(WC.accent.opacity(0.55))
+                .frame(width: 6, height: max(0, abs(displacement)))
+                .offset(y: -displacement / 2)
+        } else {
+            Capsule()
+                .fill(WC.accent.opacity(0.55))
+                .frame(width: max(0, abs(displacement)), height: 6)
+                .offset(x: displacement / 2)
+        }
     }
 
-    // MARK: - Fullscreen toggle
+    @ViewBuilder
+    private func knob(trackLength: CGFloat) -> some View {
+        let displacement = CGFloat(zoomCommand) * (trackLength / 2)
+        let knobSize: CGFloat = 26
 
-    private var fullscreenToggleButton: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                isFullscreen.toggle()
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [WC.accent.opacity(0.9), WC.accent.opacity(0.6)],
+                    center: .center,
+                    startRadius: 2,
+                    endRadius: 14
+                )
+            )
+            .shadow(color: WC.accent.opacity(0.4), radius: 8)
+            .frame(width: knobSize, height: knobSize)
+            .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
+            .offset(
+                x: axis == .horizontal ? displacement : 0,
+                y: axis == .vertical ? -displacement : 0
+            )
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: zoomCommand)
+    }
+}
+
+// MARK: - GlassLockChip
+
+/// Minimal HUD chip showing lock state + plain-English reason (wraps FeedLockReason logic).
+private struct GlassLockChip: View {
+    let status: WCStatus?
+    let connected: Bool
+
+    private var locked: Bool { connected && status?.tracking.locked == true }
+    private var isRecording: Bool { connected && status?.media?.recording == true }
+    private var killed: Bool { connected && status?.safety.killed == true }
+
+    private var lockLabel: String {
+        if !connected { return "OFFLINE" }
+        if killed { return "STOPPED" }
+        if locked { return "LOCKED" }
+        return lockHintText ?? "SEARCH"
+    }
+
+    private var lockColor: Color {
+        if !connected { return WC.warn }
+        if killed { return WC.kill }
+        if locked { return WC.ok }
+        return WC.warn
+    }
+
+    private var lockHintText: String? {
+        guard connected, let t = status?.tracking else { return nil }
+        if t.locked { return nil }
+        let hasColor = t.hasColor ?? false
+        let hasPerson = t.hasPerson ?? false
+        if !hasColor && !hasPerson { return nil }
+        if hasColor && !hasPerson { return "CLR·NO YOLO" }
+        if !hasColor && hasPerson { return "YOLO·NO CLR" }
+        return "ACQUIRING"
+    }
+
+    var body: some View {
+        HStack(spacing: WCSpace.sm) {
+            GlassChip(text: lockLabel, color: lockColor, dot: locked)
+            if isRecording {
+                GlassChip(text: "REC", color: WC.kill, dot: true)
             }
-        } label: {
-            Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(WC.txt)
-                .frame(width: 36, height: 36)
-                .background(Color.black.opacity(0.58), in: .rect(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.line))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isFullscreen ? "Exit fullscreen" : "Fullscreen")
-    }
-
-    // MARK: - Home unavailable hint
-
-    private var homeUnavailablePill: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "house.slash")
-                .font(.system(size: 10, weight: .semibold))
-            Text("Home unavailable — backend does not support /ptz/home yet")
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-        }
-        .foregroundStyle(WC.muted)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(WC.muted.opacity(0.12), in: .rect(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.muted.opacity(0.3)))
     }
 }
 
-// MARK: - Extensions (file-private; PTZView.swift has its own private copies)
-
-private extension CGSize {
-    func clamped(to radius: CGFloat) -> CGSize {
-        let distance = sqrt(width * width + height * height)
-        guard distance > radius, distance > 0 else { return self }
-        let scale = radius / distance
-        return CGSize(width: width * scale, height: height * scale)
-    }
-}
-
-private extension Double {
-    func zeroed(deadzone: Double) -> Double {
-        abs(self) < deadzone ? 0 : self
-    }
-
-    var signedPTZ: String {
-        formatted(.number.sign(strategy: .always()).precision(.fractionLength(2)))
-    }
-}
+// MARK: - Preview
 
 #Preview {
     MergedLiveView()
