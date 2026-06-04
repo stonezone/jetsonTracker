@@ -195,42 +195,42 @@ private struct ConnectionFormCard: View {
             }
             .pickerStyle(.segmented)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
                 FieldLabel("USB TETHER API")
                 TextField("http://172.20.10.8:8088/api/v1", text: $tetherURLText)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(WCFont.captionMono)
                     .foregroundStyle(WC.txt)
-                    .padding(12)
-                    .background(WC.bg, in: .rect(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.line))
+                    .padding(WCSpace.md)
+                    .background(WC.ink, in: .rect(cornerRadius: WCRadius.sm))
+                    .overlay(RoundedRectangle(cornerRadius: WCRadius.sm).stroke(WC.line))
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
                 FieldLabel("WI-FI / HOTSPOT API")
                 TextField("http://192.168.1.155:8088/api/v1", text: $wifiURLText)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(WCFont.captionMono)
                     .foregroundStyle(WC.txt)
-                    .padding(12)
-                    .background(WC.bg, in: .rect(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.line))
+                    .padding(WCSpace.md)
+                    .background(WC.ink, in: .rect(cornerRadius: WCRadius.sm))
+                    .overlay(RoundedRectangle(cornerRadius: WCRadius.sm).stroke(WC.line))
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
                 FieldLabel("AUTH TOKEN")
                 SecureField("optional", text: $tokenText)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(WCFont.captionMono)
                     .foregroundStyle(WC.txt)
-                    .padding(12)
-                    .background(WC.bg, in: .rect(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.line))
+                    .padding(WCSpace.md)
+                    .background(WC.ink, in: .rect(cornerRadius: WCRadius.sm))
+                    .overlay(RoundedRectangle(cornerRadius: WCRadius.sm).stroke(WC.line))
             }
 
             Toggle(isOn: $mockFallbackEnabled) {
@@ -246,30 +246,27 @@ private struct ConnectionFormCard: View {
             .tint(WC.accent)
 
             if let validationError {
-                Text(validationError)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(WC.kill)
+                OperatorNotice(validationError, tint: WC.kill)
             }
 
-            HStack(spacing: 10) {
-                Button(action: onApply) {
-                    Label("Apply", systemImage: "checkmark.circle.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(ConnectionButtonStyle(tint: WC.accent, filled: true))
-
-                Button(action: onRefresh) {
-                    Image(systemName: "arrow.clockwise")
-                        .frame(width: 44)
-                }
-                .buttonStyle(ConnectionButtonStyle(tint: WC.accent, filled: false))
+            HStack(spacing: WCSpace.sm) {
+                GlassButton(
+                    label: "Apply",
+                    icon: "checkmark.circle.fill",
+                    role: .active,
+                    action: onApply
+                )
+                GlassIconButton(
+                    systemImage: "arrow.clockwise",
+                    state: .normal,
+                    action: onRefresh
+                )
                 .accessibilityLabel("Refresh status")
-
-                Button(action: onUseDefault) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .frame(width: 44)
-                }
-                .buttonStyle(ConnectionButtonStyle(tint: WC.muted, filled: false))
+                GlassIconButton(
+                    systemImage: "arrow.uturn.backward",
+                    state: .normal,
+                    action: onUseDefault
+                )
                 .accessibilityLabel("Use default connection")
             }
             }
@@ -289,21 +286,6 @@ private struct FieldLabel: View {
             .font(WCFont.label)
             .tracking(1.3)
             .foregroundStyle(WC.muted)
-    }
-}
-
-private struct ConnectionButtonStyle: ButtonStyle {
-    let tint: Color
-    let filled: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(filled ? Color.black : tint)
-            .padding(.vertical, 12)
-            .background((filled ? tint : WC.panel2).opacity(configuration.isPressed ? 0.72 : 1), in: .rect(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).stroke(tint.opacity(filled ? 0 : 0.7)))
-            .frame(minHeight: 44)
     }
 }
 

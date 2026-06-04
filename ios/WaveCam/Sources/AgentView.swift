@@ -211,22 +211,20 @@ private struct AgentMetric: View {
     let tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(1.3)
-                .foregroundStyle(WC.faint)
-            Text(value.uppercased())
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
+        GlassCard(cornerRadius: WCRadius.md, padding: WCSpace.sm) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
+                Text(label)
+                    .font(WCFont.label)
+                    .tracking(1.3)
+                    .foregroundStyle(WC.faint)
+                Text(value.uppercased())
+                    .font(WCFont.mono)
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(WC.panel, in: .rect(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.line))
     }
 }
 
@@ -347,18 +345,6 @@ private struct AgentRequestCard: View {
             )
             .accessibilityLabel("Summon Codex diagnostics")
         }
-    }
-}
-
-private struct AgentSectionLabel: View {
-    let text: String
-
-    init(_ text: String) {
-        self.text = text
-    }
-
-    var body: some View {
-        OperatorSectionLabel(text)
     }
 }
 

@@ -74,7 +74,7 @@ struct TuneView: View {
                 header
 
                 if let configError {
-                    TuneNotice(configError, tint: WC.kill)
+                    OperatorNotice(configError, tint: WC.kill)
                         .onTapGesture { self.configError = nil }
                 }
 
@@ -86,41 +86,41 @@ struct TuneView: View {
                     presetsSection
                 }
 
-                TuneCard(title: "TARGET") {
+                OperatorCard(title: "TARGET") {
                     pickerRow("Color preset", selection: $colorPreset, options: presets.map { ($0.id, $0.name) }, key: "color.preset")
                     tuneCaption("Match the subject's color. Your orange rashguard → Orange / red. Other presets chase that color instead, so the camera won't lock onto you.")
-                    TuneDivider()
+                    OperatorDivider()
                     pickerRow("YOLO target", selection: $yoloClass, options: classes.map { ($0.id, $0.name) }, key: "detector.person_class")
-                    TuneDivider()
+                    OperatorDivider()
                     infoRow("Model", model ?? "—")
-                    TuneDivider()
+                    OperatorDivider()
                     sliderRow("Aim point", value: $aimY, range: 0.2...0.75, step: 0.01, readout: aimLabel(aimY), key: "fusion.person_aim_y")
                 }
 
-                TuneCard(title: "DETECTION") {
+                OperatorCard(title: "DETECTION") {
                     sliderRow("YOLO confidence", value: $conf, range: 0.05...0.95, step: 0.05, readout: fmt(conf), key: "detector.conf")
-                    TuneDivider()
+                    OperatorDivider()
                     toggleRow("Require YOLO person", isOn: $requirePerson, key: "fusion.require_person")
                     tuneCaption("Off: track the color cue even when YOLO can't make out a person — best when you're far offshore. On: only lock onto a confirmed person (you'll lose lock at distance).")
-                    TuneDivider()
+                    OperatorDivider()
                     toggleRow("Show detection mask", isOn: $showMask, key: "web.show_mask")
                 }
 
-                TuneCard(title: "MOTION") {
+                OperatorCard(title: "MOTION") {
                     sliderRow("Max pan speed", value: $maxPan, range: 1...24, step: 1, readout: "\(Int(maxPan))", key: "ptz.max_pan_speed", isInt: true)
-                    TuneDivider()
+                    OperatorDivider()
                     sliderRow("Max tilt speed", value: $maxTilt, range: 1...20, step: 1, readout: "\(Int(maxTilt))", key: "ptz.max_tilt_speed", isInt: true)
-                    TuneDivider()
+                    OperatorDivider()
                     sliderRow("Deadband", value: $deadzone, range: 0.02...0.30, step: 0.01, readout: fmt(deadzone), key: "ptz.deadzone")
-                    TuneDivider()
+                    OperatorDivider()
                     sliderRow("Feed-forward gain", value: $ffGain, range: 0.0...1.0, step: 0.05, readout: fmt(ffGain), key: "ptz.ff_gain")
                 }
 
                 if cinematicAvailable {
-                    TuneCard(title: "CINEMATIC ZOOM") {
+                    OperatorCard(title: "CINEMATIC ZOOM") {
                         toggleRow("Cinematic zoom (auto-frame)", isOn: $cinematicEnabled, key: "ptz.cinematic_zoom_enabled")
                         if cinematicEnabled {
-                            TuneDivider()
+                            OperatorDivider()
                             sliderRow("Subject size", value: $subjectSize, range: 0.2...0.8, step: 0.05, readout: fmt(subjectSize), key: "ptz.zoom_target_frac")
                         }
                     }
@@ -131,30 +131,25 @@ struct TuneView: View {
                 advancedMotionCard
 
                 if !restartKeys.isEmpty {
-                    TuneCard(title: "SERVICE") {
+                    OperatorCard(title: "SERVICE") {
                         Text("Restart-only settings (change on the Orin web UI, then restart):")
-                            .font(.system(size: 11)).foregroundStyle(WC.muted)
+                            .font(WCFont.caption).foregroundStyle(WC.muted)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text(restartKeys.joined(separator: ", "))
-                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(WC.faint)
+                            .font(WCFont.captionMono).foregroundStyle(WC.faint)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Button {
-                            showRestartConfirm = true
-                        } label: {
-                            Label("Restart WaveCam", systemImage: "arrow.clockwise.circle")
-                                .font(.system(size: 14, weight: .bold))
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .foregroundStyle(WC.warn)
-                                .background(WC.warn.opacity(0.12), in: .rect(cornerRadius: 13))
-                                .overlay(RoundedRectangle(cornerRadius: 13).stroke(WC.warn.opacity(0.6)))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(client.mode != .live)
+                        GlassButton(
+                            label: "Restart WaveCam",
+                            icon: "arrow.clockwise.circle",
+                            role: .normal,
+                            disabled: client.mode != .live,
+                            action: { showRestartConfirm = true }
+                        )
                     }
                 }
 
                 Text("Tuning changes apply live (no restart). Restart-only keys are under Service.")
-                    .font(.system(size: 11)).foregroundStyle(WC.faint)
+                    .font(WCFont.caption).foregroundStyle(WC.faint)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 24)
@@ -214,16 +209,16 @@ struct TuneView: View {
 
     @ViewBuilder private var header: some View {
         if client.mode != .live {
-            TuneNotice("Switch to Live mode on the Connect tab to tune.", tint: WC.warn)
+            OperatorNotice("Switch to Live mode on the Connect tab to tune.", tint: WC.warn)
         } else if !loaded {
-            TuneNotice(client.connected ? "Loading current settings..." : "Connecting to the Orin...", tint: WC.muted)
+            OperatorNotice(client.connected ? "Loading current settings..." : "Connecting to the Orin...", tint: WC.muted)
         }
     }
 
     // MARK: - Presets section
 
     @ViewBuilder private var presetsSection: some View {
-        TuneCard(title: "PRESETS") {
+        OperatorCard(title: "PRESETS") {
             // Horizontal chip row
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -234,36 +229,24 @@ struct TuneView: View {
                 .padding(.vertical, 2)
             }
 
-            TuneDivider()
+            OperatorDivider()
 
             // Action buttons row
             HStack(spacing: 8) {
-                Button {
-                    newPresetName = ""
-                    showSavePresetAlert = true
-                } label: {
-                    Label("Save", systemImage: "square.and.arrow.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(WC.accent)
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                        .background(WC.accent.opacity(0.12), in: .rect(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.accent.opacity(0.35)))
-                }
-                .buttonStyle(.plain)
-                .disabled(client.mode != .live)
-
-                Button {
-                    applyPreset(named: "Default")
-                } label: {
-                    Label("Reset", systemImage: "arrow.counterclockwise")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(WC.warn)
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                        .background(WC.warn.opacity(0.10), in: .rect(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.warn.opacity(0.35)))
-                }
-                .buttonStyle(.plain)
-                .disabled(client.mode != .live)
+                GlassButton(
+                    label: "Save",
+                    icon: "square.and.arrow.down",
+                    role: .normal,
+                    disabled: client.mode != .live,
+                    action: { newPresetName = ""; showSavePresetAlert = true }
+                )
+                GlassButton(
+                    label: "Reset",
+                    icon: "arrow.counterclockwise",
+                    role: .normal,
+                    disabled: client.mode != .live,
+                    action: { applyPreset(named: "Default") }
+                )
             }
         }
     }
@@ -313,7 +296,7 @@ struct TuneView: View {
     }
 
     @ViewBuilder private var presetRestartNotice: some View {
-        TuneNotice(
+        OperatorNotice(
             "Preset applied. Some keys require a restart: \(presetApplyRestartKeys.joined(separator: ", "))",
             tint: WC.warn
         )
@@ -417,23 +400,23 @@ struct TuneView: View {
     @ViewBuilder private var advancedDetectionCard: some View {
         let anyVisible = everyN != nil || lockThreshold != nil || unlockThreshold != nil || matchDist != nil
         if anyVisible {
-            TuneCard(title: "DETECTION ADVANCED") {
+            OperatorCard(title: "DETECTION ADVANCED") {
                 if let n = everyN {
                     sliderRow("YOLO every N frames", value: Binding(get: { Double(n) }, set: { everyN = Int($0) }),
                               range: 1...30, step: 1, readout: "\(n)", key: "detector.every_n", isInt: true)
                 }
                 if let lt = lockThreshold {
-                    if everyN != nil { TuneDivider() }
+                    if everyN != nil { OperatorDivider() }
                     sliderRow("Lock threshold", value: Binding(get: { lt }, set: { lockThreshold = $0 }),
                               range: 0.05...0.95, step: 0.05, readout: fmt(lt), key: "fusion.lock_threshold")
                 }
                 if let ut = unlockThreshold {
-                    if everyN != nil || lockThreshold != nil { TuneDivider() }
+                    if everyN != nil || lockThreshold != nil { OperatorDivider() }
                     sliderRow("Unlock threshold", value: Binding(get: { ut }, set: { unlockThreshold = $0 }),
                               range: 0.05...0.95, step: 0.05, readout: fmt(ut), key: "fusion.unlock_threshold")
                 }
                 if let md = matchDist {
-                    if everyN != nil || lockThreshold != nil || unlockThreshold != nil { TuneDivider() }
+                    if everyN != nil || lockThreshold != nil || unlockThreshold != nil { OperatorDivider() }
                     sliderRow("Color/YOLO match px", value: Binding(get: { md }, set: { matchDist = $0 }),
                               range: 20...500, step: 10, readout: "\(Int(md))", key: "fusion.match_dist")
                 }
@@ -444,18 +427,18 @@ struct TuneView: View {
     @ViewBuilder private var colorCard: some View {
         let anyVisible = colorMinArea != nil || colorMaxArea != nil || morphKernel != nil
         if anyVisible {
-            TuneCard(title: "COLOR") {
+            OperatorCard(title: "COLOR") {
                 if let mn = colorMinArea {
                     numberRow("Min color blob area", value: Binding(get: { mn }, set: { colorMinArea = $0 }),
                               bounds: 1...500_000, key: "color.min_area")
                 }
                 if let mx = colorMaxArea {
-                    if colorMinArea != nil { TuneDivider() }
+                    if colorMinArea != nil { OperatorDivider() }
                     numberRow("Max color blob area", value: Binding(get: { mx }, set: { colorMaxArea = $0 }),
                               bounds: 100...1_000_000, key: "color.max_area")
                 }
                 if let mk = morphKernel {
-                    if colorMinArea != nil || colorMaxArea != nil { TuneDivider() }
+                    if colorMinArea != nil || colorMaxArea != nil { OperatorDivider() }
                     sliderRow("Mask cleanup kernel", value: Binding(get: { Double(mk) }, set: { morphKernel = Int($0) }),
                               range: 1...31, step: 2, readout: "\(mk)", key: "color.morph_kernel", isInt: true)
                 }
@@ -467,31 +450,31 @@ struct TuneView: View {
         let anyVisible = ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil
                       || invertTilt != nil || invertPan != nil || jpegQuality != nil
         if anyVisible {
-            TuneCard(title: "MOTION ADVANCED") {
+            OperatorCard(title: "MOTION ADVANCED") {
                 if let m = ffDeadzoneMult {
                     sliderRow("FF deadband mult", value: Binding(get: { m }, set: { ffDeadzoneMult = $0 }),
                               range: 1...4, step: 0.1, readout: fmt1(m), key: "ptz.ff_deadzone_mult")
                 }
                 if let s = ptzMinSpeed {
-                    if ffDeadzoneMult != nil { TuneDivider() }
+                    if ffDeadzoneMult != nil { OperatorDivider() }
                     sliderRow("Min speed", value: Binding(get: { Double(s) }, set: { ptzMinSpeed = Int($0) }),
                               range: 1...8, step: 1, readout: "\(s)", key: "ptz.min_speed", isInt: true)
                 }
                 if let ci = commandMinInterval {
-                    if ffDeadzoneMult != nil || ptzMinSpeed != nil { TuneDivider() }
+                    if ffDeadzoneMult != nil || ptzMinSpeed != nil { OperatorDivider() }
                     sliderRow("Command interval", value: Binding(get: { ci }, set: { commandMinInterval = $0 }),
                               range: 0.01...0.5, step: 0.01, readout: fmt(ci), key: "ptz.command_min_interval")
                 }
                 if let it = invertTilt {
-                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil { TuneDivider() }
+                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil { OperatorDivider() }
                     toggleRow("Invert tilt", isOn: Binding(get: { it }, set: { invertTilt = $0 }), key: "ptz.invert_tilt")
                 }
                 if let ip = invertPan {
-                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil || invertTilt != nil { TuneDivider() }
+                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil || invertTilt != nil { OperatorDivider() }
                     toggleRow("Invert pan", isOn: Binding(get: { ip }, set: { invertPan = $0 }), key: "ptz.invert_pan")
                 }
                 if let jq = jpegQuality {
-                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil || invertTilt != nil || invertPan != nil { TuneDivider() }
+                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil || invertTilt != nil || invertPan != nil { OperatorDivider() }
                     sliderRow("JPEG quality", value: Binding(get: { Double(jq) }, set: { jpegQuality = Int($0) }),
                               range: 30...95, step: 5, readout: "\(jq)", key: "web.jpeg_quality", isInt: true)
                 }
@@ -646,35 +629,6 @@ struct TuneView: View {
                 configError = "Setting not applied: \(client.lastControlError ?? "rejected by the Orin"). Tap to dismiss."
             }
         }
-    }
-}
-
-private struct TuneCard<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        OperatorCard(title: title) {
-            content
-        }
-    }
-}
-
-private struct TuneDivider: View {
-    var body: some View { OperatorDivider() }
-}
-
-private struct TuneNotice: View {
-    let text: String
-    let tint: Color
-
-    init(_ text: String, tint: Color) {
-        self.text = text
-        self.tint = tint
-    }
-
-    var body: some View {
-        OperatorNotice(text, tint: tint)
     }
 }
 
