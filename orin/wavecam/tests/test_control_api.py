@@ -936,6 +936,42 @@ def test_api_v1_media_list_and_download_are_recorder_dir_scoped(tmp_path):
     assert unsafe.json()["code"] == "media_not_found"
 
 
+def test_guide_route_serves_html_and_assets(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"
+    assets = docs / "guide_assets"
+    assets.mkdir(parents=True)
+    (docs / "WaveCam_Guide.html").write_text("<!doctype html><title>WaveCam</title>")
+    (assets / "live.png").write_bytes(b"png-bytes")
+    monkeypatch.setenv("WAVECAM_GUIDE_ROOT", str(docs))
+    client = make_client()
+
+    guide = client.get("/guide")
+    asset = client.get("/guide_assets/live.png")
+
+    assert guide.status_code == 200
+    assert guide.headers["content-type"].startswith("text/html")
+    assert b"WaveCam" in guide.content
+    assert asset.status_code == 200
+    assert asset.content == b"png-bytes"
+
+
+def test_guide_route_missing_and_traversal_return_404(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"
+    assets = docs / "guide_assets"
+    assets.mkdir(parents=True)
+    (tmp_path / "secret.txt").write_text("secret")
+    monkeypatch.setenv("WAVECAM_GUIDE_ROOT", str(docs))
+    client = make_client()
+
+    missing_guide = client.get("/guide")
+    traversal = client.get("/guide_assets/%2E%2E/secret.txt")
+
+    assert missing_guide.status_code == 404
+    assert missing_guide.json()["code"] == "guide_not_found"
+    assert traversal.status_code == 404
+    assert traversal.json()["code"] == "guide_asset_not_found"
+
+
 if __name__ == "__main__":
     test_api_v1_status_maps_legacy_state_to_release_contract()
     test_api_v1_status_reports_pipeline_gps_snapshot_when_available()

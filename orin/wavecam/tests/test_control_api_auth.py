@@ -137,6 +137,21 @@ def test_viewer_can_list_and_download_media(tmp_path):
     assert unauthenticated.status_code == 401
 
 
+def test_viewer_can_open_guide_when_auth_enabled(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "WaveCam_Guide.html").write_text("<!doctype html><title>WaveCam</title>")
+    monkeypatch.setenv("WAVECAM_GUIDE_ROOT", str(docs))
+    client = client_with_auth(True, {"v": "viewer"})
+
+    unauthenticated = client.get("/guide")
+    viewed = client.get("/guide", headers=hdr("v"))
+
+    assert unauthenticated.status_code == 401
+    assert viewed.status_code == 200
+    assert b"WaveCam" in viewed.content
+
+
 def test_supervisor_no_direct_ptz_but_config_ok():
     client = client_with_auth(True, {"s": "supervisor"})
     assert client.post("/api/v1/ptz/stop", json={}, headers=hdr("s")).status_code == 403

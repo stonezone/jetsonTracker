@@ -7,6 +7,7 @@ PTZ owner gate, and PTZ backend.
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 import threading
 import time
@@ -25,6 +26,10 @@ from .supervisor import read_health, restart_systemd_unit, snapshot_services
 
 
 FrameSource = Callable[[], Any]
+
+GUIDE_FILENAME = "WaveCam_Guide.html"
+GUIDE_ASSET_DIR = "guide_assets"
+GUIDE_ROOT_ENV = "WAVECAM_GUIDE_ROOT"
 
 HOT_CONFIG_KEYS = (
     "ptz.deadzone",
@@ -159,6 +164,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     adapter = ControlApiAdapter(pipeline, frames)
     app.state.control_api = adapter
     install_auth(app)
+    register_guide_routes(app)
     register_status_routes(app, adapter)
     register_safety_routes(app, adapter)
     register_ptz_routes(app, adapter)
@@ -166,6 +172,22 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_config_routes(app, adapter)
     register_system_routes(app, adapter)
     register_agent_routes(app, adapter)
+
+
+def register_guide_routes(app: FastAPI) -> None:
+    @app.get("/guide", dependencies=[Depends(require(READ))])
+    def guide():
+        path = find_guide_file()
+        if path is None:
+            return JSONResponse({"ok": False, "code": "guide_not_found"}, status_code=404)
+        return FileResponse(path, media_type="text/html")
+
+    @app.get("/guide_assets/{asset_path:path}", dependencies=[Depends(require(READ))])
+    def guide_asset(asset_path: str):
+        path = find_guide_asset(asset_path)
+        if path is None:
+            return JSONResponse({"ok": False, "code": "guide_asset_not_found"}, status_code=404)
+        return FileResponse(path)
 
 
 def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
@@ -908,6 +930,51 @@ def normalized_text(value: str | None, fallback: str, max_len: int) -> str:
 def make_request_id() -> str:
     ms = int(time.time() * 1000) % 1000
     return f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}.{ms:03d}Z-{uuid.uuid4().hex[:8]}"
+
+
+def guide_root_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    env_root = os.environ.get(GUIDE_ROOT_ENV)
+    if env_root:
+        candidates.append(Path(env_root))
+
+    cwd = Path.cwd()
+    candidates.extend([cwd / "docs", cwd.parent / "docs"])
+
+    module = Path(__file__).resolve()
+    parents = list(module.parents)
+    for idx in (1, 2, 3):
+        if idx < len(parents):
+            candidates.append(parents[idx] / "docs")
+
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    return unique
+
+
+def find_guide_file() -> Path | None:
+    for root in guide_root_candidates():
+        path = root / GUIDE_FILENAME
+        if path.is_file():
+            return path
+    return None
+
+
+def find_guide_asset(asset_path: str) -> Path | None:
+    requested = Path(asset_path)
+    if requested.is_absolute() or ".." in requested.parts:
+        return None
+    for root in guide_root_candidates():
+        asset_root = (root / GUIDE_ASSET_DIR).resolve()
+        path = (asset_root / requested).resolve()
+        if path.is_file() and path.is_relative_to(asset_root):
+            return path
+    return None
 
 
 def build_config_snapshot(pipeline, revision: int) -> dict:
