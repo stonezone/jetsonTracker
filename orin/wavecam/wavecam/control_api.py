@@ -7,13 +7,14 @@ PTZ owner gate, and PTZ backend.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 import threading
 import time
 import uuid
 from typing import Any, Callable, Dict
 
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .auth import CONFIG, PTZ, READ, SAFETY, SERVICE, install_auth, require, websocket_authorized
@@ -288,6 +289,31 @@ def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/media/status", dependencies=[Depends(require(READ))])
     def media_status():
         return api.media.status()
+
+    @app.get("/api/v1/media/list", dependencies=[Depends(require(READ))])
+    def media_list():
+        try:
+            files = api.media.list_files()
+        except MediaUnavailable as exc:
+            return api.refusal("media_unavailable", exc.message, 503)
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "files": files,
+                "status": api.status_snapshot(),
+            }
+        )
+
+    @app.get("/api/v1/media/download/{name}", dependencies=[Depends(require(READ))])
+    def media_download(name: str):
+        try:
+            path = api.media.download_path(name)
+        except MediaUnavailable as exc:
+            return api.refusal("media_unavailable", exc.message, 503)
+        except MediaNotFound as exc:
+            return api.refusal("media_not_found", exc.message, 404)
+        return FileResponse(path, media_type="video/mp4", filename=path.name)
 
     @app.post("/api/v1/media/record/start", dependencies=[Depends(require(CONFIG))])
     def media_record_start(req: RecordStartRequest | None = None):
@@ -795,12 +821,67 @@ class MediaAdapter:
             raise MediaUnavailable("Recorder is not configured.")
         return self.recorder.stop()
 
+    def list_files(self) -> list[dict]:
+        rec_dir = self.rec_dir()
+        if not rec_dir.exists():
+            return []
+        files: list[dict] = []
+        for path in rec_dir.iterdir():
+            if not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            files.append(
+                {
+                    "name": path.name,
+                    "size_bytes": stat.st_size,
+                    "ctime_unix_ms": int(stat.st_ctime * 1000),
+                }
+            )
+        return sorted(files, key=lambda item: (item["ctime_unix_ms"], item["name"]), reverse=True)
+
+    def download_path(self, name: str) -> Path:
+        rec_dir = self.rec_dir().resolve()
+        if (
+            not name
+            or name in {".", ".."}
+            or "/" in name
+            or "\\" in name
+            or Path(name).name != name
+        ):
+            raise MediaNotFound("Media file was not found.")
+        path = (rec_dir / name).resolve()
+        try:
+            path.relative_to(rec_dir)
+        except ValueError as exc:
+            raise MediaNotFound("Media file was not found.") from exc
+        if not path.is_file():
+            raise MediaNotFound("Media file was not found.")
+        return path
+
+    def rec_dir(self) -> Path:
+        if self.recorder is None:
+            raise MediaUnavailable("Recorder is not configured.")
+        config = getattr(self.recorder, "config", None)
+        rec_dir = getattr(config, "rec_dir", None)
+        if rec_dir is None:
+            raise MediaUnavailable("Recorder directory is not configured.")
+        return Path(rec_dir)
+
     def stop_for_safety(self) -> None:
         if self.recorder is not None:
             self.recorder.stop()
 
 
 class MediaUnavailable(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class MediaNotFound(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message

@@ -119,6 +119,24 @@ def test_viewer_can_read_but_not_kill():
     assert summon_blocked.status_code == 403
 
 
+def test_viewer_can_list_and_download_media(tmp_path):
+    client = client_with_auth(True, {"v": "viewer"})
+    pipe = client.app.state.pipeline
+    pipe.recorder.config.rec_dir = tmp_path
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"clip")
+
+    listed = client.get("/api/v1/media/list", headers=hdr("v"))
+    downloaded = client.get(f"/api/v1/media/download/{clip.name}", headers=hdr("v"))
+    unauthenticated = client.get("/api/v1/media/list")
+
+    assert listed.status_code == 200
+    assert listed.json()["files"][0]["name"] == "clip.mp4"
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"clip"
+    assert unauthenticated.status_code == 401
+
+
 def test_supervisor_no_direct_ptz_but_config_ok():
     client = client_with_auth(True, {"s": "supervisor"})
     assert client.post("/api/v1/ptz/stop", json={}, headers=hdr("s")).status_code == 403
