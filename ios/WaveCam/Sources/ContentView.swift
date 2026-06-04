@@ -18,6 +18,7 @@ struct ContentView: View {
                     CalibrateView().tag(2).tabItem { Label("Calibrate", systemImage: "scope") }
                     ToolsView().tag(3).tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
                     ConnectionView().tag(4).tabItem { Label("Connect", systemImage: "network") }
+                    MediaView().tag(5).tabItem { Label("Media", systemImage: "play.rectangle.on.rectangle") }
                 }
                 .tint(WC.brand)
             }

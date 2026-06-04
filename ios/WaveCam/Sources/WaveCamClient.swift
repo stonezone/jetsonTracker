@@ -181,6 +181,27 @@ struct WCConfig: Codable, Sendable {
     }
 }
 
+// MARK: - Media models
+
+/// One recording returned by GET /api/v1/media/list.
+/// Field names match the snake_case JSON after .convertFromSnakeCase.
+struct WCMediaFile: Codable, Sendable, Identifiable {
+    var name: String
+    var sizeBytes: Int
+    var ctimeUnixMs: Int
+
+    /// Stable identity: the filename is unique within a recording directory.
+    var id: String { name }
+
+    /// Creation date derived from the Unix-ms timestamp.
+    var createdAt: Date { Date(timeIntervalSince1970: Double(ctimeUnixMs) / 1000) }
+}
+
+private struct WCMediaListResponse: Codable, Sendable {
+    var ok: Bool?
+    var files: [WCMediaFile]
+}
+
 // MARK: - Client
 
 /// The single seam to the Orin Control API. `.mock` returns canned, locally-mutable
@@ -492,6 +513,41 @@ final class WaveCamClient {
             lastCommandError = "Restart not confirmed: \(error.localizedDescription)"
             return false
         }
+    }
+
+    // MARK: media (read-only; guard mode == .live like config())
+
+    /// GET /api/v1/media/list — returns [] in mock mode or when the endpoint is unavailable.
+    /// Throws a `WaveCamMediaListUnavailable` sentinel when the backend responds with 503
+    /// (MediaUnavailable) so the caller can surface a distinct "update the Orin" message.
+    func mediaList() async throws -> [WCMediaFile] {
+        guard mode == .live else { return [] }
+        let data = try await getWithFallback("media/list")
+        let response = try Self.decoder.decode(WCMediaListResponse.self, from: data)
+        return response.files ?? []
+    }
+
+    /// GET /api/v1/media/download/{name} — streams bytes to a temp file and returns
+    /// its local URL. Uses the active `baseURL` (already resolved by the last status
+    /// or getWithFallback call) so USB-tether vs. Wi-Fi failover is already settled.
+    func downloadMedia(name: String) async throws -> URL {
+        guard mode == .live else { throw URLError(.resourceUnavailable) }
+        guard let escapedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw URLError(.badURL)
+        }
+        let url = baseURL.appending(path: "media/download/\(escapedName)")
+        var req = URLRequest(url: url, timeoutInterval: 120)
+        authorize(&req)
+        let (tempURL, response) = try await URLSession.shared.download(for: req)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+        // Move from the ephemeral temp location to a durable Documents file.
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WaveCam-\(name)", conformingTo: .mpeg4Movie)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: tempURL, to: dest)
+        return dest
     }
 
     /// MJPEG monitor feed URL (GET /api/v1/preview.mjpeg), nil in mock mode.
