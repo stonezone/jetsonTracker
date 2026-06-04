@@ -10,7 +10,7 @@ struct ContentView: View {
         ZStack {
             WC.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                TopBar()
+                TopBar(tab: tab)
                 if client.isShowingMockData { MockDataBanner() }
                 TabView(selection: $tab) {
                     MergedLiveView().tag(0).tabItem { Label("Live", systemImage: "viewfinder") }
@@ -40,6 +40,19 @@ struct ContentView: View {
 /// Always-visible across every tab: brand, connection state, and the KILL chip.
 private struct TopBar: View {
     @Environment(WaveCamClient.self) private var client
+    var tab: Int
+
+    /// Maps the current tab to its anchor in the Orin-hosted operator guide.
+    private var guideAnchor: String {
+        switch tab {
+        case 0: return "live"
+        case 1: return "calibrate"
+        case 2: return "tune"
+        case 3: return "connect"
+        case 4: return "media"
+        default: return "overview"
+        }
+    }
 
     private var connectionText: String {
         if client.mode == .mock { return "MOCK" }
@@ -81,11 +94,45 @@ private struct TopBar: View {
                     .foregroundStyle(WC.muted)
             }
             .padding(.trailing, 4)
+            GuideButton(anchor: guideAnchor)
             EmergencyStopButton(style: .chip)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(WC.ink)
+    }
+}
+
+/// Opens the Orin-hosted operator guide at the section matching the current tab.
+/// Derives the guide URL from the live API base (e.g. http://host:8088/api/v1 → /guide#anchor),
+/// so it follows whichever route — tether or Wi-Fi — is currently active.
+private struct GuideButton: View {
+    @Environment(WaveCamClient.self) private var client
+    @Environment(\.openURL) private var openURL
+    var anchor: String
+
+    private var guideURL: URL? {
+        guard var comps = URLComponents(url: client.baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        comps.path = "/guide"
+        comps.query = nil
+        comps.fragment = anchor
+        return comps.url
+    }
+
+    var body: some View {
+        Button {
+            if let url = guideURL { openURL(url) }
+        } label: {
+            Image(systemName: "book")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(WC.accent)
+                .frame(width: 30, height: 30)
+                .background(WC.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(WC.accent.opacity(0.32)))
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 6)
+        .accessibilityLabel("Open guide for this screen")
     }
 }
 
