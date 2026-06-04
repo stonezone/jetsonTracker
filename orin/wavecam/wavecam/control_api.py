@@ -129,6 +129,25 @@ class ZoomRequest(BaseModel):
     source: str | None = None
 
 
+class CalibrationBaseRequest(BaseModel):
+    requested_owner: str = "manual"
+    takeover: bool = False
+    source: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(default=None, max_length=256)
+
+
+class HeadingCalibrationRequest(CalibrationBaseRequest):
+    heading_deg: float = Field(ge=0.0, le=360.0)
+
+
+class TiltCalibrationRequest(CalibrationBaseRequest):
+    tilt_deg: float = Field(ge=-90.0, le=90.0)
+
+
+class ZoomCalibrationRequest(CalibrationBaseRequest):
+    zoom_fov_deg: float = Field(ge=1.0, le=180.0)
+
+
 class RecordStartRequest(BaseModel):
     segment_seconds: int | None = Field(default=None, ge=1, le=21600)
     source: str | None = None
@@ -162,6 +181,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_status_routes(app, adapter)
     register_safety_routes(app, adapter)
     register_ptz_routes(app, adapter)
+    register_calibration_routes(app, adapter)
     register_media_routes(app, adapter)
     register_config_routes(app, adapter)
     register_system_routes(app, adapter)
@@ -285,6 +305,60 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         return api.ok()
 
 
+def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/calibration", dependencies=[Depends(require(READ))])
+    def calibration_get():
+        return api.calibration_ok()
+
+    @app.post("/api/v1/calibration/heading", dependencies=[Depends(require(PTZ))])
+    def calibration_heading(req: HeadingCalibrationRequest):
+        refusal = api.validate_calibration_capture(req)
+        if refusal is not None:
+            return refusal
+        api.capture_calibration(
+            "heading",
+            {
+                "heading_deg": req.heading_deg,
+                "source": normalized_text(req.source, "unknown", 64),
+                "note": normalized_optional_text(req.note, 256),
+            },
+        )
+        api.bump_revision()
+        return api.calibration_ok()
+
+    @app.post("/api/v1/calibration/tilt", dependencies=[Depends(require(PTZ))])
+    def calibration_tilt(req: TiltCalibrationRequest):
+        refusal = api.validate_calibration_capture(req)
+        if refusal is not None:
+            return refusal
+        api.capture_calibration(
+            "tilt",
+            {
+                "tilt_deg": req.tilt_deg,
+                "source": normalized_text(req.source, "unknown", 64),
+                "note": normalized_optional_text(req.note, 256),
+            },
+        )
+        api.bump_revision()
+        return api.calibration_ok()
+
+    @app.post("/api/v1/calibration/zoom", dependencies=[Depends(require(PTZ))])
+    def calibration_zoom(req: ZoomCalibrationRequest):
+        refusal = api.validate_calibration_capture(req)
+        if refusal is not None:
+            return refusal
+        api.capture_calibration(
+            "zoom",
+            {
+                "zoom_fov_deg": req.zoom_fov_deg,
+                "source": normalized_text(req.source, "unknown", 64),
+                "note": normalized_optional_text(req.note, 256),
+            },
+        )
+        api.bump_revision()
+        return api.calibration_ok()
+
+
 def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/media/status", dependencies=[Depends(require(READ))])
     def media_status():
@@ -381,6 +455,7 @@ class ControlApiAdapter:
         self._restart_timer: threading.Timer | None = None
         self._restart_pending = False
         self._restart_unit = "wavecam.service"
+        self._calibration = empty_calibration_state()
 
     @property
     def revision(self) -> int:
@@ -395,7 +470,7 @@ class ControlApiAdapter:
         return build_status_snapshot(self.pipeline, self.revision, self.media.status())
 
     def config_snapshot(self) -> dict:
-        return build_config_snapshot(self.pipeline, self.revision)
+        return build_config_snapshot(self.pipeline, self.revision, self.calibration_state())
 
     def ok(self) -> JSONResponse:
         return JSONResponse(
@@ -407,6 +482,45 @@ class ControlApiAdapter:
             {"ok": False, "code": code, "message": message, "status": self.status_snapshot()},
             status_code=status_code,
         )
+
+    def calibration_ok(self) -> JSONResponse:
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "revision": self.revision,
+                "calibration": self.calibration_state(),
+                "status": self.status_snapshot(),
+            }
+        )
+
+    def calibration_state(self) -> dict:
+        with self._lock:
+            return {
+                "reference_heading": self._calibration["reference_heading"],
+                "heading": copy_optional_dict(self._calibration["heading"]),
+                "tilt": copy_optional_dict(self._calibration["tilt"]),
+                "zoom": copy_optional_dict(self._calibration["zoom"]),
+                "updated_at_unix_ms": self._calibration["updated_at_unix_ms"],
+            }
+
+    def validate_calibration_capture(self, req: CalibrationBaseRequest) -> JSONResponse | None:
+        if self.pipeline.owner.killed:
+            return self.refusal("killed", "KILL is latched; resume before calibration capture.")
+        if req.requested_owner != "manual":
+            return self.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
+        if not self.claim_manual(takeover=req.takeover):
+            return self.refusal("owner_busy", "Another PTZ owner holds the camera.")
+        return None
+
+    def capture_calibration(self, step: str, values: dict) -> None:
+        captured_at = int(time.time() * 1000)
+        entry = {**values, "captured_at_unix_ms": captured_at}
+        with self._lock:
+            self._calibration[step] = entry
+            self._calibration["updated_at_unix_ms"] = captured_at
+            if step == "heading":
+                self._calibration["reference_heading"] = entry["heading_deg"]
 
     def resume_without_autostart(self) -> None:
         with self._lock:
@@ -905,12 +1019,31 @@ def normalized_text(value: str | None, fallback: str, max_len: int) -> str:
     return text[:max_len]
 
 
+def normalized_optional_text(value: str | None, max_len: int) -> str | None:
+    text = (value or "").strip()
+    return text[:max_len] if text else None
+
+
+def empty_calibration_state() -> dict:
+    return {
+        "reference_heading": None,
+        "heading": None,
+        "tilt": None,
+        "zoom": None,
+        "updated_at_unix_ms": None,
+    }
+
+
+def copy_optional_dict(value: dict | None) -> dict | None:
+    return dict(value) if value is not None else None
+
+
 def make_request_id() -> str:
     ms = int(time.time() * 1000) % 1000
     return f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}.{ms:03d}Z-{uuid.uuid4().hex[:8]}"
 
 
-def build_config_snapshot(pipeline, revision: int) -> dict:
+def build_config_snapshot(pipeline, revision: int, calibration: dict | None = None) -> dict:
     cfg = pipeline.cfg
     return {
         "revision": revision,
@@ -961,8 +1094,10 @@ def build_config_snapshot(pipeline, revision: int) -> dict:
                 "show_mask": bool(getattr(pipeline.state, "show_mask", False)),
                 "jpeg_quality": cfg.web.jpeg_quality,
             },
+            "calibration": calibration or empty_calibration_state(),
         },
         "supported": {
+            "calibration": True,
             "color_presets": sorted(COLOR_PRESETS),
             "ptz_home": callable(getattr(getattr(pipeline, "ptz", None), "home", None)),
             "yolo_classes": list(YOLO_CLASSES),

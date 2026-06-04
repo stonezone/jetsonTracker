@@ -94,15 +94,28 @@ def test_operator_allows_read_safety_ptz_config():
         json={"source": "test", "reason": "operator_diagnostics"},
         headers=hdr("op"),
     ).status_code == 202
+    assert client.get("/api/v1/calibration", headers=hdr("op")).status_code == 200
+    assert client.post(
+        "/api/v1/calibration/heading",
+        json={"requested_owner": "manual", "heading_deg": 180.0},
+        headers=hdr("op"),
+    ).status_code == 200
 
 
 def test_viewer_can_read_but_not_kill():
     client = client_with_auth(True, {"v": "viewer"})
     assert client.get("/api/v1/status", headers=hdr("v")).status_code == 200
     assert client.get("/api/v1/media/status", headers=hdr("v")).status_code == 200
+    assert client.get("/api/v1/calibration", headers=hdr("v")).status_code == 200
     blocked = client.post("/api/v1/safety/kill", json={}, headers=hdr("v"))
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "forbidden"
+    calibration_blocked = client.post(
+        "/api/v1/calibration/heading",
+        json={"requested_owner": "manual", "heading_deg": 180.0},
+        headers=hdr("v"),
+    )
+    assert calibration_blocked.status_code == 403
     record_blocked = client.post("/api/v1/media/record/start", json={}, headers=hdr("v"))
     assert record_blocked.status_code == 403
     restart_blocked = client.post(

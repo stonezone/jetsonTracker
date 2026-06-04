@@ -477,6 +477,88 @@ def test_api_v1_ptz_home_is_owner_gated_and_kill_respecting():
     assert pipe.ptz.calls == calls_after_kill
 
 
+def test_api_v1_calibration_captures_heading_tilt_zoom_state():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.owner.request("testbed")
+
+    initial = client.get("/api/v1/calibration")
+
+    assert initial.status_code == 200
+    assert initial.json()["calibration"]["reference_heading"] is None
+
+    heading = client.post(
+        "/api/v1/calibration/heading",
+        json={
+            "requested_owner": "manual",
+            "takeover": True,
+            "heading_deg": 247.1,
+            "source": "test",
+            "note": "pier end",
+        },
+    )
+    tilt = client.post(
+        "/api/v1/calibration/tilt",
+        json={
+            "requested_owner": "manual",
+            "tilt_deg": -2.5,
+            "source": "test",
+        },
+    )
+    zoom = client.post(
+        "/api/v1/calibration/zoom",
+        json={
+            "requested_owner": "manual",
+            "zoom_fov_deg": 31.5,
+            "source": "test",
+        },
+    )
+
+    assert heading.status_code == 200
+    assert tilt.status_code == 200
+    assert zoom.status_code == 200
+    assert pipe.owner.owner == "manual"
+
+    state = client.get("/api/v1/calibration").json()["calibration"]
+    assert state["reference_heading"] == 247.1
+    assert state["heading"]["heading_deg"] == 247.1
+    assert state["heading"]["source"] == "test"
+    assert state["heading"]["note"] == "pier end"
+    assert state["tilt"]["tilt_deg"] == -2.5
+    assert state["zoom"]["zoom_fov_deg"] == 31.5
+    assert state["updated_at_unix_ms"] >= state["heading"]["captured_at_unix_ms"]
+
+    config_state = client.get("/api/v1/config").json()
+    assert config_state["current"]["calibration"]["reference_heading"] == 247.1
+
+
+def test_api_v1_calibration_is_owner_gated_kill_safe_and_validated():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.owner.request("testbed")
+
+    busy = client.post("/api/v1/calibration/heading", json={"heading_deg": 90.0})
+
+    assert busy.status_code == 409
+    assert busy.json()["code"] == "owner_busy"
+
+    invalid = client.post(
+        "/api/v1/calibration/heading",
+        json={"requested_owner": "manual", "takeover": True, "heading_deg": 361.0},
+    )
+
+    assert invalid.status_code == 422
+
+    client.post("/api/v1/safety/kill", json={})
+    killed = client.post(
+        "/api/v1/calibration/heading",
+        json={"requested_owner": "manual", "takeover": True, "heading_deg": 90.0},
+    )
+
+    assert killed.status_code == 409
+    assert killed.json()["code"] == "killed"
+
+
 def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -953,6 +1035,8 @@ if __name__ == "__main__":
     test_api_v1_ptz_auto_starts_tracking_owner_from_manual_hold()
     test_api_v1_ptz_auto_refuses_while_killed()
     test_api_v1_ptz_home_is_owner_gated_and_kill_respecting()
+    test_api_v1_calibration_captures_heading_tilt_zoom_state()
+    test_api_v1_calibration_is_owner_gated_kill_safe_and_validated()
     test_api_v1_ptz_zoom_endpoint_is_owner_gated()
     test_api_v1_zoom_stop_does_not_release_manual_owner_while_pan_tilt_active()
     test_api_v1_ptz_zoom_refuses_while_killed()
