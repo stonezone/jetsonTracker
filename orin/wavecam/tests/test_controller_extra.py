@@ -68,4 +68,16 @@ check(z.compute_zoom((0, 0, 40, 300), H)[0] == "wide", "big person -> wide")
 check(z.compute_zoom((0, 0, 40, 180), H) == ("stop", 0), "within deadband -> stop")
 check(z.compute_zoom(None, H) == ("stop", 0), "no person box -> hold zoom (stop)")
 
+zr = VisualServo(SimpleNamespace(target_frac=0.5, zoom_deadband=0.06, zoom_max=5, **BASE))
+check(zr.compute_zoom(None, H) == ("stop", 0), "fresh color-only frame holds zoom")
+check(
+    zr.compute_zoom((0, 0, 40, 90), H)[0] == "tele",
+    "far person starts zoom-in recovery state",
+)
+recovery = zr.compute_zoom(None, H)
+check(
+    recovery[0] == "wide" and recovery[1] > 0,
+    "lost person after zoom-in widens toward recovery",
+)
+
 print("\nALL %d CHECKS PASSED (cv2-free)" % _n)

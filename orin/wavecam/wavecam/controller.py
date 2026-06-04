@@ -6,7 +6,8 @@ compute(): P controller with a center deadzone (speed scales min..max across
 deadzone..1) + optional feed-forward lead (ff_gain) that anticipates motion, with
 a jump-guard that ignores detection switches.
 compute_zoom(): drives a YOLO person box toward target_frac of the frame height;
-holds zoom (stop) on color-only frames.
+holds zoom (stop) on fresh color-only frames, and widens after a prior zoom
+correction loses the person box.
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -38,6 +39,7 @@ class VisualServo:
     def __init__(self, cfg):
         self.cfg = cfg
         self._last = None      # last (ex, ey) image error, for feed-forward lead
+        self._zoom_recovery_active = False
 
     def _map_speed(self, err_abs: float, max_speed: int) -> int:
         dz = self.cfg.deadzone
@@ -99,16 +101,25 @@ class VisualServo:
 
     def compute_zoom(self, person_bbox: Optional[Tuple[int, int, int, int]],
                      frame_h: int) -> Tuple[str, int]:
-        """Zoom only off a YOLO person box; HOLD (stop) on color-only frames.
-        Drives the person bbox height toward target_frac of the frame height."""
-        if not person_bbox or frame_h <= 0:
+        """Zoom off a YOLO person box; recover wide after losing an active zoom."""
+        if frame_h <= 0:
             return "stop", 0
         target = getattr(self.cfg, "zoom_target_frac", getattr(self.cfg, "target_frac", 0.5))
         dz = getattr(self.cfg, "zoom_deadband", 0.06)
         zmax = int(getattr(self.cfg, "zoom_max_speed", getattr(self.cfg, "zoom_max", 5)))
+        zmax = max(1, zmax)
+        if not person_bbox:
+            if self._zoom_recovery_active:
+                recovery_speed = int(
+                    getattr(self.cfg, "zoom_recovery_speed", max(1, round(zmax * 0.4)))
+                )
+                return "wide", max(1, min(zmax, recovery_speed))
+            return "stop", 0
         frac = person_bbox[3] / float(frame_h)
         err = target - frac
         if abs(err) <= dz:
+            self._zoom_recovery_active = False
             return "stop", 0
         speed = max(1, min(zmax, int(round(abs(err) / max(1e-6, target) * zmax))))
+        self._zoom_recovery_active = True
         return ("tele" if err > 0 else "wide"), speed
