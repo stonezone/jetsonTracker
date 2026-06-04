@@ -408,7 +408,7 @@
           </div>
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Lock threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.lock_threshold</span></div>
-            <div class="ctrl-what">Confidence needed to <b>acquire</b> a lock.</div>
+            <div class="ctrl-what">Fused confidence needed to <b>acquire</b> a lock — the color+person score, not raw YOLO (see the note below).</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Waits for a sure target — fewer false locks.</span></div>
               <div class="adj"><b>Lower</b><span>Grabs eagerly — good in marginal visibility.</span></div>
@@ -417,7 +417,7 @@
           </div>
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Unlock threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.unlock_threshold</span></div>
-            <div class="ctrl-what">Confidence below which it <b>releases</b> the lock. Sits under Lock for hysteresis (no flapping).</div>
+            <div class="ctrl-what">Fused confidence below which it <b>releases</b> the lock. Keep it <b>under</b> Lock for hysteresis (no flapping).</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Lower</b><span>Hold a lock through spray, occlusion, sharp turns.</span></div>
               <div class="adj"><b>Raise</b><span>Drop a bad lock fast and re-acquire.</span></div>
@@ -426,7 +426,7 @@
           </div>
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Color / YOLO match px</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.match_dist</span></div>
-            <div class="ctrl-what">How close (pixels) your color blob must be to the person box to count as the same target.</div>
+            <div class="ctrl-what">How close (pixels) your color blob's center must be to the person's center to count as the same target.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>If your rashguard "detaches" from your body box at distance.</span></div>
               <div class="adj"><b>Lower</b><span>If nearby orange wrongly merges onto you.</span></div>
@@ -462,13 +462,18 @@
         </div>
       </div>
 
+      <div class="callout teal" style="margin-top:0.9rem">
+        <h3>What "confidence" means here</h3>
+        <p>Lock and unlock compare a <b>fused</b> score, not raw YOLO: a confirmed <em>color&nbsp;+&nbsp;person</em> target scores ~0.5–1.0, a color-only blob (or a lock sustaining near your last position) scores ~0.45, and a person with no color match scores ~0.2. So a lock of 0.60 means "only commit to a confirmed orange-on-person target," and unlock must stay below lock so a brief dropout doesn't drop you.</p>
+      </div>
+
       <!-- PTZ Tuning -->
       <div class="ctrl-group">
         <h3><span class="pill hot">B</span> PTZ Tuning <span class="tag">how fast &amp; smooth it moves</span></h3>
         <div class="ctrls">
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Deadband</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.deadzone</span></div>
-            <div class="ctrl-what">How far off-center you can drift before the camera moves at all.</div>
+            <div class="ctrl-what">How far off-center you can drift before the camera moves — measured as a fraction of the half-frame (not pixels).</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Calmer — stops micro-jitter around you.</span></div>
               <div class="adj"><b>Lower</b><span>Tighter — follows every small move.</span></div>
@@ -553,13 +558,22 @@
               <div class="see"><b>You'll see</b><span>The colored mask painted over the video.</span></div>
             </div>
           </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">JPEG quality</span><span class="pill hot">Hot</span><span class="ctrl-key">web.jpeg_quality</span></div>
+            <div class="ctrl-what">Quality of the live MJPEG preview (30–95). Your saved recordings are a separate, full-quality stream.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower</b><span>Weak / choppy link — smaller frames, smoother live preview.</span></div>
+              <div class="adj"><b>Raise</b><span>Sharper preview when you have the bandwidth.</span></div>
+              <div class="see"><b>You'll see</b><span>The preview get crisper or blockier (not your clips).</span></div>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Cinematic Zoom -->
       <div class="ctrl-group">
-        <h3><span class="pill restart">C</span> Cinematic Zoom <span class="tag">default off · auto-frame your size</span></h3>
-        <p class="card" style="margin-bottom:0.8rem">Cinematic Zoom is a bounded zoom policy, not a second tracker. When enabled <em>and</em> locked on a person box, it zooms to hold your on-screen size and then holds inside a deadband. No person box or no lock → it holds. A manual zoom nudge briefly suppresses it while pan/tilt keeps tracking. Enable it only after pan/tilt tracking looks good.</p>
+        <h3><span class="pill">C</span> Cinematic Zoom <span class="tag">default off · all keys hot</span></h3>
+        <p class="card" style="margin-bottom:0.8rem">Cinematic Zoom is a bounded zoom policy, not a second tracker. It only runs when PTZ is enabled, <b>AUTO</b> (autonomous) owns the camera, and there's a <b>lock</b> on a person box — then it zooms to hold your on-screen size and holds inside a deadband. With no lock it sends a zoom <em>stop</em> (it doesn't keep an old zoom move). A manual zoom nudge briefly suppresses it while pan/tilt keeps tracking. Enable it only after pan/tilt tracking looks good.</p>
         <div class="ctrls">
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Enable</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.cinematic_zoom_enabled</span></div>
@@ -665,7 +679,7 @@
         <table>
           <thead><tr><th>Part</th><th>What it is</th><th>How it connects</th></tr></thead>
           <tbody>
-            <tr><td><b>Compute</b></td><td>Jetson Orin Nano — runs vision (YOLOv8n TensorRT + color), fusion, servo, the API.</td><td>Wired camera LAN <code>192.168.100.10</code>; serves the app on <code>:8088</code>.</td></tr>
+            <tr><td><b>Compute</b></td><td>Jetson Orin Nano — runs vision (YOLOv8n TensorRT + color), fusion, servo, the API.</td><td>Orin's camera-LAN interface <code>192.168.100.10</code>; serves the app on <code>:8088</code>.</td></tr>
             <tr><td><b>Camera</b></td><td>Prisual NDI PTZ — the pan/tilt/zoom actuator and video source.</td><td>Orin-only control via VISCA over UDP <code>192.168.100.88:1259</code>; video over RTSP.</td></tr>
             <tr><td><b>GPS</b> <span class="pill">Planned</span></td><td>SeeedStudio Wio Tracker L1 Lite (LoRa / Meshtastic) — coarse point &amp; zoom at long range; vision refines in-frame.</td><td>Not yet live; the stub returns empty. Heading comes from pan-home, no magnetometer.</td></tr>
             <tr><td><b>Console</b></td><td>The iOS WaveCam app — your operator screen.</td><td>USB tether <code>172.20.10.8</code> or Wi-Fi <code>192.168.1.155</code>, port <code>:8088</code>.</td></tr>
