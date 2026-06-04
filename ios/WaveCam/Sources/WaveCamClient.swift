@@ -194,6 +194,62 @@ struct WCConfig: Codable, Sendable {
     }
 }
 
+// MARK: - Calibration models
+
+/// Persisted calibration entry for a single axis returned inside GET /api/v1/calibration.
+struct WCCalibrationEntry: Codable, Sendable {
+    var capturedAtUnixMs: Int?
+    var source: String?
+    var note: String?
+    // Axis-specific fields – only one will be present per entry.
+    var headingDeg: Double?
+    var tiltDeg: Double?
+    var zoomFovDeg: Double?
+}
+
+/// The `calibration` sub-object from GET /api/v1/calibration (and POST responses).
+/// Field names match snake_case JSON decoded via .convertFromSnakeCase.
+struct WCCalibrationState: Codable, Sendable {
+    var referenceHeading: Double?
+    var heading: WCCalibrationEntry?
+    var tilt: WCCalibrationEntry?
+    var zoom: WCCalibrationEntry?
+    var updatedAtUnixMs: Int?
+}
+
+/// Envelope returned by GET /api/v1/calibration and each POST /calibration/* endpoint.
+private struct WCCalibrationResponse: Codable, Sendable {
+    var ok: Bool?
+    var code: String?
+    var message: String?
+    var calibration: WCCalibrationState?
+    var status: WCStatus?
+}
+
+/// Structured refusal reason surfaced to the UI on a failed calibration capture.
+enum WaveCamCalibrationError: LocalizedError, Sendable {
+    case killed
+    case ownerBusy
+    case unavailable   // endpoint not present (backend not yet deployed)
+    case httpError(Int, String?)
+    case networkError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .killed:
+            return "KILL is latched — resume before capturing calibration."
+        case .ownerBusy:
+            return "Another PTZ owner holds the camera. Try again or take over."
+        case .unavailable:
+            return "On-device calibration requires the latest Orin build — checklist only for now."
+        case let .httpError(code, msg):
+            return msg.map { "\($0) (HTTP \(code))" } ?? "HTTP \(code)"
+        case let .networkError(desc):
+            return "Network error: \(desc)"
+        }
+    }
+}
+
 // MARK: - Media models
 
 /// One recording returned by GET /api/v1/media/list.
@@ -511,6 +567,120 @@ final class WaveCamClient {
             return try Self.decoder.decode(WCConfig.self, from: data)
         } catch {
             return nil
+        }
+    }
+
+    // MARK: calibration (owner-gated, PTZ auth, KILL-rejected on the backend)
+
+    /// GET /api/v1/calibration — returns nil when the endpoint is absent (not yet deployed)
+    /// or on any network error. The `.unavailable` case is detected by a 404 status code.
+    func calibrationState() async -> WCCalibrationState? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("calibration")
+            let response = try Self.decoder.decode(WCCalibrationResponse.self, from: data)
+            return response.calibration
+        } catch let error as WaveCamAPIError where error.statusCode == 404 {
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    /// True = endpoint present; false = 404 (backend not deployed); nil = network failure.
+    func calibrationAvailable() async -> Bool? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("calibration")
+            _ = try Self.decoder.decode(WCCalibrationResponse.self, from: data)
+            return true
+        } catch let error as WaveCamAPIError where error.statusCode == 404 {
+            return false
+        } catch {
+            return nil
+        }
+    }
+
+    /// POST /api/v1/calibration/heading
+    /// Fields: requested_owner, takeover, heading_deg (0…360), source, note (optional)
+    func captureCalibrationHeading(
+        headingDeg: Double,
+        source: String = "ios_native",
+        note: String? = nil
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "requested_owner": "manual",
+            "takeover": true,
+            "heading_deg": headingDeg,
+            "source": source
+        ]
+        if let note { body["note"] = note }
+        return await sendCalibrationCapture("calibration/heading", body: body)
+    }
+
+    /// POST /api/v1/calibration/tilt
+    /// Fields: requested_owner, takeover, tilt_deg (-90…90), source, note (optional)
+    func captureCalibrationTilt(
+        tiltDeg: Double,
+        source: String = "ios_native",
+        note: String? = nil
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "requested_owner": "manual",
+            "takeover": true,
+            "tilt_deg": tiltDeg,
+            "source": source
+        ]
+        if let note { body["note"] = note }
+        return await sendCalibrationCapture("calibration/tilt", body: body)
+    }
+
+    /// POST /api/v1/calibration/zoom
+    /// Fields: requested_owner, takeover, zoom_fov_deg (1…180), source, note (optional)
+    func captureCalibrationZoom(
+        zoomFovDeg: Double,
+        source: String = "ios_native",
+        note: String? = nil
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "requested_owner": "manual",
+            "takeover": true,
+            "zoom_fov_deg": zoomFovDeg,
+            "source": source
+        ]
+        if let note { body["note"] = note }
+        return await sendCalibrationCapture("calibration/zoom", body: body)
+    }
+
+    private func sendCalibrationCapture(
+        _ path: String,
+        body: [String: Any]
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        do {
+            let data = try await post(path, body: body)
+            let response = try Self.decoder.decode(WCCalibrationResponse.self, from: data)
+            if let status = response.status { self.status = status; connected = true }
+            guard let calibration = response.calibration else {
+                return .failure(.httpError(200, "Backend returned no calibration state."))
+            }
+            return .success(calibration)
+        } catch let apiError as WaveCamAPIError {
+            // Surface structured refusals from the backend (killed / owner_busy).
+            if let obj = try? JSONSerialization.jsonObject(with: apiError.data) as? [String: Any] {
+                let code = obj["code"] as? String ?? ""
+                let message = obj["message"] as? String
+                switch code {
+                case "killed":  return .failure(.killed)
+                case "owner_busy": return .failure(.ownerBusy)
+                default: return .failure(.httpError(apiError.statusCode, message ?? code))
+                }
+            }
+            return .failure(.httpError(apiError.statusCode, apiError.localizedDescription))
+        } catch {
+            return .failure(.networkError(error.localizedDescription))
         }
     }
 

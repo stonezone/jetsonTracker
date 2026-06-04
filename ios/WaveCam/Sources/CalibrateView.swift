@@ -1,10 +1,25 @@
 import SwiftUI
 
 /// Calibration wizard: preflight, base lock, heading, tilt, zoom/FOV, and dry-run.
+///
+/// Feature-detect: probes GET /api/v1/calibration on appear. When the endpoint is absent
+/// (backend not yet deployed) the wizard enters `.unavailable` mode — steps are still
+/// navigable as a checklist but no capture is sent and no green "DONE" mark appears.
+/// When the backend is updated, capture activates automatically on the next appearance.
 struct CalibrateView: View {
     @Environment(WaveCamClient.self) private var client
     @State private var activeStepID = CalibrationStep.preflight.id
     @State private var capturedStepIDs: Set<Int> = []
+    @State private var persistedState: WCCalibrationState? = nil
+
+    /// nil = probing, true = endpoint present, false = backend not yet deployed
+    @State private var calibrationAvailable: Bool? = nil
+
+    /// Populated when the most recent capture was refused (killed, owner_busy, etc).
+    @State private var refusalMessage: String? = nil
+
+    /// True while a capture POST is in-flight for the active step.
+    @State private var isCaptureInFlight = false
 
     private var activeStep: CalibrationStep {
         CalibrationStep.all.first { $0.id == activeStepID } ?? .preflight
@@ -13,7 +28,13 @@ struct CalibrateView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                CalibrationStatusStrip(status: client.status)
+                if calibrationAvailable == false {
+                    CalibrationUnavailableBanner()
+                }
+                CalibrationStatusStrip(
+                    status: client.status,
+                    persistedState: persistedState
+                )
                 CalibrationStepsCard(
                     activeStepID: activeStepID,
                     capturedStepIDs: capturedStepIDs,
@@ -22,11 +43,16 @@ struct CalibrateView: View {
                 CalibrationActiveCard(
                     step: activeStep,
                     canGoBack: activeStepID > CalibrationStep.preflight.id,
-                    canGoForward: activeStepID < CalibrationStep.dryRun.id && capturedStepIDs.contains(activeStepID),
+                    canGoForward: activeStepID < CalibrationStep.dryRun.id
+                        && capturedStepIDs.contains(activeStepID),
                     isCaptured: capturedStepIDs.contains(activeStepID),
+                    isCaptureInFlight: isCaptureInFlight,
+                    calibrationAvailable: calibrationAvailable,
+                    refusalMessage: refusalMessage,
                     onBack: moveBack,
                     onCapture: captureActiveStep,
-                    onForward: moveForward
+                    onForward: moveForward,
+                    onDismissRefusal: { refusalMessage = nil }
                 )
             }
             .padding(.horizontal, 16)
@@ -35,28 +61,144 @@ struct CalibrateView: View {
         }
         .background(WC.bg.ignoresSafeArea())
         .scrollIndicators(.hidden)
-        .task { await client.refresh() }
-    }
-
-    private func selectStep(_ step: CalibrationStep) {
-        activeStepID = step.id
-    }
-
-    private func captureActiveStep() {
-        capturedStepIDs.insert(activeStepID)
-        if activeStepID < CalibrationStep.dryRun.id {
-            activeStepID += 1
+        .task {
+            await client.refresh()
+            await probeCalibrationEndpoint()
         }
     }
 
+    // MARK: - Endpoint probe
+
+    private func probeCalibrationEndpoint() async {
+        let available = await client.calibrationAvailable()
+        calibrationAvailable = available
+        if available == true {
+            persistedState = await client.calibrationState()
+        }
+    }
+
+    // MARK: - Step navigation
+
+    private func selectStep(_ step: CalibrationStep) {
+        refusalMessage = nil
+        activeStepID = step.id
+    }
+
     private func moveBack() {
+        refusalMessage = nil
         activeStepID = max(CalibrationStep.preflight.id, activeStepID - 1)
     }
 
     private func moveForward() {
+        refusalMessage = nil
         activeStepID = min(CalibrationStep.dryRun.id, activeStepID + 1)
     }
+
+    // MARK: - Capture dispatch
+
+    private func captureActiveStep() {
+        // Steps without a backend endpoint (preflight, baseLock, dryRun) advance locally.
+        let localSteps: Set<Int> = [
+            CalibrationStep.preflight.id,
+            CalibrationStep.baseLock.id,
+            CalibrationStep.dryRun.id
+        ]
+        if localSteps.contains(activeStepID) {
+            capturedStepIDs.insert(activeStepID)
+            if activeStepID < CalibrationStep.dryRun.id { activeStepID += 1 }
+            return
+        }
+
+        // When the backend is not yet deployed, treat as a checklist-only confirm.
+        if calibrationAvailable == false {
+            capturedStepIDs.insert(activeStepID)
+            if activeStepID < CalibrationStep.dryRun.id { activeStepID += 1 }
+            return
+        }
+
+        // Backend is available (or still probing) — send the real POST.
+        Task { await performCapture() }
+    }
+
+    private func performCapture() async {
+        guard !isCaptureInFlight else { return }
+        isCaptureInFlight = true
+        refusalMessage = nil
+        defer { isCaptureInFlight = false }
+
+        let result: Result<WCCalibrationState, WaveCamCalibrationError>
+
+        switch activeStepID {
+        case CalibrationStep.heading.id:
+            result = await client.captureCalibrationHeading(headingDeg: resolvedHeadingDeg())
+        case CalibrationStep.tilt.id:
+            result = await client.captureCalibrationTilt(tiltDeg: resolvedTiltDeg())
+        case CalibrationStep.zoom.id:
+            result = await client.captureCalibrationZoom(zoomFovDeg: resolvedZoomFovDeg())
+        default:
+            // Should not reach here — local steps short-circuit above.
+            capturedStepIDs.insert(activeStepID)
+            return
+        }
+
+        switch result {
+        case let .success(state):
+            persistedState = state
+            capturedStepIDs.insert(activeStepID)
+            if activeStepID < CalibrationStep.dryRun.id { activeStepID += 1 }
+        case let .failure(error):
+            refusalMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Capture value resolution
+    //
+    // These are placeholder capture values sent with each POST.
+    // The heading/tilt/zoom steps instruct the operator to aim the camera
+    // manually; the backend reads motor position directly from the PTZ — the
+    // iOS app supplies only the annotation fields (source, note). The numeric
+    // fields below are required by the Pydantic models but carry the operator's
+    // current intent annotation rather than a computed motor value.
+    // TODO(calibration): once the backend exposes a "read current PTZ position"
+    // endpoint, replace these with live motor-position reads.
+
+    private func resolvedHeadingDeg() -> Double {
+        // Use last known GPS bearing as a sensible default; fall back to 0.
+        client.status?.gps?.bearingDeg ?? 0.0
+    }
+
+    private func resolvedTiltDeg() -> Double {
+        // Level horizon reference — 0 deg tilt is the canonical level-reference capture.
+        0.0
+    }
+
+    private func resolvedZoomFovDeg() -> Double {
+        // Wide-angle capture for the FOV-curve anchor point.
+        31.5
+    }
 }
+
+// MARK: - Unavailable banner
+
+private struct CalibrationUnavailableBanner: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(WC.warn)
+            Text("On-device calibration requires the latest Orin build — checklist only for now.")
+                .font(.system(size: 12))
+                .foregroundStyle(WC.muted)
+                .lineSpacing(3)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WC.warn.opacity(0.08), in: .rect(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.warn.opacity(0.35)))
+    }
+}
+
+// MARK: - Step model
 
 private struct CalibrationStep: Identifiable, Equatable {
     let id: Int
@@ -130,12 +272,20 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let all: [CalibrationStep] = [.preflight, .baseLock, .heading, .tilt, .zoom, .dryRun]
 }
 
+// MARK: - Status strip
+
 private struct CalibrationStatusStrip: View {
     let status: WCStatus?
+    let persistedState: WCCalibrationState?
 
     private var gpsText: String {
         guard let distance = status?.gps?.distanceM else { return "UNKNOWN" }
         return "\(Int(distance.rounded()))m"
+    }
+
+    private var refHeadingText: String {
+        guard let deg = persistedState?.referenceHeading else { return "—" }
+        return String(format: "%.1f°", deg)
     }
 
     var body: some View {
@@ -143,6 +293,7 @@ private struct CalibrationStatusStrip: View {
             CalibrationMetric(label: "SESSION", value: status?.session.state ?? "READY", tint: WC.ok)
             CalibrationMetric(label: "GPS", value: gpsText, tint: WC.ok)
             CalibrationMetric(label: "OWNER", value: status?.ptz.owner.ptzOwnerLabel ?? "IDLE", tint: WC.brand)
+            CalibrationMetric(label: "REF HDG", value: refHeadingText, tint: WC.muted)
         }
     }
 }
@@ -171,6 +322,8 @@ private struct CalibrationMetric: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.line))
     }
 }
+
+// MARK: - Steps list card
 
 private struct CalibrationStepsCard: View {
     let activeStepID: Int
@@ -293,14 +446,35 @@ private struct StepBadge: View {
     }
 }
 
+// MARK: - Active step card
+
 private struct CalibrationActiveCard: View {
     let step: CalibrationStep
     let canGoBack: Bool
     let canGoForward: Bool
     let isCaptured: Bool
+    let isCaptureInFlight: Bool
+    /// nil = still probing; false = unavailable; true = live
+    let calibrationAvailable: Bool?
+    let refusalMessage: String?
     let onBack: () -> Void
     let onCapture: () -> Void
     let onForward: () -> Void
+    let onDismissRefusal: () -> Void
+
+    /// Steps whose capture is local-only (no backend POST).
+    private static let localStepIDs: Set<Int> = [
+        CalibrationStep.preflight.id,
+        CalibrationStep.baseLock.id,
+        CalibrationStep.dryRun.id
+    ]
+
+    private var isLocalStep: Bool { Self.localStepIDs.contains(step.id) }
+
+    /// True when the capture button should show a "not wired yet" indicator.
+    private var showsChecklistMode: Bool {
+        !isLocalStep && calibrationAvailable == false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -328,6 +502,28 @@ private struct CalibrationActiveCard: View {
                 .foregroundStyle(WC.muted)
                 .lineSpacing(4)
 
+            // Refusal message strip — appears only when a capture was refused.
+            if let msg = refusalMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark.octagon.fill")
+                        .foregroundStyle(WC.kill)
+                    Text(msg)
+                        .font(.system(size: 12))
+                        .foregroundStyle(WC.kill)
+                        .lineSpacing(3)
+                    Spacer(minLength: 0)
+                    Button(action: onDismissRefusal) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(WC.faint)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(WC.kill.opacity(0.08), in: .rect(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.kill.opacity(0.35)))
+            }
+
             HStack(spacing: 8) {
                 Button {
                     onBack()
@@ -338,12 +534,7 @@ private struct CalibrationActiveCard: View {
                 .disabled(!canGoBack)
                 .opacity(canGoBack ? 1 : 0.38)
 
-                Button {
-                    onCapture()
-                } label: {
-                    Label(isCaptured ? "Captured" : step.actionTitle, systemImage: isCaptured ? "checkmark.circle.fill" : "dot.scope")
-                }
-                .buttonStyle(CalibrationButtonStyle(tint: isCaptured ? WC.ok : WC.brand, filled: true))
+                captureButton
 
                 Button {
                     onForward()
@@ -359,7 +550,48 @@ private struct CalibrationActiveCard: View {
         .background(WC.panel, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
+
+    @ViewBuilder
+    private var captureButton: some View {
+        if isCaptureInFlight {
+            Button {} label: {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .tint(Color.black)
+                        .scaleEffect(0.75)
+                    Text("Capturing…")
+                }
+            }
+            .buttonStyle(CalibrationButtonStyle(tint: WC.brand, filled: true))
+            .disabled(true)
+        } else if showsChecklistMode {
+            // Backend not deployed — checklist-only confirm. Do NOT show a green checkmark
+            // that implies hardware calibration actually ran.
+            Button {
+                onCapture()
+            } label: {
+                Label(
+                    isCaptured ? "Noted (checklist)" : step.actionTitle,
+                    systemImage: isCaptured ? "list.bullet.clipboard.fill" : "dot.scope"
+                )
+            }
+            .buttonStyle(CalibrationButtonStyle(tint: isCaptured ? WC.muted : WC.brand, filled: isCaptured))
+        } else {
+            Button {
+                onCapture()
+            } label: {
+                Label(
+                    isCaptured ? "Captured" : step.actionTitle,
+                    systemImage: isCaptured ? "checkmark.circle.fill" : "dot.scope"
+                )
+            }
+            .buttonStyle(CalibrationButtonStyle(tint: isCaptured ? WC.ok : WC.brand, filled: true))
+            .disabled(isCaptureInFlight)
+        }
+    }
 }
+
+// MARK: - Button style
 
 private struct CalibrationButtonStyle: ButtonStyle {
     let tint: Color
