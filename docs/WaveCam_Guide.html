@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>WaveCam — Operator Guide</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      /* Surfaces */
+      --bg:        #06101a;
+      --bg2:       #08131f;
+      --surface:   rgba(20, 34, 48, 0.55);
+      --surface2:  rgba(12, 23, 34, 0.62);
+      --glass:     rgba(255, 255, 255, 0.045);
+      --line:      rgba(150, 196, 222, 0.16);
+      --line2:     rgba(150, 196, 222, 0.30);
+      /* Ink */
+      --text:      #eaf5fb;
+      --muted:     #9bb1c0;
+      --faint:     #62788a;
+      /* Brand roles — mirror the iOS app theme exactly */
+      --accent:    #36d1c4;  /* teal  = interactive / links / active / HOT */
+      --accent-d:  #1fb3a7;
+      --brand:     #ff6a1f;  /* orange = WaveCam brand + subject-cue */
+      --brand-2:   #ff8a4d;
+      --kill:      #ff443d;  /* red   = KILL / danger */
+      --ok:        #3ee58f;
+      --warn:      #f5c451;
+      /* Form */
+      --radius:    18px;
+      --radius-sm: 12px;
+      --shadow:    0 24px 70px rgba(0, 0, 0, 0.45);
+      --blur:      saturate(150%) blur(20px);
+      --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(34rem 34rem at 82% -4%, rgba(255, 106, 31, 0.13), transparent 70%),
+        radial-gradient(40rem 40rem at 4% 12%, rgba(54, 209, 196, 0.10), transparent 70%),
+        linear-gradient(180deg, var(--bg) 0%, #081522 46%, var(--bg) 100%);
+      background-attachment: fixed;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, .mono { font-family: var(--mono); }
+    code {
+      color: #d6f6ff;
+      background: rgba(54, 209, 196, 0.10);
+      border: 1px solid rgba(54, 209, 196, 0.18);
+      padding: 0.08em 0.4em;
+      border-radius: 6px;
+      font-size: 0.88em;
+      white-space: nowrap;
+    }
+
+    /* ---------- Top nav ---------- */
+    .nav {
+      position: sticky; top: 0; z-index: 40;
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.7rem clamp(0.9rem, 3vw, 2.4rem);
+      padding-top: max(0.7rem, env(safe-area-inset-top));
+      background: rgba(6, 16, 26, 0.72);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+    }
+    .brand { display: flex; align-items: center; gap: 0.55rem; font-weight: 800; letter-spacing: 0.04em; font-size: 0.98rem; }
+    .brand-dot {
+      width: 0.66rem; height: 0.66rem; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, var(--brand-2), var(--brand));
+      box-shadow: 0 0 16px rgba(255, 106, 31, 0.8);
+    }
+    .brand em { color: var(--brand); font-style: normal; }
+    .nav-scroll { margin-left: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .nav-scroll::-webkit-scrollbar { display: none; }
+    .nav-links { display: flex; align-items: center; gap: 0.2rem; font: 600 0.76rem/1 var(--sans); }
+    .nav-links a {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      color: var(--muted); padding: 0.5rem 0.7rem; border-radius: 999px; white-space: nowrap;
+    }
+    .nav-links a:hover { background: var(--glass); color: var(--text); text-decoration: none; }
+    .nav-links a .ic { width: 0.95rem; height: 0.95rem; opacity: 0.8; }
+
+    /* ---------- Hero ---------- */
+    .hero {
+      max-width: 1180px; margin: 0 auto;
+      padding: clamp(2.4rem, 7vw, 5.4rem) clamp(1rem, 5vw, 3rem) clamp(1.6rem, 4vw, 3rem);
+      display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: clamp(1.4rem, 4vw, 3rem); align-items: center;
+    }
+    .eyeline { color: var(--accent); font: 700 0.74rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.16em; margin-bottom: 1rem; }
+    h1 { margin: 0; font-size: clamp(2.6rem, 7vw, 5.2rem); line-height: 0.92; letter-spacing: -0.02em; font-weight: 800; }
+    h1 em { font-style: normal; color: var(--brand); }
+    .lede { color: var(--muted); font-size: clamp(1rem, 1.5vw, 1.16rem); max-width: 38rem; margin: 1.2rem 0 1.6rem; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.45rem; min-height: 2.7rem; padding: 0 1.1rem;
+      border-radius: var(--radius-sm); border: 1px solid var(--line2); background: var(--glass);
+      color: var(--text); font-weight: 650; font-size: 0.9rem; cursor: pointer;
+    }
+    .btn:hover { text-decoration: none; border-color: var(--accent); }
+    .btn.primary { color: #04201d; background: linear-gradient(180deg, var(--accent), var(--accent-d)); border-color: transparent; font-weight: 750; }
+    .btn .ic { width: 1.05rem; height: 1.05rem; }
+
+    .summary {
+      border: 1px solid var(--line); border-radius: 24px; padding: 1rem;
+      background: linear-gradient(180deg, rgba(54,209,196,0.06), var(--surface2));
+      box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+      display: grid; gap: 0.6rem;
+    }
+    .summary-row { display: grid; grid-template-columns: 5.4rem 1fr; gap: 0.85rem; align-items: start; padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: rgba(6,16,26,0.5); }
+    .summary-row b { color: var(--brand-2); font: 700 0.7rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; padding-top: 0.1rem; }
+    .summary-row span { color: var(--muted); font-size: 0.86rem; }
+
+    /* ---------- Sections ---------- */
+    main { max-width: 1180px; margin: 0 auto; padding: 0 clamp(1rem, 5vw, 3rem) 3rem; }
+    section { padding: clamp(2.2rem, 5vw, 3.6rem) 0; border-top: 1px solid var(--line); scroll-margin-top: 4.2rem; }
+    .sec-head { margin-bottom: 1.4rem; }
+    .kicker { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--accent); font: 700 0.74rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 0.7rem; }
+    .kicker .ic { width: 1.05rem; height: 1.05rem; }
+    h2 { margin: 0; font-size: clamp(1.7rem, 4.4vw, 2.9rem); line-height: 1.0; letter-spacing: -0.015em; font-weight: 800; }
+    .sec-head .sub { color: var(--muted); max-width: 46rem; margin-top: 0.7rem; font-size: 1rem; }
+    h3 { margin: 0 0 0.5rem; font-size: 1.02rem; color: var(--text); font-weight: 700; }
+
+    .grid { display: grid; gap: 0.9rem; }
+    .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    .card, .callout {
+      border: 1px solid var(--line); border-radius: var(--radius);
+      background: var(--surface); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+      padding: 1rem; transition: transform 0.18s ease, border-color 0.18s ease;
+    }
+    .card:hover { transform: translateY(-2px); border-color: var(--line2); }
+    .card p, .callout p { color: var(--muted); font-size: 0.92rem; margin: 0.35rem 0 0; }
+    .card ul, .card ol, .callout ul { color: var(--muted); font-size: 0.92rem; padding-left: 1.15rem; margin: 0.5rem 0 0; }
+    .card li, .callout li { margin: 0.28rem 0; }
+    .callout { border-color: rgba(255, 106, 31, 0.34); background: linear-gradient(180deg, rgba(255,106,31,0.10), var(--surface)); }
+    .callout.teal { border-color: rgba(54,209,196,0.34); background: linear-gradient(180deg, rgba(54,209,196,0.10), var(--surface)); }
+    .callout.kill { border-color: rgba(255,68,61,0.36); background: linear-gradient(180deg, rgba(255,68,61,0.11), var(--surface)); }
+
+    /* Badges / pills */
+    .pill { display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--line2); border-radius: 999px; padding: 0.22rem 0.55rem; font: 700 0.64rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .pill.hot  { color: var(--accent); border-color: rgba(54,209,196,0.4); background: rgba(54,209,196,0.08); }
+    .pill.restart { color: var(--warn); border-color: rgba(245,196,81,0.4); background: rgba(245,196,81,0.08); }
+    .pill.ok { color: var(--ok); border-color: rgba(62,229,143,0.4); background: rgba(62,229,143,0.08); }
+    .pill.stop { color: var(--kill); border-color: rgba(255,68,61,0.4); background: rgba(255,68,61,0.08); }
+    .pill.subj { color: var(--brand-2); border-color: rgba(255,106,31,0.4); background: rgba(255,106,31,0.08); }
+
+    /* Figures (screenshots) */
+    figure { margin: 0; }
+    .shot {
+      border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+      background: rgba(6,16,26,0.55); position: relative;
+    }
+    .shot img { display: block; width: 100%; height: auto; }
+    .shot.phone { max-width: 300px; }
+    .shot figcaption, figure > figcaption { color: var(--faint); font: 0.76rem/1.4 var(--mono); padding: 0.5rem 0.2rem 0; }
+    /* graceful pre-screenshot state */
+    .shot img { min-height: 120px; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0 12px, transparent 12px 24px); }
+
+    /* ---------- Control reference ---------- */
+    .ctrl-group { margin-top: 1.2rem; }
+    .ctrl-group > h3 { display: flex; align-items: center; gap: 0.55rem; font-size: 1.1rem; margin-bottom: 0.8rem; }
+    .ctrl-group > h3 .tag { font: 700 0.66rem/1 var(--mono); color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; border: 1px solid var(--line); border-radius: 999px; padding: 0.24rem 0.5rem; }
+    .ctrls { display: grid; gap: 0.8rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ctrl {
+      border: 1px solid var(--line); border-radius: var(--radius); padding: 0.95rem 1rem;
+      background: var(--surface2); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+      display: grid; gap: 0.5rem; align-content: start;
+    }
+    .ctrl:hover { border-color: var(--line2); }
+    .ctrl-top { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .ctrl-name { font-weight: 750; font-size: 0.98rem; color: var(--text); }
+    .ctrl-key { font: 0.72rem/1 var(--mono); color: var(--faint); }
+    .ctrl-what { color: var(--muted); font-size: 0.9rem; }
+    .ctrl-meta { display: grid; gap: 0.3rem; margin-top: 0.1rem; }
+    .ctrl-meta div { font-size: 0.84rem; color: var(--muted); display: grid; grid-template-columns: 4.7rem 1fr; gap: 0.5rem; }
+    .ctrl-meta div b { color: var(--text); font: 700 0.66rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.05em; }
+    .ctrl-meta .adj b { color: var(--accent); }
+    .ctrl-meta .see b { color: var(--brand-2); }
+
+    /* Tables */
+    .tablewrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 34rem; }
+    th, td { text-align: left; vertical-align: top; padding: 0.75rem 0.85rem; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+    th { color: var(--text); font: 700 0.7rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; background: rgba(255,255,255,0.03); position: sticky; top: 0; }
+    td { color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+
+    /* Steps */
+    .steps { counter-reset: s; display: grid; gap: 0.7rem; padding: 0; list-style: none; margin: 0; }
+    .steps li { counter-increment: s; position: relative; padding: 0.85rem 1rem 0.85rem 3rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface2); color: var(--muted); font-size: 0.92rem; }
+    .steps li::before { content: counter(s); position: absolute; left: 0.85rem; top: 0.85rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font: 700 0.8rem/1 var(--mono); color: #04201d; background: linear-gradient(180deg, var(--accent), var(--accent-d)); }
+    .steps li b { color: var(--text); }
+
+    .footer { max-width: 1180px; margin: 0 auto; padding: 1.6rem clamp(1rem,5vw,3rem) calc(2.4rem + env(safe-area-inset-bottom)); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.8rem; color: var(--faint); font: 0.76rem/1.4 var(--mono); border-top: 1px solid var(--line); }
+
+    /* ---------- Responsive ---------- */
+    @media (max-width: 860px) {
+      .hero { grid-template-columns: 1fr; }
+      .g2, .g3, .g4, .ctrls { grid-template-columns: 1fr; }
+      .summary-row { grid-template-columns: 4.6rem 1fr; }
+    }
+    @media (min-width: 561px) and (max-width: 860px) {
+      .g3, .g4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .ctrls { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+      .hero > * { animation: rise 0.6s cubic-bezier(0.22,1,0.36,1) both; }
+      .summary { animation-delay: 0.1s; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="brand"><span class="brand-dot"></span>WAVE<em>CAM</em></div>
+    <div class="nav-scroll">
+      <div class="nav-links">
+        <a href="#overview">Overview</a>
+        <a href="#live">Live</a>
+        <a href="#calibrate">Calibrate</a>
+        <a href="#tune">Tune</a>
+        <a href="#agent">Agent</a>
+        <a href="#connect">Connect</a>
+        <a href="#media">Media</a>
+        <a href="#safety">Safety</a>
+        <a href="#troubleshooting">Fixes</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <div class="eyeline">Operator Guide · v1</div>
+      <h1>Film yourself,<br /><em>hands-free.</em></h1>
+      <p class="lede">WaveCam is a vision-guided PTZ camera that keeps you in frame while you foil-surf 50–300&nbsp;m offshore. A Jetson Orin watches for your <span style="color:var(--brand-2)">orange rashguard</span> plus a person detection, locks on, and drives the camera — you just ride. This guide walks every screen and every tuning control in the app.</p>
+      <div class="btn-row">
+        <a class="btn primary" href="#live">Start with Live</a>
+        <a class="btn" href="#tune">Jump to tuning</a>
+      </div>
+    </div>
+    <div class="summary">
+      <div class="summary-row"><b>iPhone</b><span>The WaveCam app is your console: Live feed, PTZ joystick, Calibrate, Tune, Connect, Media. It auto-picks USB&nbsp;tether or Wi-Fi and labels the active route.</span></div>
+      <div class="summary-row"><b>Orin</b><span>Jetson Orin Nano runs the backend (<code>:8088</code>): vision tracking (YOLOv8n + color), the camera link, safety, tuning, and the MJPEG preview.</span></div>
+      <div class="summary-row"><b>Camera</b><span>Prisual NDI PTZ does the pan / tilt / zoom. Only the Orin talks to it — the phone never commands the camera directly.</span></div>
+      <div class="summary-row"><b>You</b><span>Wear orange, hit <span style="color:var(--accent)">AUTO</span>, and keep <span style="color:var(--kill)">KILL</span> within reach. Vision keeps you framed; LoRa GPS (coming) will point it at long range.</span></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section id="overview">
+      <div class="sec-head">
+        <div class="kicker">How it works</div>
+        <h2>One subject, one camera, one safe path</h2>
+        <p class="sub">WaveCam finds you two ways at once and fuses them: a neural net (YOLOv8n) spots a <em>person</em>, and a color detector spots your <em>orange rashguard</em>. When both agree, it <b>locks</b> and the camera follows. Everything routes through the Orin so there is exactly one authority for movement and safety.</p>
+      </div>
+      <div class="grid g3">
+        <div class="card"><span class="pill subj">Cue</span><h3>Color + person fusion</h3><p>Your orange rashguard is the standout cue on a blue ocean. YOLO confirms it's a person, not a buoy. Agreement within a pixel distance = a confirmed target.</p></div>
+        <div class="card"><span class="pill ok">Lock</span><h3>Lock with hysteresis</h3><p>Confidence above the <b>lock</b> threshold acquires; it only releases below the lower <b>unlock</b> threshold, so spray and quick turns don't drop you.</p></div>
+        <div class="card"><span class="pill hot">Follow</span><h3>Smooth servo + zoom</h3><p>A deadband-and-feed-forward controller pans/tilts without twitching. Optional Cinematic Zoom holds your on-screen size. The camera caps its own speed.</p></div>
+      </div>
+      <div class="callout teal" style="margin-top:0.9rem">
+        <h3>Reading this guide from the app</h3>
+        <p>Tap the <b>Guide</b> button on any tab and it opens straight to that tab's section here. You can also browse the whole thing top to bottom — the nav bar up top jumps between sections.</p>
+      </div>
+    </section>
+
+    <!-- LIVE -->
+    <section id="live">
+      <div class="sec-head">
+        <div class="kicker">Live tab</div>
+        <h2>Fly it, or let it fly itself</h2>
+        <p class="sub">The Live tab is the camera feed plus everything you touch in the water: the joystick, zoom, record, and the two controls that matter most — <span style="color:var(--accent)">AUTO</span> and <span style="color:var(--kill)">KILL</span>.</p>
+      </div>
+      <div class="grid g2" style="align-items:start">
+        <figure class="shot phone">
+          <img src="guide_assets/live.jpg" alt="WaveCam Live tab: camera feed with joystick, zoom slider, and control dock" />
+          <figcaption>Live tab — feed, glass control dock, lock HUD.</figcaption>
+        </figure>
+        <div class="grid" style="gap:0.8rem">
+          <div class="card"><h3>Joystick &amp; Home</h3><p>Drag the translucent joystick (bottom-left) to pan/tilt manually. <b>Tap</b> the center to recenter; <b>long-press</b> the center to send the camera <b>Home</b> (pan-forward, wide).</p></div>
+          <div class="card"><h3>Zoom &amp; Fullscreen</h3><p>The vertical slider zooms in/out. Tap the expand icon (top-right of the feed) for fullscreen; tap again to exit. Works in portrait and landscape — the phone tripod-mounts either way.</p></div>
+          <div class="card"><h3>Record</h3><p>The red record button starts/stops an MP4 on the Orin. Find clips later in <a href="#media">Media</a>.</p></div>
+          <div class="card"><h3>Lock HUD</h3><p>The reticle and lock readout show what the tracker sees: searching, locked, or holding. Turn on <code>Show mask</code> in <a href="#tune">Tune</a> to see the color detection overlaid.</p></div>
+        </div>
+      </div>
+      <div class="grid g2" style="margin-top:0.9rem">
+        <div class="callout teal"><h3><span class="pill ok">AUTO</span> &nbsp;Hand it the wheel</h3><p>Tap <b>AUTO</b> to request autonomous tracking. The camera takes over and follows your lock. Touching the joystick hands control back to you; tap AUTO again to resume. AUTO refuses while killed — Resume first.</p></div>
+        <div class="callout kill"><h3><span class="pill stop">KILL</span> &nbsp;Always reachable</h3><p>KILL is a hard latch: it stops all motion immediately and blocks any further movement until you <b>Resume</b>. The live feed keeps streaming so you can still see. This button is on screen at all times by design.</p></div>
+      </div>
+    </section>
+
+    <!-- CALIBRATE -->
+    <section id="calibrate">
+      <div class="sec-head">
+        <div class="kicker">Calibrate tab</div>
+        <h2>Teach it where it's pointing</h2>
+        <p class="sub">Calibration solves the camera-to-world geometry so coarse GPS pointing (coming) and zoom framing land on target. Run it once per setup spot, and again if you move the tripod or the horizon shifts.</p>
+      </div>
+      <div class="grid g2" style="align-items:start">
+        <ol class="steps">
+          <li><b>Preflight</b> — confirm feed, camera link, and that KILL is reachable before anything moves.</li>
+          <li><b>Base lock</b> — fix the tripod and set the camera's resting "forward" reference.</li>
+          <li><b>Heading</b> — align pan-home to a known bearing; this is WaveCam's compass without a magnetometer (motors near magnets make those useless).</li>
+          <li><b>Tilt</b> — set the horizon / water-level reference so vertical aim is true.</li>
+          <li><b>Zoom FOV</b> — map zoom positions to field-of-view so framing math knows how tight each zoom is.</li>
+          <li><b>Dry-run</b> — a no-stakes follow to confirm the solve before you paddle out.</li>
+        </ol>
+        <div class="grid" style="gap:0.8rem; align-content:start">
+          <figure class="shot phone">
+            <img src="guide_assets/calibrate.png" alt="WaveCam Calibrate wizard step" />
+            <figcaption>Calibrate — six guided steps.</figcaption>
+          </figure>
+          <div class="callout"><h3>When to recalibrate</h3><p>Moved the tripod, changed beach/orientation, or framing feels biased off-center at distance? Re-run Heading + Tilt at minimum.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TUNE (the core) -->
+    <section id="tune">
+      <div class="sec-head">
+        <div class="kicker">Tune tab · the control reference</div>
+        <h2>Every knob, what it does, when to touch it</h2>
+        <p class="sub">Tune is under <b>Tools → Tune</b>. Most controls are <span class="pill hot">Hot</span> — they apply live with no restart. A few are <span class="pill restart">Restart</span> and prompt you to restart the service. Save a set as a <b>Preset</b> for tow-foil, wing-foil, land-chase, sunny, or cloudy days. The screenshot below is a <em>testbed</em> config (tracking a blue cup); in the field you'll run orange + person.</p>
+      </div>
+
+      <div class="grid g2" style="margin-bottom:0.4rem; align-items:start">
+        <figure class="shot phone">
+          <img src="guide_assets/tune.png" alt="WaveCam in-app Tune tab showing presets and target controls" />
+          <figcaption>The Tune tab in the app — presets, then the controls below.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="guide_assets/webtune.jpg" alt="WaveCam live tuning page showing Tracking Trigger and PTZ Tuning controls" />
+          <figcaption>The same controls on the Orin's live tuning page.</figcaption>
+        </figure>
+      </div>
+
+      <!-- Tracking Trigger -->
+      <div class="ctrl-group">
+        <h3><span class="pill subj">A</span> Tracking Trigger <span class="tag">what gets detected &amp; locked</span></h3>
+        <div class="ctrls">
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Color preset</span><span class="pill hot">Hot</span><span class="ctrl-key">color.preset</span></div>
+            <div class="ctrl-what">The hue band WaveCam hunts for — your orange rashguard (testbed shows <code>blue</code>).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Adjust</b><span>When you change rashguard color or strong light shifts the apparent hue.</span></div>
+              <div class="see"><b>You'll see</b><span>Turn on Show mask: the mask lights up only on the target color. Wrong preset → empty or speckled mask.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">YOLO class</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.person_class</span></div>
+            <div class="ctrl-what">Which object the neural net looks for — <code>person</code> in the field (testbed: <code>41 cup</code>).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Adjust</b><span>Only when testing with a prop instead of a person.</span></div>
+              <div class="see"><b>You'll see</b><span>Detection boxes drawn around that class of object.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">YOLO conf</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.conf</span></div>
+            <div class="ctrl-what">How sure the net must be before it accepts a detection (≈0.25–0.45).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower</b><span>Catches you at distance — but more false boxes.</span></div>
+              <div class="adj"><b>Raise</b><span>Rejects onlookers/boats — but may miss you in chop.</span></div>
+              <div class="see"><b>You'll see</b><span>More or fewer person boxes appear.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">YOLO every N frames</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.every_n</span></div>
+            <div class="ctrl-what">Run the heavy net every Nth frame; color + tracking fill the gaps to hold 30+ FPS.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>If FPS drops (e.g. 4). Acquisition feels a touch laggier.</span></div>
+              <div class="adj"><b>Lower</b><span>1–2 for snappier lock when the Orin has headroom.</span></div>
+              <div class="see"><b>You'll see</b><span>FPS readout rise as N rises.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Require YOLO person</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.require_person</span></div>
+            <div class="ctrl-what">If <b>on</b>, color only counts when it sits on a detected person — rejects stray orange.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>On</b><span>Busy, cluttered scenes (buoys, flags, beachgoers in orange).</span></div>
+              <div class="adj"><b>Off</b><span>Extreme distance where YOLO can't resolve you but your rashguard still shows.</span></div>
+              <div class="see"><b>You'll see</b><span>Lock refuses non-person orange when on.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Person aim Y</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.person_aim_y</span></div>
+            <div class="ctrl-what">Where on your body it aims: 0 = head, 0.5 = center, 1 = feet (≈0.45 favors chest).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower</b><span>Keep your head/upper body framed on a wave.</span></div>
+              <div class="adj"><b>Raise</b><span>Frame more board / full body.</span></div>
+              <div class="see"><b>You'll see</b><span>The reticle ride higher or lower on you.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Lock threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.lock_threshold</span></div>
+            <div class="ctrl-what">Confidence needed to <b>acquire</b> a lock.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Waits for a sure target — fewer false locks.</span></div>
+              <div class="adj"><b>Lower</b><span>Grabs eagerly — good in marginal visibility.</span></div>
+              <div class="see"><b>You'll see</b><span>The LOCK indicator turn on sooner or later.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Unlock threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.unlock_threshold</span></div>
+            <div class="ctrl-what">Confidence below which it <b>releases</b> the lock. Sits under Lock for hysteresis (no flapping).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower</b><span>Hold a lock through spray, occlusion, sharp turns.</span></div>
+              <div class="adj"><b>Raise</b><span>Drop a bad lock fast and re-acquire.</span></div>
+              <div class="see"><b>You'll see</b><span>Lock persist longer or shorter when you're partly hidden.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Color / YOLO match px</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.match_dist</span></div>
+            <div class="ctrl-what">How close (pixels) your color blob must be to the person box to count as the same target.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>If your rashguard "detaches" from your body box at distance.</span></div>
+              <div class="adj"><b>Lower</b><span>If nearby orange wrongly merges onto you.</span></div>
+              <div class="see"><b>You'll see</b><span>Lock hold or lose as color and person drift apart.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Min color area</span><span class="pill hot">Hot</span><span class="ctrl-key">color.min_area</span></div>
+            <div class="ctrl-what">Smallest color blob accepted — rejects sparkle and sensor noise.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower</b><span>Catch you at long range (small blob).</span></div>
+              <div class="adj"><b>Raise</b><span>Ignore glints and speckle.</span></div>
+              <div class="see"><b>You'll see</b><span>Tiny mask specks disappear as you raise it.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Max color area</span><span class="pill hot">Hot</span><span class="ctrl-key">color.max_area</span></div>
+            <div class="ctrl-what">Largest blob accepted — rejects big static orange (a tent, a sunrise band).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower</b><span>If a large orange background hijacks tracking.</span></div>
+              <div class="see"><b>You'll see</b><span>Huge mask regions get ignored.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Mask cleanup</span><span class="pill hot">Hot</span><span class="ctrl-key">color.morph_kernel</span></div>
+            <div class="ctrl-what">Smooths the color mask — fills pinholes, removes specks.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Choppy, sparkly water (cleaner blob, slightly slower).</span></div>
+              <div class="adj"><b>Lower</b><span>Crisp edges, fastest.</span></div>
+              <div class="see"><b>You'll see</b><span>The mask overlay get smoother / rounder.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PTZ Tuning -->
+      <div class="ctrl-group">
+        <h3><span class="pill hot">B</span> PTZ Tuning <span class="tag">how fast &amp; smooth it moves</span></h3>
+        <div class="ctrls">
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Deadband</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.deadzone</span></div>
+            <div class="ctrl-what">How far off-center you can drift before the camera moves at all.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Calmer — stops micro-jitter around you.</span></div>
+              <div class="adj"><b>Lower</b><span>Tighter — follows every small move.</span></div>
+              <div class="see"><b>You'll see</b><span>A still camera until you leave the center zone.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Feed-forward gain</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_gain</span></div>
+            <div class="ctrl-what">Lead — predicts your motion and moves ahead instead of chasing. 0 = pure reactive.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>0.05–0.3 to keep up with fast cut-backs. Too high overshoots.</span></div>
+              <div class="see"><b>You'll see</b><span>The camera anticipate your line vs. trailing behind it.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">FF deadband mult</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_deadzone_mult</span></div>
+            <div class="ctrl-what">Widens the deadband for the lead term so noise doesn't trigger predictive motion.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>If feed-forward makes it twitchy.</span></div>
+              <div class="adj"><b>Lower</b><span>For more responsive lead.</span></div>
+              <div class="see"><b>You'll see</b><span>Lead motion only kick in on real movement.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Max pan speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.max_pan_speed</span></div>
+            <div class="ctrl-what">Top left/right slew rate (1–24 on the Prisual scale).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Track fast rides and close passes.</span></div>
+              <div class="adj"><b>Lower</b><span>Smoother, cinematic pans.</span></div>
+              <div class="see"><b>You'll see</b><span>The cap on how fast it whips sideways.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Max tilt speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.max_tilt_speed</span></div>
+            <div class="ctrl-what">Top up/down rate (1–20). Usually a little below pan.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Big swell, fast vertical changes.</span></div>
+              <div class="adj"><b>Lower</b><span>Gentle, steady tilt.</span></div>
+              <div class="see"><b>You'll see</b><span>The vertical tracking speed cap.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Min speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.min_speed</span></div>
+            <div class="ctrl-what">Slowest move it will command — below this the PTZ stalls, so it floors here.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>If slow corrections stutter or stall.</span></div>
+              <div class="adj"><b>Lower</b><span>Finer creep on tiny corrections.</span></div>
+              <div class="see"><b>You'll see</b><span>Smoother small adjustments.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Command interval</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.command_min_interval</span></div>
+            <div class="ctrl-what">Minimum time between PTZ commands — rate-limits so the camera isn't flooded (seconds).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower</b><span>Snappier response, if the camera keeps up.</span></div>
+              <div class="adj"><b>Raise</b><span>If the camera lags or queues commands.</span></div>
+              <div class="see"><b>You'll see</b><span>The responsiveness-vs-smoothness trade.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Invert tilt</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.invert_tilt</span></div>
+            <div class="ctrl-what">Flip up/down if the camera tilts the wrong way for your mount.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Adjust</b><span>Once at setup, then leave it.</span></div>
+              <div class="see"><b>You'll see</b><span>Tilt direction reverse.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Invert pan</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.invert_pan</span></div>
+            <div class="ctrl-what">Flip left/right if the camera pans the wrong way for your mount.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Adjust</b><span>Once at setup, then leave it.</span></div>
+              <div class="see"><b>You'll see</b><span>Pan direction reverse.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Show mask</span><span class="pill hot">Hot</span><span class="ctrl-key">web.show_mask</span></div>
+            <div class="ctrl-what">Overlay the color-detection mask on the feed — your tuning X-ray.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>On</b><span>While tuning color (preset, areas, cleanup).</span></div>
+              <div class="adj"><b>Off</b><span>For a clean picture / recording.</span></div>
+              <div class="see"><b>You'll see</b><span>The colored mask painted over the video.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cinematic Zoom -->
+      <div class="ctrl-group">
+        <h3><span class="pill restart">C</span> Cinematic Zoom <span class="tag">default off · auto-frame your size</span></h3>
+        <p class="card" style="margin-bottom:0.8rem">Cinematic Zoom is a bounded zoom policy, not a second tracker. When enabled <em>and</em> locked on a person box, it zooms to hold your on-screen size and then holds inside a deadband. No person box or no lock → it holds. A manual zoom nudge briefly suppresses it while pan/tilt keeps tracking. Enable it only after pan/tilt tracking looks good.</p>
+        <div class="ctrls">
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Enable</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.cinematic_zoom_enabled</span></div>
+            <div class="ctrl-what">Turns auto-zoom on. Off by default for safety.</div>
+            <div class="ctrl-meta"><div class="see"><b>You'll see</b><span>Zoom starts moving from a locked person box.</span></div></div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Subject size</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.zoom_target_frac</span></div>
+            <div class="ctrl-what">How much of the frame height you should fill (≈0.50 = half).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Tighter framing (0.7).</span></div>
+              <div class="adj"><b>Lower</b><span>Wider, more context (0.3).</span></div>
+              <div class="see"><b>You'll see</b><span>The lens settle so you fill that fraction.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Zoom deadband</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.zoom_deadband</span></div>
+            <div class="ctrl-what">Size tolerance before zoom corrects — prevents zoom hunting.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Calmer zoom (ignores small size changes).</span></div>
+              <div class="see"><b>You'll see</b><span>Zoom hold still until you clearly change size.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Zoom max speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.zoom_max_speed</span></div>
+            <div class="ctrl-what">Top zoom velocity (1–7).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower</b><span>Gentle, filmic zoom.</span></div>
+              <div class="adj"><b>Raise</b><span>Snappier reframing.</span></div>
+              <div class="see"><b>You'll see</b><span>How fast the lens zooms.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top:1rem">
+        <h3>Presets &amp; restart-required keys</h3>
+        <p>Save the current set as a named <b>Preset</b> (e.g. <em>Tow Foil, Wing Foil, Land Chase, Sunny, Cloudy</em>) and re-apply it in one tap. Most keys are Hot and apply instantly; a handful (camera source/codec, PTZ address, detector model) are <span class="pill restart">Restart</span> and the app will prompt you to restart the service for them to take effect.</p>
+      </div>
+    </section>
+
+    <!-- AGENT -->
+    <section id="agent">
+      <div class="sec-head">
+        <div class="kicker">Tools → Agent</div>
+        <h2>It watches. It never drives.</h2>
+        <p class="sub">The Agent panel surfaces service health and logs, and can accept a diagnostics request. It is <b>supervise-only</b> by design — it will never move the camera, run a shell, or restart a service on its own.</p>
+      </div>
+      <div class="grid g3">
+        <div class="card"><h3>Service health</h3><p>Green/red rows for the vision, PTZ, and API services so you can spot a stalled component at a glance.</p></div>
+        <div class="card"><h3>Logs</h3><p>A minimal, redacted log view — recent backend lines for field debugging, with secrets stripped.</p></div>
+        <div class="card"><span class="pill ok">Safe</span><h3>Supervise-only</h3><p>A summon request returns "accepted — no automatic shell, service, or camera-movement command was run." Advisory only.</p></div>
+      </div>
+    </section>
+
+    <!-- CONNECT -->
+    <section id="connect">
+      <div class="sec-head">
+        <div class="kicker">Connect tab</div>
+        <h2>Two ways in, picked automatically</h2>
+        <p class="sub">The app reaches the Orin over a USB tether (fastest) or Wi-Fi/hotspot, and labels which one is live. You rarely touch this once it's set.</p>
+      </div>
+      <div class="grid g2" style="align-items:start">
+        <div class="grid" style="gap:0.8rem; align-content:start">
+          <div class="card"><h3>USB tether</h3><p>Default <code>http://172.20.10.8:8088</code>. Used when the phone is plugged into the Orin's USB-A host port. Tried first.</p></div>
+          <div class="card"><h3>Wi-Fi / hotspot</h3><p>Default <code>http://192.168.1.155:8088</code>. Used when the Orin is on Wi-Fi. The app keeps probing tether so re-plugging restores USB automatically.</p></div>
+          <div class="card"><h3>Token &amp; Mock</h3><p>Optional auth token, and a Mock mode that renders the UI without a backend — handy for demos and for reading this guide offline.</p></div>
+        </div>
+        <figure class="shot phone">
+          <img src="guide_assets/connect.png" alt="WaveCam Connect tab with tether and Wi-Fi URLs" />
+          <figcaption>Connect — routes, token, mock, active-route label.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- MEDIA -->
+    <section id="media">
+      <div class="sec-head">
+        <div class="kicker">Media tab</div>
+        <h2>Your clips, off the Orin</h2>
+        <p class="sub">Recordings you start from Live land on the Orin. The Media tab lists them so you can play, download to your phone, and share.</p>
+      </div>
+      <div class="grid g2" style="align-items:start">
+        <figure class="shot phone">
+          <img src="guide_assets/media.png" alt="WaveCam Media tab listing recordings" />
+          <figcaption>Media — browse, download, share recordings.</figcaption>
+        </figure>
+        <div class="grid" style="gap:0.8rem; align-content:start">
+          <div class="card"><h3>Browse &amp; play</h3><p>Each recording shows its name and size. Tap to preview.</p></div>
+          <div class="card"><h3>Download &amp; share</h3><p>Pull a clip to the phone, then share it through the standard iOS share sheet.</p></div>
+          <div class="callout teal"><h3>Storage</h3><p>Clips live on the Orin until you remove them. Pull the keepers before you wipe a card.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HARDWARE -->
+    <section id="hardware">
+      <div class="sec-head">
+        <div class="kicker">Under the hood</div>
+        <h2>The hardware stack</h2>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Part</th><th>What it is</th><th>How it connects</th></tr></thead>
+          <tbody>
+            <tr><td><b>Compute</b></td><td>Jetson Orin Nano — runs vision (YOLOv8n TensorRT + color), fusion, servo, the API.</td><td>Wired camera LAN <code>192.168.100.10</code>; serves the app on <code>:8088</code>.</td></tr>
+            <tr><td><b>Camera</b></td><td>Prisual NDI PTZ — the pan/tilt/zoom actuator and video source.</td><td>Orin-only control via VISCA over UDP <code>192.168.100.88:1259</code>; video over RTSP.</td></tr>
+            <tr><td><b>GPS</b> <span class="pill">Planned</span></td><td>SeeedStudio Wio Tracker L1 Lite (LoRa / Meshtastic) — coarse point &amp; zoom at long range; vision refines in-frame.</td><td>Not yet live; the stub returns empty. Heading comes from pan-home, no magnetometer.</td></tr>
+            <tr><td><b>Console</b></td><td>The iOS WaveCam app — your operator screen.</td><td>USB tether <code>172.20.10.8</code> or Wi-Fi <code>192.168.1.155</code>, port <code>:8088</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SAFETY -->
+    <section id="safety">
+      <div class="sec-head">
+        <div class="kicker">Safety model</div>
+        <h2>Stop is not Kill. Restart is not Resume.</h2>
+        <p class="sub">Movement controls are deliberately separate from safety controls. Read the state before repeating a command.</p>
+      </div>
+      <div class="grid g4">
+        <div class="callout kill"><span class="pill stop">Emergency</span><h3>KILL</h3><p>Global latch. Stops all motion now and blocks future motion until Resume. Feed stays live. Always on screen.</p></div>
+        <div class="card"><span class="pill restart">Hold</span><h3>Stop PTZ</h3><p>Manual hold — halts pan/tilt/zoom but does <em>not</em> latch. Backend stays reachable; you can move again or re-arm AUTO.</p></div>
+        <div class="card"><span class="pill ok">Resume / AUTO</span><h3>Start Auto</h3><p>Requests autonomous ownership. Refuses while killed — Resume first. No auto-steal: take manual, then AUTO.</p></div>
+        <div class="card"><span class="pill restart">Restart</span><h3>Service</h3><p>Stops PTZ, then restarts the WaveCam service — used after a Restart-required config change.</p></div>
+      </div>
+      <div class="callout teal" style="margin-top:0.9rem"><h3>The one rule</h3><p>The automation supervises; it never moves the camera on its own. You — and the KILL button — are always the final authority.</p></div>
+    </section>
+
+    <!-- TROUBLESHOOTING -->
+    <section id="troubleshooting">
+      <div class="sec-head">
+        <div class="kicker">Field fixes</div>
+        <h2>When it misbehaves</h2>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Symptom</th><th>Likely cause</th><th>Try this</th></tr></thead>
+          <tbody>
+            <tr><td>Won't lock onto you</td><td>Conf too high, wrong color preset, or Require-person on at distance</td><td>Turn on Show mask; lower <code>YOLO conf</code>; verify <code>Color preset</code>; turn Require-person off far out; lower <code>Lock threshold</code>.</td></tr>
+            <tr><td>Camera jitters / twitches</td><td>Deadband too small or feed-forward too hot</td><td>Raise <code>Deadband</code>; lower <code>Feed-forward gain</code>; raise <code>Min speed</code> if slow moves stutter.</td></tr>
+            <tr><td>Loses you in spray / turns</td><td>Unlock too high, match distance too tight</td><td>Lower <code>Unlock threshold</code>; raise <code>Color/YOLO match px</code>.</td></tr>
+            <tr><td>Grabs the wrong orange thing</td><td>Color-only false cue</td><td>Turn Require-person on; raise <code>Min color area</code>; lower <code>Max color area</code>.</td></tr>
+            <tr><td>Zoom stuck / too tight</td><td>Cinematic Zoom state, or the camera held a zoom</td><td>Long-press joystick center for Home (wide); check <code>Subject size</code>; disable Cinematic Zoom and retest pan/tilt.</td></tr>
+            <tr><td>Can't connect</td><td>Wrong route or Orin not up</td><td>Check the route label in Connect; re-plug USB; confirm the Wi-Fi static IP; the app falls back automatically.</td></tr>
+            <tr><td>Camera won't move</td><td>Killed latch is set</td><td>Tap Resume, then AUTO. KILL stays latched on purpose until you clear it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>WaveCam — Operator Guide</span>
+    <span>Tracking: YOLOv8n + orange-color fusion · Orin :8088 · KILL always reachable</span>
+  </footer>
+</body>
+</html>
