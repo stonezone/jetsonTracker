@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import types
 import time
 
@@ -55,9 +56,10 @@ class DummyPtz:
 
 
 class DummyRecorder:
-    def __init__(self):
+    def __init__(self, rec_dir: Path | None = None):
         self.started_with = []
         self.stop_calls = 0
+        self.config = types.SimpleNamespace(rec_dir=rec_dir or Path("/tmp/wavecam-test-recordings"))
         self.media = {
             "recording": False,
             "segment_name": None,
@@ -893,6 +895,45 @@ def test_api_v1_media_record_start_and_stop_control_recorder():
     assert stopped_body["ok"] is True
     assert stopped_body["media"]["stopped"] is True
     assert stopped_body["status"]["media"]["recording"] is False
+
+
+def test_api_v1_media_list_and_download_are_recorder_dir_scoped(tmp_path):
+    client = make_client()
+    pipe = client.app.state.pipeline
+    rec_dir = tmp_path / "recordings"
+    rec_dir.mkdir()
+    pipe.recorder.config.rec_dir = rec_dir
+    clip = rec_dir / "wavecam_20260604_000000_000.mp4"
+    clip.write_bytes(b"mp4-bytes")
+    (rec_dir / "nested").mkdir()
+
+    listed = client.get("/api/v1/media/list")
+
+    assert listed.status_code == 200
+    listed_body = listed.json()
+    assert listed_body["ok"] is True
+    assert listed_body["files"] == [
+        {
+            "name": clip.name,
+            "size_bytes": 9,
+            "ctime_unix_ms": listed_body["files"][0]["ctime_unix_ms"],
+        }
+    ]
+    assert isinstance(listed_body["files"][0]["ctime_unix_ms"], int)
+
+    downloaded = client.get(f"/api/v1/media/download/{clip.name}")
+
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"mp4-bytes"
+    assert downloaded.headers["content-type"].startswith("video/mp4")
+
+    missing = client.get("/api/v1/media/download/nope.mp4")
+    unsafe = client.get("/api/v1/media/download/%2E%2E%5Csecret.mp4")
+
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "media_not_found"
+    assert unsafe.status_code == 404
+    assert unsafe.json()["code"] == "media_not_found"
 
 
 if __name__ == "__main__":
