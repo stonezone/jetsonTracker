@@ -25,6 +25,23 @@ struct TuneView: View {
     @State private var cinematicAvailable = false
     @State private var cinematicEnabled = false
     @State private var subjectSize = 0.5
+    // DETECTION / ADVANCED
+    @State private var everyN: Int? = nil
+    @State private var lockThreshold: Double? = nil
+    @State private var unlockThreshold: Double? = nil
+    @State private var matchDist: Double? = nil
+    // COLOR
+    @State private var colorMinArea: Int? = nil
+    @State private var colorMaxArea: Int? = nil
+    @State private var morphKernel: Int? = nil
+    // MOTION advanced
+    @State private var ffDeadzoneMult: Double? = nil
+    @State private var ptzMinSpeed: Int? = nil
+    @State private var commandMinInterval: Double? = nil
+    @State private var invertTilt: Bool? = nil
+    @State private var invertPan: Bool? = nil
+    // STREAM
+    @State private var jpegQuality: Int? = nil
 
     private let presets: [(id: String, name: String)] = [
         ("orange_red", "Orange / red (rashguard)"), ("orange", "Orange"),
@@ -86,6 +103,10 @@ struct TuneView: View {
                     }
                 }
 
+                advancedDetectionCard
+                colorCard
+                advancedMotionCard
+
                 if !restartKeys.isEmpty {
                     TuneCard(title: "SERVICE") {
                         Text("Restart-only settings (change on the Orin web UI, then restart):")
@@ -133,6 +154,93 @@ struct TuneView: View {
             TuneNotice("Switch to Live mode on the Connect tab to tune.", tint: WC.warn)
         } else if !loaded {
             TuneNotice(client.connected ? "Loading current settings..." : "Connecting to the Orin...", tint: WC.muted)
+        }
+    }
+
+    // MARK: - Feature-detected advanced cards
+
+    @ViewBuilder private var advancedDetectionCard: some View {
+        let anyVisible = everyN != nil || lockThreshold != nil || unlockThreshold != nil || matchDist != nil
+        if anyVisible {
+            TuneCard(title: "DETECTION ADVANCED") {
+                if let n = everyN {
+                    sliderRow("YOLO every N frames", value: Binding(get: { Double(n) }, set: { everyN = Int($0) }),
+                              range: 1...30, step: 1, readout: "\(n)", key: "detector.every_n", isInt: true)
+                }
+                if let lt = lockThreshold {
+                    if everyN != nil { TuneDivider() }
+                    sliderRow("Lock threshold", value: Binding(get: { lt }, set: { lockThreshold = $0 }),
+                              range: 0.05...0.95, step: 0.05, readout: fmt(lt), key: "fusion.lock_threshold")
+                }
+                if let ut = unlockThreshold {
+                    if everyN != nil || lockThreshold != nil { TuneDivider() }
+                    sliderRow("Unlock threshold", value: Binding(get: { ut }, set: { unlockThreshold = $0 }),
+                              range: 0.05...0.95, step: 0.05, readout: fmt(ut), key: "fusion.unlock_threshold")
+                }
+                if let md = matchDist {
+                    if everyN != nil || lockThreshold != nil || unlockThreshold != nil { TuneDivider() }
+                    sliderRow("Color/YOLO match px", value: Binding(get: { md }, set: { matchDist = $0 }),
+                              range: 20...500, step: 10, readout: "\(Int(md))", key: "fusion.match_dist")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var colorCard: some View {
+        let anyVisible = colorMinArea != nil || colorMaxArea != nil || morphKernel != nil
+        if anyVisible {
+            TuneCard(title: "COLOR") {
+                if let mn = colorMinArea {
+                    numberRow("Min color blob area", value: Binding(get: { mn }, set: { colorMinArea = $0 }),
+                              bounds: 1...500_000, key: "color.min_area")
+                }
+                if let mx = colorMaxArea {
+                    if colorMinArea != nil { TuneDivider() }
+                    numberRow("Max color blob area", value: Binding(get: { mx }, set: { colorMaxArea = $0 }),
+                              bounds: 100...1_000_000, key: "color.max_area")
+                }
+                if let mk = morphKernel {
+                    if colorMinArea != nil || colorMaxArea != nil { TuneDivider() }
+                    sliderRow("Mask cleanup kernel", value: Binding(get: { Double(mk) }, set: { morphKernel = Int($0) }),
+                              range: 1...31, step: 2, readout: "\(mk)", key: "color.morph_kernel", isInt: true)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var advancedMotionCard: some View {
+        let anyVisible = ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil
+                      || invertTilt != nil || invertPan != nil || jpegQuality != nil
+        if anyVisible {
+            TuneCard(title: "MOTION ADVANCED") {
+                if let m = ffDeadzoneMult {
+                    sliderRow("FF deadband mult", value: Binding(get: { m }, set: { ffDeadzoneMult = $0 }),
+                              range: 1...4, step: 0.1, readout: fmt1(m), key: "ptz.ff_deadzone_mult")
+                }
+                if let s = ptzMinSpeed {
+                    if ffDeadzoneMult != nil { TuneDivider() }
+                    sliderRow("Min speed", value: Binding(get: { Double(s) }, set: { ptzMinSpeed = Int($0) }),
+                              range: 1...8, step: 1, readout: "\(s)", key: "ptz.min_speed", isInt: true)
+                }
+                if let ci = commandMinInterval {
+                    if ffDeadzoneMult != nil || ptzMinSpeed != nil { TuneDivider() }
+                    sliderRow("Command interval", value: Binding(get: { ci }, set: { commandMinInterval = $0 }),
+                              range: 0.01...0.5, step: 0.01, readout: fmt(ci), key: "ptz.command_min_interval")
+                }
+                if let it = invertTilt {
+                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil { TuneDivider() }
+                    toggleRow("Invert tilt", isOn: Binding(get: { it }, set: { invertTilt = $0 }), key: "ptz.invert_tilt")
+                }
+                if let ip = invertPan {
+                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil || invertTilt != nil { TuneDivider() }
+                    toggleRow("Invert pan", isOn: Binding(get: { ip }, set: { invertPan = $0 }), key: "ptz.invert_pan")
+                }
+                if let jq = jpegQuality {
+                    if ffDeadzoneMult != nil || ptzMinSpeed != nil || commandMinInterval != nil || invertTilt != nil || invertPan != nil { TuneDivider() }
+                    sliderRow("JPEG quality", value: Binding(get: { Double(jq) }, set: { jpegQuality = Int($0) }),
+                              range: 30...95, step: 5, readout: "\(jq)", key: "web.jpeg_quality", isInt: true)
+                }
+            }
         }
     }
 
@@ -192,7 +300,30 @@ struct TuneView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Stepper row for wide integer ranges (color.min_area, color.max_area) where a
+    /// slider would have too many steps to be usable. Step is 1/1000th of range width.
+    @ViewBuilder
+    private func numberRow(_ label: String, value: Binding<Int>, bounds: ClosedRange<Int>, key: String) -> some View {
+        let step = max(1, (bounds.upperBound - bounds.lowerBound) / 1000)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(WC.txt)
+                Spacer()
+                Text("\(value.wrappedValue)")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(WC.brand)
+                    .frame(minWidth: 64, alignment: .trailing)
+            }
+            Stepper(value: value, in: bounds, step: step) {
+                EmptyView()
+            }
+            .labelsHidden()
+            .onChange(of: value.wrappedValue) { _, v in send([key: v]) }
+        }
+    }
+
     private func fmt(_ v: Double) -> String { v.formatted(.number.precision(.fractionLength(2))) }
+    private func fmt1(_ v: Double) -> String { v.formatted(.number.precision(.fractionLength(1))) }
 
     private func aimLabel(_ v: Double) -> String {
         if v <= 0.25 { return "HEAD" }
@@ -222,6 +353,20 @@ struct TuneView: View {
             cinematicEnabled = cz
             subjectSize = cfg.current.ptz.zoomTargetFrac ?? 0.5
         }
+        // Feature-detected advanced keys — remain nil when backend doesn't expose them
+        everyN = cfg.current.detector.everyN
+        lockThreshold = cfg.current.fusion.lockThreshold
+        unlockThreshold = cfg.current.fusion.unlockThreshold
+        matchDist = cfg.current.fusion.matchDist
+        colorMinArea = cfg.current.color.minArea
+        colorMaxArea = cfg.current.color.maxArea
+        morphKernel = cfg.current.color.morphKernel
+        ffDeadzoneMult = cfg.current.ptz.ffDeadzoneMult
+        ptzMinSpeed = cfg.current.ptz.minSpeed
+        commandMinInterval = cfg.current.ptz.commandMinInterval
+        invertTilt = cfg.current.ptz.invertTilt
+        invertPan = cfg.current.ptz.invertPan
+        jpegQuality = cfg.current.web.jpegQuality
         loaded = true
     }
 

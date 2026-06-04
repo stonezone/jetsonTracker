@@ -6,7 +6,6 @@ struct ToolsView: View {
     private enum Tool: String, CaseIterable, Hashable {
         case tune = "Tune"
         case agent = "Agent"
-        case dashboard = "Web"
     }
 
     @State private var selectedTool = Tool.tune
@@ -28,8 +27,6 @@ struct ToolsView: View {
                 TuneView()
             case .agent:
                 AgentView()
-            case .dashboard:
-                DashView()
             }
         }
         .background(WC.bg.ignoresSafeArea())

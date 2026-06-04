@@ -162,21 +162,34 @@ struct WCConfig: Codable, Sendable {
             var ffGain: Double
             var cinematicZoomEnabled: Bool?
             var zoomTargetFrac: Double?
+            var ffDeadzoneMult: Double?
+            var minSpeed: Int?
+            var commandMinInterval: Double?
+            var invertTilt: Bool?
+            var invertPan: Bool?
         }
         struct Fusion: Codable, Sendable {
             var requirePerson: Bool
             var personAimY: Double
+            var lockThreshold: Double?
+            var unlockThreshold: Double?
+            var matchDist: Double?
         }
         struct ColorCfg: Codable, Sendable {
             var preset: String
+            var minArea: Int?
+            var maxArea: Int?
+            var morphKernel: Int?
         }
         struct Detector: Codable, Sendable {
             var conf: Double
             var personClass: Int
             var model: String?
+            var everyN: Int?
         }
         struct Web: Codable, Sendable {
             var showMask: Bool
+            var jpegQuality: Int?
         }
     }
 }
