@@ -70,7 +70,17 @@ final class PTZManualController {
         if commandState != .held {
             commandState = .idle
         }
-        Task { await client.ptzStop(hold: false) }
+        // Stop must land even over lossy Wi-Fi: retry until the POST is accepted so a
+        // dropped release-stop doesn't coast until the ~800ms backend deadman. Abort the
+        // moment the operator re-grabs the stick (pan/tilt != 0) so we don't fight a new
+        // move command. (review C3)
+        Task { [weak self] in
+            for attempt in 0..<3 {
+                guard let self, self.pan == 0, self.tilt == 0 else { return }
+                if await client.ptzStop(hold: false) { return }
+                if attempt < 2 { try? await Task.sleep(nanoseconds: 120_000_000) }
+            }
+        }
     }
 
     func holdPTZ(client: WaveCamClient) {

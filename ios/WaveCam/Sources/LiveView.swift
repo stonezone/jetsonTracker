@@ -141,26 +141,39 @@ struct MJPEGPreviewView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, URLSessionDataDelegate {
+        // All mutable state is accessed exclusively on stateQueue.
+        // No stateQueue.sync is used anywhere — all dispatches are async
+        // to prevent deadlock when delegate callbacks re-enter from URLSession's
+        // internal queue.
+        private let stateQueue = DispatchQueue(label: "wavecam.mjpeg.coordinator")
+
         private var loadedURL: URL?
         private var buffer = Data()
         private var session: URLSession?
         private var task: URLSessionDataTask?
+        // imageView is written on stateQueue; its image property is set on main.
         private weak var imageView: UIImageView?
         private var lastFrameAt = Date.distantPast
         private var watchdogWorkItem: DispatchWorkItem?
         private let stallTimeout: TimeInterval = 3.0
 
         func start(url: URL, imageView: UIImageView) {
-            self.imageView = imageView
-            guard loadedURL != url else { return }
-            stop()
-            loadedURL = url
-            connect(url: url)
+            stateQueue.async { [weak self] in
+                guard let self else { return }
+                self.imageView = imageView
+                guard self.loadedURL != url else { return }
+                self.stopLocked()
+                self.loadedURL = url
+                self.connect(url: url)
+            }
         }
 
+        // Must be called from stateQueue.
         private func connect(url: URL) {
             let configuration = URLSessionConfiguration.default
             configuration.timeoutIntervalForRequest = 10
+            // delegateQueue: nil → URLSession creates its own internal serial queue.
+            // All delegate callbacks are dispatched to stateQueue before touching state.
             let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
             self.session = session
             let task = session.dataTask(with: url)
@@ -171,6 +184,13 @@ struct MJPEGPreviewView: UIViewRepresentable {
         }
 
         func stop() {
+            stateQueue.async { [weak self] in
+                self?.stopLocked()
+            }
+        }
+
+        // Must be called from stateQueue.
+        private func stopLocked() {
             watchdogWorkItem?.cancel()
             watchdogWorkItem = nil
             task?.cancel()
@@ -186,26 +206,28 @@ struct MJPEGPreviewView: UIViewRepresentable {
         // instead of relying on a view teardown driven by the 1Hz status poll.
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             session.finishTasksAndInvalidate()
-            DispatchQueue.main.async { [weak self] in
+            stateQueue.async { [weak self] in
                 guard let self, self.session === session, let url = self.loadedURL else { return }
                 self.task = nil
                 self.session = nil
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self.stateQueue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                     guard let self, self.loadedURL == url, self.session == nil else { return }
                     self.connect(url: url)
                 }
             }
         }
 
+        // Must be called from stateQueue.
         private func scheduleWatchdog() {
             watchdogWorkItem?.cancel()
             let item = DispatchWorkItem { [weak self] in
                 self?.restartIfStalled()
             }
             watchdogWorkItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + stallTimeout, execute: item)
+            stateQueue.asyncAfter(deadline: .now() + stallTimeout, execute: item)
         }
 
+        // Runs on stateQueue (dispatched from the watchdog DispatchWorkItem).
         private func restartIfStalled() {
             guard let url = loadedURL, session != nil else { return }
             if Date().timeIntervalSince(lastFrameAt) >= stallTimeout {
@@ -215,6 +237,7 @@ struct MJPEGPreviewView: UIViewRepresentable {
             scheduleWatchdog()
         }
 
+        // Must be called from stateQueue.
         private func reconnect(url: URL) {
             task?.cancel()
             session?.invalidateAndCancel()
@@ -225,10 +248,15 @@ struct MJPEGPreviewView: UIViewRepresentable {
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-            buffer.append(data)
-            drainFrames()
+            stateQueue.async { [weak self] in
+                guard let self else { return }
+                self.buffer.append(data)
+                self.drainFrames()
+            }
         }
 
+        // Runs on stateQueue. JPEG decode happens here (off main thread).
+        // Only the image assignment hops to main.
         private func drainFrames() {
             let startMarker = Data([0xff, 0xd8])
             let endMarker = Data([0xff, 0xd9])
@@ -240,9 +268,9 @@ struct MJPEGPreviewView: UIViewRepresentable {
                 let frame = buffer[start.lowerBound..<end.upperBound]
                 buffer.removeSubrange(buffer.startIndex..<end.upperBound)
                 guard let image = UIImage(data: Data(frame)) else { continue }
-                DispatchQueue.main.async { [weak self, weak imageView] in
-                    self?.lastFrameAt = Date()
-                    self?.scheduleWatchdog()
+                lastFrameAt = Date()
+                scheduleWatchdog()
+                DispatchQueue.main.async { [weak imageView] in
                     imageView?.image = image
                 }
             }
