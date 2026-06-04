@@ -340,10 +340,8 @@ struct TuneView: View {
             if let result {
                 if result.ok {
                     activePresetName = name
-                    // Snapshot which values were applied so the modified-dot can compare.
-                    if let preset = tunePresets.first(where: { $0.name == name }) {
-                        appliedPresetValues = preset.values
-                    }
+                    // Snapshot the values the backend actually hot-applied so the modified-dot can compare.
+                    appliedPresetValues = result.applied
                     // Re-load controls so sliders reflect the preset's values.
                     loaded = false
                     await load()

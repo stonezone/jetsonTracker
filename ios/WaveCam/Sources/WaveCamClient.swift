@@ -309,7 +309,7 @@ private struct WCPresetsResponse: Codable, Sendable {
 
 struct WCPresetApplyResult: Codable, Sendable {
     var ok: Bool
-    var applied: [String]
+    var applied: [String: JSONValue]
     var restartRequired: Bool
     var restartKeys: [String]
 }
