@@ -294,9 +294,9 @@ private struct LiveControlRail: View {
                 )
                 .frame(minHeight: 96, maxHeight: .infinity)
 
-                Divider().background(Color.white.opacity(0.18))
+                Divider().background(Color.white.opacity(0.12))
 
-                // AUTO toggle
+                // Mode toggles + record (uniform 44pt icons)
                 GlassIconButton(
                     systemImage: isAutoActive ? "viewfinder.circle.fill" : "viewfinder.circle",
                     state: isAutoActive ? .active : .normal,
@@ -304,11 +304,6 @@ private struct LiveControlRail: View {
                 )
                 .accessibilityLabel(isAutoActive ? "Stop auto tracking" : "Start auto tracking")
 
-                // REC
-                RecordButton(compact: true)
-                    .frame(width: 44)
-
-                // HOME
                 GlassIconButton(
                     systemImage: "house",
                     state: .normal,
@@ -317,12 +312,12 @@ private struct LiveControlRail: View {
                 )
                 .accessibilityLabel(homeSupported ? "Camera home" : "Home unavailable")
 
-                Spacer(minLength: WCSpace.sm)
+                RecordButton(compact: true)
 
-                // STOP — always at bottom, distinct red, pinned
-                EmergencyStopButton(style: .compact)
-                    .frame(width: 44, height: 44)
-                    .clipShape(.rect(cornerRadius: WCRadius.xs))
+                Spacer(minLength: WCSpace.xs)
+
+                // STOP — the one safety control, pinned at the bottom, solid red
+                EmergencyStopButton(style: .icon)
             }
             .padding(WCSpace.sm)
         }
@@ -344,7 +339,9 @@ private struct LiveControlRail: View {
                 )
                 .frame(maxWidth: .infinity)
 
-                // AUTO toggle
+                Divider().frame(width: 1, height: 30).overlay(Color.white.opacity(0.12))
+
+                // Mode toggles + record (uniform 44pt icons)
                 GlassIconButton(
                     systemImage: isAutoActive ? "viewfinder.circle.fill" : "viewfinder.circle",
                     state: isAutoActive ? .active : .normal,
@@ -352,11 +349,6 @@ private struct LiveControlRail: View {
                 )
                 .accessibilityLabel(isAutoActive ? "Stop auto tracking" : "Start auto tracking")
 
-                // REC
-                RecordButton(compact: true)
-                    .frame(width: 44)
-
-                // HOME
                 GlassIconButton(
                     systemImage: "house",
                     state: .normal,
@@ -365,10 +357,12 @@ private struct LiveControlRail: View {
                 )
                 .accessibilityLabel(homeSupported ? "Camera home" : "Home unavailable")
 
-                // STOP — pinned end, red
-                EmergencyStopButton(style: .compact)
-                    .frame(width: 44, height: 44)
-                    .clipShape(.rect(cornerRadius: WCRadius.xs))
+                RecordButton(compact: true)
+
+                Divider().frame(width: 1, height: 30).overlay(Color.white.opacity(0.12))
+
+                // STOP — the one safety control, solid red, set apart
+                EmergencyStopButton(style: .icon)
             }
             .padding(WCSpace.sm)
         }
@@ -398,7 +392,7 @@ private struct GlassZoomSlider: View {
             ZStack {
                 // Track background
                 Capsule()
-                    .fill(Color.white.opacity(0.10))
+                    .fill(Color.white.opacity(0.18))
                     .frame(
                         width:  axis == .vertical ? 6 : nil,
                         height: axis == .vertical ? nil : 6
@@ -436,6 +430,13 @@ private struct GlassZoomSlider: View {
             width:  axis == .vertical ? 32 : nil,
             height: axis == .vertical ? nil : 32
         )
+        // Tele (+) / wide (−) end markers so it reads clearly as a zoom control.
+        .overlay(alignment: axis == .vertical ? .top : .trailing) {
+            Image(systemName: "plus").font(.system(size: 8, weight: .heavy)).foregroundStyle(WC.muted)
+        }
+        .overlay(alignment: axis == .vertical ? .bottom : .leading) {
+            Image(systemName: "minus").font(.system(size: 8, weight: .heavy)).foregroundStyle(WC.muted)
+        }
     }
 
     @ViewBuilder

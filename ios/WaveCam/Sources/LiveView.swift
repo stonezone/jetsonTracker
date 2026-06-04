@@ -881,37 +881,51 @@ struct RecordButton: View {
     private var segmentName: String? { client.status?.media?.segmentName }
 
     var body: some View {
-        VStack(spacing: 4) {
+        if compact {
+            // Icon-only — the Live control dock. Uniform 44pt; red = the record verb,
+            // a filled stop.fill while recording. No wrapping text, no filename clutter.
             Button {
                 Task { await client.toggleRecording() }
             } label: {
-                HStack(spacing: 9) {
-                    if isRecording {
-                        Circle().fill(WC.kill).frame(width: 10, height: 10)
-                    } else {
-                        Image(systemName: "record.circle").font(.system(size: 15, weight: .bold))
-                    }
-                    Text(isRecording ? "Stop Recording" : "Record")
-                        .font(.system(size: compact ? 13 : 15, weight: .bold))
-                }
-                .foregroundStyle(isRecording ? .black : WC.brand)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .padding(.vertical, compact ? 8 : 10)
-                .background(isRecording ? WC.brand : WC.brand.opacity(0.14), in: .rect(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.brand.opacity(isRecording ? 0 : 0.5)))
+                Image(systemName: isRecording ? "stop.fill" : "record.circle")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(isRecording ? .white : WC.kill)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        isRecording ? WC.kill : WC.kill.opacity(0.15),
+                        in: .rect(cornerRadius: WCRadius.xs)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: WCRadius.xs)
+                            .stroke(WC.kill.opacity(isRecording ? 0.85 : 0.4))
+                    )
             }
             .buttonStyle(.plain)
             .disabled(!client.connected)
             .opacity(client.connected ? 1 : 0.5)
             .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
-
-            if isRecording, let segmentName {
-                Text(segmentName)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(WC.muted)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        } else {
+            // Full labelled variant (used outside the dock).
+            Button {
+                Task { await client.toggleRecording() }
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: isRecording ? "stop.fill" : "record.circle")
+                        .font(.system(size: 15, weight: .bold))
+                    Text(isRecording ? "Stop Recording" : "Record")
+                        .font(.system(size: 15, weight: .bold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(isRecording ? .white : WC.kill)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, 10)
+                .background(isRecording ? WC.kill : WC.kill.opacity(0.14), in: .rect(cornerRadius: WCRadius.sm))
+                .overlay(RoundedRectangle(cornerRadius: WCRadius.sm).stroke(WC.kill.opacity(isRecording ? 0 : 0.5)))
             }
+            .buttonStyle(.plain)
+            .disabled(!client.connected)
+            .opacity(client.connected ? 1 : 0.5)
+            .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
         }
     }
 }
