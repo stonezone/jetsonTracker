@@ -28,39 +28,35 @@ struct MediaView: View {
     // MARK: - Header
 
     private var mediaHeader: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("RECORDINGS")
-                    .font(.system(size: 12, weight: .bold))
-                    .tracking(1.5)
-                    .foregroundStyle(WC.muted)
-                if let freeGb = client.status?.media?.freeGb {
-                    Text(String(format: "%.1f GB free", freeGb))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(WC.faint)
+        GlassCard(cornerRadius: 0, padding: 0) {
+            HStack(spacing: WCSpace.md) {
+                VStack(alignment: .leading, spacing: WCSpace.xs) {
+                    Text("RECORDINGS")
+                        .font(WCFont.bodyBold)
+                        .tracking(1.5)
+                        .foregroundStyle(WC.muted)
+                    if let freeGb = client.status?.media?.freeGb {
+                        Text(String(format: "%.1f GB free", freeGb))
+                            .font(WCFont.captionMono)
+                            .foregroundStyle(WC.faint)
+                    }
+                }
+                Spacer()
+                if case .loading = loadState {
+                    ProgressView().tint(WC.accent).scaleEffect(0.8)
+                        .frame(width: 44, height: 44)
+                } else {
+                    GlassIconButton(
+                        systemImage: "arrow.clockwise",
+                        state: .normal,
+                        action: { Task { await load() } }
+                    )
+                    .accessibilityLabel("Refresh recordings")
                 }
             }
-            Spacer()
-            if case .loading = loadState {
-                ProgressView().tint(WC.ok).scaleEffect(0.8)
-            } else {
-                Button {
-                    Task { await load() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .bold))
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(WC.ok)
-                .background(WC.panel2, in: .rect(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.line))
-                .accessibilityLabel("Refresh recordings")
-            }
+            .padding(.horizontal, WCSpace.lg)
+            .padding(.vertical, WCSpace.sm + WCSpace.xs)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(WC.ink)
     }
 
     // MARK: - Content states
@@ -104,20 +100,24 @@ struct MediaView: View {
 
     private var fileList: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(files) { file in
-                    MediaFileRow(
-                        file: file,
-                        downloadState: downloadProgress[file.name] ?? .idle,
-                        onDownload: { Task { await download(file) } },
-                        onShare: { localURL in shareItem = ShareableFile(url: localURL) }
-                    )
-                    Divider()
-                        .background(WC.line)
-                        .padding(.leading, 16)
+            GlassSurface(cornerRadius: WCRadius.md) {
+                LazyVStack(spacing: 0) {
+                    ForEach(files) { file in
+                        MediaFileRow(
+                            file: file,
+                            downloadState: downloadProgress[file.name] ?? .idle,
+                            onDownload: { Task { await download(file) } },
+                            onShare: { localURL in shareItem = ShareableFile(url: localURL) }
+                        )
+                        Divider()
+                            .background(WC.line)
+                            .padding(.leading, WCSpace.lg)
+                    }
                 }
             }
-            .padding(.bottom, 24)
+            .padding(.horizontal, WCSpace.lg)
+            .padding(.vertical, WCSpace.md)
+            .padding(.bottom, WCSpace.xl)
         }
         .scrollIndicators(.hidden)
         .background(WC.bg)
@@ -175,35 +175,34 @@ private struct MediaFileRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WCSpace.md) {
             Image(systemName: "film")
                 .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(WC.brand)
+                .foregroundStyle(WC.accent)
                 .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
                 Text(file.name)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .font(WCFont.mono)
                     .foregroundStyle(WC.txt)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(spacing: 8) {
+                HStack(spacing: WCSpace.sm) {
                     Text(sizeLabel)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(WCFont.captionMono)
                         .foregroundStyle(WC.faint)
                     Text(dateLabel)
-                        .font(.system(size: 11))
+                        .font(WCFont.caption)
                         .foregroundStyle(WC.faint)
                 }
             }
 
-            Spacer(minLength: 4)
+            Spacer(minLength: WCSpace.xs)
 
             rowActions
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(WC.bg)
+        .padding(.horizontal, WCSpace.lg)
+        .padding(.vertical, WCSpace.md)
         .contentShape(Rectangle())
     }
 
@@ -239,7 +238,7 @@ private struct MediaFileRow: View {
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(WC.brand)
+            .foregroundStyle(WC.accent)
             .accessibilityLabel("Share \(file.name)")
         }
     }
@@ -312,35 +311,26 @@ private struct MediaStateShell: View {
     let onAction: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: WCSpace.lg) {
             Image(systemName: icon)
                 .font(.system(size: 32, weight: .bold))
                 .foregroundStyle(iconColor)
             Text(title)
-                .font(.system(size: 16, weight: .black))
+                .font(WCFont.heading)
                 .tracking(1.5)
                 .foregroundStyle(WC.txt)
             Text(detail)
-                .font(.system(size: 13))
+                .font(WCFont.body)
                 .foregroundStyle(WC.muted)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
                 .fixedSize(horizontal: false, vertical: true)
             if let label = actionLabel, let action = onAction {
-                Button {
-                    action()
-                } label: {
-                    Text(label)
-                        .font(.system(size: 14, weight: .bold))
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.black)
-                .background(WC.ok, in: .rect(cornerRadius: 12))
+                GlassButton(label: label, role: .normal, action: action)
+                    .frame(maxWidth: 200)
             }
         }
-        .padding(24)
+        .padding(WCSpace.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

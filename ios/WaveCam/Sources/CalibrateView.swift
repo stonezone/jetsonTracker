@@ -182,19 +182,10 @@ struct CalibrateView: View {
 
 private struct CalibrationUnavailableBanner: View {
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(WC.warn)
-            Text("On-device calibration requires the latest Orin build — checklist only for now.")
-                .font(.system(size: 12))
-                .foregroundStyle(WC.muted)
-                .lineSpacing(3)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WC.warn.opacity(0.08), in: .rect(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.warn.opacity(0.35)))
+        OperatorNotice(
+            "On-device calibration requires the latest Orin build — checklist only for now.",
+            tint: WC.warn
+        )
     }
 }
 
@@ -304,22 +295,20 @@ private struct CalibrationMetric: View {
     let tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(1.3)
-                .foregroundStyle(WC.faint)
-            Text(value)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
+        GlassCard(cornerRadius: WCRadius.sm, padding: WCSpace.sm) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
+                Text(label)
+                    .font(WCFont.label)
+                    .tracking(1.3)
+                    .foregroundStyle(WC.faint)
+                Text(value)
+                    .font(WCFont.mono)
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(WC.panel, in: .rect(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.line))
     }
 }
 
@@ -331,22 +320,21 @@ private struct CalibrationStepsCard: View {
     let onSelect: (CalibrationStep) -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            ForEach(CalibrationStep.all) { step in
-                Button {
-                    onSelect(step)
-                } label: {
-                    CalibrationStepRow(
-                        step: step,
-                        state: rowState(for: step)
-                    )
+        GlassCard(cornerRadius: WCRadius.lg, padding: WCSpace.sm) {
+            VStack(spacing: WCSpace.sm) {
+                ForEach(CalibrationStep.all) { step in
+                    Button {
+                        onSelect(step)
+                    } label: {
+                        CalibrationStepRow(
+                            step: step,
+                            state: rowState(for: step)
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
-        .padding(12)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 
     private func rowState(for step: CalibrationStep) -> CalibrationStepRow.StateKind {
@@ -363,23 +351,20 @@ private struct CalibrationStepRow: View {
     let state: StateKind
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WCSpace.md) {
             StepBadge(stepNumber: step.id, state: state)
             Text(step.title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(WCFont.bodyBold)
                 .foregroundStyle(WC.txt)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
-            Spacer(minLength: 8)
-            Text(statusText)
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.2)
-                .foregroundStyle(statusColor)
+            Spacer(minLength: WCSpace.sm)
+            GlassChip(text: statusText, color: statusColor)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 11)
-        .background(rowBackground, in: .rect(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(rowStroke))
+        .padding(.horizontal, WCSpace.md - 1)
+        .padding(.vertical, WCSpace.md - 1)
+        .background(rowBackground, in: .rect(cornerRadius: WCRadius.sm))
+        .overlay(RoundedRectangle(cornerRadius: WCRadius.sm).stroke(rowStroke))
     }
 
     private var statusText: String {
@@ -393,17 +378,17 @@ private struct CalibrationStepRow: View {
     private var statusColor: Color {
         switch state {
         case .done: WC.ok
-        case .active: WC.brand
+        case .active: WC.accent
         case .pending: WC.faint
         }
     }
 
     private var rowBackground: Color {
-        state == .active ? WC.brand.opacity(0.1) : WC.ink
+        state == .active ? WC.accent.opacity(0.1) : WC.ink
     }
 
     private var rowStroke: Color {
-        state == .active ? WC.brand.opacity(0.55) : WC.line
+        state == .active ? WC.accent.opacity(0.55) : WC.line
     }
 }
 
@@ -423,7 +408,7 @@ private struct StepBadge: View {
             } else {
                 Text(stepNumber, format: .number)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(state == .active ? WC.brand : WC.faint)
+                    .foregroundStyle(state == .active ? WC.accent : WC.faint)
             }
         }
         .frame(width: 28, height: 28)
@@ -432,7 +417,7 @@ private struct StepBadge: View {
     private var fill: Color {
         switch state {
         case .done: WC.ok
-        case .active: WC.brand.opacity(0.12)
+        case .active: WC.accent.opacity(0.12)
         case .pending: Color.clear
         }
     }
@@ -440,7 +425,7 @@ private struct StepBadge: View {
     private var stroke: Color {
         switch state {
         case .done: Color.clear
-        case .active: WC.brand
+        case .active: WC.accent
         case .pending: WC.line
         }
     }
@@ -477,136 +462,105 @@ private struct CalibrationActiveCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: step.systemImage)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(WC.brand)
-                    .frame(width: 38, height: 38)
-                    .background(WC.brand.opacity(0.12), in: .rect(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("STEP \(step.id)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.4)
-                        .foregroundStyle(WC.faint)
-                    Text(step.headline)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(WC.txt)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.78)
-                }
-            }
-
-            Text(step.detail)
-                .font(.system(size: 13))
-                .foregroundStyle(WC.muted)
-                .lineSpacing(4)
-
-            // Refusal message strip — appears only when a capture was refused.
-            if let msg = refusalMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.octagon.fill")
-                        .foregroundStyle(WC.kill)
-                    Text(msg)
-                        .font(.system(size: 12))
-                        .foregroundStyle(WC.kill)
-                        .lineSpacing(3)
-                    Spacer(minLength: 0)
-                    Button(action: onDismissRefusal) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .semibold))
+        GlassCard(cornerRadius: WCRadius.lg, padding: WCSpace.md) {
+            VStack(alignment: .leading, spacing: WCSpace.md) {
+                HStack(spacing: WCSpace.sm) {
+                    Image(systemName: step.systemImage)
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(WC.accent)
+                        .frame(width: 38, height: 38)
+                        .background(WC.accent.opacity(0.12), in: .rect(cornerRadius: WCRadius.sm))
+                    VStack(alignment: .leading, spacing: WCSpace.xs) {
+                        Text("STEP \(step.id)")
+                            .font(WCFont.label)
+                            .tracking(1.4)
                             .foregroundStyle(WC.faint)
+                        Text(step.headline)
+                            .font(WCFont.title)
+                            .foregroundStyle(WC.txt)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.78)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(WC.kill.opacity(0.08), in: .rect(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.kill.opacity(0.35)))
-            }
 
-            HStack(spacing: 8) {
-                Button {
-                    onBack()
-                } label: {
-                    Label("Back", systemImage: "chevron.left")
+                Text(step.detail)
+                    .font(WCFont.body)
+                    .foregroundStyle(WC.muted)
+                    .lineSpacing(4)
+
+                // Refusal message strip — appears only when a capture was refused.
+                if let msg = refusalMessage {
+                    OperatorNotice(msg, tint: WC.kill)
+                        .overlay(alignment: .trailing) {
+                            Button(action: onDismissRefusal) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(WC.faint)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.trailing, WCSpace.xs)
+                        }
                 }
-                .buttonStyle(CalibrationButtonStyle(tint: WC.muted, filled: false))
-                .disabled(!canGoBack)
-                .opacity(canGoBack ? 1 : 0.38)
 
-                captureButton
+                HStack(spacing: WCSpace.sm) {
+                    GlassButton(
+                        label: "Back",
+                        icon: "chevron.left",
+                        role: .normal,
+                        disabled: !canGoBack,
+                        action: onBack
+                    )
 
-                Button {
-                    onForward()
-                } label: {
-                    Label("Next", systemImage: "chevron.right")
+                    captureButton
+
+                    GlassButton(
+                        label: "Next",
+                        icon: "chevron.right",
+                        role: .normal,
+                        disabled: !canGoForward,
+                        action: onForward
+                    )
                 }
-                .buttonStyle(CalibrationButtonStyle(tint: WC.ok, filled: false))
-                .disabled(!canGoForward)
-                .opacity(canGoForward ? 1 : 0.38)
             }
         }
-        .padding(14)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 
     @ViewBuilder
     private var captureButton: some View {
         if isCaptureInFlight {
-            Button {} label: {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .tint(Color.black)
-                        .scaleEffect(0.75)
-                    Text("Capturing…")
-                }
+            // In-flight: show a teal-active button with a spinner — disabled, non-tappable.
+            GlassButton(
+                label: "Capturing…",
+                role: .active,
+                disabled: true,
+                action: {}
+            )
+            // Overlay spinner on top of the GlassButton label area.
+            .overlay(alignment: .leading) {
+                ProgressView()
+                    .tint(Color.black)
+                    .scaleEffect(0.72)
+                    .padding(.leading, WCSpace.lg)
             }
-            .buttonStyle(CalibrationButtonStyle(tint: WC.brand, filled: true))
-            .disabled(true)
         } else if showsChecklistMode {
             // Backend not deployed — checklist-only confirm. Do NOT show a green checkmark
             // that implies hardware calibration actually ran.
-            Button {
-                onCapture()
-            } label: {
-                Label(
-                    isCaptured ? "Noted (checklist)" : step.actionTitle,
-                    systemImage: isCaptured ? "list.bullet.clipboard.fill" : "dot.scope"
-                )
-            }
-            .buttonStyle(CalibrationButtonStyle(tint: isCaptured ? WC.muted : WC.brand, filled: isCaptured))
+            GlassButton(
+                label: isCaptured ? "Noted (checklist)" : step.actionTitle,
+                icon: isCaptured ? "list.bullet.clipboard.fill" : "dot.scope",
+                role: isCaptured ? .active : .normal,
+                action: onCapture
+            )
         } else {
-            Button {
-                onCapture()
-            } label: {
-                Label(
-                    isCaptured ? "Captured" : step.actionTitle,
-                    systemImage: isCaptured ? "checkmark.circle.fill" : "dot.scope"
-                )
-            }
-            .buttonStyle(CalibrationButtonStyle(tint: isCaptured ? WC.ok : WC.brand, filled: true))
-            .disabled(isCaptureInFlight)
+            GlassButton(
+                label: isCaptured ? "Captured" : step.actionTitle,
+                icon: isCaptured ? "checkmark.circle.fill" : "dot.scope",
+                role: isCaptured ? .active : .normal,
+                disabled: isCaptureInFlight,
+                action: onCapture
+            )
         }
     }
 }
 
-// MARK: - Button style
-
-private struct CalibrationButtonStyle: ButtonStyle {
-    let tint: Color
-    let filled: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .semibold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.62)
-            .foregroundStyle(filled ? Color.black : tint)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .padding(.vertical, 12)
-            .background(filled ? tint : WC.panel2, in: .rect(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).stroke(filled ? tint.opacity(0.7) : WC.line))
-            .opacity(configuration.isPressed ? 0.76 : 1)
-    }
-}
