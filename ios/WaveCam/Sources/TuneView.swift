@@ -253,7 +253,7 @@ struct TuneView: View {
                 ForEach(options, id: \.0) { Text($0.1).tag($0.0) }
             }
             .pickerStyle(.menu)
-            .tint(WC.brand)
+            .tint(WC.accent)
             .onChange(of: selection.wrappedValue) { _, v in send([key: v]) }
         }
     }
@@ -274,12 +274,12 @@ struct TuneView: View {
             HStack {
                 Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(WC.txt)
                 Spacer()
-                Text(readout).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(WC.brand)
+                Text(readout).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(WC.accent)
             }
             Slider(value: value, in: range, step: step) { editing in
                 if !editing { send([key: isInt ? Int(value.wrappedValue) : value.wrappedValue]) }
             }
-            .tint(WC.brand)
+            .tint(WC.accent)
         }
     }
 
@@ -288,7 +288,7 @@ struct TuneView: View {
         Toggle(isOn: isOn) {
             Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(WC.txt)
         }
-        .tint(WC.ok)
+        .tint(WC.accent)
         .onChange(of: isOn.wrappedValue) { _, v in send([key: v]) }
     }
 
@@ -311,7 +311,7 @@ struct TuneView: View {
                 Spacer()
                 Text("\(value.wrappedValue)")
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(WC.brand)
+                    .foregroundStyle(WC.accent)
                     .frame(minWidth: 64, alignment: .trailing)
             }
             Stepper(value: value, in: bounds, step: step) {
@@ -387,19 +387,14 @@ private struct TuneCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.system(size: 10, weight: .semibold)).tracking(1.5).foregroundStyle(WC.faint)
+        OperatorCard(title: title) {
             content
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 }
 
 private struct TuneDivider: View {
-    var body: some View { Divider().overlay(WC.line) }
+    var body: some View { OperatorDivider() }
 }
 
 private struct TuneNotice: View {
@@ -412,12 +407,7 @@ private struct TuneNotice: View {
     }
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(tint)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(tint.opacity(0.12), in: .rect(cornerRadius: 12))
+        OperatorNotice(text, tint: tint)
     }
 }
 

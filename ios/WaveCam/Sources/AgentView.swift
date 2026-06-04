@@ -120,7 +120,7 @@ private enum AgentRequestState {
         switch self {
         case .idle: WC.ok
         case .requesting: WC.warn
-        case .requested: WC.brand
+        case .requested: WC.accent
         case .failed: WC.kill
         }
     }
@@ -206,7 +206,7 @@ private struct AgentStatusHeader: View {
         HStack(spacing: 8) {
             AgentMetric(label: "SESSION", value: status?.session.state ?? "READY", tint: WC.ok)
             AgentMetric(label: "SAFETY", value: status?.safety.killed == true ? "KILLED" : "CLEAR", tint: status?.safety.killed == true ? WC.kill : WC.ok)
-            AgentMetric(label: "REV", value: "\(status?.revision ?? 0)", tint: WC.brand)
+            AgentMetric(label: "REV", value: "\(status?.revision ?? 0)", tint: WC.accent)
         }
     }
 }
@@ -240,13 +240,12 @@ private struct SupervisorHealthCard: View {
     let services: [SupervisorService]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            AgentSectionLabel("Supervisor - deterministic health")
+        OperatorCard(title: "Supervisor - deterministic health") {
             VStack(spacing: 0) {
                 ForEach(services) { service in
                     SupervisorServiceRow(service: service)
                     if service.id != services.last?.id {
-                        Divider().overlay(WC.line)
+                        OperatorDivider()
                     }
                 }
             }
@@ -283,8 +282,7 @@ private struct SupervisorServiceRow: View {
 
 private struct AgentAuthorityCard: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            AgentSectionLabel("Codex - on-demand assistant")
+        OperatorCard(title: "Codex - on-demand assistant") {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14)
@@ -307,9 +305,6 @@ private struct AgentAuthorityCard: View {
                 }
             }
         }
-        .padding(14)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 }
 
@@ -318,13 +313,10 @@ private struct AgentRequestCard: View {
     let onSummon: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        OperatorCard {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("DIAGNOSTIC REQUEST")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.4)
-                        .foregroundStyle(WC.faint)
+                    OperatorSectionLabel("Diagnostic request")
                     Text(state.title)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
                         .foregroundStyle(state.tint)
@@ -353,17 +345,14 @@ private struct AgentRequestCard: View {
             .buttonStyle(.plain)
             .disabled(state.isRequesting)
             .opacity(state.isRequesting ? 0.72 : 1)
-            .foregroundStyle(WC.brand)
-            .background(WC.brand.opacity(0.1), in: .rect(cornerRadius: 14))
+            .foregroundStyle(WC.accent)
+            .background(WC.accent.opacity(0.1), in: .rect(cornerRadius: 14))
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(WC.brand.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                    .stroke(WC.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
             )
             .accessibilityLabel("Summon Codex diagnostics")
         }
-        .padding(14)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 }
 
@@ -375,10 +364,6 @@ private struct AgentSectionLabel: View {
     }
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .tracking(1.5)
-            .foregroundStyle(WC.muted)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        OperatorSectionLabel(text)
     }
 }

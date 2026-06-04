@@ -136,45 +136,41 @@ private struct ConnectionStatusCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("ORIN CONTROL")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.5)
-                        .foregroundStyle(WC.faint)
-                    Text(stateText)
-                        .font(.system(size: 24, weight: .black, design: .monospaced))
-                        .foregroundStyle(stateColor)
+        OperatorCard {
+            VStack(alignment: .leading, spacing: WCSpace.md) {
+                HStack {
+                    VStack(alignment: .leading, spacing: WCSpace.xs + 1) {
+                        OperatorSectionLabel("Orin control")
+                        Text(stateText)
+                            .font(.system(size: 24, weight: .black, design: .monospaced))
+                            .foregroundStyle(stateColor)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: WCSpace.sm - 2) {
+                        Image(systemName: connected ? "network" : "network.slash")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(stateColor)
+                        Text(activeRoute.label)
+                            .font(WCFont.label)
+                            .foregroundStyle(stateColor)
+                    }
                 }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
-                    Image(systemName: connected ? "network" : "network.slash")
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(stateColor)
-                    Text(activeRoute.label)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(stateColor)
-                }
-            }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(baseURL.absoluteString)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(WC.txt)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let lastError {
-                    Text(lastError)
-                        .font(.system(size: 11))
-                        .foregroundStyle(WC.warn)
-                        .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: WCSpace.sm - 2) {
+                    Text(baseURL.absoluteString)
+                        .font(WCFont.captionMono)
+                        .foregroundStyle(WC.txt)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let lastError {
+                        Text(lastError)
+                            .font(WCFont.caption)
+                            .foregroundStyle(WC.warn)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
-        .padding(14)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 }
 
@@ -191,7 +187,8 @@ private struct ConnectionFormCard: View {
     let onRefresh: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        OperatorCard {
+            VStack(alignment: .leading, spacing: WCSpace.md) {
             Picker("Mode", selection: $selectedMode) {
                 Text("Live").tag(WaveCamClient.Mode.live)
                 Text("Mock").tag(WaveCamClient.Mode.mock)
@@ -246,7 +243,7 @@ private struct ConnectionFormCard: View {
                         .foregroundStyle(WC.muted)
                 }
             }
-            .tint(WC.ok)
+            .tint(WC.accent)
 
             if let validationError {
                 Text(validationError)
@@ -259,13 +256,13 @@ private struct ConnectionFormCard: View {
                     Label("Apply", systemImage: "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(ConnectionButtonStyle(tint: WC.ok, filled: true))
+                .buttonStyle(ConnectionButtonStyle(tint: WC.accent, filled: true))
 
                 Button(action: onRefresh) {
                     Image(systemName: "arrow.clockwise")
                         .frame(width: 44)
                 }
-                .buttonStyle(ConnectionButtonStyle(tint: WC.brand, filled: false))
+                .buttonStyle(ConnectionButtonStyle(tint: WC.accent, filled: false))
                 .accessibilityLabel("Refresh status")
 
                 Button(action: onUseDefault) {
@@ -275,10 +272,8 @@ private struct ConnectionFormCard: View {
                 .buttonStyle(ConnectionButtonStyle(tint: WC.muted, filled: false))
                 .accessibilityLabel("Use default connection")
             }
+            }
         }
-        .padding(14)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 }
 
@@ -291,9 +286,9 @@ private struct FieldLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 9, weight: .semibold))
+            .font(WCFont.label)
             .tracking(1.3)
-            .foregroundStyle(WC.faint)
+            .foregroundStyle(WC.muted)
     }
 }
 

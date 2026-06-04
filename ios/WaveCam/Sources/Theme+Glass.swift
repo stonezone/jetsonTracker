@@ -133,6 +133,81 @@ struct GlassSection<Content: View>: View {
     }
 }
 
+// MARK: - OperatorCard
+
+/// Solid high-contrast panel for dense operator forms and readouts.
+///
+/// Use this for Tune/Connect/Agent-style surfaces where outdoor legibility matters
+/// more than translucency. It shares the type/spacing/radius tokens with glass
+/// surfaces without making text-heavy controls transparent.
+struct OperatorCard<Content: View>: View {
+    var title: String? = nil
+    var cornerRadius: CGFloat = WCRadius.md
+    var padding: CGFloat = WCSpace.md
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WCSpace.md) {
+            if let title {
+                OperatorSectionLabel(title)
+            }
+            content()
+        }
+        .padding(padding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WC.panel, in: .rect(cornerRadius: cornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .stroke(WC.line)
+        )
+    }
+}
+
+struct OperatorSectionLabel: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(WCFont.label)
+            .tracking(1.4)
+            .foregroundStyle(WC.muted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct OperatorDivider: View {
+    var body: some View {
+        Divider().overlay(WC.line)
+    }
+}
+
+struct OperatorNotice: View {
+    let text: String
+    let tint: Color
+
+    init(_ text: String, tint: Color) {
+        self.text = text
+        self.tint = tint
+    }
+
+    var body: some View {
+        Text(text)
+            .font(WCFont.caption)
+            .foregroundStyle(tint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(WCSpace.md)
+            .background(tint.opacity(0.12), in: .rect(cornerRadius: WCRadius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: WCRadius.sm)
+                    .stroke(tint.opacity(0.28))
+            )
+    }
+}
+
 // MARK: - GlassButton
 
 /// A full-width glass button with role-specific styling.
