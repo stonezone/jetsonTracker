@@ -43,6 +43,21 @@ struct TuneView: View {
     // STREAM
     @State private var jpegQuality: Int? = nil
 
+    // PRESETS feature state
+    @State private var presetsSupported = false
+    @State private var tunePresets: [WCPreset] = []
+    @State private var activePresetName: String? = nil
+    /// Keys that were hot-applied when the active preset was applied. Used to compute the
+    /// "modified" dot: if any current Tune value differs from the applied preset, show the dot.
+    @State private var appliedPresetValues: [String: JSONValue] = [:]
+    @State private var showSavePresetAlert = false
+    @State private var newPresetName = ""
+    @State private var presetDeleteTarget: WCPreset? = nil
+    @State private var showPresetDeleteConfirm = false
+    @State private var presetApplyRestartRequired = false
+    @State private var presetApplyRestartKeys: [String] = []
+    @State private var showPresetRestartNotice = false
+
     private let presets: [(id: String, name: String)] = [
         ("orange_red", "Orange / red (rashguard)"), ("orange", "Orange"),
         ("blue", "Blue"), ("green", "Green"), ("yellow", "Yellow"), ("pink", "Pink"),
@@ -61,6 +76,14 @@ struct TuneView: View {
                 if let configError {
                     TuneNotice(configError, tint: WC.kill)
                         .onTapGesture { self.configError = nil }
+                }
+
+                if showPresetRestartNotice {
+                    presetRestartNotice
+                }
+
+                if presetsSupported {
+                    presetsSection
                 }
 
                 TuneCard(title: "TARGET") {
@@ -147,6 +170,46 @@ struct TuneView: View {
         } message: {
             Text("Stops PTZ and restarts the vision service. The live feed drops for a few seconds.")
         }
+        .alert("Save Preset", isPresented: $showSavePresetAlert) {
+            TextField("Preset name", text: $newPresetName)
+                .autocorrectionDisabled()
+            Button("Save") {
+                let name = newPresetName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                let values = currentTuneValues()
+                Task {
+                    let ok = await client.savePreset(name: name, values: values)
+                    if ok {
+                        activePresetName = name
+                        appliedPresetValues = values
+                        tunePresets = await client.presets() ?? tunePresets
+                    } else {
+                        configError = "Could not save preset: \(client.lastControlError ?? "rejected"). Tap to dismiss."
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { newPresetName = "" }
+        } message: {
+            Text("Enter a name for this preset. Built-in preset names (Default, Tow Foil, etc.) are reserved.")
+        }
+        .alert("Delete Preset?", isPresented: $showPresetDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                guard let target = presetDeleteTarget else { return }
+                Task {
+                    let ok = await client.deletePreset(name: target.name)
+                    if ok {
+                        if activePresetName == target.name { activePresetName = nil; appliedPresetValues = [:] }
+                        tunePresets = await client.presets() ?? tunePresets
+                    } else {
+                        configError = "Could not delete preset: \(client.lastControlError ?? "rejected"). Tap to dismiss."
+                    }
+                    presetDeleteTarget = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { presetDeleteTarget = nil }
+        } message: {
+            Text("Delete \"\(presetDeleteTarget?.name ?? "")\"? This cannot be undone.")
+        }
     }
 
     @ViewBuilder private var header: some View {
@@ -155,6 +218,198 @@ struct TuneView: View {
         } else if !loaded {
             TuneNotice(client.connected ? "Loading current settings..." : "Connecting to the Orin...", tint: WC.muted)
         }
+    }
+
+    // MARK: - Presets section
+
+    @ViewBuilder private var presetsSection: some View {
+        TuneCard(title: "PRESETS") {
+            // Horizontal chip row
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tunePresets) { preset in
+                        presetChip(preset)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            TuneDivider()
+
+            // Action buttons row
+            HStack(spacing: 8) {
+                Button {
+                    newPresetName = ""
+                    showSavePresetAlert = true
+                } label: {
+                    Label("Save", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(WC.accent)
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .background(WC.accent.opacity(0.12), in: .rect(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.accent.opacity(0.35)))
+                }
+                .buttonStyle(.plain)
+                .disabled(client.mode != .live)
+
+                Button {
+                    applyPreset(named: "Default")
+                } label: {
+                    Label("Reset", systemImage: "arrow.counterclockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(WC.warn)
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .background(WC.warn.opacity(0.10), in: .rect(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.warn.opacity(0.35)))
+                }
+                .buttonStyle(.plain)
+                .disabled(client.mode != .live)
+            }
+        }
+    }
+
+    @ViewBuilder private func presetChip(_ preset: WCPreset) -> some View {
+        let isActive = preset.name == activePresetName
+        let isModified = isActive && isPresetModified
+        Button {
+            applyPreset(named: preset.name)
+        } label: {
+            HStack(spacing: 4) {
+                Text(preset.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                if isModified {
+                    Circle()
+                        .fill(WC.warn)
+                        .frame(width: 5, height: 5)
+                }
+                if !preset.builtin {
+                    Button {
+                        presetDeleteTarget = preset
+                        showPresetDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(isActive ? Color.black.opacity(0.5) : WC.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 1)
+                }
+            }
+            .foregroundStyle(isActive ? Color.black : WC.txt)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(
+                isActive ? WC.accent : WC.accent.opacity(0.12),
+                in: .rect(cornerRadius: 10)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isActive ? WC.accent : WC.accent.opacity(0.30))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(client.mode != .live)
+    }
+
+    @ViewBuilder private var presetRestartNotice: some View {
+        TuneNotice(
+            "Preset applied. Some keys require a restart: \(presetApplyRestartKeys.joined(separator: ", "))",
+            tint: WC.warn
+        )
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 8) {
+                Button("Restart now") {
+                    showPresetRestartNotice = false
+                    showRestartConfirm = true
+                }
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(WC.warn)
+
+                Button {
+                    showPresetRestartNotice = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(WC.muted)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.trailing, 10)
+            .padding(.top, 10)
+        }
+    }
+
+    /// True when the current Tune control values differ from those last applied via a preset.
+    private var isPresetModified: Bool {
+        guard !appliedPresetValues.isEmpty else { return false }
+        let current = currentTuneValues()
+        for (key, appliedVal) in appliedPresetValues {
+            guard let curVal = current[key] else { continue }
+            if curVal != appliedVal { return true }
+        }
+        return false
+    }
+
+    private func applyPreset(named name: String) {
+        Task {
+            let result = await client.applyPreset(name: name)
+            if let result {
+                if result.ok {
+                    activePresetName = name
+                    // Snapshot which values were applied so the modified-dot can compare.
+                    if let preset = tunePresets.first(where: { $0.name == name }) {
+                        appliedPresetValues = preset.values
+                    }
+                    // Re-load controls so sliders reflect the preset's values.
+                    loaded = false
+                    await load()
+                    if result.restartRequired {
+                        presetApplyRestartKeys = result.restartKeys
+                        showPresetRestartNotice = true
+                    }
+                } else {
+                    configError = "Preset not applied. Tap to dismiss."
+                }
+            } else {
+                configError = "Could not reach the Orin to apply preset. Tap to dismiss."
+            }
+        }
+    }
+
+    /// Builds the current Tune control state as a [String: JSONValue] dict, keyed by
+    /// the same config keys used in send(_:). Used when saving a preset snapshot.
+    private func currentTuneValues() -> [String: JSONValue] {
+        var d: [String: JSONValue] = [
+            "color.preset":             .string(colorPreset),
+            "detector.person_class":    .int(yoloClass),
+            "fusion.person_aim_y":      .double(aimY),
+            "detector.conf":            .double(conf),
+            "fusion.require_person":    .bool(requirePerson),
+            "web.show_mask":            .bool(showMask),
+            "ptz.max_pan_speed":        .int(Int(maxPan)),
+            "ptz.max_tilt_speed":       .int(Int(maxTilt)),
+            "ptz.deadzone":             .double(deadzone),
+            "ptz.ff_gain":              .double(ffGain),
+        ]
+        if cinematicAvailable {
+            d["ptz.cinematic_zoom_enabled"] = .bool(cinematicEnabled)
+            d["ptz.zoom_target_frac"]       = .double(subjectSize)
+        }
+        if let v = everyN              { d["detector.every_n"]          = .int(v) }
+        if let v = lockThreshold       { d["fusion.lock_threshold"]     = .double(v) }
+        if let v = unlockThreshold     { d["fusion.unlock_threshold"]   = .double(v) }
+        if let v = matchDist           { d["fusion.match_dist"]         = .double(v) }
+        if let v = colorMinArea        { d["color.min_area"]            = .int(v) }
+        if let v = colorMaxArea        { d["color.max_area"]            = .int(v) }
+        if let v = morphKernel         { d["color.morph_kernel"]        = .int(v) }
+        if let v = ffDeadzoneMult      { d["ptz.ff_deadzone_mult"]      = .double(v) }
+        if let v = ptzMinSpeed         { d["ptz.min_speed"]             = .int(v) }
+        if let v = commandMinInterval  { d["ptz.command_min_interval"]  = .double(v) }
+        if let v = invertTilt          { d["ptz.invert_tilt"]           = .bool(v) }
+        if let v = invertPan           { d["ptz.invert_pan"]            = .bool(v) }
+        if let v = jpegQuality         { d["web.jpeg_quality"]          = .int(v) }
+        return d
     }
 
     // MARK: - Feature-detected advanced cards
@@ -335,7 +590,19 @@ struct TuneView: View {
         guard !loaded, !loading else { return }
         loading = true
         defer { loading = false }
-        guard let cfg = await client.config() else { return }
+
+        // Load presets feature flag + preset list independently of the config fetch.
+        // Feature-detect: show in mock mode (always demoable) or when backend signals support.
+        async let cfgTask = client.config()
+        async let presetsTask = client.presets()
+
+        guard let cfg = await cfgTask else { return }
+
+        let presetsEnabled = client.mode == .mock || (cfg.supported?.presets == true)
+        presetsSupported = presetsEnabled
+        if presetsEnabled, let loaded = await presetsTask {
+            tunePresets = loaded
+        }
         colorPreset = cfg.current.color.preset
         yoloClass = cfg.current.detector.personClass
         aimY = cfg.current.fusion.personAimY

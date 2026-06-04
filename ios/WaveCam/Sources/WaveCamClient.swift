@@ -146,6 +146,7 @@ struct WCConfig: Codable, Sendable {
     /// true without confirmation — a missing key means the endpoint or feature is absent.
     struct Supported: Codable, Sendable {
         var ptzHome: Bool?
+        var presets: Bool?
     }
 
     struct Current: Codable, Sendable {
@@ -248,6 +249,68 @@ enum WaveCamCalibrationError: LocalizedError, Sendable {
             return "Network error: \(desc)"
         }
     }
+}
+
+// MARK: - Preset models
+
+/// A heterogeneous JSON value that appears in preset `values` dicts.
+/// The backend can store any scalar type (String, Int, Double, Bool) per config key.
+/// Using a typed enum avoids `Any` casts and keeps Codable conformance clean.
+enum JSONValue: Codable, Sendable, Equatable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let v = try? c.decode(Bool.self)   { self = .bool(v);   return }
+        if let v = try? c.decode(Int.self)    { self = .int(v);    return }
+        if let v = try? c.decode(Double.self) { self = .double(v); return }
+        if let v = try? c.decode(String.self) { self = .string(v); return }
+        throw DecodingError.dataCorruptedError(in: c, debugDescription: "Unsupported JSON value type")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .string(let v): try c.encode(v)
+        case .int(let v):    try c.encode(v)
+        case .double(let v): try c.encode(v)
+        case .bool(let v):   try c.encode(v)
+        }
+    }
+
+    /// Convenience: produce a JSONValue from a Bool @State that a Tune slider wrote.
+    static func from(_ any: Any) -> JSONValue? {
+        switch any {
+        case let v as Bool:   return .bool(v)
+        case let v as Int:    return .int(v)
+        case let v as Double: return .double(v)
+        case let v as String: return .string(v)
+        default: return nil
+        }
+    }
+}
+
+struct WCPreset: Codable, Sendable, Identifiable {
+    var name: String
+    var builtin: Bool
+    var restartRequired: Bool
+    var values: [String: JSONValue]
+
+    var id: String { name }
+}
+
+private struct WCPresetsResponse: Codable, Sendable {
+    var presets: [WCPreset]
+}
+
+struct WCPresetApplyResult: Codable, Sendable {
+    var ok: Bool
+    var applied: [String]
+    var restartRequired: Bool
+    var restartKeys: [String]
 }
 
 // MARK: - Media models
@@ -698,6 +761,116 @@ final class WaveCamClient {
         }
     }
 
+    // MARK: presets
+
+    /// GET /api/v1/presets — returns canned presets in mock mode for offline demos.
+    func presets() async -> [WCPreset]? {
+        if mode == .mock { return Self.mockPresets }
+        do {
+            let data = try await getWithFallback("presets")
+            let response = try Self.decoder.decode(WCPresetsResponse.self, from: data)
+            return response.presets
+        } catch {
+            return nil
+        }
+    }
+
+    /// POST /api/v1/presets — saves a new (or updates an existing custom) preset.
+    /// Returns false in mock mode (no mutation) or on network/server error.
+    func savePreset(name: String, values: [String: JSONValue]) async -> Bool {
+        guard mode == .live else { return false }
+        do {
+            let valuesData = try JSONEncoder().encode(values)
+            guard let valuesObj = try JSONSerialization.jsonObject(with: valuesData) as? [String: Any] else {
+                return false
+            }
+            _ = try await post("presets", body: ["name": name, "values": valuesObj])
+            return true
+        } catch {
+            lastControlError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// POST /api/v1/presets/{name}/apply — applies preset values to live config.
+    func applyPreset(name: String) async -> WCPresetApplyResult? {
+        guard mode == .live else { return nil }
+        do {
+            guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                return nil
+            }
+            let data = try await post("presets/\(encodedName)/apply", body: ["source": "ios_native"])
+            return try Self.decoder.decode(WCPresetApplyResult.self, from: data)
+        } catch {
+            lastControlError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// DELETE /api/v1/presets/{name} — deletes a custom preset. Rejects builtins server-side.
+    func deletePreset(name: String) async -> Bool {
+        guard mode == .live else { return false }
+        do {
+            guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                return false
+            }
+            _ = try await delete("presets/\(encodedName)")
+            return true
+        } catch {
+            lastControlError = error.localizedDescription
+            return false
+        }
+    }
+
+    // Canned presets for mock / offline demo — Default + Tow Foil + Cloudy.
+    private static let mockPresets: [WCPreset] = [
+        WCPreset(
+            name: "Default",
+            builtin: true,
+            restartRequired: false,
+            values: [
+                "ptz.max_pan_speed": .int(10),
+                "ptz.max_tilt_speed": .int(8),
+                "ptz.deadzone": .double(0.08),
+                "ptz.ff_gain": .double(0.0),
+                "ptz.zoom_target_frac": .double(0.5),
+                "fusion.require_person": .bool(false),
+                "fusion.person_aim_y": .double(0.5),
+                "detector.conf": .double(0.35)
+            ]
+        ),
+        WCPreset(
+            name: "Tow Foil",
+            builtin: true,
+            restartRequired: false,
+            values: [
+                "ptz.max_pan_speed": .int(18),
+                "ptz.max_tilt_speed": .int(12),
+                "ptz.deadzone": .double(0.10),
+                "ptz.ff_gain": .double(0.30),
+                "ptz.zoom_target_frac": .double(0.35),
+                "fusion.require_person": .bool(false),
+                "fusion.person_aim_y": .double(0.45),
+                "detector.conf": .double(0.35)
+            ]
+        ),
+        WCPreset(
+            name: "Cloudy",
+            builtin: true,
+            restartRequired: false,
+            values: [
+                "ptz.max_pan_speed": .int(10),
+                "ptz.max_tilt_speed": .int(8),
+                "ptz.deadzone": .double(0.08),
+                "ptz.ff_gain": .double(0.0),
+                "ptz.zoom_target_frac": .double(0.5),
+                "fusion.require_person": .bool(false),
+                "fusion.person_aim_y": .double(0.5),
+                "detector.conf": .double(0.30)
+            ]
+        ),
+    ]
+
     // MARK: media (read-only; guard mode == .live like config())
 
     /// GET /api/v1/media/list — returns [] in mock mode or when the endpoint is unavailable.
@@ -880,6 +1053,31 @@ final class WaveCamClient {
         Task { [weak self] in
             await self?.refresh()
         }
+    }
+
+    @discardableResult
+    private func delete(_ path: String) async throws -> Data {
+        var failoverError: Error?
+        for candidate in apiCandidates() {
+            do {
+                var req = URLRequest(url: candidate.appending(path: path))
+                req.httpMethod = "DELETE"
+                req.timeoutInterval = 5
+                authorize(&req)
+                let (data, response) = try await URLSession.shared.data(for: req)
+                markConnected(to: candidate)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw WaveCamAPIError(statusCode: http.statusCode, data: data)
+                }
+                return data
+            } catch let error as WaveCamAPIError {
+                throw error
+            } catch let error as URLError {
+                guard error.isWriteRouteFailoverAllowed else { throw error }
+                failoverError = error
+            }
+        }
+        throw failoverError ?? URLError(.cannotConnectToHost)
     }
 
     @discardableResult
