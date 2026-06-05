@@ -775,6 +775,8 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert "ptz.cinematic_zoom_enabled" in body["hot_keys"]
     assert "ptz.zoom_target_frac" in body["hot_keys"]
     assert body["supported"]["ptz_home"] is True
+    assert body["supported"]["presets"] is True
+    assert body["supported"]["logs"] is True
     assert "detector.conf" in body["hot_keys"]
     assert "detector.model" in body["restart_required_keys"]
 
@@ -862,6 +864,125 @@ def test_api_v1_cinematic_zoom_hot_config_round_trips_in_snapshot():
     assert after["current"]["ptz"]["zoom_target_frac"] == 0.44
     assert after["current"]["ptz"]["zoom_deadband"] == 0.09
     assert after["current"]["ptz"]["zoom_max_speed"] == 3
+
+
+def test_api_v1_presets_list_save_apply_capture_and_delete_custom(tmp_path):
+    pipe = DummyPipeline()
+    pipe.preset_store_path = tmp_path / "presets.json"
+    client = TestClient(build_app(pipe))
+
+    listed = client.get("/api/v1/presets")
+
+    assert listed.status_code == 200
+    presets = {preset["name"]: preset for preset in listed.json()["presets"]}
+    assert presets["Default"]["builtin"] is True
+    assert presets["Tow Foil"]["values"]["ptz.max_pan_speed"] == 18
+
+    builtin_overwrite = client.post(
+        "/api/v1/presets",
+        json={"name": "Tow Foil", "values": {"ptz.deadzone": 0.12}},
+    )
+    assert builtin_overwrite.status_code == 409
+    assert builtin_overwrite.json()["code"] == "builtin_preset"
+
+    saved = client.post(
+        "/api/v1/presets",
+        json={
+            "name": "WaterTest",
+            "values": {
+                "ptz.deadzone": 0.12,
+                "detector.model": "/data/models/yolov8n.engine",
+            },
+        },
+    )
+    assert saved.status_code == 200
+    assert saved.json()["preset"]["builtin"] is False
+
+    applied = client.post("/api/v1/presets/WaterTest/apply")
+
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["ok"] is True
+    assert body["applied"] == {"ptz.deadzone": 0.12}
+    assert body["restart_required"] is True
+    assert body["restart_keys"] == ["detector.model"]
+    assert pipe.cfg.ptz.deadzone == 0.12
+
+    captured = client.post(
+        "/api/v1/presets",
+        json={"name": "Captured", "capture_current": True},
+    )
+    assert captured.status_code == 200
+    assert captured.json()["preset"]["values"]["ptz.deadzone"] == 0.12
+
+    deleted = client.delete("/api/v1/presets/WaterTest")
+    builtin_delete = client.delete("/api/v1/presets/Default")
+
+    assert deleted.status_code == 200
+    assert builtin_delete.status_code == 409
+    assert builtin_delete.json()["code"] == "builtin_preset"
+    names_after_delete = {
+        preset["name"] for preset in client.get("/api/v1/presets").json()["presets"]
+    }
+    assert "WaterTest" not in names_after_delete
+    assert "Captured" in names_after_delete
+
+
+def test_api_v1_presets_invalid_keys_do_not_mutate_or_persist(tmp_path):
+    pipe = DummyPipeline()
+    pipe.preset_store_path = tmp_path / "presets.json"
+    client = TestClient(build_app(pipe))
+
+    response = client.post(
+        "/api/v1/presets",
+        json={"name": "Bad", "values": {"camera.unknown": "rtsp://example"}},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "invalid_request"
+    assert not pipe.preset_store_path.exists()
+
+
+def test_api_v1_logs_scope_filter_and_redact_sensitive_values():
+    pipe = DummyPipeline()
+    pipe.log_lines = [
+        {
+            "ts_unix_ms": 1000,
+            "level": "info",
+            "source": "wavecam.service",
+            "message": "started token=secret123 path=/Users/zack/.env",
+        },
+        {
+            "ts_unix_ms": 1100,
+            "level": "error",
+            "source": "gps-server.service",
+            "message": "must not leak",
+        },
+        {
+            "ts_unix_ms": 1200,
+            "level": "warning",
+            "source": "supervisor",
+            "message": "Authorization: Bearer abc123 from /home/zack/wavecam/.env",
+        },
+    ]
+    client = TestClient(build_app(pipe))
+
+    response = client.get("/api/v1/logs", params={"limit": 10, "since": 999})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [line["source"] for line in body["lines"]] == ["wavecam.service", "supervisor"]
+    messages = "\n".join(line["message"] for line in body["lines"])
+    assert "gps-server" not in messages
+    assert "secret123" not in messages
+    assert "abc123" not in messages
+    assert "/Users/zack" not in messages
+    assert "/home/zack" not in messages
+    assert ".env" not in messages
+
+    filtered = client.get("/api/v1/logs", params={"level": "warning", "limit": 10})
+    assert filtered.status_code == 200
+    assert [line["level"] for line in filtered.json()["lines"]] == ["warning"]
 
 
 def test_api_v1_system_restart_schedules_restart_when_idle():
@@ -1016,6 +1137,42 @@ def test_api_v1_media_list_and_download_are_recorder_dir_scoped(tmp_path):
     assert missing.json()["code"] == "media_not_found"
     assert unsafe.status_code == 404
     assert unsafe.json()["code"] == "media_not_found"
+
+
+def test_guide_route_serves_html_and_assets(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"
+    assets = docs / "guide_assets"
+    assets.mkdir(parents=True)
+    (docs / "WaveCam_Guide.html").write_text("<!doctype html><title>WaveCam</title>")
+    (assets / "live.png").write_bytes(b"png-bytes")
+    monkeypatch.setenv("WAVECAM_GUIDE_ROOT", str(docs))
+    client = make_client()
+
+    guide = client.get("/guide")
+    asset = client.get("/guide_assets/live.png")
+
+    assert guide.status_code == 200
+    assert guide.headers["content-type"].startswith("text/html")
+    assert b"WaveCam" in guide.content
+    assert asset.status_code == 200
+    assert asset.content == b"png-bytes"
+
+
+def test_guide_route_missing_and_traversal_return_404(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"
+    assets = docs / "guide_assets"
+    assets.mkdir(parents=True)
+    (tmp_path / "secret.txt").write_text("secret")
+    monkeypatch.setenv("WAVECAM_GUIDE_ROOT", str(docs))
+    client = make_client()
+
+    missing_guide = client.get("/guide")
+    traversal = client.get("/guide_assets/%2E%2E/secret.txt")
+
+    assert missing_guide.status_code == 404
+    assert missing_guide.json()["code"] == "guide_not_found"
+    assert traversal.status_code == 404
+    assert traversal.json()["code"] == "guide_asset_not_found"
 
 
 if __name__ == "__main__":

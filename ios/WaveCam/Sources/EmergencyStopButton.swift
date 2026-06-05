@@ -9,6 +9,7 @@ struct EmergencyStopButton: View {
         case prominent
         case compact
         case chip
+        case icon
     }
 
     @Environment(WaveCamClient.self) private var client
@@ -52,6 +53,16 @@ struct EmergencyStopButton: View {
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.kill.opacity(0.4)))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
+        case .icon:
+            // Icon-only — the Live dock. Solid red = the one safety control, distinct from
+            // teal interactive buttons. No truncating label.
+            Image(systemName: "stop.fill")
+                .font(.system(size: 18, weight: .black))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(WC.kill, in: .rect(cornerRadius: WCRadius.xs))
+                .overlay(RoundedRectangle(cornerRadius: WCRadius.xs).stroke(Color.white.opacity(0.25)))
+                .shadow(color: WC.kill.opacity(0.4), radius: 8, y: 2)
         }
     }
 }

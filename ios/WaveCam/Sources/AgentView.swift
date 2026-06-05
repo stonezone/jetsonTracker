@@ -4,6 +4,10 @@ import SwiftUI
 struct AgentView: View {
     @Environment(WaveCamClient.self) private var client
     @State private var requestState: AgentRequestState = .idle
+    @State private var config: WCConfig?
+    @State private var logLines: [WCLogLine] = []
+    @State private var logLevel: LogLevelFilter = .all
+    @State private var logsLoading = false
 
     var body: some View {
         ScrollView {
@@ -12,6 +16,14 @@ struct AgentView: View {
                 SupervisorHealthCard(services: serviceRows)
                 AgentAuthorityCard()
                 AgentRequestCard(state: requestState, onSummon: summonDiagnostics)
+                if config?.supported?.logs == true || client.mode == .mock {
+                    AgentLogsCard(
+                        lines: filteredLines,
+                        level: $logLevel,
+                        isLoading: logsLoading,
+                        onRefresh: { Task { await loadLogs() } }
+                    )
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 6)
@@ -19,7 +31,29 @@ struct AgentView: View {
         }
         .background(WC.bg.ignoresSafeArea())
         .scrollIndicators(.hidden)
-        .task { await client.refresh() }
+        .task {
+            await client.refresh()
+            config = await client.config()
+            if config?.supported?.logs == true || client.mode == .mock {
+                await loadLogs()
+            }
+        }
+        .onChange(of: logLevel) {
+            Task { await loadLogs() }
+        }
+    }
+
+    private var filteredLines: [WCLogLine] {
+        guard logLevel != .all else { return logLines }
+        return logLines.filter { $0.level.uppercased() == logLevel.rawValue }
+    }
+
+    @MainActor
+    private func loadLogs() async {
+        logsLoading = true
+        let levelParam = logLevel == .all ? nil : logLevel.rawValue
+        logLines = await client.logs(level: levelParam, limit: 200) ?? []
+        logsLoading = false
     }
 
     private var serviceRows: [SupervisorService] {
@@ -45,50 +79,10 @@ struct AgentView: View {
 
     @MainActor
     private func summonDiagnosticsRequest() async {
-        guard client.mode == .live else {
-            requestState = .requested
-            return
-        }
-
         requestState = .requesting
-        do {
-            var request = URLRequest(url: client.baseURL.appending(path: "agent/summon"))
-            request.httpMethod = "POST"
-            request.timeoutInterval = 5
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            if let token = client.token, !token.isEmpty {
-                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            }
-            request.httpBody = try JSONSerialization.data(withJSONObject: [
-                "source": "ios_native",
-                "reason": "operator_diagnostics"
-            ])
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                requestState = .failed("No HTTP response from supervisor.")
-                return
-            }
-            guard (200..<300).contains(http.statusCode) else {
-                let message = Self.errorMessage(statusCode: http.statusCode, data: data)
-                requestState = .failed(message)
-                return
-            }
-            requestState = .requested
-        } catch {
-            requestState = .failed(error.localizedDescription)
-        }
+        let ok = await client.summonAgent()
+        requestState = ok ? .requested : .failed(client.lastCommandError ?? "Summon failed.")
         await client.refresh()
-    }
-
-    private static func errorMessage(statusCode: Int, data: Data) -> String {
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let message = object["message"] as? String
-        else {
-            return "HTTP \(statusCode)"
-        }
-        return "HTTP \(statusCode): \(message)"
     }
 }
 
@@ -120,7 +114,7 @@ private enum AgentRequestState {
         switch self {
         case .idle: WC.ok
         case .requesting: WC.warn
-        case .requested: WC.brand
+        case .requested: WC.accent
         case .failed: WC.kill
         }
     }
@@ -206,7 +200,7 @@ private struct AgentStatusHeader: View {
         HStack(spacing: 8) {
             AgentMetric(label: "SESSION", value: status?.session.state ?? "READY", tint: WC.ok)
             AgentMetric(label: "SAFETY", value: status?.safety.killed == true ? "KILLED" : "CLEAR", tint: status?.safety.killed == true ? WC.kill : WC.ok)
-            AgentMetric(label: "REV", value: "\(status?.revision ?? 0)", tint: WC.brand)
+            AgentMetric(label: "REV", value: "\(status?.revision ?? 0)", tint: WC.accent)
         }
     }
 }
@@ -217,22 +211,20 @@ private struct AgentMetric: View {
     let tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(1.3)
-                .foregroundStyle(WC.faint)
-            Text(value.uppercased())
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
+        GlassCard(cornerRadius: WCRadius.md, padding: WCSpace.sm) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
+                Text(label)
+                    .font(WCFont.label)
+                    .tracking(1.3)
+                    .foregroundStyle(WC.faint)
+                Text(value.uppercased())
+                    .font(WCFont.mono)
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(WC.panel, in: .rect(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.line))
     }
 }
 
@@ -240,13 +232,12 @@ private struct SupervisorHealthCard: View {
     let services: [SupervisorService]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            AgentSectionLabel("Supervisor - deterministic health")
+        OperatorCard(title: "Supervisor - deterministic health") {
             VStack(spacing: 0) {
                 ForEach(services) { service in
                     SupervisorServiceRow(service: service)
                     if service.id != services.last?.id {
-                        Divider().overlay(WC.line)
+                        OperatorDivider()
                     }
                 }
             }
@@ -283,8 +274,7 @@ private struct SupervisorServiceRow: View {
 
 private struct AgentAuthorityCard: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            AgentSectionLabel("Codex - on-demand assistant")
+        OperatorCard(title: "Codex - on-demand assistant") {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14)
@@ -307,9 +297,6 @@ private struct AgentAuthorityCard: View {
                 }
             }
         }
-        .padding(14)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 }
 
@@ -318,13 +305,10 @@ private struct AgentRequestCard: View {
     let onSummon: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        OperatorCard {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("DIAGNOSTIC REQUEST")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.4)
-                        .foregroundStyle(WC.faint)
+                    OperatorSectionLabel("Diagnostic request")
                     Text(state.title)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
                         .foregroundStyle(state.tint)
@@ -353,32 +337,142 @@ private struct AgentRequestCard: View {
             .buttonStyle(.plain)
             .disabled(state.isRequesting)
             .opacity(state.isRequesting ? 0.72 : 1)
-            .foregroundStyle(WC.brand)
-            .background(WC.brand.opacity(0.1), in: .rect(cornerRadius: 14))
+            .foregroundStyle(WC.accent)
+            .background(WC.accent.opacity(0.1), in: .rect(cornerRadius: 14))
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(WC.brand.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                    .stroke(WC.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
             )
             .accessibilityLabel("Summon Codex diagnostics")
         }
-        .padding(14)
-        .background(WC.panel, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(WC.line))
     }
 }
 
-private struct AgentSectionLabel: View {
-    let text: String
+// MARK: - Log viewer
 
-    init(_ text: String) {
-        self.text = text
-    }
+/// Level-filter values for the log viewer segmented picker.
+private enum LogLevelFilter: String, CaseIterable, Hashable {
+    case all   = "ALL"
+    case debug = "DEBUG"
+    case info  = "INFO"
+    case warn  = "WARN"
+    case error = "ERROR"
+
+    var label: String { rawValue }
+}
+
+private struct AgentLogsCard: View {
+    let lines: [WCLogLine]
+    @Binding var level: LogLevelFilter
+    let isLoading: Bool
+    let onRefresh: () -> Void
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .tracking(1.5)
-            .foregroundStyle(WC.muted)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        OperatorCard {
+            HStack {
+                OperatorSectionLabel("Logs")
+                Spacer()
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                } else {
+                    Button {
+                        onRefresh()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(WC.accent)
+                    }
+                    .accessibilityLabel("Refresh logs")
+                }
+            }
+
+            Picker("Level", selection: $level) {
+                ForEach(LogLevelFilter.allCases, id: \.self) { filter in
+                    Text(filter.label).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if lines.isEmpty && !isLoading {
+                Text("No log lines.")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(WC.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            } else {
+                // Solid background with high contrast for sun readability.
+                VStack(spacing: 0) {
+                    ForEach(lines.reversed()) { line in
+                        LogLineRow(line: line)
+                        if line.id != lines.first?.id {
+                            Divider()
+                                .background(WC.line)
+                        }
+                    }
+                }
+                .background(WC.ink, in: .rect(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(WC.line))
+            }
+        }
+    }
+}
+
+private struct LogLineRow: View {
+    let line: WCLogLine
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(Self.timeFormatter.string(from: line.timestamp))
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .foregroundStyle(WC.muted)
+                .lineLimit(1)
+                .fixedSize()
+
+            Text(line.level)
+                .font(.system(size: 9, weight: .black))
+                .tracking(0.5)
+                .foregroundStyle(levelFg)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(levelBg, in: .rect(cornerRadius: 4))
+                .fixedSize()
+
+            Text(line.message)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(WC.txt)
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private var levelFg: Color {
+        switch line.level.uppercased() {
+        case "DEBUG": return WC.faint
+        case "INFO":  return WC.txt
+        case "WARN":  return WC.warn
+        case "ERROR": return WC.kill
+        default:      return WC.muted
+        }
+    }
+
+    // Solid badge background: keeps level readable in bright sunlight.
+    private var levelBg: Color {
+        switch line.level.uppercased() {
+        case "DEBUG": return WC.faint.opacity(0.18)
+        case "INFO":  return WC.txt.opacity(0.12)
+        case "WARN":  return WC.warn.opacity(0.20)
+        case "ERROR": return WC.kill.opacity(0.20)
+        default:      return WC.muted.opacity(0.15)
+        }
     }
 }

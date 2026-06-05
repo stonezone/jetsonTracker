@@ -13,8 +13,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 from test_control_api import DummyPipeline  # noqa: E402  (reuse sibling test's fixture)
 
 
-def client_with_auth(enabled: bool, tokens: dict[str, str] | None = None) -> TestClient:
-    client = TestClient(build_app(DummyPipeline()))
+def client_with_auth(
+    enabled: bool,
+    tokens: dict[str, str] | None = None,
+    pipeline: DummyPipeline | None = None,
+) -> TestClient:
+    client = TestClient(build_app(pipeline or DummyPipeline()))
     client.app.state.auth = AuthConfig(enabled=enabled, tokens=tokens or {})
     return client
 
@@ -148,6 +152,64 @@ def test_viewer_can_list_and_download_media(tmp_path):
     assert downloaded.status_code == 200
     assert downloaded.content == b"clip"
     assert unauthenticated.status_code == 401
+
+
+def test_viewer_can_open_guide_when_auth_enabled(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "WaveCam_Guide.html").write_text("<!doctype html><title>WaveCam</title>")
+    monkeypatch.setenv("WAVECAM_GUIDE_ROOT", str(docs))
+    client = client_with_auth(True, {"v": "viewer"})
+
+    unauthenticated = client.get("/guide")
+    viewed = client.get("/guide", headers=hdr("v"))
+
+    assert unauthenticated.status_code == 401
+    assert viewed.status_code == 200
+    assert b"WaveCam" in viewed.content
+
+
+def test_viewer_can_read_presets_and_logs_but_not_mutate_presets(tmp_path):
+    pipe = DummyPipeline()
+    pipe.preset_store_path = tmp_path / "presets.json"
+    pipe.log_lines = [
+        {
+            "ts_unix_ms": 1000,
+            "level": "info",
+            "source": "wavecam.service",
+            "message": "started",
+        }
+    ]
+    client = client_with_auth(True, {"v": "viewer", "s": "supervisor"}, pipe)
+
+    assert client.get("/api/v1/presets", headers=hdr("v")).status_code == 200
+    assert client.get("/api/v1/logs", headers=hdr("v")).status_code == 200
+    assert client.get("/api/v1/presets").status_code == 401
+    assert client.get("/api/v1/logs").status_code == 401
+
+    save_blocked = client.post(
+        "/api/v1/presets",
+        json={"name": "ViewerPreset", "values": {"ptz.deadzone": 0.12}},
+        headers=hdr("v"),
+    )
+    apply_blocked = client.post("/api/v1/presets/Default/apply", headers=hdr("v"))
+    delete_blocked = client.delete("/api/v1/presets/Default", headers=hdr("v"))
+
+    assert save_blocked.status_code == 403
+    assert apply_blocked.status_code == 403
+    assert delete_blocked.status_code == 403
+
+    save_ok = client.post(
+        "/api/v1/presets",
+        json={"name": "SupervisorPreset", "values": {"ptz.deadzone": 0.12}},
+        headers=hdr("s"),
+    )
+    apply_ok = client.post("/api/v1/presets/SupervisorPreset/apply", headers=hdr("s"))
+    delete_ok = client.delete("/api/v1/presets/SupervisorPreset", headers=hdr("s"))
+
+    assert save_ok.status_code == 200
+    assert apply_ok.status_code == 200
+    assert delete_ok.status_code == 200
 
 
 def test_supervisor_no_direct_ptz_but_config_ok():

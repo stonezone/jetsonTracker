@@ -116,7 +116,7 @@ private struct FeedBackground: View {
     }
 }
 
-private struct MJPEGPreviewView: UIViewRepresentable {
+struct MJPEGPreviewView: UIViewRepresentable {
     let url: URL
 
     func makeUIView(context: Context) -> UIImageView {
@@ -141,26 +141,39 @@ private struct MJPEGPreviewView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, URLSessionDataDelegate {
+        // All mutable state is accessed exclusively on stateQueue.
+        // No stateQueue.sync is used anywhere — all dispatches are async
+        // to prevent deadlock when delegate callbacks re-enter from URLSession's
+        // internal queue.
+        private let stateQueue = DispatchQueue(label: "wavecam.mjpeg.coordinator")
+
         private var loadedURL: URL?
         private var buffer = Data()
         private var session: URLSession?
         private var task: URLSessionDataTask?
+        // imageView is written on stateQueue; its image property is set on main.
         private weak var imageView: UIImageView?
         private var lastFrameAt = Date.distantPast
         private var watchdogWorkItem: DispatchWorkItem?
         private let stallTimeout: TimeInterval = 3.0
 
         func start(url: URL, imageView: UIImageView) {
-            self.imageView = imageView
-            guard loadedURL != url else { return }
-            stop()
-            loadedURL = url
-            connect(url: url)
+            stateQueue.async { [weak self] in
+                guard let self else { return }
+                self.imageView = imageView
+                guard self.loadedURL != url else { return }
+                self.stopLocked()
+                self.loadedURL = url
+                self.connect(url: url)
+            }
         }
 
+        // Must be called from stateQueue.
         private func connect(url: URL) {
             let configuration = URLSessionConfiguration.default
             configuration.timeoutIntervalForRequest = 10
+            // delegateQueue: nil → URLSession creates its own internal serial queue.
+            // All delegate callbacks are dispatched to stateQueue before touching state.
             let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
             self.session = session
             let task = session.dataTask(with: url)
@@ -171,6 +184,13 @@ private struct MJPEGPreviewView: UIViewRepresentable {
         }
 
         func stop() {
+            stateQueue.async { [weak self] in
+                self?.stopLocked()
+            }
+        }
+
+        // Must be called from stateQueue.
+        private func stopLocked() {
             watchdogWorkItem?.cancel()
             watchdogWorkItem = nil
             task?.cancel()
@@ -186,26 +206,28 @@ private struct MJPEGPreviewView: UIViewRepresentable {
         // instead of relying on a view teardown driven by the 1Hz status poll.
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             session.finishTasksAndInvalidate()
-            DispatchQueue.main.async { [weak self] in
+            stateQueue.async { [weak self] in
                 guard let self, self.session === session, let url = self.loadedURL else { return }
                 self.task = nil
                 self.session = nil
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self.stateQueue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                     guard let self, self.loadedURL == url, self.session == nil else { return }
                     self.connect(url: url)
                 }
             }
         }
 
+        // Must be called from stateQueue.
         private func scheduleWatchdog() {
             watchdogWorkItem?.cancel()
             let item = DispatchWorkItem { [weak self] in
                 self?.restartIfStalled()
             }
             watchdogWorkItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + stallTimeout, execute: item)
+            stateQueue.asyncAfter(deadline: .now() + stallTimeout, execute: item)
         }
 
+        // Runs on stateQueue (dispatched from the watchdog DispatchWorkItem).
         private func restartIfStalled() {
             guard let url = loadedURL, session != nil else { return }
             if Date().timeIntervalSince(lastFrameAt) >= stallTimeout {
@@ -215,6 +237,7 @@ private struct MJPEGPreviewView: UIViewRepresentable {
             scheduleWatchdog()
         }
 
+        // Must be called from stateQueue.
         private func reconnect(url: URL) {
             task?.cancel()
             session?.invalidateAndCancel()
@@ -225,10 +248,15 @@ private struct MJPEGPreviewView: UIViewRepresentable {
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-            buffer.append(data)
-            drainFrames()
+            stateQueue.async { [weak self] in
+                guard let self else { return }
+                self.buffer.append(data)
+                self.drainFrames()
+            }
         }
 
+        // Runs on stateQueue. JPEG decode happens here (off main thread).
+        // Only the image assignment hops to main.
         private func drainFrames() {
             let startMarker = Data([0xff, 0xd8])
             let endMarker = Data([0xff, 0xd9])
@@ -240,9 +268,9 @@ private struct MJPEGPreviewView: UIViewRepresentable {
                 let frame = buffer[start.lowerBound..<end.upperBound]
                 buffer.removeSubrange(buffer.startIndex..<end.upperBound)
                 guard let image = UIImage(data: Data(frame)) else { continue }
-                DispatchQueue.main.async { [weak self, weak imageView] in
-                    self?.lastFrameAt = Date()
-                    self?.scheduleWatchdog()
+                lastFrameAt = Date()
+                scheduleWatchdog()
+                DispatchQueue.main.async { [weak imageView] in
                     imageView?.image = image
                 }
             }
@@ -390,7 +418,7 @@ private struct LockBox: View {
     }
 }
 
-private struct FeedReticles: View {
+struct FeedReticles: View {
     var body: some View {
         ZStack {
             ReticleCorner(horizontal: .leading, vertical: .top)
@@ -402,7 +430,7 @@ private struct FeedReticles: View {
     }
 }
 
-private struct ReticleCorner: View {
+struct ReticleCorner: View {
     enum Horizontal { case leading, trailing }
     enum Vertical { case top, bottom }
 
@@ -434,7 +462,7 @@ private struct ReticleCorner: View {
     }
 }
 
-private struct FeedAimReticle: View {
+struct FeedAimReticle: View {
     let status: WCStatus?
     let connected: Bool
 
@@ -474,7 +502,7 @@ private struct FeedAimReticle: View {
     }
 }
 
-private struct FeedPTZOverlay: View {
+struct FeedPTZOverlay: View {
     let status: WCStatus?
     let connected: Bool
 
@@ -567,7 +595,7 @@ private struct FeedPTZOverlay: View {
     }
 }
 
-private struct PTZOverlayMetric: View {
+struct PTZOverlayMetric: View {
     let label: String
     let value: String
     let color: Color
@@ -619,7 +647,7 @@ private struct PTZMotionScope: View {
     }
 }
 
-private struct FeedTopTags: View {
+struct FeedTopTags: View {
     let isLocked: Bool
     let isRecording: Bool
     let connected: Bool
@@ -642,7 +670,7 @@ private struct FeedTopTags: View {
     }
 }
 
-private struct LiveTag: View {
+struct LiveTag: View {
     let text: String
     let color: Color
     let dot: Bool
@@ -667,7 +695,7 @@ private struct LiveTag: View {
 /// Plain-English reason the camera isn't locked, shown under the top tags.
 /// Built only from real tracking fields; silent when locked, offline, or
 /// the backend doesn't report the color/person components.
-private struct FeedLockReason: View {
+struct FeedLockReason: View {
     let status: WCStatus?
     let connected: Bool
 
@@ -845,7 +873,7 @@ private struct StatusPill: View {
 
 /// Start/stop the Orin recorder (server: media/record/start|stop). The core
 /// "film" verb, surfaced on the screen the operator watches while filming.
-private struct RecordButton: View {
+struct RecordButton: View {
     @Environment(WaveCamClient.self) private var client
     var compact = false
 
@@ -853,37 +881,51 @@ private struct RecordButton: View {
     private var segmentName: String? { client.status?.media?.segmentName }
 
     var body: some View {
-        VStack(spacing: 4) {
+        if compact {
+            // Icon-only — the Live control dock. Uniform 44pt; red = the record verb,
+            // a filled stop.fill while recording. No wrapping text, no filename clutter.
             Button {
                 Task { await client.toggleRecording() }
             } label: {
-                HStack(spacing: 9) {
-                    if isRecording {
-                        Circle().fill(WC.kill).frame(width: 10, height: 10)
-                    } else {
-                        Image(systemName: "record.circle").font(.system(size: 15, weight: .bold))
-                    }
-                    Text(isRecording ? "Stop Recording" : "Record")
-                        .font(.system(size: compact ? 13 : 15, weight: .bold))
-                }
-                .foregroundStyle(isRecording ? .black : WC.brand)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .padding(.vertical, compact ? 8 : 10)
-                .background(isRecording ? WC.brand : WC.brand.opacity(0.14), in: .rect(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(WC.brand.opacity(isRecording ? 0 : 0.5)))
+                Image(systemName: isRecording ? "stop.fill" : "record.circle")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(isRecording ? .white : WC.kill)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        isRecording ? WC.kill : WC.kill.opacity(0.15),
+                        in: .rect(cornerRadius: WCRadius.xs)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: WCRadius.xs)
+                            .stroke(WC.kill.opacity(isRecording ? 0.85 : 0.4))
+                    )
             }
             .buttonStyle(.plain)
             .disabled(!client.connected)
             .opacity(client.connected ? 1 : 0.5)
             .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
-
-            if isRecording, let segmentName {
-                Text(segmentName)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(WC.muted)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        } else {
+            // Full labelled variant (used outside the dock).
+            Button {
+                Task { await client.toggleRecording() }
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: isRecording ? "stop.fill" : "record.circle")
+                        .font(.system(size: 15, weight: .bold))
+                    Text(isRecording ? "Stop Recording" : "Record")
+                        .font(.system(size: 15, weight: .bold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(isRecording ? .white : WC.kill)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, 10)
+                .background(isRecording ? WC.kill : WC.kill.opacity(0.14), in: .rect(cornerRadius: WCRadius.sm))
+                .overlay(RoundedRectangle(cornerRadius: WCRadius.sm).stroke(WC.kill.opacity(isRecording ? 0 : 0.5)))
             }
+            .buttonStyle(.plain)
+            .disabled(!client.connected)
+            .opacity(client.connected ? 1 : 0.5)
+            .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
         }
     }
 }

@@ -138,7 +138,17 @@ extension WCStatus {
 /// Subset of GET /api/v1/config we bind in the Tune panel (decoder is convertFromSnakeCase).
 struct WCConfig: Codable, Sendable {
     var current: Current
+    var supported: Supported?
     var restartRequiredKeys: [String]?
+
+    /// Feature flags advertised by the backend's `supported` block in GET /api/v1/config.
+    /// Unknown flags default to nil (absent = unsupported). iOS must never assume a flag is
+    /// true without confirmation — a missing key means the endpoint or feature is absent.
+    struct Supported: Codable, Sendable {
+        var ptzHome: Bool?
+        var presets: Bool?
+        var logs: Bool?
+    }
 
     struct Current: Codable, Sendable {
         var ptz: PTZ
@@ -154,23 +164,196 @@ struct WCConfig: Codable, Sendable {
             var ffGain: Double
             var cinematicZoomEnabled: Bool?
             var zoomTargetFrac: Double?
+            var ffDeadzoneMult: Double?
+            var minSpeed: Int?
+            var commandMinInterval: Double?
+            var invertTilt: Bool?
+            var invertPan: Bool?
         }
         struct Fusion: Codable, Sendable {
             var requirePerson: Bool
             var personAimY: Double
+            var lockThreshold: Double?
+            var unlockThreshold: Double?
+            var matchDist: Double?
         }
         struct ColorCfg: Codable, Sendable {
             var preset: String
+            var minArea: Int?
+            var maxArea: Int?
+            var morphKernel: Int?
         }
         struct Detector: Codable, Sendable {
             var conf: Double
             var personClass: Int
             var model: String?
+            var everyN: Int?
         }
         struct Web: Codable, Sendable {
             var showMask: Bool
+            var jpegQuality: Int?
         }
     }
+}
+
+// MARK: - Calibration models
+
+/// Persisted calibration entry for a single axis returned inside GET /api/v1/calibration.
+struct WCCalibrationEntry: Codable, Sendable {
+    var capturedAtUnixMs: Int?
+    var source: String?
+    var note: String?
+    // Axis-specific fields – only one will be present per entry.
+    var headingDeg: Double?
+    var tiltDeg: Double?
+    var zoomFovDeg: Double?
+}
+
+/// The `calibration` sub-object from GET /api/v1/calibration (and POST responses).
+/// Field names match snake_case JSON decoded via .convertFromSnakeCase.
+struct WCCalibrationState: Codable, Sendable {
+    var referenceHeading: Double?
+    var heading: WCCalibrationEntry?
+    var tilt: WCCalibrationEntry?
+    var zoom: WCCalibrationEntry?
+    var updatedAtUnixMs: Int?
+}
+
+/// Envelope returned by GET /api/v1/calibration and each POST /calibration/* endpoint.
+private struct WCCalibrationResponse: Codable, Sendable {
+    var ok: Bool?
+    var code: String?
+    var message: String?
+    var calibration: WCCalibrationState?
+    var status: WCStatus?
+}
+
+/// Structured refusal reason surfaced to the UI on a failed calibration capture.
+enum WaveCamCalibrationError: LocalizedError, Sendable {
+    case killed
+    case ownerBusy
+    case unavailable   // endpoint not present (backend not yet deployed)
+    case httpError(Int, String?)
+    case networkError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .killed:
+            return "KILL is latched — resume before capturing calibration."
+        case .ownerBusy:
+            return "Another PTZ owner holds the camera. Try again or take over."
+        case .unavailable:
+            return "On-device calibration requires the latest Orin build — checklist only for now."
+        case let .httpError(code, msg):
+            return msg.map { "\($0) (HTTP \(code))" } ?? "HTTP \(code)"
+        case let .networkError(desc):
+            return "Network error: \(desc)"
+        }
+    }
+}
+
+// MARK: - Preset models
+
+/// A heterogeneous JSON value that appears in preset `values` dicts.
+/// The backend can store any scalar type (String, Int, Double, Bool) per config key.
+/// Using a typed enum avoids `Any` casts and keeps Codable conformance clean.
+enum JSONValue: Codable, Sendable, Equatable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let v = try? c.decode(Bool.self)   { self = .bool(v);   return }
+        if let v = try? c.decode(Int.self)    { self = .int(v);    return }
+        if let v = try? c.decode(Double.self) { self = .double(v); return }
+        if let v = try? c.decode(String.self) { self = .string(v); return }
+        throw DecodingError.dataCorruptedError(in: c, debugDescription: "Unsupported JSON value type")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .string(let v): try c.encode(v)
+        case .int(let v):    try c.encode(v)
+        case .double(let v): try c.encode(v)
+        case .bool(let v):   try c.encode(v)
+        }
+    }
+
+    /// Convenience: produce a JSONValue from a Bool @State that a Tune slider wrote.
+    static func from(_ any: Any) -> JSONValue? {
+        switch any {
+        case let v as Bool:   return .bool(v)
+        case let v as Int:    return .int(v)
+        case let v as Double: return .double(v)
+        case let v as String: return .string(v)
+        default: return nil
+        }
+    }
+}
+
+struct WCPreset: Codable, Sendable, Identifiable {
+    var name: String
+    var builtin: Bool
+    var restartRequired: Bool
+    var values: [String: JSONValue]
+
+    var id: String { name }
+}
+
+private struct WCPresetsResponse: Codable, Sendable {
+    var presets: [WCPreset]
+}
+
+struct WCPresetApplyResult: Codable, Sendable {
+    var ok: Bool
+    var applied: [String: JSONValue]
+    var restartRequired: Bool
+    var restartKeys: [String]
+}
+
+// MARK: - Media models
+
+/// One recording returned by GET /api/v1/media/list.
+/// Field names match the snake_case JSON after .convertFromSnakeCase.
+struct WCMediaFile: Codable, Sendable, Identifiable {
+    var name: String
+    var sizeBytes: Int
+    var ctimeUnixMs: Int
+
+    /// Stable identity: the filename is unique within a recording directory.
+    var id: String { name }
+
+    /// Creation date derived from the Unix-ms timestamp.
+    var createdAt: Date { Date(timeIntervalSince1970: Double(ctimeUnixMs) / 1000) }
+}
+
+private struct WCMediaListResponse: Codable, Sendable {
+    var ok: Bool?
+    var files: [WCMediaFile]
+}
+
+// MARK: - Log models
+
+/// One log line returned by GET /api/v1/logs.
+/// Field names decoded via .convertFromSnakeCase.
+struct WCLogLine: Codable, Sendable, Identifiable {
+    var tsUnixMs: Int
+    var level: String
+    var source: String
+    var message: String
+
+    /// Stable row identity: timestamp-ms + source prevents collisions between two lines
+    /// at the same millisecond from different sources.
+    var id: String { "\(tsUnixMs)-\(source)" }
+
+    var timestamp: Date { Date(timeIntervalSince1970: Double(tsUnixMs) / 1000) }
+}
+
+private struct WCLogsResponse: Codable, Sendable {
+    var lines: [WCLogLine]
 }
 
 // MARK: - Client
@@ -237,6 +420,10 @@ final class WaveCamClient {
     /// failure can't paint a false "PTZ failed" banner on the PTZ screen (review #P1-C).
     private(set) var lastControlError: String?
 
+    /// Optimistic local KILL latch: set the instant the operator hits Emergency Stop so the
+    /// latch overlay appears immediately, before the ~1Hz poll round-trips (review: optimistic KILL).
+    private(set) var optimisticKilled = false
+
     private var mockKilled = false
     private var pollTask: Task<Void, Never>?
     private var nextTetherProbeAt = Date.distantPast
@@ -258,6 +445,12 @@ final class WaveCamClient {
     }
 
     var killed: Bool { status?.safety.killed ?? false }
+    /// What the UI treats as latched: the confirmed rig latch OR an operator stop we've
+    /// issued but not yet confirmed. Fail-safe — stays latched until resume clears it.
+    var effectiveKilled: Bool { optimisticKilled || killed }
+    /// True only when the live API failed and we're substituting mock telemetry (NOT
+    /// deliberate mock mode), so the UI can warn loudly that the feed is fake. (review H2)
+    var isShowingMockData: Bool { mode != .mock && activeRoute == .mockFallback }
     var owner: String { status?.ptz.owner ?? "idle" }
 
     func configure(mode: Mode, baseURL: URL, token: String?, mockFallbackEnabled: Bool) {
@@ -300,6 +493,7 @@ final class WaveCamClient {
             status = try Self.decoder.decode(WCStatus.self, from: data)
             connected = true
             lastError = nil
+            if status?.safety.killed == true { optimisticKilled = false }
         } catch {
             if mockFallbackEnabled {
                 status = .mockTracking(killed: mockKilled)
@@ -334,6 +528,7 @@ final class WaveCamClient {
     // MARK: safety (highest priority, always allowed)
 
     func kill(reason: String = "operator") async {
+        optimisticKilled = true
         if mode == .mock { mockKilled = true; await refresh(); return }
         do {
             _ = try await post("safety/kill", body: ["reason": reason, "source": "ios_native"])
@@ -345,6 +540,7 @@ final class WaveCamClient {
     }
 
     func resume() async {
+        optimisticKilled = false
         if mode == .mock { mockKilled = false; await refresh(); return }
         do {
             _ = try await post("safety/resume", body: ["source": "ios_native"])
@@ -416,6 +612,17 @@ final class WaveCamClient {
         return await sendControl("ptz/auto", body: ["source": "ios_native"])
     }
 
+    /// POST /api/v1/ptz/home — VISCA pan/tilt-to-home. Owner-gated; KILL-rejected by the server.
+    /// Returns false if the backend refuses (killed, owner_busy, or not connected).
+    /// iOS must feature-detect via WCConfig.supported.ptzHome before calling.
+    @discardableResult
+    func ptzHome() async -> Bool {
+        guard mode == .live else { return false }
+        return await sendControl("ptz/home", body: [
+            "requested_owner": "manual", "takeover": true, "source": "ios_native"
+        ])
+    }
+
     @discardableResult
     func zoom(_ value: Double) async -> Bool {
         guard mode == .live else { return false }
@@ -448,6 +655,120 @@ final class WaveCamClient {
         }
     }
 
+    // MARK: calibration (owner-gated, PTZ auth, KILL-rejected on the backend)
+
+    /// GET /api/v1/calibration — returns nil when the endpoint is absent (not yet deployed)
+    /// or on any network error. The `.unavailable` case is detected by a 404 status code.
+    func calibrationState() async -> WCCalibrationState? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("calibration")
+            let response = try Self.decoder.decode(WCCalibrationResponse.self, from: data)
+            return response.calibration
+        } catch let error as WaveCamAPIError where error.statusCode == 404 {
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    /// True = endpoint present; false = 404 (backend not deployed); nil = network failure.
+    func calibrationAvailable() async -> Bool? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("calibration")
+            _ = try Self.decoder.decode(WCCalibrationResponse.self, from: data)
+            return true
+        } catch let error as WaveCamAPIError where error.statusCode == 404 {
+            return false
+        } catch {
+            return nil
+        }
+    }
+
+    /// POST /api/v1/calibration/heading
+    /// Fields: requested_owner, takeover, heading_deg (0…360), source, note (optional)
+    func captureCalibrationHeading(
+        headingDeg: Double,
+        source: String = "ios_native",
+        note: String? = nil
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "requested_owner": "manual",
+            "takeover": true,
+            "heading_deg": headingDeg,
+            "source": source
+        ]
+        if let note { body["note"] = note }
+        return await sendCalibrationCapture("calibration/heading", body: body)
+    }
+
+    /// POST /api/v1/calibration/tilt
+    /// Fields: requested_owner, takeover, tilt_deg (-90…90), source, note (optional)
+    func captureCalibrationTilt(
+        tiltDeg: Double,
+        source: String = "ios_native",
+        note: String? = nil
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "requested_owner": "manual",
+            "takeover": true,
+            "tilt_deg": tiltDeg,
+            "source": source
+        ]
+        if let note { body["note"] = note }
+        return await sendCalibrationCapture("calibration/tilt", body: body)
+    }
+
+    /// POST /api/v1/calibration/zoom
+    /// Fields: requested_owner, takeover, zoom_fov_deg (1…180), source, note (optional)
+    func captureCalibrationZoom(
+        zoomFovDeg: Double,
+        source: String = "ios_native",
+        note: String? = nil
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "requested_owner": "manual",
+            "takeover": true,
+            "zoom_fov_deg": zoomFovDeg,
+            "source": source
+        ]
+        if let note { body["note"] = note }
+        return await sendCalibrationCapture("calibration/zoom", body: body)
+    }
+
+    private func sendCalibrationCapture(
+        _ path: String,
+        body: [String: Any]
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        do {
+            let data = try await post(path, body: body)
+            let response = try Self.decoder.decode(WCCalibrationResponse.self, from: data)
+            if let status = response.status { self.status = status; connected = true }
+            guard let calibration = response.calibration else {
+                return .failure(.httpError(200, "Backend returned no calibration state."))
+            }
+            return .success(calibration)
+        } catch let apiError as WaveCamAPIError {
+            // Surface structured refusals from the backend (killed / owner_busy).
+            if let obj = try? JSONSerialization.jsonObject(with: apiError.data) as? [String: Any] {
+                let code = obj["code"] as? String ?? ""
+                let message = obj["message"] as? String
+                switch code {
+                case "killed":  return .failure(.killed)
+                case "owner_busy": return .failure(.ownerBusy)
+                default: return .failure(.httpError(apiError.statusCode, message ?? code))
+                }
+            }
+            return .failure(.httpError(apiError.statusCode, apiError.localizedDescription))
+        } catch {
+            return .failure(.networkError(error.localizedDescription))
+        }
+    }
+
     /// POST /api/v1/system/restart -- stops PTZ + restarts the vision service (confirm_moving).
     @discardableResult
     func systemRestart() async -> Bool {
@@ -460,6 +781,221 @@ final class WaveCamClient {
             lastCommandError = "Restart not confirmed: \(error.localizedDescription)"
             return false
         }
+    }
+
+    // MARK: presets
+
+    /// GET /api/v1/presets — returns canned presets in mock mode for offline demos.
+    func presets() async -> [WCPreset]? {
+        if mode == .mock { return Self.mockPresets }
+        do {
+            let data = try await getWithFallback("presets")
+            let response = try Self.decoder.decode(WCPresetsResponse.self, from: data)
+            return response.presets
+        } catch {
+            return nil
+        }
+    }
+
+    /// POST /api/v1/presets — saves a new (or updates an existing custom) preset.
+    /// Returns false in mock mode (no mutation) or on network/server error.
+    func savePreset(name: String, values: [String: JSONValue]) async -> Bool {
+        guard mode == .live else { return false }
+        do {
+            let valuesData = try JSONEncoder().encode(values)
+            guard let valuesObj = try JSONSerialization.jsonObject(with: valuesData) as? [String: Any] else {
+                return false
+            }
+            _ = try await post("presets", body: ["name": name, "values": valuesObj])
+            return true
+        } catch {
+            lastControlError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// POST /api/v1/presets/{name}/apply — applies preset values to live config.
+    func applyPreset(name: String) async -> WCPresetApplyResult? {
+        guard mode == .live else { return nil }
+        do {
+            guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                return nil
+            }
+            let data = try await post("presets/\(encodedName)/apply", body: ["source": "ios_native"])
+            return try Self.decoder.decode(WCPresetApplyResult.self, from: data)
+        } catch {
+            lastControlError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// DELETE /api/v1/presets/{name} — deletes a custom preset. Rejects builtins server-side.
+    func deletePreset(name: String) async -> Bool {
+        guard mode == .live else { return false }
+        do {
+            guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                return false
+            }
+            _ = try await delete("presets/\(encodedName)")
+            return true
+        } catch {
+            lastControlError = error.localizedDescription
+            return false
+        }
+    }
+
+    // Canned presets for mock / offline demo — Default + Tow Foil + Cloudy.
+    private static let mockPresets: [WCPreset] = [
+        WCPreset(
+            name: "Default",
+            builtin: true,
+            restartRequired: false,
+            values: [
+                "ptz.max_pan_speed": .int(10),
+                "ptz.max_tilt_speed": .int(8),
+                "ptz.deadzone": .double(0.08),
+                "ptz.ff_gain": .double(0.0),
+                "ptz.zoom_target_frac": .double(0.5),
+                "fusion.require_person": .bool(false),
+                "fusion.person_aim_y": .double(0.5),
+                "detector.conf": .double(0.35)
+            ]
+        ),
+        WCPreset(
+            name: "Tow Foil",
+            builtin: true,
+            restartRequired: false,
+            values: [
+                "ptz.max_pan_speed": .int(18),
+                "ptz.max_tilt_speed": .int(12),
+                "ptz.deadzone": .double(0.10),
+                "ptz.ff_gain": .double(0.30),
+                "ptz.zoom_target_frac": .double(0.35),
+                "fusion.require_person": .bool(false),
+                "fusion.person_aim_y": .double(0.45),
+                "detector.conf": .double(0.35)
+            ]
+        ),
+        WCPreset(
+            name: "Cloudy",
+            builtin: true,
+            restartRequired: false,
+            values: [
+                "ptz.max_pan_speed": .int(10),
+                "ptz.max_tilt_speed": .int(8),
+                "ptz.deadzone": .double(0.08),
+                "ptz.ff_gain": .double(0.0),
+                "ptz.zoom_target_frac": .double(0.5),
+                "fusion.require_person": .bool(false),
+                "fusion.person_aim_y": .double(0.5),
+                "detector.conf": .double(0.30)
+            ]
+        ),
+    ]
+
+    // MARK: logs (read-only; feature-detected on supported.logs)
+
+    /// GET /api/v1/logs — returns canned lines in mock mode for offline demos;
+    /// nil on network/server error in live mode.
+    /// `level` is passed as a query param (nil = no filter); `limit` caps the result count.
+    func logs(level: String? = nil, limit: Int = 200) async -> [WCLogLine]? {
+        if mode == .mock { return Self.mockLogLines }
+        var components = URLComponents(url: baseURL.appending(path: "logs"), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = [URLQueryItem(name: "limit", value: "\(limit)")]
+        if let level { queryItems.append(URLQueryItem(name: "level", value: level)) }
+        components?.queryItems = queryItems
+        guard let url = components?.url else { return nil }
+        do {
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 5
+            authorize(&req)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                return nil
+            }
+            let decoded = try Self.decoder.decode(WCLogsResponse.self, from: data)
+            return decoded.lines
+        } catch {
+            return nil
+        }
+    }
+
+    /// POST /api/v1/agent/summon — requests an on-demand diagnostic pass from the supervisor.
+    /// Returns true when the server accepts the request (2xx). In mock mode always returns true.
+    func summonAgent() async -> Bool {
+        if mode == .mock { return true }
+        do {
+            _ = try await post("agent/summon", body: [
+                "source": "ios_native",
+                "reason": "operator_diagnostics"
+            ])
+            return true
+        } catch {
+            lastCommandError = "Summon not accepted: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    // 12 canned log lines across all levels for mock/offline demos.
+    private static let mockLogLines: [WCLogLine] = {
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        let lines: [(offset: Int, level: String, source: String, message: String)] = [
+            (0,    "INFO",  "supervisor",  "Supervisor started, PID 3812"),
+            (800,  "DEBUG", "tracker",     "YOLO engine loaded: yolov8n.engine"),
+            (1600, "INFO",  "tracker",     "Vision pipeline started at 30 FPS"),
+            (2400, "DEBUG", "ptz",         "VISCA handshake OK — cam 192.168.100.88:1259"),
+            (3200, "INFO",  "gps",         "LoRa GPS locked: 4 sats, dist 148m"),
+            (4000, "DEBUG", "tracker",     "Color match: orange 0.87, person 0.93"),
+            (4800, "WARN",  "ptz",         "Pan speed clamped to max (18) — high tracking error"),
+            (5600, "INFO",  "tracker",     "Subject LOCKED — confidence 0.91"),
+            (6400, "DEBUG", "media",       "Segment rolled: 20260603-141500.mp4"),
+            (7200, "INFO",  "api",         "POST /api/v1/config/hot applied 2 keys"),
+            (8000, "WARN",  "cloudflared", "Tunnel reconnect — attempt 1/3"),
+            (8800, "ERROR", "cloudflared", "Tunnel failed after 3 attempts — uplink degraded"),
+        ]
+        return lines.map { line in
+            WCLogLine(
+                tsUnixMs: now - (12000 - line.offset),
+                level: line.level,
+                source: line.source,
+                message: line.message
+            )
+        }
+    }()
+
+    // MARK: media (read-only; guard mode == .live like config())
+
+    /// GET /api/v1/media/list — returns [] in mock mode or when the endpoint is unavailable.
+    /// Throws a `WaveCamMediaListUnavailable` sentinel when the backend responds with 503
+    /// (MediaUnavailable) so the caller can surface a distinct "update the Orin" message.
+    func mediaList() async throws -> [WCMediaFile] {
+        guard mode == .live else { return [] }
+        let data = try await getWithFallback("media/list")
+        let response = try Self.decoder.decode(WCMediaListResponse.self, from: data)
+        return response.files ?? []
+    }
+
+    /// GET /api/v1/media/download/{name} — streams bytes to a temp file and returns
+    /// its local URL. Uses the active `baseURL` (already resolved by the last status
+    /// or getWithFallback call) so USB-tether vs. Wi-Fi failover is already settled.
+    func downloadMedia(name: String) async throws -> URL {
+        guard mode == .live else { throw URLError(.resourceUnavailable) }
+        guard let escapedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw URLError(.badURL)
+        }
+        let url = baseURL.appending(path: "media/download/\(escapedName)")
+        var req = URLRequest(url: url, timeoutInterval: 120)
+        authorize(&req)
+        let (tempURL, response) = try await URLSession.shared.download(for: req)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+        // Move from the ephemeral temp location to a durable Documents file.
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WaveCam-\(name)", conformingTo: .mpeg4Movie)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: tempURL, to: dest)
+        return dest
     }
 
     /// MJPEG monitor feed URL (GET /api/v1/preview.mjpeg), nil in mock mode.
@@ -612,6 +1148,31 @@ final class WaveCamClient {
     }
 
     @discardableResult
+    private func delete(_ path: String) async throws -> Data {
+        var failoverError: Error?
+        for candidate in apiCandidates() {
+            do {
+                var req = URLRequest(url: candidate.appending(path: path))
+                req.httpMethod = "DELETE"
+                req.timeoutInterval = 5
+                authorize(&req)
+                let (data, response) = try await URLSession.shared.data(for: req)
+                markConnected(to: candidate)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw WaveCamAPIError(statusCode: http.statusCode, data: data)
+                }
+                return data
+            } catch let error as WaveCamAPIError {
+                throw error
+            } catch let error as URLError {
+                guard error.isWriteRouteFailoverAllowed else { throw error }
+                failoverError = error
+            }
+        }
+        throw failoverError ?? URLError(.cannotConnectToHost)
+    }
+
+    @discardableResult
     private func post(_ path: String, body: [String: Any]) async throws -> Data {
         let payload = try JSONSerialization.data(withJSONObject: body)
         var failoverError: Error?
@@ -645,14 +1206,23 @@ final class WaveCamClient {
 
 private extension URLError {
     var isReadRouteFailoverAllowed: Bool {
-        if code == .timedOut { return true }
-        return isWriteRouteFailoverAllowed
+        // Reads are idempotent, so failing over after a post-send drop is harmless.
+        switch code {
+        case .timedOut, .networkConnectionLost, .notConnectedToInternet:
+            return true
+        default:
+            return isWriteRouteFailoverAllowed
+        }
     }
 
     var isWriteRouteFailoverAllowed: Bool {
+        // Mutating POSTs fail over ONLY on pre-connection errors, where the server
+        // provably never received the request. .timedOut / .networkConnectionLost /
+        // .notConnectedToInternet can fire AFTER the server already acted, so retrying
+        // to the other host would double-apply non-idempotent commands like
+        // media/record/* or config/hot. (review C2)
         switch code {
-        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
-             .networkConnectionLost, .notConnectedToInternet:
+        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
             return true
         default:
             return false

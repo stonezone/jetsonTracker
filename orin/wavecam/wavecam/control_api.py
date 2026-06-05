@@ -7,7 +7,11 @@ PTZ owner gate, and PTZ backend.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 from pathlib import Path
+import re
+import subprocess
 import threading
 import time
 import uuid
@@ -25,6 +29,10 @@ from .supervisor import read_health, restart_systemd_unit, snapshot_services
 
 
 FrameSource = Callable[[], Any]
+
+GUIDE_FILENAME = "WaveCam_Guide.html"
+GUIDE_ASSET_DIR = "guide_assets"
+GUIDE_ROOT_ENV = "WAVECAM_GUIDE_ROOT"
 
 HOT_CONFIG_KEYS = (
     "ptz.deadzone",
@@ -87,6 +95,70 @@ YOLO_CLASSES = (
     {"id": 32, "label": "sports ball"},
     {"id": 37, "label": "surfboard"},
     {"id": 41, "label": "cup"},
+)
+
+BUILTIN_PRESET_VALUES: dict[str, dict[str, Any]] = {
+    "Tow Foil": {
+        "fusion.require_person": False,
+        "ptz.max_pan_speed": 18,
+        "ptz.max_tilt_speed": 12,
+        "ptz.deadzone": 0.10,
+        "ptz.ff_gain": 0.30,
+        "ptz.zoom_target_frac": 0.35,
+        "fusion.person_aim_y": 0.45,
+    },
+    "Wing Foil": {
+        "fusion.require_person": False,
+        "ptz.max_pan_speed": 12,
+        "ptz.max_tilt_speed": 9,
+        "ptz.deadzone": 0.08,
+        "ptz.ff_gain": 0.15,
+        "ptz.zoom_target_frac": 0.45,
+    },
+    "Land Chase": {
+        "fusion.require_person": True,
+        "ptz.max_pan_speed": 16,
+        "ptz.max_tilt_speed": 12,
+        "ptz.deadzone": 0.06,
+        "ptz.ff_gain": 0.25,
+        "ptz.zoom_target_frac": 0.55,
+        "fusion.person_aim_y": 0.50,
+    },
+    "Sunny": {
+        "detector.conf": 0.40,
+        "web.jpeg_quality": 80,
+    },
+    "Cloudy": {
+        "detector.conf": 0.30,
+    },
+}
+
+DEFAULT_PRESET_STORE_PATH = "/data/wavecam/presets.json"
+PRESET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
+LOG_LEVELS = frozenset({"debug", "info", "warning", "error"})
+LOG_UNITS = ("wavecam.service", "wavecam-supervisor.service")
+SYSLOG_PRIORITY_LEVELS = {
+    "0": "error",
+    "1": "error",
+    "2": "error",
+    "3": "error",
+    "4": "warning",
+    "5": "info",
+    "6": "info",
+    "7": "debug",
+}
+SENSITIVE_LOG_PATTERNS = (
+    (
+        re.compile(r"(?i)\b(authorization\s*:\s*bearer)\s+[A-Za-z0-9._~+/\-=]+"),
+        r"\1 <redacted>",
+    ),
+    (
+        re.compile(r"(?i)\b(token|api[_-]?key|secret|password|key)\s*[:=]\s*[^ \t,;]+"),
+        r"\1=<redacted>",
+    ),
+    (re.compile(r"/Users/[^ \t,;:]+"), "<home>"),
+    (re.compile(r"/home/[^ \t,;:]+"), "<home>"),
+    (re.compile(r"(?i)[^ \t,;:]*\.env[^ \t,;:]*"), "<redacted-path>"),
 )
 
 
@@ -163,6 +235,12 @@ class HotConfigRequest(BaseModel):
     persist: bool = False
 
 
+class PresetSaveRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    values: Dict[str, Any] | None = None
+    capture_current: bool = False
+
+
 class RestartRequest(BaseModel):
     reason: str | None = None
     confirm_moving: bool = False
@@ -178,14 +256,33 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     adapter = ControlApiAdapter(pipeline, frames)
     app.state.control_api = adapter
     install_auth(app)
+    register_guide_routes(app)
     register_status_routes(app, adapter)
     register_safety_routes(app, adapter)
     register_ptz_routes(app, adapter)
     register_calibration_routes(app, adapter)
     register_media_routes(app, adapter)
+    register_preset_routes(app, adapter)
+    register_log_routes(app, adapter)
     register_config_routes(app, adapter)
     register_system_routes(app, adapter)
     register_agent_routes(app, adapter)
+
+
+def register_guide_routes(app: FastAPI) -> None:
+    @app.get("/guide", dependencies=[Depends(require(READ))])
+    def guide():
+        path = find_guide_file()
+        if path is None:
+            return JSONResponse({"ok": False, "code": "guide_not_found"}, status_code=404)
+        return FileResponse(path, media_type="text/html")
+
+    @app.get("/guide_assets/{asset_path:path}", dependencies=[Depends(require(READ))])
+    def guide_asset(asset_path: str):
+        path = find_guide_asset(asset_path)
+        if path is None:
+            return JSONResponse({"ok": False, "code": "guide_asset_not_found"}, status_code=404)
+        return FileResponse(path)
 
 
 def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
@@ -408,6 +505,30 @@ def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         return media_ok(api, result)
 
 
+def register_preset_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/presets", dependencies=[Depends(require(READ))])
+    def presets_get():
+        return api.presets.list_response()
+
+    @app.post("/api/v1/presets", dependencies=[Depends(require(CONFIG))])
+    def preset_save(req: PresetSaveRequest):
+        return api.presets.save_response(req)
+
+    @app.post("/api/v1/presets/{name}/apply", dependencies=[Depends(require(CONFIG))])
+    def preset_apply(name: str):
+        return api.presets.apply_response(name)
+
+    @app.delete("/api/v1/presets/{name}", dependencies=[Depends(require(CONFIG))])
+    def preset_delete(name: str):
+        return api.presets.delete_response(name)
+
+
+def register_log_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/logs", dependencies=[Depends(require(READ))])
+    def logs_get(level: str | None = None, limit: int = 200, since: int | None = None):
+        return api.logs.response(level=level, limit=limit, since=since)
+
+
 def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/config", dependencies=[Depends(require(READ))])
     def config_get():
@@ -456,6 +577,9 @@ class ControlApiAdapter:
         self._restart_pending = False
         self._restart_unit = "wavecam.service"
         self._calibration = empty_calibration_state()
+        self._pending_restart_config: dict[str, Any] = {}
+        self.presets = PresetStore(self)
+        self.logs = LogAdapter(self)
 
     @property
     def revision(self) -> int:
@@ -470,7 +594,12 @@ class ControlApiAdapter:
         return build_status_snapshot(self.pipeline, self.revision, self.media.status())
 
     def config_snapshot(self) -> dict:
-        return build_config_snapshot(self.pipeline, self.revision, self.calibration_state())
+        snapshot = build_config_snapshot(self.pipeline, self.revision, self.calibration_state())
+        with self._lock:
+            pending_restart = dict(self._pending_restart_config)
+        snapshot["pending_restart"] = pending_restart
+        snapshot["restart_required"] = bool(pending_restart)
+        return snapshot
 
     def ok(self) -> JSONResponse:
         return JSONResponse(
@@ -482,6 +611,23 @@ class ControlApiAdapter:
             {"ok": False, "code": code, "message": message, "status": self.status_snapshot()},
             status_code=status_code,
         )
+
+    def current_preset_values(self) -> dict[str, Any]:
+        current = build_config_snapshot(
+            self.pipeline,
+            self.revision,
+            self.calibration_state(),
+        )["current"]
+        values: dict[str, Any] = {}
+        for key in HOT_CONFIG_KEYS:
+            value = nested_current_value(current, key)
+            if value is not None:
+                values[key] = value
+        return values
+
+    def stage_restart_config(self, patch: dict[str, Any]) -> None:
+        with self._lock:
+            self._pending_restart_config.update(patch)
 
     def calibration_ok(self) -> JSONResponse:
         return JSONResponse(
@@ -909,6 +1055,293 @@ class ControlApiAdapter:
                 self._restart_timer = None
 
 
+class PresetStore:
+    """Backend-stored Tune presets, with read-only built-ins and JSON custom presets."""
+
+    def __init__(self, api: ControlApiAdapter) -> None:
+        self.api = api
+        self.path = preset_store_path(api.pipeline)
+        self._builtins = {
+            "Default": api.current_preset_values(),
+            **BUILTIN_PRESET_VALUES,
+        }
+
+    def list_response(self) -> JSONResponse:
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "presets": self.list_presets(),
+            }
+        )
+
+    def save_response(self, req: PresetSaveRequest) -> JSONResponse:
+        name = normalized_preset_name(req.name)
+        if name is None:
+            return self.api.refusal(
+                "invalid_request",
+                "Preset name must start with a letter or number and contain only letters, numbers, spaces, dots, underscores, or dashes.",
+                422,
+            )
+        if name in self._builtins:
+            return self.api.refusal(
+                "builtin_preset",
+                "Built-in presets are read-only.",
+            )
+        if req.capture_current and req.values is not None:
+            return self.api.refusal(
+                "invalid_request",
+                "Use either values or capture_current=true, not both.",
+                422,
+            )
+        if not req.capture_current and req.values is None:
+            return self.api.refusal(
+                "invalid_request",
+                "Preset save requires values or capture_current=true.",
+                422,
+            )
+
+        values = self.api.current_preset_values() if req.capture_current else dict(req.values or {})
+        if not values:
+            return self.api.refusal("invalid_request", "Preset values may not be empty.", 422)
+        refusal = self.validate_values(values)
+        if refusal is not None:
+            return refusal
+
+        preset = {
+            "name": name,
+            "values": canonical_preset_values(values),
+            "updated_at_unix_ms": int(time.time() * 1000),
+        }
+        custom = [item for item in self.read_custom() if item["name"] != name]
+        custom.append(preset)
+        try:
+            self.write_custom(custom)
+        except OSError as exc:
+            return self.api.refusal(
+                "preset_store_unavailable",
+                f"Preset store is not writable: {exc}",
+                503,
+            )
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "preset": preset_payload(name, preset["values"], builtin=False),
+            }
+        )
+
+    def apply_response(self, name: str) -> JSONResponse:
+        preset = self.find_preset(name)
+        if preset is None:
+            return self.api.refusal("preset_not_found", "Preset was not found.", 404)
+        values = dict(preset["values"])
+        refusal = self.validate_values(values)
+        if refusal is not None:
+            return refusal
+
+        hot_patch, restart_patch = split_preset_values(values)
+        if hot_patch:
+            refusal = self.api.apply_hot_config(hot_patch)
+            if refusal is not None:
+                return refusal
+        if restart_patch:
+            self.api.stage_restart_config(restart_patch)
+        if hot_patch or restart_patch:
+            self.api.bump_revision()
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "name": preset["name"],
+                "applied": hot_patch,
+                "restart_required": bool(restart_patch),
+                "restart_keys": list(restart_patch),
+                "status": self.api.status_snapshot(),
+            }
+        )
+
+    def delete_response(self, name: str) -> JSONResponse:
+        clean_name = normalized_preset_name(name)
+        if clean_name is None:
+            return self.api.refusal("preset_not_found", "Preset was not found.", 404)
+        if clean_name in self._builtins:
+            return self.api.refusal(
+                "builtin_preset",
+                "Built-in presets are read-only.",
+            )
+        custom = self.read_custom()
+        kept = [item for item in custom if item["name"] != clean_name]
+        if len(kept) == len(custom):
+            return self.api.refusal("preset_not_found", "Preset was not found.", 404)
+        try:
+            self.write_custom(kept)
+        except OSError as exc:
+            return self.api.refusal(
+                "preset_store_unavailable",
+                f"Preset store is not writable: {exc}",
+                503,
+            )
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "deleted": clean_name,
+                "presets": self.list_presets(custom=kept),
+            }
+        )
+
+    def list_presets(self, custom: list[dict] | None = None) -> list[dict]:
+        presets = [
+            preset_payload(name, values, builtin=True)
+            for name, values in self._builtins.items()
+        ]
+        custom_presets = custom if custom is not None else self.read_custom()
+        presets.extend(
+            preset_payload(item["name"], item["values"], builtin=False)
+            for item in sorted(custom_presets, key=lambda entry: entry["name"])
+        )
+        return presets
+
+    def find_preset(self, name: str) -> dict | None:
+        clean_name = normalized_preset_name(name)
+        if clean_name is None:
+            return None
+        if clean_name in self._builtins:
+            return {"name": clean_name, "values": self._builtins[clean_name], "builtin": True}
+        for item in self.read_custom():
+            if item["name"] == clean_name:
+                return {"name": clean_name, "values": item["values"], "builtin": False}
+        return None
+
+    def validate_values(self, values: dict[str, Any]) -> JSONResponse | None:
+        for key, value in values.items():
+            if key in HOT_CONFIG_KEYS:
+                refusal = self.api.apply_hot_key(key, value, dry_run=True)
+                if refusal is not None:
+                    return refusal
+            elif key not in RESTART_REQUIRED_KEYS:
+                return self.api.refusal(
+                    "invalid_request",
+                    f"{key} is not a supported preset key.",
+                    422,
+                )
+        return None
+
+    def read_custom(self) -> list[dict]:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        items = data.get("presets", [])
+        if not isinstance(items, list):
+            return []
+        custom: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = normalized_preset_name(item.get("name"))
+            values = item.get("values")
+            if name is None or name in self._builtins or not isinstance(values, dict):
+                continue
+            custom.append(
+                {
+                    "name": name,
+                    "values": canonical_preset_values(values),
+                    "updated_at_unix_ms": int(item.get("updated_at_unix_ms") or 0),
+                }
+            )
+        return custom
+
+    def write_custom(self, presets: list[dict]) -> None:
+        payload = {"presets": sorted(presets, key=lambda entry: entry["name"])}
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self.path.with_name(f"{self.path.name}.tmp")
+        tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        tmp_path.replace(self.path)
+
+
+class LogAdapter:
+    """Read-scoped log facade; never exposes arbitrary journald output."""
+
+    def __init__(self, api: ControlApiAdapter) -> None:
+        self.api = api
+
+    def response(
+        self,
+        level: str | None = None,
+        limit: int = 200,
+        since: int | None = None,
+    ) -> JSONResponse:
+        normalized_level = normalized_log_level(level)
+        if level is not None and normalized_level is None:
+            return self.api.refusal(
+                "invalid_request",
+                "level must be one of debug, info, warning, error.",
+                422,
+            )
+        limit = bounded_log_limit(limit)
+        lines = self.lines(level=normalized_level, limit=limit, since=since)
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "lines": lines,
+            }
+        )
+
+    def lines(self, level: str | None, limit: int, since: int | None) -> list[dict]:
+        normalized: list[dict] = []
+        for raw in self.raw_lines(limit):
+            line = normalize_log_line(raw)
+            if line is None:
+                continue
+            if since is not None and line["ts_unix_ms"] < since:
+                continue
+            if level is not None and line["level"] != level:
+                continue
+            normalized.append(line)
+        normalized.sort(key=lambda item: (item["ts_unix_ms"], item["source"], item["message"]))
+        return normalized[-limit:]
+
+    def raw_lines(self, limit: int) -> list[Any]:
+        reader = getattr(self.api.pipeline, "read_logs", None)
+        if callable(reader):
+            try:
+                return list(reader(limit=limit))
+            except TypeError:
+                try:
+                    return list(reader())
+                except Exception:
+                    return []
+            except Exception:
+                return []
+        log_lines = getattr(self.api.pipeline, "log_lines", None)
+        if log_lines is not None:
+            return list(log_lines)
+        return self.journal_lines(limit)
+
+    def journal_lines(self, limit: int) -> list[dict]:
+        cmd = ["journalctl", "--no-pager", "--output=json", "-n", str(limit)]
+        for unit in LOG_UNITS:
+            cmd.extend(["--unit", unit])
+        try:
+            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=1.5)
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        if proc.returncode != 0:
+            return []
+        lines: list[dict] = []
+        for raw_line in proc.stdout.splitlines():
+            try:
+                parsed = json.loads(raw_line)
+            except ValueError:
+                continue
+            if isinstance(parsed, dict):
+                lines.append(parsed)
+        return lines
+
+
 class MediaAdapter:
     """Small recorder facade used by /api/v1 status and media routes."""
 
@@ -1038,9 +1471,175 @@ def copy_optional_dict(value: dict | None) -> dict | None:
     return dict(value) if value is not None else None
 
 
+def preset_store_path(pipeline) -> Path:
+    raw_path = (
+        getattr(pipeline, "preset_store_path", None)
+        or os.environ.get("WAVECAM_PRESETS_FILE")
+        or DEFAULT_PRESET_STORE_PATH
+    )
+    return Path(raw_path)
+
+
+def normalized_preset_name(value: Any) -> str | None:
+    name = str(value or "").strip()
+    if not PRESET_NAME_RE.match(name):
+        return None
+    return name
+
+
+def canonical_preset_values(values: dict[str, Any]) -> dict[str, Any]:
+    return {str(key): values[key] for key in sorted(values)}
+
+
+def split_preset_values(values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    hot_patch: dict[str, Any] = {}
+    restart_patch: dict[str, Any] = {}
+    for key, value in values.items():
+        if key in HOT_CONFIG_KEYS:
+            hot_patch[key] = value
+        elif key in RESTART_REQUIRED_KEYS:
+            restart_patch[key] = value
+    return hot_patch, restart_patch
+
+
+def preset_payload(name: str, values: dict[str, Any], builtin: bool) -> dict:
+    restart_keys = [key for key in values if key in RESTART_REQUIRED_KEYS]
+    return {
+        "name": name,
+        "builtin": builtin,
+        "values": dict(values),
+        "restart_required": bool(restart_keys),
+        "restart_keys": restart_keys,
+    }
+
+
+def nested_current_value(current: dict, key: str) -> Any:
+    node: Any = current
+    for part in key.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    return node
+
+
+def bounded_log_limit(limit: int) -> int:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        value = 200
+    return max(1, min(value, 500))
+
+
+def normalized_log_level(level: str | None) -> str | None:
+    if level is None:
+        return None
+    normalized = str(level).strip().lower()
+    return normalized if normalized in LOG_LEVELS else None
+
+
+def normalized_log_source(source: Any) -> str | None:
+    text = str(source or "").strip()
+    if text == "wavecam.service":
+        return "wavecam.service"
+    if text in {"supervisor", "wavecam-supervisor.service"}:
+        return "supervisor"
+    return None
+
+
+def redact_log_message(message: Any) -> str:
+    text = str(message or "")
+    for pattern, replacement in SENSITIVE_LOG_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def normalize_log_line(raw: Any) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    source = normalized_log_source(
+        raw.get("source") or raw.get("_SYSTEMD_UNIT") or raw.get("unit")
+    )
+    if source is None:
+        return None
+    level = normalized_log_level(raw.get("level"))
+    if level is None:
+        level = SYSLOG_PRIORITY_LEVELS.get(str(raw.get("PRIORITY")), "info")
+    ts_unix_ms = log_timestamp_ms(raw)
+    if ts_unix_ms is None:
+        ts_unix_ms = int(time.time() * 1000)
+    return {
+        "ts_unix_ms": ts_unix_ms,
+        "level": level,
+        "source": source,
+        "message": redact_log_message(raw.get("message") or raw.get("MESSAGE")),
+    }
+
+
+def log_timestamp_ms(raw: dict) -> int | None:
+    for key in ("ts_unix_ms", "timestamp_ms"):
+        value = raw.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+    realtime_us = raw.get("__REALTIME_TIMESTAMP")
+    if realtime_us is not None:
+        try:
+            return int(int(realtime_us) / 1000)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def make_request_id() -> str:
     ms = int(time.time() * 1000) % 1000
     return f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}.{ms:03d}Z-{uuid.uuid4().hex[:8]}"
+
+
+def guide_root_candidates() -> list[Path]:
+    env_root = os.environ.get(GUIDE_ROOT_ENV)
+    if env_root:
+        return [Path(env_root).resolve()]
+
+    candidates: list[Path] = []
+    cwd = Path.cwd()
+    candidates.extend([cwd / "docs", cwd.parent / "docs"])
+
+    module = Path(__file__).resolve()
+    parents = list(module.parents)
+    for idx in (1, 2, 3):
+        if idx < len(parents):
+            candidates.append(parents[idx] / "docs")
+
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    return unique
+
+
+def find_guide_file() -> Path | None:
+    for root in guide_root_candidates():
+        path = root / GUIDE_FILENAME
+        if path.is_file():
+            return path
+    return None
+
+
+def find_guide_asset(asset_path: str) -> Path | None:
+    requested = Path(asset_path)
+    if requested.is_absolute() or ".." in requested.parts:
+        return None
+    for root in guide_root_candidates():
+        asset_root = (root / GUIDE_ASSET_DIR).resolve()
+        path = (asset_root / requested).resolve()
+        if path.is_file() and path.is_relative_to(asset_root):
+            return path
+    return None
 
 
 def build_config_snapshot(pipeline, revision: int, calibration: dict | None = None) -> dict:
@@ -1099,6 +1698,8 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
         "supported": {
             "calibration": True,
             "color_presets": sorted(COLOR_PRESETS),
+            "presets": True,
+            "logs": True,
             "ptz_home": callable(getattr(getattr(pipeline, "ptz", None), "home", None)),
             "yolo_classes": list(YOLO_CLASSES),
             "person_aim_y": {

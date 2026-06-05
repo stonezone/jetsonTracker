@@ -10,17 +10,18 @@ struct ContentView: View {
         ZStack {
             WC.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                TopBar()
+                TopBar(tab: tab)
+                if client.isShowingMockData { MockDataBanner() }
                 TabView(selection: $tab) {
-                    LiveView().tag(0).tabItem { Label("Live", systemImage: "viewfinder") }
-                    PTZView().tag(1).tabItem { Label("PTZ", systemImage: "gamecontroller") }
-                    CalibrateView().tag(2).tabItem { Label("Calibrate", systemImage: "scope") }
-                    ToolsView().tag(3).tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
-                    ConnectionView().tag(4).tabItem { Label("Connect", systemImage: "network") }
+                    MergedLiveView().tag(0).tabItem { Label("Live", systemImage: "viewfinder") }
+                    CalibrateView().tag(1).tabItem { Label("Calibrate", systemImage: "scope") }
+                    ToolsView().tag(2).tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
+                    ConnectionView().tag(3).tabItem { Label("Connect", systemImage: "network") }
+                    MediaView().tag(4).tabItem { Label("Media", systemImage: "play.rectangle.on.rectangle") }
                 }
                 .tint(WC.brand)
             }
-            if client.killed {
+            if client.effectiveKilled {
                 KillLatchOverlay()
             }
         }
@@ -39,6 +40,19 @@ struct ContentView: View {
 /// Always-visible across every tab: brand, connection state, and the KILL chip.
 private struct TopBar: View {
     @Environment(WaveCamClient.self) private var client
+    var tab: Int
+
+    /// Maps the current tab to its anchor in the Orin-hosted operator guide.
+    private var guideAnchor: String {
+        switch tab {
+        case 0: return "live"
+        case 1: return "calibrate"
+        case 2: return "tune"
+        case 3: return "connect"
+        case 4: return "media"
+        default: return "overview"
+        }
+    }
 
     private var connectionText: String {
         if client.mode == .mock { return "MOCK" }
@@ -48,6 +62,12 @@ private struct TopBar: View {
     private var connectionColor: Color {
         if client.mode == .mock { return WC.warn }
         return client.connected ? WC.ok : WC.faint
+    }
+
+    private var appVersion: String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "v\(v) (\(b))"
     }
 
     var body: some View {
@@ -61,6 +81,11 @@ private struct TopBar: View {
                 .font(.system(size: 16, weight: .bold))
                 .tracking(1)
             }
+            Text(appVersion)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(WC.faint)
+                .padding(.leading, 6)
+                .accessibilityLabel("App version \(appVersion)")
             Spacer()
             HStack(spacing: 6) {
                 Circle().fill(connectionColor).frame(width: 7, height: 7)
@@ -69,11 +94,64 @@ private struct TopBar: View {
                     .foregroundStyle(WC.muted)
             }
             .padding(.trailing, 4)
+            GuideButton(anchor: guideAnchor)
             EmergencyStopButton(style: .chip)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(WC.ink)
+    }
+}
+
+/// Opens the Orin-hosted operator guide at the section matching the current tab.
+/// Derives the guide URL from the live API base (e.g. http://host:8088/api/v1 → /guide#anchor),
+/// so it follows whichever route — tether or Wi-Fi — is currently active.
+private struct GuideButton: View {
+    @Environment(WaveCamClient.self) private var client
+    @Environment(\.openURL) private var openURL
+    var anchor: String
+
+    private var guideURL: URL? {
+        guard var comps = URLComponents(url: client.baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        comps.path = "/guide"
+        comps.query = nil
+        comps.fragment = anchor
+        return comps.url
+    }
+
+    var body: some View {
+        Button {
+            if let url = guideURL { openURL(url) }
+        } label: {
+            Image(systemName: "book")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(WC.accent)
+                .frame(width: 30, height: 30)
+                .background(WC.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(WC.accent.opacity(0.32)))
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 6)
+        .accessibilityLabel("Open guide for this screen")
+    }
+}
+
+/// Loud, unmissable warning shown whenever the live API is down and the HUD is
+/// substituting mock telemetry — so the operator can never mistake fake data for the
+/// real rig (which could mean the camera is NOT recording/tracking). (review H2)
+private struct MockDataBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text("OFFLINE — SHOWING MOCK DATA · real camera state unknown")
+                .font(.system(size: 11, weight: .bold)).tracking(0.5)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.black)
+        .padding(.horizontal, 14).padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WC.warn)
     }
 }
 
