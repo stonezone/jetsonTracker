@@ -2,6 +2,15 @@ import SwiftUI
 import UIKit
 
 /// Live/Monitor screen: operator preview, tracking HUD, and emergency stop.
+///
+/// ⚠️ DEAD-CODE DELETION TRAP: `struct LiveView` is superseded by `MergedLiveView`
+/// and is referenced only by its own `#Preview`. Its private helpers (LiveFeedCard,
+/// LiveTelemetryGrid, FeedBackground, MockOceanScene, WaveBands, FeedSubjectOverlay,
+/// SurferGlyph, LockBox, PTZMotionScope, FeedBottomStrip, FeedMetric) are dead too —
+/// BUT this file ALSO defines components still used live by MergedLiveView that MUST be
+/// kept: MJPEGPreviewView, FeedReticles, ReticleCorner, FeedAimReticle, FeedPTZOverlay,
+/// PTZOverlayMetric, FeedTopTags, LiveTag, FeedLockReason, RecordButton. Prune the dead
+/// set only with a build after each removal (revert any that breaks — it was shared).
 struct LiveView: View {
     @Environment(WaveCamClient.self) private var client
     @Environment(\.verticalSizeClass) private var verticalSizeClass
