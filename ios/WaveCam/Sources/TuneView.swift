@@ -42,6 +42,7 @@ struct TuneView: View {
     @State private var invertPan: Bool? = nil
     // STREAM
     @State private var jpegQuality: Int? = nil
+    @State private var showHud: Bool? = nil
 
     // PRESETS feature state
     @State private var presetsSupported = false
@@ -103,6 +104,11 @@ struct TuneView: View {
                     tuneCaption("Off: track the color cue even when YOLO can't make out a person — best when you're far offshore. On: only lock onto a confirmed person (you'll lose lock at distance).")
                     OperatorDivider()
                     toggleRow("Show detection mask", isOn: $showMask, key: "web.show_mask")
+                    if let hud = showHud {
+                        OperatorDivider()
+                        toggleRow("Show debug HUD", isOn: Binding(get: { hud }, set: { showHud = $0 }), key: "web.show_hud")
+                        tuneCaption("The on-video readout (confidence, lock, FPS). Off = a clean picture for filming; on = diagnostics while tuning.")
+                    }
                 }
 
                 OperatorCard(title: "MOTION") {
@@ -389,6 +395,7 @@ struct TuneView: View {
         if let v = invertTilt          { d["ptz.invert_tilt"]           = .bool(v) }
         if let v = invertPan           { d["ptz.invert_pan"]            = .bool(v) }
         if let v = jpegQuality         { d["web.jpeg_quality"]          = .int(v) }
+        if let h = showHud             { d["web.show_hud"]              = .bool(h) }
         return d
     }
 
@@ -589,6 +596,7 @@ struct TuneView: View {
         conf = cfg.current.detector.conf
         requirePerson = cfg.current.fusion.requirePerson
         showMask = cfg.current.web.showMask
+        showHud = cfg.current.web.showHud
         maxPan = Double(cfg.current.ptz.maxPanSpeed)
         maxTilt = Double(cfg.current.ptz.maxTiltSpeed)
         deadzone = cfg.current.ptz.deadzone

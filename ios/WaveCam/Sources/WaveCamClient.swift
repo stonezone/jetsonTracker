@@ -193,6 +193,7 @@ struct WCConfig: Codable, Sendable {
         struct Web: Codable, Sendable {
             var showMask: Bool
             var jpegQuality: Int?
+            var showHud: Bool?
         }
     }
 }
