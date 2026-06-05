@@ -493,7 +493,10 @@ final class WaveCamClient {
             status = try Self.decoder.decode(WCStatus.self, from: data)
             connected = true
             lastError = nil
-            if status?.safety.killed == true { optimisticKilled = false }
+            // Fresh status is authoritative — drop the optimistic latch and let
+            // `killed` drive `effectiveKilled` (:450), so a FAILED kill can't leave a
+            // false "STOP LATCHED" while the camera still moves (error alert covers it).
+            optimisticKilled = false
         } catch {
             if mockFallbackEnabled {
                 status = .mockTracking(killed: mockKilled)
