@@ -867,10 +867,10 @@ final class WaveCamClient {
     func applyPreset(name: String) async -> WCPresetApplyResult? {
         guard mode == .live else { return nil }
         do {
-            guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-                return nil
-            }
-            let data = try await post("presets/\(encodedName)/apply", body: ["source": "ios_native"])
+            // Pass the RAW name — post()'s URL.appending(path:) percent-encodes it once.
+            // Pre-encoding here double-encodes (a space → %2520), which 404s any preset
+            // whose name contains a space (Tow Foil / Wing Foil / Land Chase).
+            let data = try await post("presets/\(name)/apply", body: ["source": "ios_native"])
             return try Self.decoder.decode(WCPresetApplyResult.self, from: data)
         } catch {
             lastControlError = error.localizedDescription
@@ -882,10 +882,8 @@ final class WaveCamClient {
     func deletePreset(name: String) async -> Bool {
         guard mode == .live else { return false }
         do {
-            guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-                return false
-            }
-            _ = try await delete("presets/\(encodedName)")
+            // Raw name — delete()'s URL.appending(path:) encodes it once (see applyPreset).
+            _ = try await delete("presets/\(name)")
             return true
         } catch {
             lastControlError = error.localizedDescription
