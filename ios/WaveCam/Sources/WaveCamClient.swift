@@ -148,6 +148,7 @@ struct WCConfig: Codable, Sendable {
         var ptzHome: Bool?
         var presets: Bool?
         var logs: Bool?
+        var cinematicZoom: Bool?
     }
 
     struct Current: Codable, Sendable {
@@ -1011,7 +1012,7 @@ final class WaveCamClient {
         guard mode == .live else { return [] }
         let data = try await getWithFallback("media/list")
         let response = try Self.decoder.decode(WCMediaListResponse.self, from: data)
-        return response.files ?? []
+        return response.files
     }
 
     /// GET /api/v1/media/download/{name} — streams bytes to a temp file and returns

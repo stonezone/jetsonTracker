@@ -595,9 +595,12 @@ struct TuneView: View {
         ffGain = cfg.current.ptz.ffGain
         model = cfg.current.detector.model
         restartKeys = cfg.restartRequiredKeys ?? []
-        if let cz = cfg.current.ptz.cinematicZoomEnabled {
+        // #9: prefer the explicit supported.cinematicZoom flag; fall back to
+        // value-present detection until the backend advertises it (inert today,
+        // auto-activates when the flag ships).
+        if cfg.supported?.cinematicZoom ?? (cfg.current.ptz.cinematicZoomEnabled != nil) {
             cinematicAvailable = true
-            cinematicEnabled = cz
+            cinematicEnabled = cfg.current.ptz.cinematicZoomEnabled ?? false
             subjectSize = cfg.current.ptz.zoomTargetFrac ?? 0.5
         }
         // Feature-detected advanced keys — remain nil when backend doesn't expose them
