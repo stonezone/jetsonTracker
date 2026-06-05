@@ -149,6 +149,7 @@ struct WCConfig: Codable, Sendable {
         var presets: Bool?
         var logs: Bool?
         var cinematicZoom: Bool?
+        var mediaDelete: Bool?
     }
 
     struct Current: Codable, Sendable {
@@ -1019,10 +1020,8 @@ final class WaveCamClient {
     /// or getWithFallback call) so USB-tether vs. Wi-Fi failover is already settled.
     func downloadMedia(name: String) async throws -> URL {
         guard mode == .live else { throw URLError(.resourceUnavailable) }
-        guard let escapedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            throw URLError(.badURL)
-        }
-        let url = baseURL.appending(path: "media/download/\(escapedName)")
+        // Raw name — baseURL.appending(path:) encodes it once (pre-encoding double-encodes).
+        let url = baseURL.appending(path: "media/download/\(name)")
         var req = URLRequest(url: url, timeoutInterval: 120)
         authorize(&req)
         let (tempURL, response) = try await URLSession.shared.download(for: req)
@@ -1035,6 +1034,24 @@ final class WaveCamClient {
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: tempURL, to: dest)
         return dest
+    }
+
+    /// DELETE /api/v1/media/{name} — deletes one recording. Feature-detected via
+    /// supported.mediaDelete (the UI hides delete until the backend exposes it).
+    func deleteMedia(name: String) async -> Bool {
+        guard mode == .live else { return false }
+        do {
+            _ = try await delete("media/\(name)")   // raw name — delete() encodes once
+            return true
+        } catch {
+            lastControlError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Whether the Orin exposes the media-delete endpoint (GET /config supported.media_delete).
+    func mediaDeleteSupported() async -> Bool {
+        await config()?.supported?.mediaDelete ?? false
     }
 
     /// MJPEG monitor feed URL (GET /api/v1/preview.mjpeg), nil in mock mode.
