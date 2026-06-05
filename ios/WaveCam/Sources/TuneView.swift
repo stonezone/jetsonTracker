@@ -54,7 +54,6 @@ struct TuneView: View {
     @State private var newPresetName = ""
     @State private var presetDeleteTarget: WCPreset? = nil
     @State private var showPresetDeleteConfirm = false
-    @State private var presetApplyRestartRequired = false
     @State private var presetApplyRestartKeys: [String] = []
     @State private var showPresetRestartNotice = false
 
