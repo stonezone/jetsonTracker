@@ -292,6 +292,16 @@ enum JSONValue: Codable, Sendable, Equatable {
         default: return nil
         }
     }
+
+    /// The underlying JSON-native value, for JSONSerialization request bodies.
+    var rawValue: Any {
+        switch self {
+        case .string(let v): return v
+        case .int(let v):    return v
+        case .double(let v): return v
+        case .bool(let v):   return v
+        }
+    }
 }
 
 struct WCPreset: Codable, Sendable, Identifiable {
@@ -670,10 +680,10 @@ final class WaveCamClient {
     }
 
     @discardableResult
-    func configHot(_ patch: [String: Any]) async -> Bool {
+    func configHot(_ patch: [String: JSONValue]) async -> Bool {
         guard mode == .live else { return false }
         do {
-            _ = try await post("config/hot", body: ["patch": patch])
+            _ = try await post("config/hot", body: ["patch": patch.mapValues(\.rawValue)])
             return true
         } catch {
             lastControlError = error.localizedDescription
