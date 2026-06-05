@@ -1697,7 +1697,9 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
         },
         "supported": {
             "calibration": True,
+            "cinematic_zoom": True,
             "color_presets": sorted(COLOR_PRESETS),
+            "media": getattr(pipeline, "recorder", None) is not None,
             "presets": True,
             "logs": True,
             "ptz_home": callable(getattr(getattr(pipeline, "ptz", None), "home", None)),

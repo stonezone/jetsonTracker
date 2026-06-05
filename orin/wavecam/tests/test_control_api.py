@@ -774,6 +774,9 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert "blue" in body["supported"]["color_presets"]
     assert "ptz.cinematic_zoom_enabled" in body["hot_keys"]
     assert "ptz.zoom_target_frac" in body["hot_keys"]
+    assert body["supported"]["calibration"] is True
+    assert body["supported"]["cinematic_zoom"] is True
+    assert body["supported"]["media"] is True
     assert body["supported"]["ptz_home"] is True
     assert body["supported"]["presets"] is True
     assert body["supported"]["logs"] is True
@@ -874,9 +877,20 @@ def test_api_v1_presets_list_save_apply_capture_and_delete_custom(tmp_path):
     listed = client.get("/api/v1/presets")
 
     assert listed.status_code == 200
-    presets = {preset["name"]: preset for preset in listed.json()["presets"]}
+    listed_body = listed.json()
+    assert listed_body["ok"] is True
+    assert isinstance(listed_body["request_id"], str)
+    presets = {preset["name"]: preset for preset in listed_body["presets"]}
     assert presets["Default"]["builtin"] is True
+    assert presets["Default"]["restart_required"] is False
+    assert presets["Default"]["restart_keys"] == []
     assert presets["Tow Foil"]["values"]["ptz.max_pan_speed"] == 18
+    for preset in listed_body["presets"]:
+        assert isinstance(preset["name"], str)
+        assert isinstance(preset["builtin"], bool)
+        assert isinstance(preset["restart_required"], bool)
+        assert isinstance(preset["restart_keys"], list)
+        assert isinstance(preset["values"], dict)
 
     builtin_overwrite = client.post(
         "/api/v1/presets",
@@ -903,9 +917,12 @@ def test_api_v1_presets_list_save_apply_capture_and_delete_custom(tmp_path):
     assert applied.status_code == 200
     body = applied.json()
     assert body["ok"] is True
+    assert isinstance(body["request_id"], str)
+    assert body["name"] == "WaterTest"
     assert body["applied"] == {"ptz.deadzone": 0.12}
     assert body["restart_required"] is True
     assert body["restart_keys"] == ["detector.model"]
+    assert isinstance(body["status"], dict)
     assert pipe.cfg.ptz.deadzone == 0.12
 
     captured = client.post(
@@ -971,7 +988,14 @@ def test_api_v1_logs_scope_filter_and_redact_sensitive_values():
 
     assert response.status_code == 200
     body = response.json()
+    assert body["ok"] is True
+    assert isinstance(body["request_id"], str)
     assert [line["source"] for line in body["lines"]] == ["wavecam.service", "supervisor"]
+    for line in body["lines"]:
+        assert isinstance(line["ts_unix_ms"], int)
+        assert isinstance(line["level"], str)
+        assert isinstance(line["source"], str)
+        assert isinstance(line["message"], str)
     messages = "\n".join(line["message"] for line in body["lines"])
     assert "gps-server" not in messages
     assert "secret123" not in messages
@@ -1115,6 +1139,8 @@ def test_api_v1_media_list_and_download_are_recorder_dir_scoped(tmp_path):
     assert listed.status_code == 200
     listed_body = listed.json()
     assert listed_body["ok"] is True
+    assert isinstance(listed_body["request_id"], str)
+    assert isinstance(listed_body["status"], dict)
     assert listed_body["files"] == [
         {
             "name": clip.name,
