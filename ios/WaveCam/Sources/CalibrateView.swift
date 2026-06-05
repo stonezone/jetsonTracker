@@ -280,33 +280,10 @@ private struct CalibrationStatusStrip: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            CalibrationMetric(label: "SESSION", value: status?.session.state ?? "READY", tint: WC.ok)
-            CalibrationMetric(label: "GPS", value: gpsText, tint: WC.ok)
-            CalibrationMetric(label: "OWNER", value: status?.ptz.owner.ptzOwnerLabel ?? "IDLE", tint: WC.brand)
-            CalibrationMetric(label: "REF HDG", value: refHeadingText, tint: WC.muted)
-        }
-    }
-}
-
-private struct CalibrationMetric: View {
-    let label: String
-    let value: String
-    let tint: Color
-
-    var body: some View {
-        GlassCard(cornerRadius: WCRadius.sm, padding: WCSpace.sm) {
-            VStack(alignment: .leading, spacing: WCSpace.xs) {
-                Text(label)
-                    .font(WCFont.label)
-                    .tracking(1.3)
-                    .foregroundStyle(WC.faint)
-                Text(value)
-                    .font(WCFont.mono)
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.62)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            OperatorMetric(label: "SESSION", value: status?.session.state ?? "READY", tint: WC.ok, cornerRadius: WCRadius.sm, uppercaseValue: false)
+            OperatorMetric(label: "GPS", value: gpsText, tint: WC.ok, cornerRadius: WCRadius.sm, uppercaseValue: false)
+            OperatorMetric(label: "OWNER", value: status?.ptz.owner.ptzOwnerLabel ?? "IDLE", tint: WC.brand, cornerRadius: WCRadius.sm, uppercaseValue: false)
+            OperatorMetric(label: "REF HDG", value: refHeadingText, tint: WC.muted, cornerRadius: WCRadius.sm, uppercaseValue: false)
         }
     }
 }

@@ -164,6 +164,33 @@ struct OperatorDivider: View {
     }
 }
 
+/// Compact labelled metric card (caps label + mono value) for operator status grids.
+/// Unifies the former AgentMetric / CalibrationMetric (review: dedup).
+struct OperatorMetric: View {
+    let label: String
+    let value: String
+    var tint: Color = WC.accent
+    var cornerRadius: CGFloat = WCRadius.md
+    var uppercaseValue: Bool = true
+
+    var body: some View {
+        GlassCard(cornerRadius: cornerRadius, padding: WCSpace.sm) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
+                Text(label)
+                    .font(WCFont.label)
+                    .tracking(1.3)
+                    .foregroundStyle(WC.faint)
+                Text(uppercaseValue ? value.uppercased() : value)
+                    .font(WCFont.mono)
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct OperatorNotice: View {
     let text: String
     let tint: Color

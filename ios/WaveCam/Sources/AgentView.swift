@@ -198,32 +198,9 @@ private struct AgentStatusHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            AgentMetric(label: "SESSION", value: status?.session.state ?? "READY", tint: WC.ok)
-            AgentMetric(label: "SAFETY", value: status?.safety.killed == true ? "KILLED" : "CLEAR", tint: status?.safety.killed == true ? WC.kill : WC.ok)
-            AgentMetric(label: "REV", value: "\(status?.revision ?? 0)", tint: WC.accent)
-        }
-    }
-}
-
-private struct AgentMetric: View {
-    let label: String
-    let value: String
-    let tint: Color
-
-    var body: some View {
-        GlassCard(cornerRadius: WCRadius.md, padding: WCSpace.sm) {
-            VStack(alignment: .leading, spacing: WCSpace.xs) {
-                Text(label)
-                    .font(WCFont.label)
-                    .tracking(1.3)
-                    .foregroundStyle(WC.faint)
-                Text(value.uppercased())
-                    .font(WCFont.mono)
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.62)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            OperatorMetric(label: "SESSION", value: status?.session.state ?? "READY", tint: WC.ok)
+            OperatorMetric(label: "SAFETY", value: status?.safety.killed == true ? "KILLED" : "CLEAR", tint: status?.safety.killed == true ? WC.kill : WC.ok)
+            OperatorMetric(label: "REV", value: "\(status?.revision ?? 0)", tint: WC.accent)
         }
     }
 }
