@@ -193,7 +193,6 @@ private struct CalibrationUnavailableBanner: View {
 private struct CalibrationStep: Identifiable, Equatable {
     let id: Int
     let title: String
-    let shortStatus: String
     let headline: String
     let detail: String
     let actionTitle: String
@@ -202,7 +201,6 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let preflight = CalibrationStep(
         id: 1,
         title: "Preflight checks",
-        shortStatus: "Done",
         headline: "Confirm camera and network",
         detail: "Verify the camera feed, PTZ link, GPS source, storage, and safety latch before alignment begins.",
         actionTitle: "Confirm preflight",
@@ -212,7 +210,6 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let baseLock = CalibrationStep(
         id: 2,
         title: "Base lock (GPS)",
-        shortStatus: "Done",
         headline: "Lock the base location",
         detail: "Use the Orin/base position as the fixed reference point before heading and tilt are solved.",
         actionTitle: "Confirm base",
@@ -222,7 +219,6 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let heading = CalibrationStep(
         id: 3,
         title: "Heading - landmark",
-        shortStatus: "Now",
         headline: "Aim at a known landmark",
         detail: "Center the camera on a fixed point you can identify on the map, such as a pier end or channel marker. WaveCam reads motor position and solves reference_heading without a magnetometer.",
         actionTitle: "Capture heading",
@@ -232,7 +228,6 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let tilt = CalibrationStep(
         id: 4,
         title: "Tilt reference",
-        shortStatus: "Next",
         headline: "Capture a level reference",
         detail: "Aim at a stable horizon or known-height reference so the tracker can map target elevation into camera tilt.",
         actionTitle: "Capture tilt",
@@ -242,7 +237,6 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let zoom = CalibrationStep(
         id: 5,
         title: "Zoom / FOV curve",
-        shortStatus: "Next",
         headline: "Map zoom to field of view",
         detail: "Sample wide, mid, and tele positions so the tracker can estimate box size and vision confidence at each zoom state.",
         actionTitle: "Capture zoom",
@@ -252,7 +246,6 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let dryRun = CalibrationStep(
         id: 6,
         title: "Dry-run",
-        shortStatus: "Ready",
         headline: "Run without recording",
         detail: "Exercise GPS pointing, vision lock, and PTZ authority while recording stays optional and the stop latch remains visible.",
         actionTitle: "Mark ready",
