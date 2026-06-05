@@ -488,6 +488,25 @@ def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("media_not_found", exc.message, 404)
         return FileResponse(path, media_type="video/mp4", filename=path.name)
 
+    @app.delete("/api/v1/media/{name}", dependencies=[Depends(require(CONFIG))])
+    def media_delete(name: str):
+        try:
+            result = api.media.delete_file(name)
+        except MediaUnavailable as exc:
+            return api.refusal("media_unavailable", exc.message, 503)
+        except MediaNotFound as exc:
+            return api.refusal("media_not_found", exc.message, 404)
+        api.bump_revision()
+        return JSONResponse(
+            {
+                "ok": True,
+                "request_id": make_request_id(),
+                "name": result["name"],
+                "freed_bytes": result["freed_bytes"],
+                "status": api.status_snapshot(),
+            }
+        )
+
     @app.post("/api/v1/media/record/start", dependencies=[Depends(require(CONFIG))])
     def media_record_start(req: RecordStartRequest | None = None):
         try:
@@ -1416,6 +1435,17 @@ class MediaAdapter:
             raise MediaNotFound("Media file was not found.")
         return path
 
+    def delete_file(self, name: str) -> dict:
+        path = self.download_path(name)
+        try:
+            freed_bytes = path.stat().st_size
+            path.unlink()
+        except FileNotFoundError as exc:
+            raise MediaNotFound("Media file was not found.") from exc
+        except OSError as exc:
+            raise MediaUnavailable(f"Media file could not be deleted: {exc}") from exc
+        return {"ok": True, "name": path.name, "freed_bytes": freed_bytes}
+
     def rec_dir(self) -> Path:
         if self.recorder is None:
             raise MediaUnavailable("Recorder is not configured.")
@@ -1709,6 +1739,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
             "cinematic_zoom": True,
             "color_presets": sorted(COLOR_PRESETS),
             "media": getattr(pipeline, "recorder", None) is not None,
+            "media_delete": getattr(pipeline, "recorder", None) is not None,
             "presets": True,
             "logs": True,
             "ptz_home": callable(getattr(getattr(pipeline, "ptz", None), "home", None)),

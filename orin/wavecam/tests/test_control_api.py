@@ -783,6 +783,7 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert body["supported"]["calibration"] is True
     assert body["supported"]["cinematic_zoom"] is True
     assert body["supported"]["media"] is True
+    assert body["supported"]["media_delete"] is True
     assert body["supported"]["ptz_home"] is True
     assert body["supported"]["presets"] is True
     assert body["supported"]["logs"] is True
@@ -1170,6 +1171,38 @@ def test_api_v1_media_list_and_download_are_recorder_dir_scoped(tmp_path):
     assert missing.json()["code"] == "media_not_found"
     assert unsafe.status_code == 404
     assert unsafe.json()["code"] == "media_not_found"
+
+
+def test_api_v1_media_delete_removes_only_recorder_dir_file(tmp_path):
+    client = make_client()
+    pipe = client.app.state.pipeline
+    rec_dir = tmp_path / "recordings"
+    rec_dir.mkdir()
+    pipe.recorder.config.rec_dir = rec_dir
+    clip = rec_dir / "wavecam_20260604_000000_000.mp4"
+    clip.write_bytes(b"mp4-bytes")
+    outside = tmp_path / "secret.mp4"
+    outside.write_bytes(b"secret")
+
+    deleted = client.delete(f"/api/v1/media/{clip.name}")
+    missing = client.delete(f"/api/v1/media/{clip.name}")
+    traversal = client.delete("/api/v1/media/%2E%2E/secret.mp4")
+    backslash = client.delete("/api/v1/media/%2E%2E%5Csecret.mp4")
+
+    assert deleted.status_code == 200
+    deleted_body = deleted.json()
+    assert deleted_body["ok"] is True
+    assert deleted_body["name"] == clip.name
+    assert deleted_body["freed_bytes"] == 9
+    assert isinstance(deleted_body["request_id"], str)
+    assert isinstance(deleted_body["status"], dict)
+    assert not clip.exists()
+    assert outside.read_bytes() == b"secret"
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "media_not_found"
+    assert traversal.status_code == 404
+    assert backslash.status_code == 404
+    assert backslash.json()["code"] == "media_not_found"
 
 
 def test_guide_route_serves_html_and_assets(tmp_path, monkeypatch):

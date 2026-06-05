@@ -154,6 +154,25 @@ def test_viewer_can_list_and_download_media(tmp_path):
     assert unauthenticated.status_code == 401
 
 
+def test_viewer_can_not_delete_media(tmp_path):
+    client = client_with_auth(True, {"v": "viewer", "s": "supervisor"})
+    pipe = client.app.state.pipeline
+    pipe.recorder.config.rec_dir = tmp_path
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"clip")
+
+    viewer_blocked = client.delete(f"/api/v1/media/{clip.name}", headers=hdr("v"))
+    unauthenticated = client.delete(f"/api/v1/media/{clip.name}")
+    supervisor_ok = client.delete(f"/api/v1/media/{clip.name}", headers=hdr("s"))
+
+    assert viewer_blocked.status_code == 403
+    assert viewer_blocked.json()["code"] == "forbidden"
+    assert unauthenticated.status_code == 401
+    assert supervisor_ok.status_code == 200
+    assert supervisor_ok.json()["freed_bytes"] == 4
+    assert not clip.exists()
+
+
 def test_viewer_can_open_guide_when_auth_enabled(tmp_path, monkeypatch):
     docs = tmp_path / "docs"
     docs.mkdir()
