@@ -280,6 +280,15 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - Don't let the agent/automation move the camera without the supervise-only gate + a reachable Emergency Stop
 - Don't touch the Orin runtime/deploy (Codex/Zack's lane); don't `git push` to remote
 
+## Gotchas (hard-won — 2026-06-05)
+
+- **The build is the source of truth, not SourceKit.** Inline "Cannot find X in scope" / "Extra argument 'conformingTo'" diagnostics are almost always stale single-file indexing noise — trust only `xcodebuild … ** BUILD SUCCEEDED **`.
+- **`main` is push-protected.** A hook + org policy block direct pushes to `main` (even when authorized). Merge via a PR or hand the fast-forward to Codex. A command containing both "push" and "main" trips the guard even when the push target is a feature branch — split such commands.
+- **Codable: put a tolerant `init(from:)` in an _extension_,** not the struct body — an in-body custom init removes Swift's synthesized memberwise init and breaks every construction site. Decode non-essential fields with `decodeIfPresent ?? default` so a partial backend response doesn't throw → false "operation failed".
+- **iOS networking:** every GET should go through `getWithFallback` (tether→Wi-Fi); a non-failover request surfaces as a false "Orin unreachable."
+- **Orin outage triage:** ping the gateway (`192.168.1.1`) vs the Orin (`.155`). Gateway clean + Orin 100% loss = the Orin (likely DHCP IP-drift, e.g. to `.50`). A `.155` DHCP reservation is in place; full procedure in `docs/ORIN_FIELD_RELIABILITY.md`.
+- **Collab bus:** partners can replay stale events as "fresh" — independently verify any state claim (`git fetch`, your own `curl`/`ping`) before acting. The Stop-hook now drains the inbox backlog to the latest event per turn (fixed 2026-06-05).
+
 ## IMPORTANT: Project Context
 
 This file (CLAUDE.md) is automatically loaded at the start of every Claude Code session. Keep it updated with:
