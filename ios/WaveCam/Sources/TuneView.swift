@@ -54,7 +54,6 @@ struct TuneView: View {
     @State private var newPresetName = ""
     @State private var presetDeleteTarget: WCPreset? = nil
     @State private var showPresetDeleteConfirm = false
-    @State private var presetApplyRestartRequired = false
     @State private var presetApplyRestartKeys: [String] = []
     @State private var showPresetRestartNotice = false
 
@@ -490,7 +489,7 @@ struct TuneView: View {
             }
             .pickerStyle(.menu)
             .tint(WC.accent)
-            .onChange(of: selection.wrappedValue) { _, v in send([key: v]) }
+            .onChange(of: selection.wrappedValue) { _, v in if let jv = JSONValue.from(v) { send([key: jv]) } }
         }
     }
 
@@ -513,7 +512,7 @@ struct TuneView: View {
                 Text(readout).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(WC.accent)
             }
             Slider(value: value, in: range, step: step) { editing in
-                if !editing { send([key: isInt ? Int(value.wrappedValue) : value.wrappedValue]) }
+                if !editing { send([key: isInt ? .int(Int(value.wrappedValue)) : .double(value.wrappedValue)]) }
             }
             .tint(WC.accent)
         }
@@ -525,7 +524,7 @@ struct TuneView: View {
             Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(WC.txt)
         }
         .tint(WC.accent)
-        .onChange(of: isOn.wrappedValue) { _, v in send([key: v]) }
+        .onChange(of: isOn.wrappedValue) { _, v in send([key: .bool(v)]) }
     }
 
     @ViewBuilder
@@ -554,7 +553,7 @@ struct TuneView: View {
                 EmptyView()
             }
             .labelsHidden()
-            .onChange(of: value.wrappedValue) { _, v in send([key: v]) }
+            .onChange(of: value.wrappedValue) { _, v in send([key: .int(v)]) }
         }
     }
 
@@ -596,9 +595,12 @@ struct TuneView: View {
         ffGain = cfg.current.ptz.ffGain
         model = cfg.current.detector.model
         restartKeys = cfg.restartRequiredKeys ?? []
-        if let cz = cfg.current.ptz.cinematicZoomEnabled {
+        // #9: prefer the explicit supported.cinematicZoom flag; fall back to
+        // value-present detection until the backend advertises it (inert today,
+        // auto-activates when the flag ships).
+        if cfg.supported?.cinematicZoom ?? (cfg.current.ptz.cinematicZoomEnabled != nil) {
             cinematicAvailable = true
-            cinematicEnabled = cz
+            cinematicEnabled = cfg.current.ptz.cinematicZoomEnabled ?? false
             subjectSize = cfg.current.ptz.zoomTargetFrac ?? 0.5
         }
         // Feature-detected advanced keys — remain nil when backend doesn't expose them
@@ -618,7 +620,7 @@ struct TuneView: View {
         loaded = true
     }
 
-    private func send(_ patch: [String: Any]) {
+    private func send(_ patch: [String: JSONValue]) {
         guard loaded, client.mode == .live else { return }
         Task {
             if await client.configHot(patch) {

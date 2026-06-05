@@ -61,7 +61,6 @@ struct MergedLiveView: View {
             LiveControlRail(
                 isLandscape: true,
                 isAutoActive: isAutoActive,
-                isFullscreen: isFullscreen,
                 homeSupported: homeSupported,
                 controller: controller,
                 onAutoToggle: toggleAuto,
@@ -82,7 +81,6 @@ struct MergedLiveView: View {
             LiveControlRail(
                 isLandscape: false,
                 isAutoActive: isAutoActive,
-                isFullscreen: isFullscreen,
                 homeSupported: homeSupported,
                 controller: controller,
                 onAutoToggle: toggleAuto,
@@ -250,7 +248,6 @@ struct MergedLiveView: View {
 private struct LiveControlRail: View {
     let isLandscape: Bool
     let isAutoActive: Bool
-    let isFullscreen: Bool
     let homeSupported: Bool
     let controller: PTZManualController
     let onAutoToggle: () -> Void

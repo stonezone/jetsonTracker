@@ -148,6 +148,7 @@ struct WCConfig: Codable, Sendable {
         var ptzHome: Bool?
         var presets: Bool?
         var logs: Bool?
+        var cinematicZoom: Bool?
     }
 
     struct Current: Codable, Sendable {
@@ -292,6 +293,16 @@ enum JSONValue: Codable, Sendable, Equatable {
         default: return nil
         }
     }
+
+    /// The underlying JSON-native value, for JSONSerialization request bodies.
+    var rawValue: Any {
+        switch self {
+        case .string(let v): return v
+        case .int(let v):    return v
+        case .double(let v): return v
+        case .bool(let v):   return v
+        }
+    }
 }
 
 struct WCPreset: Codable, Sendable, Identifiable {
@@ -303,6 +314,19 @@ struct WCPreset: Codable, Sendable, Identifiable {
     var id: String { name }
 }
 
+// H4: decode in an extension so the synthesized memberwise init survives. Tolerate
+// a partial response — a missing flag must not throw the whole decode (which would
+// otherwise surface as a false "operation failed").
+extension WCPreset {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        builtin = try c.decodeIfPresent(Bool.self, forKey: .builtin) ?? false
+        restartRequired = try c.decodeIfPresent(Bool.self, forKey: .restartRequired) ?? false
+        values = try c.decodeIfPresent([String: JSONValue].self, forKey: .values) ?? [:]
+    }
+}
+
 private struct WCPresetsResponse: Codable, Sendable {
     var presets: [WCPreset]
 }
@@ -312,6 +336,18 @@ struct WCPresetApplyResult: Codable, Sendable {
     var applied: [String: JSONValue]
     var restartRequired: Bool
     var restartKeys: [String]
+}
+
+// H4: only `ok` is essential; default the rest so a partial response decodes
+// instead of throwing → false "apply failed". (Extension preserves memberwise init.)
+extension WCPresetApplyResult {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try c.decode(Bool.self, forKey: .ok)
+        applied = try c.decodeIfPresent([String: JSONValue].self, forKey: .applied) ?? [:]
+        restartRequired = try c.decodeIfPresent(Bool.self, forKey: .restartRequired) ?? false
+        restartKeys = try c.decodeIfPresent([String].self, forKey: .restartKeys) ?? []
+    }
 }
 
 // MARK: - Media models
@@ -333,6 +369,15 @@ struct WCMediaFile: Codable, Sendable, Identifiable {
 private struct WCMediaListResponse: Codable, Sendable {
     var ok: Bool?
     var files: [WCMediaFile]
+}
+
+// H4: a missing `files` decodes to empty rather than throwing.
+extension WCMediaListResponse {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try c.decodeIfPresent(Bool.self, forKey: .ok)
+        files = try c.decodeIfPresent([WCMediaFile].self, forKey: .files) ?? []
+    }
 }
 
 // MARK: - Log models
@@ -493,7 +538,10 @@ final class WaveCamClient {
             status = try Self.decoder.decode(WCStatus.self, from: data)
             connected = true
             lastError = nil
-            if status?.safety.killed == true { optimisticKilled = false }
+            // Fresh status is authoritative — drop the optimistic latch and let
+            // `killed` drive `effectiveKilled` (:450), so a FAILED kill can't leave a
+            // false "STOP LATCHED" while the camera still moves (error alert covers it).
+            optimisticKilled = false
         } catch {
             if mockFallbackEnabled {
                 status = .mockTracking(killed: mockKilled)
@@ -633,10 +681,10 @@ final class WaveCamClient {
     }
 
     @discardableResult
-    func configHot(_ patch: [String: Any]) async -> Bool {
+    func configHot(_ patch: [String: JSONValue]) async -> Bool {
         guard mode == .live else { return false }
         do {
-            _ = try await post("config/hot", body: ["patch": patch])
+            _ = try await post("config/hot", body: ["patch": patch.mapValues(\.rawValue)])
             return true
         } catch {
             lastControlError = error.localizedDescription
@@ -900,21 +948,13 @@ final class WaveCamClient {
     /// `level` is passed as a query param (nil = no filter); `limit` caps the result count.
     func logs(level: String? = nil, limit: Int = 200) async -> [WCLogLine]? {
         if mode == .mock { return Self.mockLogLines }
-        var components = URLComponents(url: baseURL.appending(path: "logs"), resolvingAgainstBaseURL: false)
         var queryItems: [URLQueryItem] = [URLQueryItem(name: "limit", value: "\(limit)")]
         if let level { queryItems.append(URLQueryItem(name: "level", value: level)) }
-        components?.queryItems = queryItems
-        guard let url = components?.url else { return nil }
         do {
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 5
-            authorize(&req)
-            let (data, response) = try await URLSession.shared.data(for: req)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                return nil
-            }
-            let decoded = try Self.decoder.decode(WCLogsResponse.self, from: data)
-            return decoded.lines
+            // H2: route through getWithFallback so a tether-down cold start fails over
+            // to Wi-Fi instead of returning nil (same class as the "false unreachable" bug).
+            let data = try await getWithFallback("logs", queryItems: queryItems)
+            return try Self.decoder.decode(WCLogsResponse.self, from: data).lines
         } catch {
             return nil
         }
@@ -972,7 +1012,7 @@ final class WaveCamClient {
         guard mode == .live else { return [] }
         let data = try await getWithFallback("media/list")
         let response = try Self.decoder.decode(WCMediaListResponse.self, from: data)
-        return response.files ?? []
+        return response.files
     }
 
     /// GET /api/v1/media/download/{name} — streams bytes to a temp file and returns
@@ -1021,11 +1061,13 @@ final class WaveCamClient {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func getWithFallback(_ path: String) async throws -> Data {
+    private func getWithFallback(_ path: String, queryItems: [URLQueryItem] = []) async throws -> Data {
         var lastError: Error?
         for candidate in apiCandidates() {
             do {
-                var req = URLRequest(url: candidate.appending(path: path))
+                var url = candidate.appending(path: path)
+                if !queryItems.isEmpty { url.append(queryItems: queryItems) }
+                var req = URLRequest(url: url)
                 req.timeoutInterval = 3
                 authorize(&req)
                 let (data, response) = try await URLSession.shared.data(for: req)
@@ -1118,17 +1160,15 @@ final class WaveCamClient {
         } else {
             refreshAfterLegacyResponse()
         }
-        guard let ok = response.ok else {
-            lastControlError = [response.code, response.message]
-                .compactMap(\.self)
-                .joined(separator: ": ")
-            if lastControlError?.isEmpty != false {
-                lastControlError = "Control response did not confirm success."
-            }
-            return false
-        }
-        if ok == false {
+        // A cleanly-parsed response that omits `ok` is treated as success — only an
+        // explicit ok=false is a failure. Stops a 2xx response without an `ok` field
+        // from surfacing as a false "command not confirmed" (the status poll is the
+        // real source of truth for the resulting state).
+        if response.ok == false {
             lastControlError = [response.code, response.message].compactMap(\.self).joined(separator: ": ")
+            if lastControlError?.isEmpty != false {
+                lastControlError = "Control response reported failure."
+            }
             return false
         }
         return true

@@ -112,27 +112,6 @@ struct GlassCard<Content: View>: View {
     }
 }
 
-// MARK: - GlassSection
-
-/// A labelled glass card section — title in muted caps, content below.
-struct GlassSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        GlassSurface(cornerRadius: WCRadius.md) {
-            VStack(alignment: .leading, spacing: WCSpace.sm) {
-                Text(title.uppercased())
-                    .font(WCFont.label)
-                    .tracking(1.2)
-                    .foregroundStyle(WC.muted)
-                content()
-            }
-            .padding(WCSpace.md)
-        }
-    }
-}
-
 // MARK: - OperatorCard
 
 /// Solid high-contrast panel for dense operator forms and readouts.
@@ -182,6 +161,33 @@ struct OperatorSectionLabel: View {
 struct OperatorDivider: View {
     var body: some View {
         Divider().overlay(WC.line)
+    }
+}
+
+/// Compact labelled metric card (caps label + mono value) for operator status grids.
+/// Unifies the former AgentMetric / CalibrationMetric (review: dedup).
+struct OperatorMetric: View {
+    let label: String
+    let value: String
+    var tint: Color = WC.accent
+    var cornerRadius: CGFloat = WCRadius.md
+    var uppercaseValue: Bool = true
+
+    var body: some View {
+        GlassCard(cornerRadius: cornerRadius, padding: WCSpace.sm) {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
+                Text(label)
+                    .font(WCFont.label)
+                    .tracking(1.3)
+                    .foregroundStyle(WC.faint)
+                Text(uppercaseValue ? value.uppercased() : value)
+                    .font(WCFont.mono)
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -307,24 +313,6 @@ struct GlassIconButton: View {
     }
 }
 
-// MARK: - GlassRow
-
-/// A horizontal label + control row, padded inside a glass surface.
-struct GlassRow<Control: View>: View {
-    let label: String
-    @ViewBuilder let control: () -> Control
-
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(WCFont.caption)
-                .foregroundStyle(WC.muted)
-            Spacer()
-            control()
-        }
-    }
-}
-
 // MARK: - GlassChip
 
 /// A small glass pill for status / lock indicators.
@@ -420,11 +408,6 @@ struct GlassToast: View {
             GlassCard {
                 Text("Glass Card")
                     .font(WCFont.heading)
-                    .foregroundStyle(WC.txt)
-            }
-            GlassSection(title: "Section") {
-                Text("Body content here")
-                    .font(WCFont.body)
                     .foregroundStyle(WC.txt)
             }
         }
