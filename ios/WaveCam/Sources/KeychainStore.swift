@@ -24,7 +24,9 @@ enum KeychainStore {
         if updated == errSecItemNotFound {
             var insert = query
             insert[kSecValueData as String] = data
-            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            // Tighter than AfterFirstUnlock: the LAN token is only readable while the
+            // device is unlocked and never migrates off this device via backup.
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
             return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
         }
         return false
