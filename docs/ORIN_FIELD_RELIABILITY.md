@@ -23,8 +23,9 @@ ping -c2 192.168.1.155   # the Orin (Wi-Fi)
 - **Gateway 0% loss + Orin 100% loss → it's the Orin** (down, rebooted, or drifted IP). Go to Step 2.
 - **Both fail → it's your machine's Wi-Fi**, not the Orin.
 
-> Observed 2026-06-05: the Orin flapped (reachable, then 100% loss twice, then reachable) within ~15 min
-> while the gateway stayed clean — i.e. intermittent Orin presence, the worst case for unattended filming.
+> Observed 2026-06-05: one client saw intermittent `.155` reachability while another continuous ping
+> later stayed clean. When reachability reports disagree, test from the app route, the same Wi-Fi
+> client, and the Orin console before calling the host down.
 
 ## Step 2 — find where the Orin went (IP drift)
 
@@ -37,15 +38,24 @@ ping -c1 orin                   # hostname (Codex set the Orin hostname to "orin
 arp -a | grep -i b8:27\|nvidia  # scan the LAN for the Orin's MAC if needed
 ```
 
-**Permanent fix (applied 2026-06-05):** a **DHCP reservation** for `192.168.1.155` on the router,
-tied to the Orin's Wi-Fi MAC, so it always gets `.155` regardless of reboots. Re-confirm the
-reservation exists after any router change.
+**Permanent Wi-Fi fix (applied 2026-06-05):** the Orin's Wi-Fi profile is manually pinned to
+`192.168.1.155/24`, and the router also has a **DHCP reservation** for `192.168.1.155` tied to
+the Orin's Wi-Fi MAC. Re-confirm both after router or NetworkManager changes.
 
 ## Step 3 — tether route
 
 The iPhone USB tether path (`172.20.10.8/28`, Orin USB-A host port) is the field-primary uplink.
-Confirm the Orin's tether interface IP is **enforced/static** so it doesn't drift either
-(`172.20.10.8`). If tethered and `.155` is down, the app should still reach the Orin over tether.
+Current truth: `172.20.10.8` is the expected iPhone Personal Hotspot DHCP lease, not a static
+address hardcoded on the Orin. Verify it when the phone is physically tethered:
+
+```bash
+ssh orin 'ip -4 addr; nmcli -t -f NAME,DEVICE,IP4.ADDRESS connection show --active'
+curl -s -o /dev/null -w "%{http_code}\n" --max-time 6 http://172.20.10.8:8088/api/v1/status   # expect 200
+```
+
+If tethered and `.155` is down, the app should still reach the Orin over the tether route. If the
+phone assigns a different tether address, update the app route/defaults or fix the tether DHCP source;
+do not assume the Orin is enforcing `172.20.10.8` locally.
 
 ## Step 4 — service vs host
 
