@@ -85,6 +85,7 @@ class WebCfg:
     host: str = "0.0.0.0"
     port: int = 8088
     jpeg_quality: int = 70
+    show_hud: bool = True
 
 
 @dataclass

@@ -28,6 +28,7 @@ class SharedState:
         self.status: dict = {"state": "INIT", "fps": 0.0, "connected": False, "killed": False}
         self.killed = False
         self.show_mask = True
+        self.show_hud = True
 
     def set_jpeg(self, b: bytes):
         with self.lock:
@@ -52,6 +53,7 @@ class Pipeline(threading.Thread):
         self.cfg = cfg
         self.ptz = ptz
         self.state = SharedState()
+        self.state.show_hud = bool(getattr(cfg.web, "show_hud", True))
 
         self.grab = FrameGrabber(cfg.camera)
         self.color = ColorDetector(cfg.color) if cfg.color.enabled else None
@@ -237,8 +239,21 @@ class Pipeline(threading.Thread):
                 "ptz": "ON" if self.cfg.ptz.enabled else "off",
                 "killed": self.state.killed,
             }
-            annotated = annotate(frame, mask, blobs, persons or [], fr, cmd,
-                                 self.cfg.ptz, hud, show_mask=self.state.show_mask)
+            annotated = (
+                annotate(
+                    frame,
+                    mask,
+                    blobs,
+                    persons or [],
+                    fr,
+                    cmd,
+                    self.cfg.ptz,
+                    hud,
+                    show_mask=self.state.show_mask,
+                )
+                if self.state.show_hud
+                else frame
+            )
             ok, buf = cv2.imencode(".jpg", annotated,
                                    [cv2.IMWRITE_JPEG_QUALITY, self.cfg.web.jpeg_quality])
             if ok:

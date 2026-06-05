@@ -33,6 +33,7 @@ FrameSource = Callable[[], Any]
 GUIDE_FILENAME = "WaveCam_Guide.html"
 GUIDE_ASSET_DIR = "guide_assets"
 GUIDE_ROOT_ENV = "WAVECAM_GUIDE_ROOT"
+HOME_ZOOM_WIDE_DEADMAN_MS = 4000
 
 HOT_CONFIG_KEYS = (
     "ptz.deadzone",
@@ -64,6 +65,7 @@ HOT_CONFIG_KEYS = (
     "detector.every_n",
     "detector.box_ttl_sec",
     "web.show_mask",
+    "web.show_hud",
     "web.jpeg_quality",
 )
 
@@ -744,6 +746,11 @@ class ControlApiAdapter:
             self.pipeline.ptz.stop()
             self.pipeline.ptz.zoom("stop")
             self.pipeline.ptz.home()
+            self.pipeline.ptz.zoom(
+                "wide",
+                int(getattr(self.pipeline.cfg.ptz, "zoom_max_speed", 5)),
+            )
+            self.schedule_zoom_deadman(HOME_ZOOM_WIDE_DEADMAN_MS)
 
     def hold_manual_owner(self) -> None:
         with self._lock:
@@ -928,6 +935,7 @@ class ControlApiAdapter:
             "detector.every_n": lambda: set_int(cfg.detector, "every_n", value, 1, 30, dry_run=dry_run),
             "detector.box_ttl_sec": lambda: set_float(cfg.detector, "box_ttl_sec", value, 0.1, 5.0, dry_run=dry_run),
             "web.show_mask": lambda: set_bool(self.pipeline.state, "show_mask", value, dry_run=dry_run),
+            "web.show_hud": lambda: set_bool(self.pipeline.state, "show_hud", value, dry_run=dry_run),
             "web.jpeg_quality": lambda: set_int(cfg.web, "jpeg_quality", value, 30, 95, dry_run=dry_run),
         }
         setter = setters.get(key)
@@ -1691,6 +1699,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
             },
             "web": {
                 "show_mask": bool(getattr(pipeline.state, "show_mask", False)),
+                "show_hud": bool(getattr(pipeline.state, "show_hud", True)),
                 "jpeg_quality": cfg.web.jpeg_quality,
             },
             "calibration": calibration or empty_calibration_state(),
@@ -1703,6 +1712,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
             "presets": True,
             "logs": True,
             "ptz_home": callable(getattr(getattr(pipeline, "ptz", None), "home", None)),
+            "show_hud": True,
             "yolo_classes": list(YOLO_CLASSES),
             "person_aim_y": {
                 "0.20": "head/upper face",

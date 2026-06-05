@@ -15,6 +15,7 @@ from wavecam.web import build_app
 class DummyState:
     def __init__(self):
         self.show_mask = True
+        self.show_hud = True
         self.status = {
             "state": "TRACKING",
             "conf": 0.72,
@@ -131,7 +132,7 @@ class DummyPipeline:
                 every_n=3,
                 box_ttl_sec=0.6,
             ),
-            web=types.SimpleNamespace(jpeg_quality=70),
+            web=types.SimpleNamespace(jpeg_quality=70, show_hud=True),
         )
 
     def kill(self, on=True):
@@ -467,6 +468,7 @@ def test_api_v1_ptz_home_is_owner_gated_and_kill_respecting():
     assert ("stop",) in pipe.ptz.calls
     assert ("zoom", "stop", 0) in pipe.ptz.calls
     assert ("home",) in pipe.ptz.calls
+    assert ("zoom", "wide", 5) in pipe.ptz.calls
 
     client.post("/api/v1/safety/kill", json={"reason": "test"})
     calls_after_kill = list(pipe.ptz.calls)
@@ -728,6 +730,7 @@ def test_api_v1_config_hot_applies_known_keys_only():
                 "detector.conf": 0.55,
                 "detector.every_n": 2,
                 "web.show_mask": False,
+                "web.show_hud": False,
             }
         },
     )
@@ -750,6 +753,7 @@ def test_api_v1_config_hot_applies_known_keys_only():
     assert pipe.cfg.detector.conf == 0.55
     assert pipe.cfg.detector.every_n == 2
     assert pipe.state.show_mask is False
+    assert pipe.state.show_hud is False
 
     refused = client.post("/api/v1/config/hot", json={"patch": {"camera.source": "rtsp://x"}})
     assert refused.status_code == 422
@@ -770,16 +774,19 @@ def test_api_v1_config_reports_supported_tuning_surface():
     assert body["current"]["ptz"]["max_pan_speed"] == 10
     assert body["current"]["ptz"]["cinematic_zoom_enabled"] is False
     assert body["current"]["ptz"]["zoom_target_frac"] == 0.5
+    assert body["current"]["web"]["show_hud"] is True
     assert body["current"]["color"]["preset"] == "orange_red"
     assert "blue" in body["supported"]["color_presets"]
     assert "ptz.cinematic_zoom_enabled" in body["hot_keys"]
     assert "ptz.zoom_target_frac" in body["hot_keys"]
+    assert "web.show_hud" in body["hot_keys"]
     assert body["supported"]["calibration"] is True
     assert body["supported"]["cinematic_zoom"] is True
     assert body["supported"]["media"] is True
     assert body["supported"]["ptz_home"] is True
     assert body["supported"]["presets"] is True
     assert body["supported"]["logs"] is True
+    assert body["supported"]["show_hud"] is True
     assert "detector.conf" in body["hot_keys"]
     assert "detector.model" in body["restart_required_keys"]
 
