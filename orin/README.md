@@ -1,47 +1,115 @@
-# Orin Software
+# Orin Backend
 
-Code running on the Jetson Orin Nano for the robot cameraman.
+This directory contains the Jetson Orin software for WaveCam. The current
+production backend is `orin/wavecam/`: a FastAPI control API, vision tracker,
+PTZ controller, recorder, and live MJPEG/web surface for the Prisual PTZ camera.
 
-## Components
+The older Watch/Cloudflare/Nucleo/stepper pipeline still exists in this repo for
+reference, but it is not the active WaveCam runtime.
 
-| Module | Description |
-|--------|-------------|
-| `gps_server.py` | WebSocket server receiving GPS from iPhone (port 8765) |
-| `vision/vision_tracker.py` | YOLOv8 person detection and tracking |
-| `gimbal_control/gimbal_controller.py` | Serial UART interface to Nucleo |
-| `gps_fusion/` | GPS-Vision fusion with Kalman filtering |
-| `scripts/phone_webcam.sh` | Android camera via scrcpy |
+## Current Runtime
 
-## Quick Start
+| Item | Current value |
+|---|---|
+| Service | `wavecam.service` |
+| Live API | `http://<orin>:8088/api/v1` |
+| Guide/Web | `http://<orin>:8088/guide` and `http://<orin>:8088/` |
+| Orin Wi-Fi | `192.168.1.155` (`ssh orin`) |
+| Orin camera LAN | `192.168.100.10/24` |
+| PTZ camera | Prisual NDI PTZ at `192.168.100.88` |
+| PTZ control | RAW VISCA UDP `192.168.100.88:1259` |
+| Detection stream | RTSP sub-stream `rtsp://192.168.100.88:554/2` |
+| Recording stream | RTSP main stream `rtsp://192.168.100.88:554/1` |
+| Production model | `/data/projects/gimbal/models/yolov8n.engine` |
+| Loop target | `35` FPS; live validation has shown 30+ FPS |
+
+## Canonical Backend
+
+| Path | Purpose |
+|---|---|
+| `wavecam/run.py` | Entry point used by `wavecam.service` |
+| `wavecam/config.orin.servo.yaml` | Live Orin servo config; camera will move |
+| `wavecam/wavecam/control_api.py` | FastAPI routes for status, config, PTZ, media, logs, presets, guide |
+| `wavecam/wavecam/pipeline.py` | Vision loop orchestration |
+| `wavecam/wavecam/controller.py` | Visual servo, PTZ command decision logic, cinematic zoom |
+| `wavecam/wavecam/ptz_visca.py` | RAW VISCA-over-UDP adapter for the Prisual camera |
+| `wavecam/wavecam/fusion.py` | Person/color fusion and lock state |
+| `wavecam/wavecam/detector.py` | YOLO detector wrapper |
+| `wavecam/wavecam/color_detector.py` | HSV color cue detector |
+| `wavecam/wavecam/recorder.py` | FFmpeg segmented recorder for the main RTSP stream |
+| `wavecam/tests/` | Backend regression tests |
+
+## Legacy Directories
+
+These are not the active field runtime:
+
+| Path | Status |
+|---|---|
+| `gimbal_control/` | Legacy UART controller for the retired STM32 stepper gimbal |
+| `gps_server.py` | Legacy Watch/iPhone/Cloudflare GPS receiver |
+| `vision/` | Earlier standalone vision-follow experiments |
+| `dashboard/` | Retired `:8080` dashboard surface |
+| `gps_fusion/` | Reusable GPS math/pointing pieces; future LoRa work should port the useful parts into `wavecam/` |
+| `scripts/phone_webcam.sh` | Old DroidCam/scrcpy helper; not used by the Prisual PTZ stack |
+
+## Run On The Orin
+
+The deployed service runs from `/data/projects/gimbal/wavecam`:
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Start GPS server (for Cloudflare tunnel)
-python3 gps_server.py &
-
-# Start vision tracking
-python3 vision/vision_tracker.py --camera 10 --gimbal /dev/ttyACM0
+ssh orin
+systemctl is-active wavecam.service
+systemctl status wavecam.service --no-pager
+curl -s http://localhost:8088/api/v1/status
 ```
 
-## GPS Fusion
-
-The fusion engine combines:
-- **Visual tracking:** YOLOv8 person detection → frame offset
-- **GPS tracking:** Watch location → bearing/distance → pan/tilt angles
-
-See `gps_fusion/README.md` for details.
-
-## Camera Setup
-
-Uses Android phone as USB webcam via scrcpy:
+Manual foreground run for maintenance only:
 
 ```bash
-./scripts/phone_webcam.sh
-# Creates /dev/video10
+cd /data/projects/gimbal/wavecam
+python3 run.py config.orin.servo.yaml
 ```
 
-## Serial Commands
+Do not start the retired `dashboard.service` for normal WaveCam use. `:8088` is
+the active API/web surface; `:8080` is legacy.
 
-See `ARCHITECTURE.md` in project root for full command reference.
+## Test Locally
+
+From the repo root on the Mac:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=orin/wavecam python3 -m pytest orin/wavecam/tests -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m compileall -q orin/wavecam/wavecam
+```
+
+The full backend suite imports OpenCV for color tests. On desktop, install
+`opencv-python-headless` or `opencv-python`; on Jetson, prefer the system OpenCV
+from JetPack.
+
+## Deploy Safely
+
+Backend deploys are Codex/Zack lane and should be backup-first:
+
+1. Confirm the target tree from systemd:
+   ```bash
+   systemctl show wavecam.service --property=WorkingDirectory --property=ExecStart --no-pager
+   ```
+2. Back up changed live files under
+   `/data/projects/gimbal/wavecam/.codex-backups/<timestamp>-<reason>/`.
+3. Copy only the changed files.
+4. Restart only `wavecam.service`.
+5. Verify:
+   ```bash
+   systemctl is-active wavecam.service
+   curl -s http://localhost:8088/api/v1/status
+   curl -s http://localhost:8088/api/v1/config
+   ```
+6. If media/recording changed, run a short record start/stop validation and
+   remove only the generated validation clip.
+
+## More Docs
+
+- `orin/wavecam/README.md` - WaveCam backend details.
+- `docs/ORIN_MAINTENANCE_RUNBOOK.md` - Orin maintenance, tether, backup, update, boot notes.
+- `docs/ORIN_FIELD_RELIABILITY.md` - IP/reachability and field reliability checks.
+- `docs/WaveCam_Guide.html` - Operator guide served by the backend.
