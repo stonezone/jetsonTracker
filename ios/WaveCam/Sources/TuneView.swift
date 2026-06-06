@@ -350,7 +350,7 @@ struct TuneView: View {
                     // Re-load controls so sliders reflect the preset's values.
                     loaded = false
                     await load()
-                    if result.restartRequired {
+                    if result.restartRequired && !result.restartKeys.isEmpty {
                         presetApplyRestartKeys = result.restartKeys
                         showPresetRestartNotice = true
                     }
@@ -587,8 +587,8 @@ struct TuneView: View {
 
         let presetsEnabled = client.mode == .mock || (cfg.supported?.presets == true)
         presetsSupported = presetsEnabled
-        if presetsEnabled, let loaded = await presetsTask {
-            tunePresets = loaded
+        if presetsEnabled, let fetchedPresets = await presetsTask {
+            tunePresets = fetchedPresets
         }
         colorPreset = cfg.current.color.preset
         yoloClass = cfg.current.detector.personClass

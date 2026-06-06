@@ -1016,10 +1016,13 @@ final class WaveCamClient {
     }
 
     /// GET /api/v1/media/download/{name} — streams bytes to a temp file and returns
-    /// its local URL. Uses the active `baseURL` (already resolved by the last status
-    /// or getWithFallback call) so USB-tether vs. Wi-Fi failover is already settled.
+    /// its local URL. Probes /status through getWithFallback first so the tether→Wi-Fi
+    /// route is settled before the streaming download (which can't fail over itself).
     func downloadMedia(name: String) async throws -> URL {
         guard mode == .live else { throw URLError(.resourceUnavailable) }
+        // Settle the active route (tether→Wi-Fi); URLSession.download uses a single
+        // resolved baseURL and has no failover of its own.
+        _ = try await getWithFallback("status")
         // Raw name — baseURL.appending(path:) encodes it once (pre-encoding double-encodes).
         let url = baseURL.appending(path: "media/download/\(name)")
         var req = URLRequest(url: url, timeoutInterval: 120)
@@ -1047,11 +1050,6 @@ final class WaveCamClient {
             lastControlError = error.localizedDescription
             return false
         }
-    }
-
-    /// Whether the Orin exposes the media-delete endpoint (GET /config supported.media_delete).
-    func mediaDeleteSupported() async -> Bool {
-        await config()?.supported?.mediaDelete ?? false
     }
 
     /// MJPEG monitor feed URL (GET /api/v1/preview.mjpeg), nil in mock mode.
