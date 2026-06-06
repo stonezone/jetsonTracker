@@ -129,6 +129,9 @@ private struct GuideButton: View {
                 .frame(width: 30, height: 30)
                 .background(WC.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(WC.accent.opacity(0.32)))
+                .frame(width: 44, height: 44)   // 44pt hit target around the 30pt badge
+                .contentShape(Rectangle())
+                .accessibilityLabel("Operator guide")
         }
         .buttonStyle(.plain)
         .padding(.trailing, 6)
@@ -210,6 +213,9 @@ private struct HoldToResumeButton: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Hold to resume")
             .accessibilityHint("Press and hold to clear the emergency stop")
+            // VoiceOver's activate (double-tap) can't fire onLongPressGesture, so expose
+            // resume as an explicit action — otherwise a VoiceOver user cannot clear KILL.
+            .accessibilityAction { action() }
     }
 }
 
