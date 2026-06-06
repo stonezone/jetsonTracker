@@ -1,4 +1,4 @@
-# Project Status — WaveCam (updated 2026-06-02)
+# Project Status — WaveCam (updated 2026-06-06)
 
 ## Project Goal
 
@@ -22,14 +22,14 @@ Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + d
 - [x] Live model on the Orin = **`yolov8n.engine`** (TensorRT)
 
 ### In Progress
-- [ ] iOS landscape parity (Live/PTZ have explicit landscape branches; Calibrate/Tools/Connect rely on ScrollViews — not yet landscape-optimized)
-- [ ] Repo/doc cleanup + Cinematic Zoom operator-guide flow (Codex)
+- [ ] LoRa/Wio GPS phase planning; hardware integration waits for the tracker hardware.
+- [ ] Field power buildout using fused 12V camera and 18V Orin buck-converter branches.
 
 ### Pending
 - [ ] **On-device test of Cinematic Zoom** on the rig (Zack)
 - [ ] **LoRa GPS phase**: integrate Wio Tracker L1 Lite for coarse point/zoom at distance; PTZ pan-home as heading reference
 - [ ] **YOLO26 TensorRT engine** export (maintenance window) — code default `yolo26n.pt` is not built/loaded; live = `yolov8n.engine`
-- [ ] Deferred iOS polish: full Dynamic Type, landscape 2-column for Calibrate/Connect, auth 401/403 routing
+- [ ] Deferred iOS polish and on-device accessibility validation
 
 ## Live System Map
 
@@ -51,8 +51,9 @@ Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + d
 ### Control API
 - `http://<orin>:8088/api/v1` — status / safety / ptz / media / config / telemetry / agent / system
 
-### Legacy gimbal (superseded, firmware kept in `nucleo/`)
-- STM32 Nucleo **F401RE**, UART `/dev/ttyACM0` @115200
+### Legacy gimbal and GPS relay
+- Archived under `archive/legacy-20260606/`
+- Not part of the active WaveCam runtime
 
 ## Architecture Flow (current)
 
@@ -69,7 +70,7 @@ iOS WaveCam app (operator) ──────► control API :8088 ──► PTZ
 ## Next Steps
 
 1. **Zack:** on-device Cinematic Zoom test (Tune → CINEMATIC ZOOM → on → set Subject size)
-2. **LoRa GPS phase:** wire the Wio Tracker for coarse point/zoom; map GPS bearing → pan via pan-home heading
+2. **LoRa GPS phase:** wire the Wio Tracker after hardware arrives; map GPS bearing → pan via pan-home heading
 3. **YOLO26 engine:** export `yolo26n.engine` (TensorRT) in a maintenance window if upgrading the detector
 4. **iOS:** finish landscape parity + deferred polish
 

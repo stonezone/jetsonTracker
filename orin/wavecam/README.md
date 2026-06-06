@@ -6,8 +6,8 @@ Prisual PTZ camera over RAW VISCA UDP, tracks the orange-confirmed person target
 records MP4 segments, and exposes guide/assets/logs/presets/media APIs.
 
 This backend replaces the old Watch/Cloudflare/Nucleo/stepper design. The old
-directories remain in the repo for reference, but they are not the active field
-runtime.
+code and docs are archived under `archive/legacy-20260606/` for reference and
+reuse, but they are not the active field runtime.
 
 ## Live Service
 
@@ -150,7 +150,7 @@ short recording and delete only the generated validation clip.
 
 - `yolo26n.pt` is not the live production model. The live Orin uses
   `yolov8n.engine`.
-- `gps_server.py`, Watch/iPhone relay, and Cloudflare GPS are legacy.
-- STM32/Nucleo stepper firmware is legacy; current movement is the Prisual PTZ.
-- The retired dashboard on `:8080` should remain stopped/disabled for normal
-  WaveCam operation.
+- `gps_server.py`, Watch/iPhone relay, Cloudflare GPS, STM32/Nucleo stepper
+  firmware, and the retired `:8080` dashboard are archived under
+  `archive/legacy-20260606/`.
+- Current movement is the Prisual PTZ through RAW VISCA UDP.

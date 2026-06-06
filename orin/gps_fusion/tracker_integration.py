@@ -1,4 +1,9 @@
-"""Integration of GPS fusion with vision tracker and gimbal."""
+"""Legacy GPS-fusion integration harness.
+
+This file predates the current WaveCam backend. It is kept as reference for the
+future Wio/LoRa GPS cueing phase, but the active runtime is `orin/wavecam/` and
+PTZ movement is handled there through the Prisual VISCA controller.
+"""
 
 import sys
 import time
@@ -26,11 +31,11 @@ class IntegratedTrackerConfig:
     model_path: str = '/data/projects/gimbal/models/yolov8n.engine'
     conf_threshold: float = 0.5
     
-    # GPS
-    gps_uri: str = 'ws://localhost:8765'  # Local gps_server.py
+    # GPS transport reference. Future Wio/LoRa work should replace this relay.
+    gps_uri: str = 'ws://localhost:8765'
     gps_enabled: bool = True
     
-    # Gimbal
+    # Legacy DIY gimbal reference, not active WaveCam PTZ control.
     gimbal_port: str = '/dev/ttyACM0'
     gimbal_enabled: bool = True
     
@@ -47,7 +52,7 @@ class IntegratedTrackerConfig:
 
 
 class IntegratedTracker:
-    """Combined GPS + Vision tracker with gimbal control."""
+    """Combined GPS + vision tracker with legacy gimbal control."""
     
     def __init__(self, config: IntegratedTrackerConfig):
         self.config = config

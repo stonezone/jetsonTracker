@@ -4,8 +4,9 @@ This directory contains the Jetson Orin software for WaveCam. The current
 production backend is `orin/wavecam/`: a FastAPI control API, vision tracker,
 PTZ controller, recorder, and live MJPEG/web surface for the Prisual PTZ camera.
 
-The older Watch/Cloudflare/Nucleo/stepper pipeline still exists in this repo for
-reference, but it is not the active WaveCam runtime.
+The older Watch/Cloudflare/Nucleo/stepper pipeline is archived under
+`archive/legacy-20260606/`. It is preserved for reference and reuse, but it is
+not the active WaveCam runtime.
 
 ## Current Runtime
 
@@ -45,12 +46,17 @@ These are not the active field runtime:
 
 | Path | Status |
 |---|---|
-| `gimbal_control/` | Legacy UART controller for the retired STM32 stepper gimbal |
-| `gps_server.py` | Legacy Watch/iPhone/Cloudflare GPS receiver |
 | `vision/` | Earlier standalone vision-follow experiments |
-| `dashboard/` | Retired `:8080` dashboard surface |
 | `gps_fusion/` | Reusable GPS math/pointing pieces; future LoRa work should port the useful parts into `wavecam/` |
 | `scripts/phone_webcam.sh` | Old DroidCam/scrcpy helper; not used by the Prisual PTZ stack |
+
+Archived retired paths:
+
+| Archived path | Contents |
+|---|---|
+| `../archive/legacy-20260606/apple-gps-cloudflare/` | Old GPS relay, Cloudflare config, GPS server, and GPS service files |
+| `../archive/legacy-20260606/stm32-nucleo-stepper/` | Old STM32/Nucleo firmware, DRV8825 wiring, and UART stepper controller |
+| `../archive/legacy-20260606/retired-dashboard/` | Old `:8080` dashboard service and Python files |
 
 ## Run On The Orin
 
@@ -112,4 +118,5 @@ Backend deploys are Codex/Zack lane and should be backup-first:
 - `orin/wavecam/README.md` - WaveCam backend details.
 - `docs/ORIN_MAINTENANCE_RUNBOOK.md` - Orin maintenance, tether, backup, update, boot notes.
 - `docs/ORIN_FIELD_RELIABILITY.md` - IP/reachability and field reliability checks.
+- `docs/hardware/WAVECAM_POWER_WIRING.md` - Current field-power wiring target.
 - `docs/WaveCam_Guide.html` - Operator guide served by the backend.

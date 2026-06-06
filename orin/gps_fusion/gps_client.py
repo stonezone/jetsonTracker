@@ -1,4 +1,9 @@
-"""WebSocket client for receiving GPS fixes from iPhone app."""
+"""Legacy WebSocket client for receiving GPS fixes.
+
+This adapter was written for the archived Watch/iPhone/Cloudflare relay. Keep it
+as a reference transport, but future Wio/LoRa work should feed normalized fixes
+into the pointing/fusion layer without depending on the old relay server.
+"""
 
 import asyncio
 import json
@@ -24,8 +29,8 @@ logger = logging.getLogger('gps_client')
 @dataclass
 class GPSState:
     """Current GPS state for both streams."""
-    gimbal: Optional[GeoPoint] = None  # Phone/base station GPS
-    target: Optional[GeoPoint] = None  # Watch/subject GPS
+    gimbal: Optional[GeoPoint] = None  # Camera-base GPS; name kept for compatibility
+    target: Optional[GeoPoint] = None  # Subject/target GPS
     gimbal_updated: float = 0.0
     target_updated: float = 0.0
     connected: bool = False
@@ -87,10 +92,10 @@ class GPSClient:
     def _handle_relay_update(self, data: Dict[str, Any]) -> None:
         """Handle a RelayUpdate envelope {base, remote, ...} from gps_server.
 
-        gps_server re-broadcasts the raw Watch/iPhone payload, which is a
+        The archived gps_server re-broadcasts the raw Watch/iPhone payload as a
         RelayUpdate envelope rather than a flat fix. Extract each side and route
-        it through _handle_fix. (MockGPSServer still sends flat fixes, handled
-        directly.)
+        it through _handle_fix. Future Wio/LoRa ingestion should normalize its
+        payload earlier and does not need this envelope shape.
         """
         remote = data.get('remote')
         if remote:

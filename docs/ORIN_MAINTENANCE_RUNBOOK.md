@@ -38,12 +38,19 @@ Read-only recon on 2026-06-01 shows the OS root is already on NVMe, but the boot
 | UEFI BootOrder | `0008` NVMe first, then `0001` SD | Firmware tries NVMe first, but currently falls back to SD because NVMe has no EFI partition. |
 | SD `mmcblk0p2`-`p15` | A/B kernel, DTB, recovery, ESP, UDA, reserved partitions | This is still a Jetson boot/recovery layout, not just a storage card. |
 
-Current service state during recon:
+Historical service state during 2026-06-01 recon:
 
-- `gps-server.service`: active on `:8765`
+- `gps-server.service`: was active on `:8765`; now archived legacy Watch/iPhone/Cloudflare GPS path
 - `dashboard.service`: retired legacy `:8080` dashboard; should remain stopped/disabled
-- `cloudflared.service`: active
+- `cloudflared.service`: was active during recon; not required for current WaveCam runtime
 - `wavecam.service`: active on `:8088`
+
+Current WaveCam runtime expectation:
+
+- `wavecam.service`: active on `:8088`
+- `dashboard.service`: stopped/disabled legacy `:8080` dashboard
+- `gps-server.service`: stopped/disabled unless deliberately testing archived legacy GPS relay code
+- `cloudflared.service`: not required for current vision-first WaveCam runtime
 
 Current package state:
 
@@ -170,7 +177,8 @@ If the iPhone interface appears but stays unmanaged:
 4. Only make NetworkManager changes persistent after a bench test proves:
    - iPhone internet works.
    - Camera LAN still reaches `192.168.100.88`.
-   - `cloudflared` and WaveCam still work after reconnect and reboot.
+   - WaveCam still works after reconnect and reboot.
+   - Any deliberately enabled remote-access service still works after reconnect and reboot.
 
 Feasibility:
 
@@ -245,14 +253,11 @@ Do this when the system is not actively tracking or recording.
    ```
 10. Verify after reboot:
    ```bash
-   systemctl is-active gps-server cloudflared wavecam
+   systemctl is-active wavecam
+   systemctl is-active dashboard gps-server 2>/dev/null || true
    ip -brief addr show enP8p1s0
    ip route get 192.168.100.88
    curl -s http://localhost:8088/api/v1/status
-   cd /data/projects/gimbal
-   python3 scripts/test_color_detector.py
-   python3 scripts/test_vision_follow_logic.py
-   python3 scripts/test_vision_assist.py
    ```
 
 ## Removable microSD Plan
