@@ -60,17 +60,13 @@ struct AgentView: View {
         let services = client.status?.services ?? [:]
         let preferred = ["wavecam", "supervisor", "gps_server", "cloudflared"]
         let known = preferred.map { name in
-            SupervisorService(name: name, state: services[name] ?? fallbackState(for: name))
+            SupervisorService(name: name, state: services[name] ?? "unknown")
         }
         let extras = services
             .filter { !preferred.contains($0.key) }
             .map { SupervisorService(name: $0.key, state: $0.value) }
             .sorted { $0.name < $1.name }
         return known + extras
-    }
-
-    private func fallbackState(for service: String) -> String {
-        "unknown"
     }
 
     private func summonDiagnostics() {

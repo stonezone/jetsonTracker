@@ -271,17 +271,20 @@ struct MediaView: View {
         loadState = .loading
         guard client.mode == .live else { loadState = .mockMode; return }
         do {
-            let fetched = try await client.mediaList()
+            async let listTask = client.mediaList()
+            async let cfgTask = client.config()
+            let fetched = try await listTask
             files = fetched
             loadState = .loaded
             if !didInitCollapse {
-                collapsedDays = Set(groupedDays.dropFirst().map(\.id)) // today open, older collapsed
+                collapsedDays = Set(groupedDays.dropFirst().map(\.id)) // newest day open, older collapsed
                 didInitCollapse = true
             }
             // Drop selections for files that no longer exist.
             let names = Set(fetched.map(\.name))
             selected = selected.intersection(names)
-            deleteSupported = await client.mediaDeleteSupported()
+            // Resolve delete-support from the same concurrent config fetch (was a 2nd serial GET /config).
+            deleteSupported = (await cfgTask)?.supported?.mediaDelete ?? false
         } catch let err as WaveCamAPIError where err.statusCode == 503 {
             loadState = .unavailable
         } catch {
@@ -312,15 +315,19 @@ struct MediaView: View {
     private func deleteSelected() async {
         guard !bulkBusy, deleteSupported else { return }
         bulkBusy = true
+        defer { bulkBusy = false }
         let targets = Array(selected)
         var anyOK = false
         for name in targets where await client.deleteMedia(name: name) {
             anyOK = true
         }
-        bulkBusy = false
-        selected.removeAll()
-        isSelecting = false
-        if anyOK { await load() }
+        // Only clear the selection + leave select mode when something actually deleted;
+        // on total failure keep the selection visible so it doesn't look like success.
+        if anyOK {
+            selected.removeAll()
+            isSelecting = false
+            await load()
+        }
     }
 }
 
@@ -483,7 +490,7 @@ private enum MediaLoadState: Equatable {
     case mockMode      // client.mode == .mock
 }
 
-enum DownloadState: Equatable {
+private enum DownloadState: Equatable {
     case idle
     case downloading
     case done(URL)
