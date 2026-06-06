@@ -1,221 +1,156 @@
-# WAVECAM — Vision-Only Testbed
+# WaveCam Backend
 
-Bring-up rig for the surf tracker: **camera + Orin + you in an orange jersey.**
-Proves the core before any GPS/LoRa work — color detection, YOLO26 person
-validation, fusion, and the VISCA visual-servo loop. **No GPS, no wave-state
-machine, no recording.** Drives the Prisual PTZ over the validated VISCA-over-IP
-path; you watch and tune from a phone/laptop browser.
+`orin/wavecam/` is the canonical backend for the live WaveCam rig. It runs on
+the Jetson Orin, serves the iOS app and browser UI on `:8088`, drives the
+Prisual PTZ camera over RAW VISCA UDP, tracks the orange-confirmed person target,
+records MP4 segments, and exposes guide/assets/logs/presets/media APIs.
 
-```
-camera (RTSP /2) ──► Orin ──► color(HSV) ┐
-                                          ├─ fusion ─► visual servo ─► VISCA pan/tilt
-                          YOLO26 person ──┘
-                          web console (MJPEG + PTZ owner + live tuning)
-```
+This backend replaces the old Watch/Cloudflare/Nucleo/stepper design. The old
+directories remain in the repo for reference, but they are not the active field
+runtime.
 
----
+## Live Service
 
-## 1. Install (Jetson Orin Nano, JetPack 6.2.x)
-
-```bash
-# system OpenCV (CUDA) is already on JetPack; verify:
-python3 -c "import cv2; print(cv2.__version__)"
-
-python3 -m pip install --upgrade pip
-pip install numpy pyyaml fastapi "uvicorn[standard]" "pydantic>=2"
-```
-
-**Torch / Ultralytics — do NOT `pip install torch` blindly on Jetson.**
-Install NVIDIA's JetPack 6.2 (CUDA 12.6) PyTorch wheel first, then Ultralytics:
-
-```bash
-# follow the Ultralytics NVIDIA Jetson guide for the exact JP6.2/cu126 wheel:
-#   https://docs.ultralytics.com/guides/nvidia-jetson
-pip install ultralytics
-```
-
-First run downloads `yolo26n.pt` (needs internet once). For speed, export a
-TensorRT engine **on the Orin** and point `detector.model` at it:
-
-```bash
-yolo export model=yolo26n.pt format=engine half=True   # builds yolo26n.engine (TRT 10.3)
-```
-
-> Desktop dev (no camera): `pip install opencv-python ultralytics`, set
-> `camera.source: 0` (webcam) and `ptz.enabled: false`.
-
----
-
-## 2. Configure
-
-Edit `config.yaml`:
-
-- `camera.source` → your Prisual sub-stream, e.g. `rtsp://<ip>:554/2`
-- `ptz.ip` → camera IP (VISCA on UDP `1259`)
-- `camera_ai.off_path` → your real `set_aimode` CGI (or just turn AI-track **off**
-  in the camera web UI)
-- `color.preset` → `orange_red` by default; hot-switchable to `orange`, `blue`,
-  `green`, `yellow`, or `pink`
-- `fusion.person_aim_y` → `0.5` centers the person box; lower values aim higher
-  in the YOLO box
-- `ptz.ff_gain` and `ptz.ff_deadzone_mult` → feed-forward lead controls; default
-  feed-forward is off, and feed-forward is suppressed near the deadzone
-- `ptz.cinematic_zoom_enabled` → optional person-box auto-zoom; default off.
-  `ptz.zoom_target_frac`, `ptz.zoom_deadband`, and `ptz.zoom_max_speed` tune the
-  subject size and zoom response.
-- leave **`ptz.enabled: false`** for the first run
-
----
-
-## 3. Run — in this order
-
-```bash
-python run.py
-# open  http://<orin-ip>:8088/   on your phone/laptop
-```
-
-**Step 1 — detection only (camera does NOT move).**
-Stand in frame in the orange jersey. You should see an amber box on the orange
-(color) and a grey `person` box (YOLO); the HUD shows `C Y  P Y  M Y` (color,
-person, matched) and a green locked box. Tune live from the Orin web UI:
-- glare giving false orange blobs → raise **min blob area**
-- wrong marker color → change **Color preset** first; edit HSV YAML only when the
-  preset is not enough
-- wrong orange object stealing lock → enable **Require YOLO person** or lower
-  **Color/YOLO match px**
-- not locking → lower **Lock threshold** or YOLO confidence; check the **Mask**
-  view to see what HSV is catching
-
-**Step 2 — confirm onboard AI-track is OFF** (web UI logs it, or check the camera).
-
-**Step 3 — enable the servo.** Set `ptz.enabled: true` (restart), keep
-`max_pan_speed`/`max_tilt_speed` conservative. Open `http://<orin-ip>:8088/`,
-then press **Start Auto** to give PTZ ownership to the autonomous tracker. Stand
-in frame and step side-to-side; the camera should follow and re-center.
-- **camera moves the WRONG way?** flip `invert_pan` / `invert_tilt` (sliders push
-  live values; persist them in `config.yaml`).
-- jittery / oscillating → raise **Deadband** or **FF deadband mult**, lower max
-  speeds, and keep **Feed-forward gain** low/off until the target is stable.
-- optional auto-framing → enable **Cinematic Zoom** only after pan/tilt tracking
-  is stable. It zooms only from a locked YOLO person box and holds zoom on
-  color-only/no-person frames.
-- **KILL** button stops PTZ instantly and latches; **RESUME** re-enables.
-- **Stop PTZ** sends stop and holds manual ownership; **Start Auto** hands PTZ
-  back to the tracker.
-
----
-
-## 4. Web console
-
-| Control | Effect |
+| Item | Value |
 |---|---|
-| live MJPEG | annotated: mask, color/person boxes, locked target, center + deadzone, command arrow, HUD |
-| KILL / RESUME | latch PTZ stopped / re-enable |
-| Start Auto | request autonomous PTZ owner `testbed`; refused while KILL is latched |
-| Stop PTZ | durable manual hold; camera stays stopped until Start Auto |
-| Zoom± / Zoom stop | manual zoom velocity commands with a server deadman; during auto tracking, manual zoom suppresses only Cinematic Zoom and leaves pan/tilt owner active |
-| Cinematic Zoom | hot toggle for person-box auto-zoom; default off; subject-size slider maps to `ptz.zoom_target_frac` |
-| Color preset | hot-switch HSV presets: `orange_red`, `orange`, `blue`, `green`, `yellow`, `pink` |
-| YOLO class / confidence / cadence | hot tune the validator trigger without restart |
-| Person aim Y | hot tune where the servo centers inside the person box |
-| PTZ tuning | hot tune deadband, feed-forward gain, feed-forward deadband multiplier, speeds, inversion |
-| Mask / JPEG quality | hot tune overlay and preview quality |
-| `GET /api/v1/status` | JSON state |
-| `GET /api/v1/config` | current config, supported presets/classes, hot keys, restart-only keys |
-| `POST /api/v1/config/hot` | live-safe atomic config patch; no restart; optional stale `revision` is rejected and `persist=true` is unsupported |
-| `POST /api/v1/system/restart` | CONFIG-scoped scheduled `wavecam.service` restart for restart-only changes |
+| Service | `wavecam.service` |
+| Working directory | `/data/projects/gimbal/wavecam` |
+| Config | `config.orin.servo.yaml` |
+| API base | `http://<orin>:8088/api/v1` |
+| Orin Wi-Fi | `192.168.1.155` |
+| iPhone tether default | `172.20.10.8` |
+| PTZ camera | `192.168.100.88` |
+| Camera LAN | Orin `192.168.100.10/24` to camera `192.168.100.88` |
+| Detector model | `/data/projects/gimbal/models/yolov8n.engine` |
+| Target loop FPS | `35`; live validation has shown 30+ FPS |
 
-Example hot patch:
+## Data Flow
+
+```text
+RTSP /2 sub-stream
+    -> capture
+    -> YOLOv8n TensorRT person detector
+    -> HSV orange/red color cue
+    -> fusion lock state
+    -> visual servo + cinematic zoom
+    -> RAW VISCA UDP pan/tilt/zoom commands
+
+RTSP /1 main stream
+    -> ffmpeg segmented MP4 recorder
+    -> /api/v1/media list/download/delete/status
+```
+
+PTZ ownership is centralized by `PtzOwner`. Manual controls, auto tracking,
+home, kill, and deadman behavior should route through that owner model rather
+than issuing side-channel camera commands.
+
+## Main Modules
+
+| Module | Role |
+|---|---|
+| `run.py` | Service entry point. Loads YAML and starts the WaveCam app. |
+| `wavecam/config.py` | YAML to typed dataclasses. |
+| `wavecam/control_api.py` | FastAPI routes, auth, status/config/media/presets/logs/guide. |
+| `wavecam/pipeline.py` | Capture/inference/fusion/control loop. |
+| `wavecam/controller.py` | PTZ speed decisions and cinematic zoom. |
+| `wavecam/ptz_owner.py` | PTZ owner/deadman coordination. |
+| `wavecam/ptz_visca.py` | RAW VISCA-over-UDP camera transport. |
+| `wavecam/fusion.py` | Color/person matching and lock/unlock state. |
+| `wavecam/detector.py` | YOLO inference wrapper. |
+| `wavecam/color_detector.py` | HSV color detection. |
+| `wavecam/recorder.py` | FFmpeg segmented recorder for RTSP `/1`. |
+| `wavecam/web.py` | MJPEG/live web surface and static guide assets. |
+
+## Configuration
+
+Production config is `config.orin.servo.yaml`.
+
+Important current values:
+
+- `camera.source`: `rtsp://192.168.100.88:554/2`
+- `ptz.ip`: `192.168.100.88`
+- `ptz.port`: `1259`
+- `detector.model`: `/data/projects/gimbal/models/yolov8n.engine`
+- `web.port`: `8088`
+- `loop.target_fps`: `35`
+
+Hot config is exposed through `POST /api/v1/config/hot`. Structural keys need a
+service restart through `POST /api/v1/system/restart`.
+
+Current hot controls include PTZ deadzone/speeds/inversion/feed-forward,
+cinematic zoom, fusion thresholds, color preset/areas, detector confidence and
+cadence, JPEG quality, and HUD visibility. Query `GET /api/v1/config` for the
+authoritative `supported`, `hot_keys`, and `restart_required_keys` sets.
+
+## API Checks
 
 ```bash
-curl -X POST http://<orin-ip>:8088/api/v1/config/hot \
+curl -s http://<orin>:8088/api/v1/status
+curl -s http://<orin>:8088/api/v1/config
+curl -s http://<orin>:8088/api/v1/media/status
+curl -s http://<orin>:8088/api/v1/presets
+curl -s http://<orin>:8088/guide
+```
+
+Recording controls:
+
+```bash
+curl -X POST http://<orin>:8088/api/v1/media/record/start \
   -H 'Content-Type: application/json' \
-  -d '{"patch":{"color.preset":"blue","fusion.require_person":true,"ptz.ff_deadzone_mult":1.8}}'
-```
+  -d '{"segment_seconds":120}'
 
-Hot config validates the whole batch before mutating live state. Invalid keys,
-invalid values, stale `revision`, or `persist:true` leave the live config and
-revision unchanged.
-
-Example Cinematic Zoom hot patch:
-
-```bash
-curl -X POST http://<orin-ip>:8088/api/v1/config/hot \
+curl -X POST http://<orin>:8088/api/v1/media/record/stop \
   -H 'Content-Type: application/json' \
-  -d '{"patch":{"ptz.cinematic_zoom_enabled":true,"ptz.zoom_target_frac":0.45}}'
+  -d '{}'
 ```
 
-Example restart after editing restart-only config:
+Recorder metadata contract:
+
+- `segment_pattern` and `segment_prefix` identify the active recording pattern.
+- `segment_name` is only an actual current segment while recording; it is `null`
+  until ffmpeg has created a segment file.
+- When not recording, `segment_name` may report the latest existing clip for
+  convenience.
+
+This avoids treating an older clip as the active recording immediately after
+`record/start`.
+
+## Tests
+
+From the repo root:
 
 ```bash
-curl -X POST http://<orin-ip>:8088/api/v1/system/restart \
-  -H 'Content-Type: application/json' \
-  -d '{"reason":"applied structural config","confirm_moving":true}'
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=orin/wavecam python3 -m pytest orin/wavecam/tests -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m compileall -q orin/wavecam/wavecam
+git diff --check
 ```
 
-If a PTZ owner is active, the restart request is refused until
-`confirm_moving:true` is supplied. A confirmed restart stops PTZ, sets status to
-`RESTARTING`, returns `202`, then asks systemd to restart `wavecam.service`.
+OpenCV is required for `tests/test_color.py`. On desktop, install
+`opencv-python-headless`; on Jetson, use the JetPack system OpenCV unless there
+is a specific reason to override it.
 
----
+## Live Deploy Pattern
 
-## 5. Verify the tricky bits offline (no hardware)
+Do not deploy by copying the whole repository over the live tree. Use a
+backup-first, file-scoped deploy:
 
 ```bash
-cd orin/wavecam
-python -m tests.test_offline
-python -m tests.test_controller_extra
-python -m tests.test_fusion
-python -m tests.test_cinematic_zoom
-python -m tests.test_control_api
-python -m pytest tests -q
-cd ..
-python scripts/test_vision_follow_logic.py
+ssh orin systemctl show wavecam.service --property=WorkingDirectory --property=ExecStart --no-pager
+ssh orin mkdir -p /data/projects/gimbal/wavecam/.codex-backups/<timestamp>-<reason>
+scp <changed-file> orin:/data/projects/gimbal/wavecam/<path>
+ssh orin sudo systemctl restart wavecam.service
+curl -s http://192.168.1.155:8088/api/v1/status
 ```
 
-Checks the RAW VISCA byte sequences (no Sony VISCA-over-IP header — what the
-Prisual uses on UDP 1259), speed clamps + stop, servo direction/speed mapping,
-feed-forward suppression near the deadzone, color/person fusion, Cinematic Zoom
-gating, Control API hot config, and the legacy Vision Follow target picker. Run
-these before trusting the control path.
+If the change affects PTZ behavior, verify the camera is in a safe state before
+and after restart. If the change affects recording or media, use a disposable
+short recording and delete only the generated validation clip.
 
----
+## Legacy Notes
 
-## 6. VISCA reconciliation
-
-`wavecam/ptz_visca.py` sends **RAW VISCA** — the classic `0x81 … 0xFF` command
-bytes with **no** Sony VISCA-over-IP 8-byte header, and parses raw `90 50 … FF`
-replies. That is what the Prisual speaks on UDP **1259** (no auth) —
-bench-validated end-to-end (pan/tilt/zoom, position readback, two-point
-calibration), ground truth in `orin/camera_control/visca_backend.py`. The
-controller depends only on the method interface (`pan_tilt`, `stop`, `zoom`,
-`home`, `inquire_pan_tilt`), so the transport stays swappable if a future camera
-needs the Sony framing header.
-
----
-
-## Layout
-
-```
-config.yaml            all tunables (safe defaults: PTZ off)
-run.py                 entrypoint
-wavecam/
-  config.py            YAML -> dataclasses
-  capture.py           threaded RTSP grabber (latest-frame, reconnect)
-  color_presets.py     shared HSV preset table for config/API/detector
-  color_detector.py    HSV preset blobs + contour filtering
-  detector.py          YOLO26 person validator (.pt or .engine)
-  fusion.py            color + YOLO -> smoothed target + lock hysteresis
-  controller.py        image error -> VISCA velocity (P + deadzone + guarded feed-forward)
-  ptz_visca.py         VISCA-over-IP UDP client
-  camera_http.py       best-effort onboard-AI-off (CGI)
-  overlay.py           annotated debug frame
-  pipeline.py          the deterministic loop + shared state
-  control_api.py       /api/v1 status, PTZ, safety, media, hot config
-  web.py               FastAPI: MJPEG, status, tune UI, kill/PTZ controls
-tests/test_offline.py  RAW VISCA bytes + servo math (no deps)
-```
-
-## Not in this rig (next steps)
-GPS/LoRa cueing, wave-state machine (riding vs back-out), recording + pre-roll
-buffer, encoder readback / GPS↔encoder calibration. See WAVECAM-EDS v2.2 §05–§16.
+- `yolo26n.pt` is not the live production model. The live Orin uses
+  `yolov8n.engine`.
+- `gps_server.py`, Watch/iPhone relay, and Cloudflare GPS are legacy.
+- STM32/Nucleo stepper firmware is legacy; current movement is the Prisual PTZ.
+- The retired dashboard on `:8080` should remain stopped/disabled for normal
+  WaveCam operation.
