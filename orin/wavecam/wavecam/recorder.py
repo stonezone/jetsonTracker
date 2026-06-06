@@ -49,6 +49,8 @@ class Recorder:
         self._popen = popen or self._default_popen
         self._now = now or self._default_now
         self._proc: ProcessLike | None = None
+        self._active_segment_pattern: str | None = None
+        self._active_segment_prefix: str | None = None
         self.config.rec_dir.mkdir(parents=True, exist_ok=True)
 
     def is_running(self) -> bool:
@@ -56,18 +58,35 @@ class Recorder:
 
     def start(self, segment_seconds: int | None = None) -> dict:
         if self.is_running():
-            return {"ok": True, "already": True}
+            return {
+                "ok": True,
+                "already": True,
+                "segment_pattern": self._active_segment_pattern,
+                "segment_prefix": self._active_segment_prefix,
+                "segment_name": self._current_segment_name(),
+            }
 
         seconds = int(segment_seconds or self.config.segment_seconds)
-        segment_name = f"wavecam_{self._now()}_%03d.mp4"
-        pattern = self.config.rec_dir / segment_name
+        segment_prefix = f"wavecam_{self._now()}_"
+        segment_pattern = f"{segment_prefix}%03d.mp4"
+        pattern = self.config.rec_dir / segment_pattern
         cmd = self._command(pattern, seconds)
         self._proc = self._popen(cmd)
-        return {"ok": True, "started": True, "segment_name": segment_name}
+        self._active_segment_prefix = segment_prefix
+        self._active_segment_pattern = segment_pattern
+        return {
+            "ok": True,
+            "started": True,
+            "segment_pattern": self._active_segment_pattern,
+            "segment_prefix": self._active_segment_prefix,
+            "segment_name": None,
+        }
 
     def stop(self) -> dict:
         if not self.is_running():
             self._proc = None
+            self._active_segment_pattern = None
+            self._active_segment_prefix = None
             return {"ok": True, "already_stopped": True}
 
         assert self._proc is not None
@@ -79,6 +98,8 @@ class Recorder:
             self._proc.kill()
             killed = True
         self._proc = None
+        self._active_segment_pattern = None
+        self._active_segment_prefix = None
 
         result = {"ok": True, "stopped": True}
         if killed:
@@ -86,15 +107,24 @@ class Recorder:
         return result
 
     def status(self) -> dict:
+        recording = self.is_running()
+        if not recording:
+            self._active_segment_pattern = None
+            self._active_segment_prefix = None
+
         segments = self._segments()
         total_bytes = sum(path.stat().st_size for path in segments)
         disk = shutil.disk_usage(self.config.rec_dir)
         latest = [path.name for path in segments[-5:]]
+        current_segment_name = self._current_segment_name() if recording else None
         return {
-            "recording": self.is_running(),
+            "recording": recording,
             "dir": str(self.config.rec_dir),
             "segments": len(segments),
-            "segment_name": latest[-1] if latest else None,
+            "segment_name": current_segment_name if recording else (latest[-1] if latest else None),
+            "current_segment_name": current_segment_name,
+            "segment_pattern": self._active_segment_pattern,
+            "segment_prefix": self._active_segment_prefix,
             "latest": latest,
             "total_mb": round(total_bytes / 1_000_000, 1) if segments else 0.0,
             "free_gb": round(disk.free / 1_000_000_000, 1),
@@ -125,6 +155,12 @@ class Recorder:
 
     def _segments(self) -> list[Path]:
         return sorted(self.config.rec_dir.glob("*.mp4"))
+
+    def _current_segment_name(self) -> str | None:
+        if not self._active_segment_prefix:
+            return None
+        active_segments = sorted(self.config.rec_dir.glob(f"{self._active_segment_prefix}*.mp4"))
+        return active_segments[-1].name if active_segments else None
 
     @staticmethod
     def _default_now() -> str:

@@ -1890,7 +1890,14 @@ def unknown_gps() -> dict:
 
 
 def unknown_media() -> dict:
-    return {"recording": False, "segment_name": None, "free_gb": None}
+    return {
+        "recording": False,
+        "segment_name": None,
+        "current_segment_name": None,
+        "segment_pattern": None,
+        "segment_prefix": None,
+        "free_gb": None,
+    }
 
 
 def normalize_media(status: dict) -> dict:

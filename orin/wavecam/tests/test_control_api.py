@@ -64,6 +64,9 @@ class DummyRecorder:
         self.media = {
             "recording": False,
             "segment_name": None,
+            "current_segment_name": None,
+            "segment_pattern": None,
+            "segment_prefix": None,
             "free_gb": 123.4,
             "segments": 0,
             "latest": [],
@@ -77,16 +80,27 @@ class DummyRecorder:
         self.media.update(
             {
                 "recording": True,
-                "segment_name": "wavecam_20260601_120000_%03d.mp4",
-                "segments": 1,
-                "latest": ["wavecam_20260601_120000_000.mp4"],
+                "segment_name": None,
+                "current_segment_name": None,
+                "segment_pattern": "wavecam_20260601_120000_%03d.mp4",
+                "segment_prefix": "wavecam_20260601_120000_",
+                "segments": 0,
+                "latest": [],
             }
         )
-        return {"ok": True, "started": True, "segment_name": self.media["segment_name"]}
+        return {
+            "ok": True,
+            "started": True,
+            "segment_name": None,
+            "segment_pattern": self.media["segment_pattern"],
+            "segment_prefix": self.media["segment_prefix"],
+        }
 
     def stop(self):
         self.stop_calls += 1
         self.media["recording"] = False
+        self.media["segment_pattern"] = None
+        self.media["segment_prefix"] = None
         return {"ok": True, "stopped": True}
 
 
@@ -1106,7 +1120,10 @@ def test_api_v1_media_status_reports_recorder_state():
     assert response.status_code == 200
     body = response.json()
     assert body["recording"] is True
-    assert body["segment_name"] == "wavecam_20260601_120000_%03d.mp4"
+    assert body["segment_name"] is None
+    assert body["current_segment_name"] is None
+    assert body["segment_pattern"] == "wavecam_20260601_120000_%03d.mp4"
+    assert body["segment_prefix"] == "wavecam_20260601_120000_"
     assert body["free_gb"] == 123.4
 
 
@@ -1120,7 +1137,10 @@ def test_api_v1_media_record_start_and_stop_control_recorder():
     started_body = started.json()
     assert started_body["ok"] is True
     assert started_body["media"]["started"] is True
+    assert started_body["media"]["segment_name"] is None
+    assert started_body["media"]["segment_pattern"] == "wavecam_20260601_120000_%03d.mp4"
     assert started_body["status"]["media"]["recording"] is True
+    assert started_body["status"]["media"]["segment_name"] is None
     assert pipe.recorder.started_with == [300]
 
     stopped = client.post("/api/v1/media/record/stop", json={})

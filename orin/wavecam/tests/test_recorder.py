@@ -62,7 +62,9 @@ def test_start_launches_rtsp_main_stream_copy_segments(tmp_path: Path):
 
     assert result["ok"] is True
     assert result["started"] is True
-    assert result["segment_name"] == "wavecam_20260601_120000_%03d.mp4"
+    assert result["segment_name"] is None
+    assert result["segment_pattern"] == "wavecam_20260601_120000_%03d.mp4"
+    assert result["segment_prefix"] == "wavecam_20260601_120000_"
     assert len(popen.commands) == 1
     cmd = popen.commands[0]
     assert cmd[:6] == ["ffmpeg", "-nostdin", "-loglevel", "error", "-rtsp_transport", "tcp"]
@@ -81,7 +83,13 @@ def test_start_is_idempotent_while_process_is_running(tmp_path: Path):
     recorder.start()
     second = recorder.start()
 
-    assert second == {"ok": True, "already": True}
+    assert second == {
+        "ok": True,
+        "already": True,
+        "segment_name": None,
+        "segment_pattern": "wavecam_20260601_120000_%03d.mp4",
+        "segment_prefix": "wavecam_20260601_120000_",
+    }
     assert len(popen.commands) == 1
 
 
@@ -116,19 +124,44 @@ def test_status_reports_latest_segment_and_disk_space(tmp_path: Path):
     latest = tmp_path / "wavecam_20260601_120000_000.mp4"
     older.write_bytes(b"a" * 3)
     latest.write_bytes(b"b" * 5)
-    popen = FakePopenFactory()
-    recorder = make_recorder(tmp_path, popen)
-    recorder.start()
+    recorder = make_recorder(tmp_path)
 
     status = recorder.status()
 
-    assert status["recording"] is True
+    assert status["recording"] is False
     assert status["segment_name"] == latest.name
+    assert status["current_segment_name"] is None
+    assert status["segment_pattern"] is None
+    assert status["segment_prefix"] is None
     assert status["segments"] == 2
     assert status["latest"] == [older.name, latest.name]
     assert status["total_mb"] == 0.0
     assert isinstance(status["free_gb"], float)
     assert status["dir"] == str(tmp_path)
+
+
+def test_status_does_not_report_old_clip_as_active_segment(tmp_path: Path):
+    old_clip = tmp_path / "wavecam_20260601_115900_000.mp4"
+    old_clip.write_bytes(b"old")
+    recorder = make_recorder(tmp_path)
+
+    recorder.start()
+    status_before_segment = recorder.status()
+
+    assert status_before_segment["recording"] is True
+    assert status_before_segment["segment_name"] is None
+    assert status_before_segment["current_segment_name"] is None
+    assert status_before_segment["segment_pattern"] == "wavecam_20260601_120000_%03d.mp4"
+    assert status_before_segment["segment_prefix"] == "wavecam_20260601_120000_"
+    assert status_before_segment["latest"] == [old_clip.name]
+
+    active_clip = tmp_path / "wavecam_20260601_120000_000.mp4"
+    active_clip.write_bytes(b"active")
+    status_after_segment = recorder.status()
+
+    assert status_after_segment["segment_name"] == active_clip.name
+    assert status_after_segment["current_segment_name"] == active_clip.name
+    assert status_after_segment["latest"] == [old_clip.name, active_clip.name]
 
 
 def test_main_stream_derives_prisual_main_rtsp_from_detection_substream():
