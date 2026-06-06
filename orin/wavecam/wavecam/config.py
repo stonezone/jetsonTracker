@@ -90,7 +90,7 @@ class WebCfg:
 
 @dataclass
 class LoopCfg:
-    target_fps: float = 25.0
+    target_fps: float = 35.0
     log_every_sec: float = 5.0
 
 

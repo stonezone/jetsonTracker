@@ -66,5 +66,5 @@ web:
   jpeg_quality: 70
 
 loop:
-  target_fps: 25
+  target_fps: 35
   log_every_sec: 5.0
