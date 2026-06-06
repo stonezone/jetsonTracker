@@ -7,8 +7,8 @@ Orin drives pan/tilt/zoom over RAW VISCA. LoRa/Meshtastic GPS cueing is a future
 phase for long-range coarse pointing.
 
 The old Apple Watch/iPhone/Cloudflare GPS relay and STM32/Nucleo stepper gimbal
-design is superseded. Those directories remain for reference, not as the active
-runtime.
+design is superseded. Retired code and docs are preserved under
+`archive/legacy-20260606/`, not deleted.
 
 ## Current Runtime
 
@@ -67,7 +67,7 @@ model instead of side-channel camera commands.
 | LoRa/Meshtastic GPS cueing | Design-only until hardware lands |
 | Long field soak under sustained tracking + recording | Not yet a full-session proof |
 | Full bare-metal Orin restore image | Not done; critical restore bundle exists in iCloud |
-| Legacy docs/assets cleanup | Ongoing; legacy paths are marked below |
+| Legacy docs/assets cleanup | Archived under `archive/legacy-20260606/` |
 
 ## Quick Checks
 
@@ -110,16 +110,15 @@ jetsonTracker/
 │   │   └── tests/
 │   ├── gps_fusion/           # Legacy/reusable GPS math for future LoRa cueing
 │   ├── vision/               # Earlier standalone vision experiments
-│   ├── dashboard/            # Retired :8080 dashboard
-│   └── gimbal_control/       # Legacy STM32 UART controller
+│   └── camera_control/       # Reusable VISCA/PTZ adapter experiments
 ├── ios/WaveCam/              # Native iOS operator app
 ├── docs/
 │   ├── WaveCam_Guide.html
 │   ├── ORIN_MAINTENANCE_RUNBOOK.md
 │   ├── ORIN_FIELD_RELIABILITY.md
+│   ├── hardware/WAVECAM_POWER_WIRING.md
 │   └── superpowers/specs/
-├── nucleo/                   # Legacy STM32 stepper firmware
-├── gps-relay-framework/      # Legacy Watch/iPhone GPS relay submodule
+├── archive/legacy-20260606/  # Preserved retired GPS, Nucleo, gimbal, dashboard material
 └── .agent-collab/            # Claude/Codex coordination bus
 ```
 
@@ -204,18 +203,20 @@ only the generated validation clip.
 - [WaveCam backend docs](orin/wavecam/README.md)
 - [Orin maintenance runbook](docs/ORIN_MAINTENANCE_RUNBOOK.md)
 - [Orin field reliability](docs/ORIN_FIELD_RELIABILITY.md)
+- [Field power wiring](docs/hardware/WAVECAM_POWER_WIRING.md)
 - [GPS/LoRa cueing design](docs/superpowers/specs/2026-06-05-gps-lora-cueing-design.md)
 
-## Legacy Areas
+## Archived Legacy Areas
 
 | Path | Legacy status |
 |---|---|
-| `nucleo/` | Retired STM32 stepper gimbal firmware |
-| `gps-relay-framework/` | Retired Watch/iPhone GPS relay |
-| `orin/gps_server.py` | Retired Cloudflare GPS receiver |
-| `orin/dashboard/` | Retired `:8080` dashboard |
-| `orin/gimbal_control/` | Retired UART stepper controller |
-| `orin/vision/` | Earlier standalone vision experiments |
+| `archive/legacy-20260606/apple-gps-cloudflare/` | Retired Watch/iPhone GPS relay, Cloudflare config, GPS server, GPS service files, and submodule pointer |
+| `archive/legacy-20260606/stm32-nucleo-stepper/` | Retired STM32/Nucleo firmware, DRV8825 wiring, serial protocol, and UART stepper controller |
+| `archive/legacy-20260606/custom-printed-gimbal/` | Retired custom printed gimbal docs |
+| `archive/legacy-20260606/retired-dashboard/` | Retired `:8080` dashboard |
+| `archive/legacy-20260606/retired-docs/` | Superseded architecture/setup/BOM/failure-mode docs |
+| `orin/vision/` | Earlier standalone vision experiments; left in place for now |
+| `orin/gps_fusion/` | Reusable GPS math/pointing pieces for future Wio/LoRa cueing |
 
 ## License
 

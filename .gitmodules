@@ -1,3 +1,3 @@
 [submodule "gps-relay-framework"]
-	path = gps-relay-framework
+	path = archive/legacy-20260606/apple-gps-cloudflare/gps-relay-framework
 	url = https://github.com/stonezone/gps-relay-framework.git

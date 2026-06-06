@@ -1,16 +1,16 @@
-"""Geographic calculations for GPS-based gimbal pointing.
+"""Geographic calculations for GPS-based camera pointing.
 
 HEADING SOURCES (in order of preference):
-1. Motor position after HOME_ALL (pan=0 = "forward") - RECOMMENDED
-   - No magnetometer interference from stepper motors
-   - Absolute accuracy with limit switches
-   - Use get_heading_from_motor_position() below
+1. PTZ pan-home reference (pan=0 = "forward") - RECOMMENDED
+   - No magnetometer dependency
+   - Operator can align the rig at setup, then GPS bearing maps to pan offset
+   - Future Wio/LoRa cueing should use this reference
 
-2. Compass heading from iPhone (Phase 1 testing only)
-   - Set gimbal.heading from iPhone CoreLocation
-   - Keep iPhone 1+ meter from gimbal to avoid interference
+2. Compass/heading from a validated base sensor
+   - Only use if the sensor is mounted away from magnetic interference
+   - Treat as fallback until validated on the field rig
 
-3. Course over ground (when gimbal is moving)
+3. Course over ground (when the camera base is moving)
    - Calculate from consecutive GPS positions
    - Only works when platform is moving > 0.5m
 
@@ -24,8 +24,8 @@ from typing import Optional, Tuple
 # Earth radius in meters
 EARTH_RADIUS_M = 6_371_000
 
-# Motor position constants (for heading calculation)
-# These values should match your stepper motor configuration
+# Legacy stepper constants retained for archived DIY-gimbal math. Current
+# WaveCam movement uses a Prisual PTZ camera, not NEMA17/DRV8825 steppers.
 STEPS_PER_REVOLUTION = 200  # NEMA17 standard
 MICROSTEPPING = 8  # DRV8825 set to 1/8
 GEAR_RATIO = 1.0  # Direct drive (adjust if using gears)
@@ -47,7 +47,7 @@ class GeoPoint:
 
 @dataclass
 class RelativePosition:
-    """Position of target relative to gimbal."""
+    """Position of target relative to the camera base."""
     bearing: float  # degrees from north (0-360)
     distance: float  # meters
     altitude_diff: float  # meters (positive = target above gimbal)
@@ -94,11 +94,11 @@ def normalize_angle(angle: float) -> float:
 def get_heading_from_motor_position(pan_steps: int,
                                       initial_heading: float = 0.0,
                                       steps_per_degree: float = STEPS_PER_DEGREE) -> float:
-    """Calculate gimbal heading from motor position.
+    """Calculate legacy DIY-gimbal heading from motor position.
 
-    RECOMMENDED over compass heading - avoids magnetometer interference from
-    stepper motor magnets. After HOME_ALL, pan=0 represents "forward" (whatever
-    direction the gimbal was placed facing).
+    This helper is retained for archived Nucleo/stepper reuse. Current WaveCam
+    uses a Prisual PTZ camera, so future LoRa cueing should prefer the PTZ
+    pan-home reference instead of step counts.
 
     Args:
         pan_steps: Current pan motor position in steps (from GET_POS command)
@@ -126,17 +126,16 @@ def get_heading_from_motor_position(pan_steps: int,
 
 def calculate_relative_position(gimbal: GeoPoint, target: GeoPoint,
                                   motor_heading: Optional[float] = None) -> RelativePosition:
-    """Calculate target position relative to gimbal.
+    """Calculate target position relative to the camera base.
 
     Args:
-        gimbal: Gimbal position (from GPS module or iPhone)
-        target: Target position (from Watch GPS via Cloudflare)
-        motor_heading: Optional heading from motor position (preferred over gimbal.heading)
-                      Use get_heading_from_motor_position() to calculate this
+        gimbal: Camera-base position. Name kept for compatibility with older code.
+        target: Target position from the future Wio/LoRa source or another normalized GPS feed.
+        motor_heading: Optional heading from a known pan-home/legacy motor reference.
 
     Heading Priority:
-        1. motor_heading parameter (if provided) - RECOMMENDED
-        2. gimbal.heading (from compass) - Phase 1 testing only
+        1. motor_heading parameter (if provided) - recommended for known rig heading
+        2. gimbal.heading (from a validated heading sensor)
         3. No heading adjustment (returns absolute bearing from north)
     """
     bearing = calculate_bearing(gimbal, target)
@@ -151,11 +150,10 @@ def calculate_relative_position(gimbal: GeoPoint, target: GeoPoint,
     # Priority: motor_heading > gimbal.heading > no adjustment
     rel_bearing = bearing
     if motor_heading is not None:
-        # PREFERRED: Use motor position as heading (no magnetometer interference)
+        # Preferred: use known rig heading rather than a live magnetometer.
         rel_bearing = normalize_angle(bearing - motor_heading)
     elif gimbal.heading is not None:
-        # FALLBACK: Use compass heading (Phase 1 testing only)
-        # Note: Keep iPhone 1+ meter from gimbal to avoid interference
+        # Fallback: use a validated heading sensor when available.
         rel_bearing = normalize_angle(bearing - gimbal.heading)
     # else: rel_bearing stays as absolute bearing from north
 
@@ -170,7 +168,7 @@ def calculate_relative_position(gimbal: GeoPoint, target: GeoPoint,
 def gps_to_gimbal_angles(rel_pos: RelativePosition, 
                           gimbal_height: float = 1.0,
                           target_height: float = 1.7) -> Tuple[float, float]:
-    """Convert relative position to pan/tilt angles.
+    """Convert relative position to PTZ pan/tilt angles.
     
     Args:
         rel_pos: Relative position from calculate_relative_position()

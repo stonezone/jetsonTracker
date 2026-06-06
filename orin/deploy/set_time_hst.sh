@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Align the Orin clock with the Watch/iPhone: Hawaii timezone + NTP time sync.
-# Epoch (UTC) timestamps drive the GPS pipeline, so this mainly fixes display TZ
-# and ensures the UTC clock is NTP-correct. Run on the Orin (passwordless sudo):
+# Align the Orin clock: Hawaii timezone + NTP time sync.
+# UTC timestamps drive logs, media metadata, and future GPS cueing, so this
+# mainly fixes display timezone and keeps the UTC clock NTP-correct.
+# Run on the Orin:
 #   bash /data/projects/gimbal/deploy/set_time_hst.sh
 set -e
 sudo timedatectl set-timezone Pacific/Honolulu

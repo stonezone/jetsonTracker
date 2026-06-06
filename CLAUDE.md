@@ -6,7 +6,7 @@
 
 > The DIY 2xNEMA17 stepper gimbal and the Apple-Watch/BN-220 GPS in the old "jetsonTracker" design are **SUPERSEDED**. The canonical current architecture lives in the `.claude` memory `wavecam-architecture-pivot` — verify against reality, not legacy docs.
 
-**Tech Stack**: Python (FastAPI control API, OpenCV, PyTorch/TensorRT) on the Orin; Swift/SwiftUI iOS app; C/STM32 (legacy gimbal firmware)
+**Tech Stack**: Python (FastAPI control API, OpenCV, PyTorch/TensorRT) on the Orin; Swift/SwiftUI iOS app. Archived legacy code includes C/STM32 firmware, but it is not active WaveCam runtime.
 **Database**: None (embedded/IoT project)
 **Development Environment**: Local Mac + Jetson Orin (Codex/Zack deploy to the Orin)
 
@@ -177,13 +177,12 @@ jetsonTracker/                 # master repo (product = WaveCam)
 │   └── wavecam/               # CANONICAL backend: FastAPI control API (/api/v1),
 │                              #   vision tracker, fusion, supervisor (Codex's lane)
 ├── ios/WaveCam/               # native iOS operator app, SwiftUI (xcodegen) (Claude's lane)
-├── nucleo/                    # legacy STM32 gimbal firmware (F401RE) — superseded by the PTZ
-├── gps-relay-framework/       # legacy watch/iOS GPS relay (submodule) — superseded by LoRa
 ├── docs/
 │   ├── superpowers/specs/     # design specs (control API, iOS app, cinematic zoom, supervisor)
-│   └── architecture/ api/ hardware/ wiring/ setup/
+│   └── hardware/              # current field-power wiring and hardware notes
+├── archive/legacy-20260606/   # archived legacy GPS relay, Nucleo, stepper gimbal, dashboard docs/code
 ├── .agent-collab/             # Claude+Codex coordination bus (claims, events, audit log)
-└── archive/                   # old jetsonTracker planning docs
+└── archive/                   # preserved retired material; do not delete without explicit request
 ```
 
 ### Development Workflow
@@ -204,7 +203,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 - **Camera**: Prisual **NDI PTZ** — RAW VISCA over UDP `192.168.100.88:1259` (no auth; NOT Sony 8-byte framed). Video = RTSP (`/1` 1080p60, `/2` 640x360); ONVIF `:81` backup.
 - **Compute**: Jetson Orin Nano (YOLOv8n TensorRT). Wired LAN `192.168.100.10`.
 - **GPS**: LoRa — SeeedStudio **Wio Tracker L1 Lite** (nRF52840, L76K multi-constellation, Meshtastic). Coarse point/zoom at distance; vision refines.
-- **Legacy gimbal**: STM32 Nucleo **F401RE** + 2x NEMA17 (the old DIY pan/tilt; firmware kept in `nucleo/`).
+- **Legacy gimbal**: STM32 Nucleo **F401RE** + 2x NEMA17 (the old DIY pan/tilt; firmware archived under `archive/legacy-20260606/stm32-nucleo-stepper/`).
 - **Operator app**: iOS WaveCam (iPhone-only, personal dev build) on the live `/api/v1`.
 - **Field uplink**: iPhone USB tether via the Orin's **USB-A host port** (`172.20.10.8/28`); Wi-Fi hotspot is the fallback.
 
@@ -213,7 +212,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 - **Orin ↔ Camera**: RAW VISCA UDP `192.168.100.88:1259`; video over RTSP.
 - **Orin control API**: `http://<orin>:8088/api/v1` (status / safety / ptz / media / config / telemetry / agent / system).
 - **Live detector model**: `yolov8n.engine` (TensorRT). To confirm what's running, trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`, or read `GET /api/v1/config`. (The `yolo26n.pt` code default is NOT what runs.)
-- **Legacy Orin ↔ STM32**: UART `/dev/ttyACM0` @115200 (F401RE gimbal).
+- **Legacy Orin ↔ STM32**: UART `/dev/ttyACM0` @115200 (F401RE gimbal), archived and not part of the active WaveCam runtime.
 - **Two-agent collab**: `.agent-collab/bin/collab.py` (emit / claim-open / claim-close). Claim before editing shared files.
 
 ## GPS Architecture (current)
