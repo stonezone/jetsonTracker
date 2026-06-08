@@ -73,3 +73,8 @@ web:
 loop:
   target_fps: 35
   log_every_sec: 5.0
+
+gps:
+  enabled: true
+  dev_path: /dev/ttyACM0
+  # remote_id: "!9f5802d5"   # optional; "" => auto-detect the non-local node

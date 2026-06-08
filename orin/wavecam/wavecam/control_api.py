@@ -1744,6 +1744,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
             "logs": True,
             "ptz_home": callable(getattr(getattr(pipeline, "ptz", None), "home", None)),
             "show_hud": True,
+            "gps": getattr(pipeline, "gps", None) is not None,
             "yolo_classes": list(YOLO_CLASSES),
             "person_aim_y": {
                 "0.20": "head/upper face",

@@ -95,6 +95,13 @@ class LoopCfg:
 
 
 @dataclass
+class GpsCfg:
+    enabled: bool = False
+    dev_path: str = "/dev/ttyACM0"
+    remote_id: str = ""  # "" => auto-detect the non-local mesh node
+
+
+@dataclass
 class Config:
     camera: CameraCfg
     ptz: PtzCfg
@@ -104,6 +111,7 @@ class Config:
     fusion: FusionCfg
     web: WebCfg
     loop: LoopCfg
+    gps: GpsCfg = field(default_factory=GpsCfg)
 
 
 def load_config(path: str) -> Config:
@@ -130,4 +138,5 @@ def load_config(path: str) -> Config:
         fusion=FusionCfg(**{**FusionCfg().__dict__, **_d(raw, "fusion", {})}),
         web=WebCfg(**{**WebCfg().__dict__, **_d(raw, "web", {})}),
         loop=LoopCfg(**{**LoopCfg().__dict__, **_d(raw, "loop", {})}),
+        gps=GpsCfg(**{**GpsCfg().__dict__, **_d(raw, "gps", {})}),
     )
