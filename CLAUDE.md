@@ -219,9 +219,12 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 **Plan**: LoRa GPS does coarse point + zoom when the subject is too far for YOLO/color to be reliable (toward 300m); vision (orange-confirmed person) refines once the subject is resolvable in-frame; **Cinematic Zoom** then holds subject size.
 
-- **GPS**: LoRa SeeedStudio Wio Tracker L1 Lite (Meshtastic). The Apple-Watch / BN-220 / iPhone-relay / Cloudflare-tunnel design is **DROPPED**.
-- **Heading reference**: PTZ pan-home = "forward"; pan offset from home maps a GPS bearing to a pan target. No magnetometer (avoids motor-magnet interference).
-- **Status**: GPS is a near-future phase; today's live pipeline is vision + Cinematic Zoom. See `docs/superpowers/specs/` for current designs.
+- **GPS (FINAL): LoRa-only, 2× SeeedStudio Wio Tracker L1 Lite** (nRF52840 + SX1262 LoRa + L76K GPS, Meshtastic). The Apple-Watch / BN-220 / iPhone-relay / **Cloudflare-tunnel** design is **DROPPED — do not reintroduce.**
+  - **Remote tracker** (on the subject): GPS + an **IMU** (heading/speed/motion) → feeds the pointing predictor to *lead* the surfer. Battery + Qi wireless charging.
+  - **Base tracker** (on the Orin, **USB-A serial** `/dev/ttyACM*`): receives the mesh; its own L76K GPS = the **camera/tripod reference position** (averaged once at setup).
+- **Heading reference**: PTZ pan-home = "forward"; pan offset from home maps a GPS bearing to a pan target. No magnetometer on the camera (motor-magnet interference). The IMU lives on the *subject*, far from the motors.
+- **Ingest**: Meshtastic serial client on the base Wio → `NormalizedFix` → the live-validated `orin/gps_fusion/` pointing stack. Spec: `docs/superpowers/specs/2026-06-05-gps-lora-cueing-design.md`.
+- **Status (2026-06-06)**: hardware on the bench; pointing math exists; remaining = Meshtastic ingest + config + wiring.
 
 ## Development Guidelines
 

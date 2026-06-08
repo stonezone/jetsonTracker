@@ -22,12 +22,12 @@ Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + d
 - [x] Live model on the Orin = **`yolov8n.engine`** (TensorRT)
 
 ### In Progress
-- [ ] LoRa/Wio GPS phase planning; hardware integration waits for the tracker hardware.
+- [ ] **LoRa GPS phase** — hardware **on the bench (2026-06-06)**: 2× Wio Tracker L1 Lite (remote = GPS + IMU on the subject; base = GPS on the Orin via USB-A serial, its fix = camera position). Decisions locked; next = Meshtastic ingest. Spec: `docs/superpowers/specs/2026-06-05-gps-lora-cueing-design.md`.
 - [ ] Field power buildout using fused 12V camera and 18V Orin buck-converter branches.
 
 ### Pending
 - [ ] **On-device test of Cinematic Zoom** on the rig (Zack)
-- [ ] **LoRa GPS phase**: integrate Wio Tracker L1 Lite for coarse point/zoom at distance; PTZ pan-home as heading reference
+- [ ] **LoRa GPS ingest**: Meshtastic serial reader on the base Wio → `NormalizedFix` → existing `gps_fusion` pointing; pan-home heading; base-Wio GPS = camera position; remote IMU enhances target prediction
 - [ ] **YOLO26 TensorRT engine** export (maintenance window) — code default `yolo26n.pt` is not built/loaded; live = `yolov8n.engine`
 - [ ] Deferred iOS polish and on-device accessibility validation
 
@@ -70,7 +70,7 @@ iOS WaveCam app (operator) ──────► control API :8088 ──► PTZ
 ## Next Steps
 
 1. **Zack:** on-device Cinematic Zoom test (Tune → CINEMATIC ZOOM → on → set Subject size)
-2. **LoRa GPS phase:** wire the Wio Tracker after hardware arrives; map GPS bearing → pan via pan-home heading
+2. **LoRa GPS phase:** hardware on bench — build the Meshtastic serial ingest (base Wio `/dev/ttyACM*` → `NormalizedFix`); map GPS bearing → pan via pan-home; base-Wio fix = camera position
 3. **YOLO26 engine:** export `yolo26n.engine` (TensorRT) in a maintenance window if upgrading the detector
 4. **iOS:** finish landscape parity + deferred polish
 
