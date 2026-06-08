@@ -103,7 +103,6 @@ struct WCStatus: Codable, Sendable {
     struct Network: Codable, Sendable {
         var cameraLan: Bool?
         var uplink: Bool?
-        var cloudflare: Bool?
     }
 }
 
@@ -128,9 +127,8 @@ extension WCStatus {
             gps: .init(source: "lora", targetAgeSec: 0.9, baseAgeSec: 120,
                        distanceM: 148.2, bearingDeg: 247.1, stale: false),
             media: .init(recording: true, segmentName: "20260601-123000.mp4", freeGb: 377.8),
-            services: ["wavecam": "running", "supervisor": "running", "gps_server": "running",
-                       "cloudflared": "degraded"],
-            network: .init(cameraLan: true, uplink: true, cloudflare: true)
+            services: ["wavecam": "running", "supervisor": "running"],
+            network: .init(cameraLan: true, uplink: true)
         )
     }
 }
@@ -990,8 +988,6 @@ final class WaveCamClient {
             (5600, "INFO",  "tracker",     "Subject LOCKED — confidence 0.91"),
             (6400, "DEBUG", "media",       "Segment rolled: 20260603-141500.mp4"),
             (7200, "INFO",  "api",         "POST /api/v1/config/hot applied 2 keys"),
-            (8000, "WARN",  "cloudflared", "Tunnel reconnect — attempt 1/3"),
-            (8800, "ERROR", "cloudflared", "Tunnel failed after 3 attempts — uplink degraded"),
         ]
         return lines.map { line in
             WCLogLine(

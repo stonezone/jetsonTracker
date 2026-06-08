@@ -58,7 +58,7 @@ struct AgentView: View {
 
     private var serviceRows: [SupervisorService] {
         let services = client.status?.services ?? [:]
-        let preferred = ["wavecam", "supervisor", "gps_server", "cloudflared"]
+        let preferred = ["wavecam", "supervisor"]
         let known = preferred.map { name in
             SupervisorService(name: name, state: services[name] ?? "unknown")
         }
@@ -145,8 +145,6 @@ private struct SupervisorService: Identifiable {
         switch name {
         case "wavecam": "wavecam.service"
         case "supervisor": "wavecam-supervisor"
-        case "gps_server": "gps-server"
-        case "cloudflared": "cloudflared"
         default: name.replacingOccurrences(of: "_", with: "-")
         }
     }
