@@ -193,7 +193,11 @@ class MeshtasticGps:
         """Stop the reader thread and release the serial interface."""
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(timeout=3.0)  # escape hatch if a serial read is in-flight
+            # If the reader is parked in a blocking serial read, Event.set() won't wake
+            # it, so join() times out and we drop the reference. The iface.close() below
+            # then unblocks that read; the daemon thread finishes unwinding on its own (or
+            # is reclaimed at process exit). Abandoning a wedged thread here is intentional.
+            self._thread.join(timeout=3.0)
             self._thread = None
         if self._iface is not None:
             try:
