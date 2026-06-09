@@ -59,6 +59,7 @@ class TrackingArbiter:
                vision: FusionResult,
                gps_fresh: bool,
                gps_calibrated: bool,
+               base_locked: bool,
                now_sec: float) -> ArbiterDecision:
         """Return who drives this frame.
 
@@ -66,8 +67,21 @@ class TrackingArbiter:
             vision: FusionResult from this frame.
             gps_fresh: True if GPS target_age < max_gps_age_sec.
             gps_calibrated: True if CameraPose is calibrated (pan_enc_per_deg ≠ 0).
+            base_locked: True if base GPS has a current fix (camera position known).
             now_sec: monotonic time for grace-window tracking.
         """
+        # --- GPS viability (C1: base must be locked) ---
+        gps_viable = gps_fresh and gps_calibrated and base_locked
+
+        # --- GPS→STOP on data loss (MUST run before state mutation) ---
+        # If we were GPS-tracking and GPS became unviable, release to idle
+        # (camera holds position, doesn't coast on stale bearing).
+        if not gps_viable and self._last_owner == "gps_tracker":
+            self._last_owner = "idle"
+            self._vision_owns = False
+            self._consecutive_locked = 0
+            return ArbiterDecision(owner="idle")
+
         # --- vision lock counting (hysteresis) ---
         if vision.locked:
             self._consecutive_locked += 1
@@ -75,18 +89,8 @@ class TrackingArbiter:
         else:
             self._consecutive_locked = 0
 
-        # --- GPS viability ---
-        gps_viable = gps_fresh and gps_calibrated
-
         # --- decide ownership ---
         owner = self._decide_owner(vision.locked, gps_viable, now_sec)
-
-        # --- GPS→STOP on data loss ---
-        # If we were GPS-tracking and GPS became unviable, release to idle
-        # (camera holds position, doesn't coast on stale bearing).
-        if not gps_viable and self._last_owner == "gps_tracker":
-            owner = "idle"
-
         self._last_owner = owner
         return ArbiterDecision(owner=owner)
 

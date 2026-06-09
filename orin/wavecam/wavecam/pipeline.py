@@ -15,6 +15,8 @@ from .capture import FrameGrabber
 from .color_detector import ColorDetector
 from .controller import VisualServo, STOP_CMD, PtzAbsoluteCommand
 from .fusion import Fusion
+from .gps_geo import GeoPoint
+from .gps_pointing import compute_target, ZoomCurve
 from .overlay import annotate
 from .ptz_owner import PtzOwner
 from .tracking_arbiter import TrackingArbiter
@@ -192,16 +194,13 @@ class Pipeline(threading.Thread):
             self._last_abs_cmd_key = key
             self._last_abs_cmd_time = now
 
-    def _gps_pointing_cmd(self):
-        """Compute a GPS absolute pointing command, or None if not viable."""
+    def _gps_pointing_cmd(self, fix):
+        """Compute a GPS absolute pointing command from a cached fix, or None."""
         if self.gps is None:
             return None
-        fix = self.gps.get_fix()
         cam = self.gps.get_camera_position()
         if fix is None or cam is None or not self.pose.calibrated:
             return None
-        from .gps_geo import GeoPoint
-        from .gps_pointing import compute_target, ZoomCurve
         base = GeoPoint(lat=cam[0], lon=cam[1], alt_m=cam[2] if len(cam) > 2 else 0.0)
         target = GeoPoint(lat=fix.lat, lon=fix.lon,
                           speed_mps=fix.speed, course_deg=fix.course)
@@ -296,24 +295,40 @@ class Pipeline(threading.Thread):
                     gps_fix.age_sec < getattr(self.cfg.gps, "stale_threshold_sec", 10.0)
                 ) if gps_fix else False
                 gps_calibrated = self.pose.calibrated
-                decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated, t0)
+                base_locked = (
+                    self.gps is not None and
+                    self.gps.get_camera_position() is not None
+                )
+                decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
+                                               base_locked, t0)
+                prev_state = self._arbiter_state
                 self._arbiter_state = decision.owner
 
+                # Atomic zoom handoff: kill old zoom before new owner takes zoom
+                if decision.owner != prev_state:
+                    self._send_zoom("stop")
+
                 if decision.owner == "vision_follow":
-                    if self.owner.owner == "testbed":
-                        self._send_cmd(cmd)       # existing velocity servo
+                    # Acquire owner if needed; gate on vision_follow/testbed
+                    if self.owner.owner not in ("vision_follow", "testbed"):
+                        self.owner.request("vision_follow")
+                    if self.owner.owner in ("vision_follow", "testbed"):
+                        self._send_cmd(cmd)
                         zoom_cmd = self._maybe_send_cinematic_zoom(fr, h)
+
                 elif decision.owner == "gps_tracker":
-                    if self.owner.owner in (None, "idle", "gps_tracker"):
+                    if self.owner.owner != "gps_tracker":
                         self.owner.request("gps_tracker")
-                    abs_cmd = self._gps_pointing_cmd()
+                    abs_cmd = self._gps_pointing_cmd(gps_fix)
                     if abs_cmd is not None:
                         self._send_absolute_cmd(abs_cmd)
                     else:
-                        # GPS math failed — stop and hold
                         self._send_cmd(STOP_CMD)
+
                 else:
-                    # idle — hold position, release GPS owner
+                    # idle — hold position, release any autonomous owner
+                    if self.owner.owner in ("vision_follow", "gps_tracker", "testbed"):
+                        self.owner.release(self.owner.owner)
                     self._send_cmd(STOP_CMD)
 
             # render

@@ -44,7 +44,6 @@ class PtzAbsoluteCommand:
 
 
 STOP_CMD = PtzCommand(1, 1, PAN_STOP, TILT_STOP)
-ABSOLUTE_STOP = PtzAbsoluteCommand(0, 0, None)  # placeholder — stop handled by pipeline
 
 
 class VisualServo:

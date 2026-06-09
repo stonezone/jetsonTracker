@@ -107,19 +107,21 @@ class ViscaIP:
         ]))
 
     def inquire_zoom(self) -> int | None:
-        """Zoom position inquiry -> unsigned 16-bit encoder value, or None."""
+        """Zoom position inquiry -> unsigned 16-bit encoder value, or None.
+        Same drain-then-send pattern as inquire_pan_tilt — lock held only
+        for the sendto, not the blocking recv loop."""
         self._drain()
         with self._lock:
             self._sock.sendto(bytes([self.addr, 0x09, 0x04, 0x47, 0xFF]),
                               (self.ip, self.port))
-            for _ in range(4):
-                try:
-                    data, _ = self._sock.recvfrom(64)
-                except socket.timeout:
-                    break
-                if len(data) >= 7 and data[0] == 0x90 and data[1] == 0x50:
-                    return ((data[2] << 12) | (data[3] << 8) |
-                            (data[4] << 4) | data[5])
+        for _ in range(4):
+            try:
+                data, _ = self._sock.recvfrom(64)
+            except socket.timeout:
+                break
+            if len(data) >= 7 and data[0] == 0x90 and data[1] == 0x50:
+                return ((data[2] << 12) | (data[3] << 8) |
+                        (data[4] << 4) | data[5])
         return None
 
     def home(self) -> None:
