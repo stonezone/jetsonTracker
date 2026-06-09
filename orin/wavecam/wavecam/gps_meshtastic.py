@@ -160,7 +160,11 @@ class MeshtasticGps:
             try:
                 nodes = self._iface.nodes or {}
                 remote = _remote_from_nodes(nodes, self._my_num, self.remote_id)
-                fix = self._to_fix(*remote[1:], now=time.time()) if remote is not None else None
+                if remote is not None:
+                    _id, lat, lon, ts = remote
+                    fix = self._to_fix(lat, lon, ts, now=time.time())
+                else:
+                    fix = None
                 cam = _camera_from_nodes(nodes, self._my_num)
                 base_node = next((x for x in nodes.values() if x.get("num") == self._my_num), None)
                 cam_ts = float((base_node.get("position") or {}).get("time") or 0.0)
