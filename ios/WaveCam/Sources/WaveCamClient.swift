@@ -103,7 +103,6 @@ struct WCStatus: Codable, Sendable {
     struct Network: Codable, Sendable {
         var cameraLan: Bool?
         var uplink: Bool?
-        var cloudflare: Bool?
     }
 }
 
@@ -128,9 +127,8 @@ extension WCStatus {
             gps: .init(source: "lora", targetAgeSec: 0.9, baseAgeSec: 120,
                        distanceM: 148.2, bearingDeg: 247.1, stale: false),
             media: .init(recording: true, segmentName: "20260601-123000.mp4", freeGb: 377.8),
-            services: ["wavecam": "running", "supervisor": "running", "gps_server": "running",
-                       "cloudflared": "degraded"],
-            network: .init(cameraLan: true, uplink: true, cloudflare: true)
+            services: ["wavecam": "running", "supervisor": "running"],
+            network: .init(cameraLan: true, uplink: true)
         )
     }
 }
@@ -1180,7 +1178,7 @@ final class WaveCamClient {
         // real source of truth for the resulting state).
         if response.ok == false {
             lastControlError = [response.code, response.message].compactMap(\.self).joined(separator: ": ")
-            if lastControlError?.isEmpty != false {
+            if (lastControlError ?? "").isEmpty {
                 lastControlError = "Control response reported failure."
             }
             return false
