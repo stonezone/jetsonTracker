@@ -116,6 +116,15 @@ struct CalibrateView: View {
             return
         }
 
+        // Heading is the aim-at-remote capture: it pairs the pan-motor position with
+        // the GPS base→remote bearing, so it needs a live bearing (base + remote fixes).
+        // Never capture the 0° fallback — that would write a bogus reference_heading.
+        if activeStepID == CalibrationStep.heading.id,
+           client.status?.gps?.bearingDeg == nil {
+            refusalMessage = "GPS bearing needed — aim at the remote and wait for base + remote GPS fixes (the GPS chip shows distance + bearing)."
+            return
+        }
+
         // Backend is available (or still probing) — send the real POST.
         Task { await performCapture() }
     }
@@ -153,17 +162,16 @@ struct CalibrateView: View {
 
     // MARK: - Capture value resolution
     //
-    // These are placeholder capture values sent with each POST.
-    // The heading/tilt/zoom steps instruct the operator to aim the camera
-    // manually; the backend reads motor position directly from the PTZ — the
-    // iOS app supplies only the annotation fields (source, note). The numeric
-    // fields below are required by the Pydantic models but carry the operator's
-    // current intent annotation rather than a computed motor value.
-    // TODO(calibration): once the backend exposes a "read current PTZ position"
-    // endpoint, replace these with live motor-position reads.
+    // The operator aims the camera manually; the backend reads the pan-motor position
+    // directly from the PTZ. The iOS app supplies the reference angle for each step.
+    //
+    // Heading is the real aim-at-remote value — the GPS base→remote bearing (the
+    // capture is gated on it being present in captureActiveStep, so the 0.0 fallback
+    // never reaches the backend). Tilt/zoom remain canonical anchors (level horizon /
+    // wide FOV) until their own captures are wired.
 
     private func resolvedHeadingDeg() -> Double {
-        // Use last known GPS bearing as a sensible default; fall back to 0.
+        // GPS base→remote bearing — captureActiveStep gates on this being non-nil.
         client.status?.gps?.bearingDeg ?? 0.0
     }
 
@@ -218,9 +226,9 @@ private struct CalibrationStep: Identifiable, Equatable {
 
     static let heading = CalibrationStep(
         id: 3,
-        title: "Heading - landmark",
-        headline: "Aim at a known landmark",
-        detail: "Center the camera on a fixed point you can identify on the map, such as a pier end or channel marker. WaveCam reads motor position and solves reference_heading without a magnetometer.",
+        title: "Heading — aim at remote",
+        headline: "Aim the camera at the remote tracker",
+        detail: "Place the LoRa remote where you can see it, center the camera on it, then capture. WaveCam reads the pan-motor position and pairs it with the GPS base→remote bearing to solve reference_heading — no magnetometer. Needs base + remote GPS fixes (the GPS chip shows distance + bearing).",
         actionTitle: "Capture heading",
         systemImage: "safari.fill"
     )
