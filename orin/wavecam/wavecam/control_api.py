@@ -457,6 +457,20 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         api.bump_revision()
         return api.calibration_ok()
 
+    @app.post("/api/v1/calibration/base-lock", dependencies=[Depends(require(PTZ))])
+    def calibration_base_lock(req: CalibrationBaseRequest):
+        refusal = api.validate_calibration_capture(req)
+        if refusal is not None:
+            return refusal
+        if api.pipeline.gps is None or api.pipeline.gps.get_camera_position() is None:
+            return api.refusal("gps_unavailable", "Base GPS has no fix yet.", 503)
+        api.capture_calibration("base_lock", {
+            "source": normalized_text(req.source, "unknown", 64),
+            "note": normalized_optional_text(req.note, 256),
+        })
+        api.bump_revision()
+        return api.calibration_ok()
+
 
 def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/media/status", dependencies=[Depends(require(READ))])
