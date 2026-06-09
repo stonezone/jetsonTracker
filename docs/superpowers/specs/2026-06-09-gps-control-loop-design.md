@@ -71,6 +71,17 @@ A single landmark gives pan; tilt-at-distance and the zoom-vs-distance curve get
 - Conservative coarse-point speeds; **on-rig validation before any field test**; vision FPS must stay **30+**.
 - The agent/supervisor rule is unchanged — it never autonomously moves the camera.
 
+## Review refinements (DeepSeek adversarial review — folded in)
+
+**Answers:** `gps_tracker` is already in `ptz_owner` OWNERS+AUTONOMOUS; the arbiter **replaces** the servo per-mode (no fight) via a **parallel `_send_absolute_cmd` path** — the velocity path stays untouched (anti-vibe). VISCA absolute is likely supported (`inquire_pan_tilt` already returns signed encoder counts; add `pan_tilt_absolute()` = cmd `0x02`, zoom = `0x01 04 47`); confirm on-rig by send→read-back, bridged by `pan_enc_per_deg≈4.47`. GPS math is < 50 µs/frame — zero FPS risk.
+
+**Required (safety/correctness gaps):**
+1. **GPS-loss → STOP, never coast.** If GPS goes stale or calibration is lost while GPS is driving, the arbiter must release to `idle` and **STOP + hold** — never keep moving toward a stale bearing.
+2. **Operator force-GPS override** (wrong surfer in a shared lineup): an operator-gated mode that suppresses the vision-lock→vision rule, with a **safety timeout** so it can't be left on by accident.
+3. **Atomic zoom handoff.** Pan/tilt **and** zoom authority transfer together — GPS owns zoom (distance curve) in GPS mode, vision owns it (cinematic) in vision mode; never split, or they fight.
+4. **Base revalidation.** Recheck the base position every ~30 s; if it drifts past a threshold (tripod bumped/moved) → `base_stale` → GPS disengages → STOP.
+5. **Conservative GPS speeds as config keys** (`gps.max_pan_speed`≈3–4 vs vision's 10, `gps.max_tilt_speed`≈2–3 vs 12) — GPS latency (~1 s poll) + bearing uncertainty (a few degrees at 300 m) would overshoot at high speed.
+
 ## Data feed + displays
 
 - `/status.gps`: `source`, `distance_m`, `bearing_deg` (camera→target), `target_age_sec`, `base_age_sec`, `stale` (age-derived), `owner`/`mode`.
