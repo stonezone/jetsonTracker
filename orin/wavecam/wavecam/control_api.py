@@ -1824,6 +1824,9 @@ def build_tracking(legacy: dict) -> dict:
     }
 
 
+STALE_THRESHOLD_SEC = 10.0
+
+
 def build_gps(pipeline, legacy: dict) -> dict:
     status = unknown_gps()
     source = gps_snapshot_source(pipeline, legacy)
@@ -1851,21 +1854,50 @@ def gps_snapshot_source(pipeline, legacy: dict):
             return method()
     get_fix = getattr(gps, "get_fix", None)
     if callable(get_fix):
-        return gps_fix_snapshot(get_fix())
+        fix = get_fix()
+        if fix is not None:
+            return gps_fix_snapshot(fix, gps)
     return None
 
 
-def gps_fix_snapshot(fix) -> dict | None:
+def gps_fix_snapshot(fix, gps=None) -> dict | None:
     if fix is None:
         return None
-    return {
+    from .gps_meshtastic import bearing_deg, haversine_m
+
+    target_age = getattr(fix, "age_sec", None)
+    snapshot = {
         "source": getattr(fix, "src", None),
-        "target_age_sec": getattr(fix, "age_sec", None),
-        "base_age_sec": None,
-        "distance_m": None,
-        "bearing_deg": getattr(fix, "course", None),
-        "stale": False,
+        "target_age_sec": target_age,
     }
+
+    # Compute camera→target distance and bearing when both positions are available
+    if gps is not None:
+        cam = getattr(gps, "get_camera_position", None)
+        cam_age = getattr(gps, "get_camera_age", None)
+        if callable(cam) and callable(cam_age):
+            cam_pos = cam()
+            base_age = cam_age()
+            if cam_pos is not None:
+                dist = haversine_m(cam_pos[0], cam_pos[1], fix.lat, fix.lon)
+                bearing = bearing_deg(cam_pos[0], cam_pos[1], fix.lat, fix.lon)
+                snapshot["distance_m"] = round(dist, 1)
+                snapshot["bearing_deg"] = round(bearing, 1)
+                snapshot["base_age_sec"] = round(base_age, 1) if base_age is not None else None
+                snapshot["stale"] = (
+                    target_age is not None and target_age > STALE_THRESHOLD_SEC
+                )
+                return snapshot
+
+    # Fallback: no camera position yet — bearing is null (fix.course is the
+    # remote's heading-of-travel, not a camera→target bearing)
+    snapshot.update({
+        "distance_m": None,
+        "bearing_deg": None,
+        "base_age_sec": None,
+        "stale": target_age is not None and target_age > STALE_THRESHOLD_SEC,
+    })
+    return snapshot
 
 
 def normalize_gps(status: dict) -> dict:
@@ -1911,7 +1943,6 @@ def build_network(legacy: dict) -> dict:
     return {
         "camera_lan": bool(legacy.get("connected", False)),
         "uplink": None,
-        "cloudflare": None,
     }
 
 

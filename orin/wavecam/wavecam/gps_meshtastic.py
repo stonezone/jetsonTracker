@@ -109,6 +109,7 @@ class MeshtasticGps:
         self._lock = threading.Lock()
         self._latest: Optional[NormalizedFix] = None
         self._cam: Optional[Tuple[float, float, float]] = None
+        self._cam_ts: float = 0.0
         # Reader lifecycle:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -145,9 +146,12 @@ class MeshtasticGps:
                 remote = _remote_from_nodes(nodes, self._my_num, self.remote_id)
                 fix = self._to_fix(*remote[1:], now=time.time()) if remote is not None else None
                 cam = _camera_from_nodes(nodes, self._my_num)
+                base_node = next((x for x in nodes.values() if x.get("num") == self._my_num), None)
+                cam_ts = float((base_node.get("position") or {}).get("time") or 0.0)
                 with self._lock:
                     self._latest = fix
                     self._cam = cam
+                    self._cam_ts = cam_ts
             except Exception as e:  # a reader error must not kill the thread or the app
                 log.warning("MeshtasticGps reader loop error: %s", e)
             self._stop.wait(self.poll_sec)
@@ -167,6 +171,13 @@ class MeshtasticGps:
         reference position), or None until the base has sky view + a fix."""
         with self._lock:
             return self._cam
+
+    def get_camera_age(self, now: Optional[float] = None) -> Optional[float]:
+        """Age of the base node's last fix in seconds, or None if no base fix yet."""
+        with self._lock:
+            if self._cam is None or self._cam_ts <= 0:
+                return None
+            return max(0.0, (time.time() if now is None else now) - self._cam_ts)
 
     def _to_fix(self, lat: float, lon: float, ts: float, now: float) -> NormalizedFix:
         """Derive a NormalizedFix, computing course/speed from the previous fix.
