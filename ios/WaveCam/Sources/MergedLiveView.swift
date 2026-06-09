@@ -533,6 +533,7 @@ private struct GlassLockChip: View {
 private struct GlassGPSChip: View {
     let status: WCStatus?
     let connected: Bool
+    @State private var showDetail = false
 
     private var gps: WCStatus.GPS? {
         guard connected, let g = status?.gps, g.source != nil else { return nil }
@@ -546,10 +547,18 @@ private struct GlassGPSChip: View {
 
     var body: some View {
         if let g = gps {
-            GlassChip(text: label(g),
-                      color: (!hasFix || stale) ? WC.warn : WC.ok,
-                      dot: hasFix && !stale)
-                .accessibilityLabel(voiceOver(g))
+            Button { showDetail = true } label: {
+                GlassChip(text: label(g),
+                          color: (!hasFix || stale) ? WC.warn : WC.ok,
+                          dot: hasFix && !stale)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(voiceOver(g))
+            .accessibilityHint("Shows GPS detail")
+            .popover(isPresented: $showDetail) {
+                GPSDetailCard(gps: g)
+                    .presentationCompactAdaptation(.popover)
+            }
         }
     }
 
@@ -568,6 +577,51 @@ private struct GlassGPSChip: View {
         if let b = g.bearingDeg { parts.append("bearing \(Int(b.rounded())) degrees") }
         parts.append(stale ? "stale" : "live")
         return parts.joined(separator: ", ")
+    }
+}
+
+/// Tap-through detail for the GPS chip — a solid, outdoor-legible readout so the field
+/// operator can see source, range/bearing, target freshness, and base-fix status (the
+/// base-fix line is the usual culprit when GPS is live but the camera isn't pointing).
+private struct GPSDetailCard: View {
+    let gps: WCStatus.GPS
+
+    var body: some View {
+        OperatorCard(title: "GPS") {
+            VStack(alignment: .leading, spacing: WCSpace.sm) {
+                row("Source", gps.source?.uppercased() ?? "—", WC.accent)
+                row("Range", gps.distanceM.map { "\(Int($0.rounded())) m" } ?? "—",
+                    gps.distanceM != nil ? WC.accent : WC.faint)
+                row("Bearing", gps.bearingDeg.map { "\(Int($0.rounded()))°" } ?? "—",
+                    gps.bearingDeg != nil ? WC.accent : WC.faint)
+                row("Target", targetText, (gps.stale ?? false) ? WC.warn : WC.ok)
+                row("Base fix", baseText, gps.baseAgeSec != nil ? WC.ok : WC.warn)
+            }
+            .frame(width: 230, alignment: .leading)
+        }
+    }
+
+    private func row(_ label: String, _ value: String, _ tint: Color) -> some View {
+        HStack(spacing: WCSpace.md) {
+            Text(label).font(WCFont.label).tracking(1.0).foregroundStyle(WC.faint)
+            Spacer(minLength: WCSpace.md)
+            Text(value).font(WCFont.mono).foregroundStyle(tint).lineLimit(1)
+        }
+    }
+
+    // null target_age with source present = remote hasn't reported a position yet.
+    private var targetText: String {
+        let fresh = !(gps.stale ?? false)
+        if let a = gps.targetAgeSec { return "\(fresh ? "LIVE" : "STALE") · \(age(a))" }
+        return fresh ? "LIVE" : "STALE"
+    }
+    // null base_age with source present = base GPS has no 3D fix (needs open sky).
+    private var baseText: String {
+        if let a = gps.baseAgeSec { return "LOCKED · \(age(a))" }
+        return "NO FIX — sky"
+    }
+    private func age(_ s: Double) -> String {
+        s < 60 ? "\(Int(s.rounded()))s" : "\(Int((s / 60).rounded()))m"
     }
 }
 
