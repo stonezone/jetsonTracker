@@ -1,0 +1,122 @@
+"""TrackingArbiter: coarse-point → vision-refine handoff state machine.
+
+Decides who drives the PTZ each frame — vision (velocity servo) or GPS (absolute
+pan/tilt/zoom) — with hysteresis so the two don't fight. Pure logic, no I/O.
+
+Inputs: FusionResult (vision confidence + lock), PointingTarget (GPS bearing +
+calibrated encoder targets), freshness/calibration flags.
+Output: source (vision_follow | gps_tracker) + optional search_roi for P2.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+from .fusion import FusionResult
+from .gps_pointing import PointingTarget
+
+
+@dataclass
+class ArbiterDecision:
+    """Output of the handoff state machine for one frame."""
+    owner: str                       # "vision_follow" | "gps_tracker"
+    # Non-None search_roi = GPS-cued region for the detector to focus on (P2).
+    # (cx, cy, w, h) in normalized frame coords [0,1].
+    search_roi: Optional[Tuple[float, float, float, float]] = None
+
+
+# Handoff config (tuned for surf filming at 50-300m)
+DEFAULT_LOCK_FRAMES = 5       # K consecutive locked → hand to vision
+DEFAULT_GRACE_SEC = 1.0       # unlock grace before falling back to GPS
+DEFAULT_MAX_GPS_AGE_SEC = 10.0  # GPS considered stale beyond this
+
+
+class TrackingArbiter:
+    """Coarse→fine handoff between GPS absolute pointing and vision velocity servo.
+
+    - VISION drives when FusionResult.locked (orange-confirmed person, confidence
+      ≥ lock threshold): existing visual servo. owner=vision_follow.
+    - GPS drives when *not* vision-locked AND GPS is fresh (age < max_age) AND
+      calibrated AND base-locked: absolute coarse-point to bearing.
+      owner=gps_tracker.
+    - Hysteresis: K consecutive locked frames → vision; grace window before → GPS.
+    - NEITHER (no lock, GPS stale/uncalibrated): owner stays idle → PTZ holds.
+      GPS is RELEASED on data loss (NOT coasted) — camera stops.
+    """
+
+    def __init__(self,
+                 lock_frames: int = DEFAULT_LOCK_FRAMES,
+                 grace_sec: float = DEFAULT_GRACE_SEC,
+                 max_gps_age_sec: float = DEFAULT_MAX_GPS_AGE_SEC):
+        self.lock_frames = lock_frames
+        self.grace_sec = grace_sec
+        self.max_gps_age_sec = max_gps_age_sec
+        self._consecutive_locked = 0
+        self._last_locked_time: Optional[float] = None
+        self._vision_owns = False  # True once vision takes over from GPS
+        self._last_owner: str = "idle"
+
+    def decide(self,
+               vision: FusionResult,
+               gps_fresh: bool,
+               gps_calibrated: bool,
+               now_sec: float) -> ArbiterDecision:
+        """Return who drives this frame.
+
+        Args:
+            vision: FusionResult from this frame.
+            gps_fresh: True if GPS target_age < max_gps_age_sec.
+            gps_calibrated: True if CameraPose is calibrated (pan_enc_per_deg ≠ 0).
+            now_sec: monotonic time for grace-window tracking.
+        """
+        # --- vision lock counting (hysteresis) ---
+        if vision.locked:
+            self._consecutive_locked += 1
+            self._last_locked_time = now_sec
+        else:
+            self._consecutive_locked = 0
+
+        # --- GPS viability ---
+        gps_viable = gps_fresh and gps_calibrated
+
+        # --- decide ownership ---
+        owner = self._decide_owner(vision.locked, gps_viable, now_sec)
+
+        # --- GPS→STOP on data loss ---
+        # If we were GPS-tracking and GPS became unviable, release to idle
+        # (camera holds position, doesn't coast on stale bearing).
+        if not gps_viable and self._last_owner == "gps_tracker":
+            owner = "idle"
+
+        self._last_owner = owner
+        return ArbiterDecision(owner=owner)
+
+    def _decide_owner(self, vision_locked: bool, gps_viable: bool,
+                      now_sec: float) -> str:
+        if vision_locked and self._consecutive_locked >= self.lock_frames:
+            # K consecutive locked frames → vision takes over
+            self._vision_owns = True
+            return "vision_follow"
+
+        if self._vision_owns:
+            # Vision had it — check if we should release to GPS
+            grace_elapsed = (
+                self._last_locked_time is not None and
+                (now_sec - self._last_locked_time) > self.grace_sec
+            )
+            if not vision_locked and grace_elapsed:
+                # Vision lost lock past grace window → release
+                self._vision_owns = False
+                if gps_viable:
+                    return "gps_tracker"
+                # No GPS available either — hold position
+                return "idle"
+            # Still in grace window or vision re-locked
+            return "vision_follow"
+
+        # Vision hasn't claimed ownership yet or lost it
+        if gps_viable:
+            return "gps_tracker"
+
+        # Neither vision locked nor GPS viable — hold position
+        return "idle"

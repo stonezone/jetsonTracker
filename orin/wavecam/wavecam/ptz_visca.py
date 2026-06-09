@@ -72,6 +72,56 @@ class ViscaIP:
             return
         self._send(bytes([self.addr, 0x01, 0x04, 0x07, p, 0xFF]))
 
+    def pan_tilt_absolute(self, pan_pos: int, tilt_pos: int,
+                          pan_speed: int = 5, tilt_speed: int = 5) -> None:
+        """Absolute pan/tilt positioning. pan_pos/tilt_pos are signed 16-bit
+        encoder values (same unit as inquire_pan_tilt returns). Speeds 1..24 (pan)
+        and 1..20 (tilt)."""
+        ps = max(1, min(0x18, int(pan_speed)))
+        ts = max(1, min(0x14, int(tilt_speed)))
+        # Clamp to signed 16-bit
+        pan = max(-0x8000, min(0x7FFF, int(pan_pos)))
+        tilt = max(-0x8000, min(0x7FFF, int(tilt_pos)))
+        # VISCA absolute position: 8x 01 06 02 VV WW 0Y0Y0Y0Y 0Z0Z0Z0Z FF
+        # Each position = 4 nibbles (2 bytes), big-endian signed
+        pan_unsigned = pan & 0xFFFF
+        tilt_unsigned = tilt & 0xFFFF
+        self._send(bytes([
+            self.addr, 0x01, 0x06, 0x02, ps, ts,
+            (pan_unsigned >> 12) & 0xF, (pan_unsigned >> 8) & 0xF,
+            (pan_unsigned >> 4) & 0xF, pan_unsigned & 0xF,
+            (tilt_unsigned >> 12) & 0xF, (tilt_unsigned >> 8) & 0xF,
+            (tilt_unsigned >> 4) & 0xF, tilt_unsigned & 0xF,
+            0xFF,
+        ]))
+
+    def zoom_absolute(self, zoom_pos: int) -> None:
+        """Set absolute zoom position. zoom_pos is an unsigned 16-bit encoder
+        value (0x0000=wide, 0x4000=max optical on Prisual)."""
+        z = max(0, min(0xFFFF, int(zoom_pos)))
+        self._send(bytes([
+            self.addr, 0x01, 0x04, 0x47,
+            (z >> 12) & 0xF, (z >> 8) & 0xF,
+            (z >> 4) & 0xF, z & 0xF,
+            0xFF,
+        ]))
+
+    def inquire_zoom(self) -> int | None:
+        """Zoom position inquiry -> unsigned 16-bit encoder value, or None."""
+        self._drain()
+        with self._lock:
+            self._sock.sendto(bytes([self.addr, 0x09, 0x04, 0x47, 0xFF]),
+                              (self.ip, self.port))
+            for _ in range(4):
+                try:
+                    data, _ = self._sock.recvfrom(64)
+                except socket.timeout:
+                    break
+                if len(data) >= 7 and data[0] == 0x90 and data[1] == 0x50:
+                    return ((data[2] << 12) | (data[3] << 8) |
+                            (data[4] << 4) | data[5])
+        return None
+
     def home(self) -> None:
         self._send(bytes([self.addr, 0x01, 0x06, 0x04, 0xFF]))
 
@@ -108,8 +158,11 @@ class NullPtz:
     """Stand-in when ptz.enabled is false — accepts calls, does nothing."""
     def reset_sequence(self): pass
     def pan_tilt(self, *a, **k): pass
+    def pan_tilt_absolute(self, *a, **k): pass
     def stop(self): pass
     def zoom(self, *a, **k): pass
+    def zoom_absolute(self, *a, **k): pass
     def home(self): pass
     def inquire_pan_tilt(self): return None
+    def inquire_zoom(self): return None
     def close(self): pass

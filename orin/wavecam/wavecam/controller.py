@@ -32,7 +32,19 @@ class PtzCommand:
         return self.pan_dir == PAN_STOP and self.tilt_dir == TILT_STOP
 
 
+@dataclass
+class PtzAbsoluteCommand:
+    """Absolute pan/tilt/zoom encoder targets for GPS coarse-pointing."""
+    pan_enc: int          # signed 16-bit pan encoder value
+    tilt_enc: int         # signed 16-bit tilt encoder value
+    zoom_enc: int | None = None   # None = don't drive zoom this frame
+
+    def key(self) -> Tuple[int, int, int | None]:
+        return (self.pan_enc, self.tilt_enc, self.zoom_enc)
+
+
 STOP_CMD = PtzCommand(1, 1, PAN_STOP, TILT_STOP)
+ABSOLUTE_STOP = PtzAbsoluteCommand(0, 0, None)  # placeholder — stop handled by pipeline
 
 
 class VisualServo:
