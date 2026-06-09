@@ -37,10 +37,13 @@ Goal: first on-rig validation of **GPS coarse-pointing** (camera pans/zooms to t
 ## 6. Vision-refine handoff (after C3 fix)
 - [ ] With the orange subject resolvable in-frame, confirm **vision takes over** from GPS (fine framing) and hands **back** to GPS when vision loses lock. *(Blocked until DeepSeek's C3 owner-release fix — see below.)*
 
-## Known items (as of overnight)
-- **C3 handoff (DeepSeek, pending):** GPS→vision takeover currently breaks (the pipeline claims a new PTZ owner without releasing the old; `ptz_owner.request` refuses cross-owner steals). Fix posted: release-before-request in both branches + gate the GPS send on owning. **GPS pointing (steps 4–5) works without this; the §6 handoff needs it.**
-- **VISCA absolute (on-rig):** `pan_tilt_absolute`/`zoom_absolute` need a send→read-back verify on the live camera (bridge `pan_enc_per_deg≈4.47`). DeepSeek can pair on this during a camera window.
-- **Base drift-revalidation:** base-lock is presence-gated, not drift-rechecked (bumped tripod mid-session). Fine for a controlled first test; P2 hardening.
+## ⚠️ Backend to-do BEFORE deploy (DeepSeek's lane — he went idle ~02:26; precise fixes are on the collab bus)
+1. **Calibration endpoint wiring — REQUIRED for steps 4–5.** Until this lands, `pose.calibrated` stays false and **GPS cannot point at all.** In `control_api` `/calibration/heading`: on capture, call `pipeline.pose.calibrate_pan_aim(pan_enc=<encoder already read>, bearing_deg=<heading_deg from iOS = GPS base→remote bearing>, enc_per_deg=4.47)` → `CameraPose.save()` to `camera_pose.json` → **load it on pipeline startup** into `pipeline.pose`. Add base-lock (`lock_base_position` → pose lat/lon) + expose `calibrated: bool` in `GET /calibration`. (`camera_pose.py` already has `calibrate_pan_aim`/`lock_base_position`/`save`/`load`; 21 tests pass.)
+2. **C3 owner-release fix — REQUIRED for step 6 (handoff); steps 4–5 work without it.** In the pipeline arbiter branches, release the outgoing autonomous owner before claiming the new one (`ptz_owner.request` refuses cross-owner steals) + gate the GPS send on owning. Otherwise once GPS claims from idle, vision can't take back (camera freezes at the GPS point).
+
+## Deferred (P2 / fine for a first test)
+- **VISCA absolute on-rig verify:** `pan_tilt_absolute`/`zoom_absolute` need a send→read-back check on the live camera (bridge `pan_enc_per_deg≈4.47`) — pair with DeepSeek in a camera window.
+- **Base drift-revalidation:** base-lock is presence-gated, not drift-rechecked (bumped tripod mid-session). P2 hardening.
 - **C2 force-GPS override:** deferred (E-Stop is the bailout for a wrong-subject lock).
 
 ## Branches
