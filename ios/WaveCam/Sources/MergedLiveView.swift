@@ -131,6 +131,7 @@ struct MergedLiveView: View {
             VStack {
                 HStack(alignment: .top) {
                     GlassLockChip(status: client.status, connected: client.connected)
+                    GlassGPSChip(status: client.status, connected: client.connected)
                     Spacer()
                     fullscreenToggleButton
                 }
@@ -520,6 +521,41 @@ private struct GlassLockChip: View {
                 GlassChip(text: "REC", color: WC.kill, dot: true)
             }
         }
+    }
+}
+
+/// At-a-glance LoRa GPS health on the feed. Feature-detected: shown only once the
+/// backend reports a gps.source, so the HUD stays clean until GPS is live. Colour +
+/// dot = freshness (green/live vs amber/stale); label carries the camera→target range.
+private struct GlassGPSChip: View {
+    let status: WCStatus?
+    let connected: Bool
+
+    private var gps: WCStatus.GPS? {
+        guard connected, let g = status?.gps, g.source != nil else { return nil }
+        return g
+    }
+
+    var body: some View {
+        if let g = gps {
+            GlassChip(text: label(g),
+                      color: (g.stale ?? false) ? WC.warn : WC.ok,
+                      dot: !(g.stale ?? false))
+                .accessibilityLabel(voiceOver(g))
+        }
+    }
+
+    private func label(_ g: WCStatus.GPS) -> String {
+        if let d = g.distanceM { return "GPS \(Int(d.rounded()))m" }
+        return "GPS"
+    }
+
+    private func voiceOver(_ g: WCStatus.GPS) -> String {
+        var parts = ["GPS"]
+        if let d = g.distanceM { parts.append("\(Int(d.rounded())) meters") }
+        if let b = g.bearingDeg { parts.append("bearing \(Int(b.rounded())) degrees") }
+        parts.append((g.stale ?? false) ? "stale" : "live")
+        return parts.joined(separator: ", ")
     }
 }
 
