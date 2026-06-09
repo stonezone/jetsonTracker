@@ -526,7 +526,10 @@ private struct GlassLockChip: View {
 
 /// At-a-glance LoRa GPS health on the feed. Feature-detected: shown only once the
 /// backend reports a gps.source, so the HUD stays clean until GPS is live. Colour +
-/// dot = freshness (green/live vs amber/stale); label carries the camera→target range.
+/// dot = freshness (green/live vs amber/stale); label carries the camera→target range
+/// and bearing — or "NO FIX" when GPS is live but the camera-reference (base) position
+/// hasn't locked yet (distance/bearing null), so the field operator sees *why* it's not
+/// pointing without SSHing the Orin.
 private struct GlassGPSChip: View {
     let status: WCStatus?
     let connected: Bool
@@ -536,25 +539,34 @@ private struct GlassGPSChip: View {
         return g
     }
 
+    // distance/bearing are null until BOTH the remote fix (source) and the base fix
+    // exist; with source live, a null distance means the base hasn't locked its 3D fix.
+    private var hasFix: Bool { gps?.distanceM != nil }
+    private var stale: Bool { gps?.stale ?? false }
+
     var body: some View {
         if let g = gps {
             GlassChip(text: label(g),
-                      color: (g.stale ?? false) ? WC.warn : WC.ok,
-                      dot: !(g.stale ?? false))
+                      color: (!hasFix || stale) ? WC.warn : WC.ok,
+                      dot: hasFix && !stale)
                 .accessibilityLabel(voiceOver(g))
         }
     }
 
     private func label(_ g: WCStatus.GPS) -> String {
-        if let d = g.distanceM { return "GPS \(Int(d.rounded()))m" }
-        return "GPS"
+        guard let d = g.distanceM else { return "GPS·NO FIX" }
+        if let b = g.bearingDeg {
+            return "GPS \(Int(d.rounded()))m·\(Int(b.rounded()))°"
+        }
+        return "GPS \(Int(d.rounded()))m"
     }
 
     private func voiceOver(_ g: WCStatus.GPS) -> String {
+        guard g.distanceM != nil else { return "GPS live, no base fix yet" }
         var parts = ["GPS"]
         if let d = g.distanceM { parts.append("\(Int(d.rounded())) meters") }
         if let b = g.bearingDeg { parts.append("bearing \(Int(b.rounded())) degrees") }
-        parts.append((g.stale ?? false) ? "stale" : "live")
+        parts.append(stale ? "stale" : "live")
         return parts.joined(separator: ", ")
     }
 }
