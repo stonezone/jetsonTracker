@@ -1889,10 +1889,11 @@ def gps_fix_snapshot(fix, gps=None) -> dict | None:
                 )
                 return snapshot
 
-    # Fallback: no camera position yet
+    # Fallback: no camera position yet — bearing is null (fix.course is the
+    # remote's heading-of-travel, not a camera→target bearing)
     snapshot.update({
         "distance_m": None,
-        "bearing_deg": getattr(fix, "course", None),
+        "bearing_deg": None,
         "base_age_sec": None,
         "stale": target_age is not None and target_age > STALE_THRESHOLD_SEC,
     })

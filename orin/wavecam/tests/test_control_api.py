@@ -1353,7 +1353,7 @@ def test_gps_fix_snapshot_falls_back_when_no_camera_position():
     snap = gps_fix_snapshot(fix, FakeGpsNoCam())
     assert snap is not None
     assert snap["distance_m"] is None
-    assert snap["bearing_deg"] == 45.0             # falls back to course
+    assert snap["bearing_deg"] is None              # null without camera position
     assert snap["base_age_sec"] is None
     assert snap["stale"] is False
 
