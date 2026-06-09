@@ -92,6 +92,19 @@ def main():
     pipe.recorder = Recorder(
         RecorderConfig(rtsp_main=main_stream_from_detection_source(cfg.camera.source))
     )
+    # LoRa GPS cue (Meshtastic): exposes the remote fix in /api/v1/status; does NOT
+    # drive the PTZ yet (pointing is a later phase). Failsafe — never blocks vision.
+    if getattr(cfg.gps, "enabled", False):
+        try:
+            from wavecam.gps_meshtastic import MeshtasticGps
+            _gps = MeshtasticGps(dev_path=cfg.gps.dev_path, remote_id=cfg.gps.remote_id or None)
+            if _gps.connect():
+                pipe.gps = _gps
+                print(f"[run] GPS: Meshtastic ingest connected on {cfg.gps.dev_path}")
+            else:
+                print("[run] GPS: enabled but connect failed; continuing without GPS")
+        except Exception as exc:  # never let GPS break the vision pipeline
+            print(f"[run] GPS init skipped (non-fatal): {exc}")
     pipe.start()
 
     app = build_app(pipe)
