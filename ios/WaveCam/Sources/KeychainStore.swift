@@ -18,8 +18,12 @@ enum KeychainStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        // Enforce the tight accessibility on the update path too — updating data alone
+        // leaves an item created by an older build at whatever (possibly weaker) class
+        // it was stored with.
         let updated = SecItemUpdate(query as CFDictionary,
-                                    [kSecValueData as String: data] as CFDictionary)
+                                    [kSecValueData as String: data,
+                                     kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly] as CFDictionary)
         if updated == errSecSuccess { return true }
         if updated == errSecItemNotFound {
             var insert = query

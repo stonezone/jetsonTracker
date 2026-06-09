@@ -1176,7 +1176,7 @@ final class WaveCamClient {
         // real source of truth for the resulting state).
         if response.ok == false {
             lastControlError = [response.code, response.message].compactMap(\.self).joined(separator: ": ")
-            if lastControlError?.isEmpty != false {
+            if (lastControlError ?? "").isEmpty {
                 lastControlError = "Control response reported failure."
             }
             return false

@@ -4,9 +4,8 @@ import SwiftUI
 
 /// Finite states for the manual PTZ command path.
 /// Pending states (stopping / startingAuto) suppress backend sync so an in-flight
-/// round-trip cannot be clobbered by the 1Hz status poll. This mirrors the
-/// previous PTZView-local enum; extracting it here makes it the single source of
-/// truth shared by PTZView and MergedLiveView.
+/// round-trip cannot be clobbered by the 1Hz status poll. Extracted here as the single
+/// source of truth for the manual PTZ controller used by MergedLiveView.
 enum PTZCommandState {
     case idle
     case manual
@@ -178,7 +177,7 @@ final class PTZManualController {
         }
     }
 
-    func backendHeldStop(client: WaveCamClient) -> Bool {
+    private func backendHeldStop(client: WaveCamClient) -> Bool {
         guard let ptz = client.status?.ptz else { return false }
         return ptz.owner == "manual" && ptz.panTiltCmd?.lowercased() == "stop"
     }
