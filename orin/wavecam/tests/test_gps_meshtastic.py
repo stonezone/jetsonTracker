@@ -207,4 +207,56 @@ def test_reader_thread_populates_snapshot_and_close_stops_it():
     g.close()
     assert g._thread is None
     assert fake.closed is True
+
+
+# --- camera age ---------------------------------------------------------------
+
+class _FakeIfaceWithBase:
+    def __init__(self):
+        self.nodes = {
+            "!base": {"num": 1, "position": {"latitude": 21.6, "longitude": -158.0, "altitude": 5, "time": 500}},
+            "!rem": {"num": 2, "user": {"id": "!rem"},
+                     "position": {"latitude": 21.0, "longitude": -158.1, "time": 600}},
+        }
+        self.closed = False
+
+    def getMyNodeInfo(self):
+        return {"num": 1}
+
+    def close(self):
+        self.closed = True
+
+
+def test_get_camera_age_returns_none_when_no_fix():
+    g = MeshtasticGps()
+    assert g.get_camera_age() is None
+
+
+def test_get_camera_age_returns_age_when_fix_exists():
+    g = MeshtasticGps()
+    g._cam = (21.6, -158.0, 5.0)
+    g._cam_ts = 1000.0
+    age = g.get_camera_age(now=1005.0)
+    assert age == 5.0
+
+
+def test_reader_populates_camera_age():
+    g = MeshtasticGps(poll_sec=0.02)
+    fake = _FakeIfaceWithBase()
+    g._iface = fake
+    g._my_num = 1
+    g.enabled = True
+    g._stop.clear()
+    g._thread = threading.Thread(target=g._reader_loop, name="meshtastic-gps", daemon=True)
+    g._thread.start()
+    time.sleep(0.1)
+
+    cam = g.get_camera_position()
+    assert cam is not None and cam[0] == 21.6
+    age = g.get_camera_age()
+    assert age is not None and age >= 0.0
+
+    g.close()
+    assert g._thread is None
+    assert fake.closed is True
     assert g.enabled is False

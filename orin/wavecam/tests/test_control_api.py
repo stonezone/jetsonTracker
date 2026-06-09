@@ -1295,4 +1295,81 @@ if __name__ == "__main__":
     test_api_v1_agent_summon_accepts_request_without_moving_camera()
     test_api_v1_media_status_reports_recorder_state()
     test_api_v1_media_record_start_and_stop_control_recorder()
+
+    # GPS snapshot (P0: real distance/bearing/stale computation)
+    test_gps_fix_snapshot_returns_none_when_no_fix()
+    test_gps_fix_snapshot_computes_real_distance_and_bearing()
+    test_gps_fix_snapshot_falls_back_when_no_camera_position()
+    test_gps_fix_snapshot_marks_stale_when_target_age_exceeds_threshold()
+
     print("CONTROL API TESTS PASSED")
+
+
+
+# --- GPS snapshot P0 ----------------------------------------------------------
+
+
+def test_gps_fix_snapshot_returns_none_when_no_fix():
+    from wavecam.control_api import gps_fix_snapshot
+    assert gps_fix_snapshot(None) is None
+
+
+def test_gps_fix_snapshot_computes_real_distance_and_bearing():
+    from wavecam.control_api import gps_fix_snapshot
+    from wavecam.gps_stub import NormalizedFix
+
+    class FakeGps:
+        def get_camera_position(self):
+            return (22.0, -158.0, 0.0)
+
+        def get_camera_age(self, now=None):
+            return 2.0
+
+    fix = NormalizedFix(lat=22.001, lon=-158.0, course=90.0, speed=5.0, ts=1000.0, age_sec=1.0, src="lora")
+    gps = FakeGps()
+    snap = gps_fix_snapshot(fix, gps)
+    assert snap is not None
+    assert snap["source"] == "lora"
+    assert snap["target_age_sec"] == 1.0
+    assert snap["base_age_sec"] == 2.0
+    # ~111m north of (22.0, -158.0) at 1° lat ≈ 111km → ~111m
+    assert 100 < snap["distance_m"] < 120
+    assert -5 < snap["bearing_deg"] < 5           # due north ≈ 0°
+    assert snap["stale"] is False                  # 1s age < 10s threshold
+
+
+def test_gps_fix_snapshot_falls_back_when_no_camera_position():
+    from wavecam.control_api import gps_fix_snapshot
+    from wavecam.gps_stub import NormalizedFix
+
+    class FakeGpsNoCam:
+        def get_camera_position(self):
+            return None
+
+        def get_camera_age(self, now=None):
+            return None
+
+    fix = NormalizedFix(lat=22.0, lon=-158.0, course=45.0, speed=0.0, ts=1000.0, age_sec=3.0, src="lora")
+    snap = gps_fix_snapshot(fix, FakeGpsNoCam())
+    assert snap is not None
+    assert snap["distance_m"] is None
+    assert snap["bearing_deg"] == 45.0             # falls back to course
+    assert snap["base_age_sec"] is None
+    assert snap["stale"] is False
+
+
+def test_gps_fix_snapshot_marks_stale_when_target_age_exceeds_threshold():
+    from wavecam.control_api import gps_fix_snapshot
+    from wavecam.gps_stub import NormalizedFix
+
+    class FakeGpsStale:
+        def get_camera_position(self):
+            return (22.0, -158.0, 0.0)
+
+        def get_camera_age(self, now=None):
+            return 12.0
+
+    fix = NormalizedFix(lat=22.0, lon=-158.0, course=0.0, speed=0.0, ts=1000.0, age_sec=15.0, src="lora")
+    snap = gps_fix_snapshot(fix, FakeGpsStale())
+    assert snap is not None
+    assert snap["stale"] is True                   # 15s > 10s threshold
