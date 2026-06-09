@@ -219,7 +219,7 @@ class Pipeline(threading.Thread):
                 self._send_zoom("stop")
                 return "hold"
             return None
-        if self.owner.owner != "testbed":
+        if self.owner.owner not in ("testbed", "vision_follow"):
             return None
         if self._cinematic_zoom_suppressed():
             if self._auto_zoom_is_moving():
