@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from .fusion import FusionResult
-from .gps_pointing import PointingTarget
 
 
 @dataclass

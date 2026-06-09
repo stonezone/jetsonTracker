@@ -1,5 +1,5 @@
 """Unit tests for TrackingArbiter — no hardware required."""
-from wavecam.tracking_arbiter import TrackingArbiter, ArbiterDecision
+from wavecam.tracking_arbiter import TrackingArbiter
 from wavecam.fusion import FusionResult
 
 
