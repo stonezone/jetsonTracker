@@ -598,6 +598,19 @@ class ControlApiAdapter:
         self._restart_pending = False
         self._restart_unit = "wavecam.service"
         self._calibration = empty_calibration_state()
+        # P1: load CameraPose from disk so calibration survives restarts
+        _pose_path = os.environ.get(
+            "WAVECAM_POSE_PATH",
+            os.path.join(os.path.dirname(__file__), "..", "..", "camera_pose.json"),
+        )
+        try:
+            from .camera_pose import CameraPose
+            loaded = CameraPose.load(_pose_path)
+            pipeline.pose = loaded
+            if loaded.calibrated:
+                print(f"[control_api] loaded calibrated pose from {_pose_path}")
+        except Exception:
+            pass  # no saved pose yet — start uncalibrated
         self._pending_restart_config: dict[str, Any] = {}
         self.presets = PresetStore(self)
         self.logs = LogAdapter(self)
@@ -663,13 +676,26 @@ class ControlApiAdapter:
 
     def calibration_state(self) -> dict:
         with self._lock:
-            return {
+            state = {
                 "reference_heading": self._calibration["reference_heading"],
                 "heading": copy_optional_dict(self._calibration["heading"]),
                 "tilt": copy_optional_dict(self._calibration["tilt"]),
                 "zoom": copy_optional_dict(self._calibration["zoom"]),
                 "updated_at_unix_ms": self._calibration["updated_at_unix_ms"],
+                # P1: GPS calibration status
+                "gps_calibrated": self.pipeline.pose.calibrated,
+                "base_locked": (
+                    self.pipeline.pose.lat != 0.0 or self.pipeline.pose.lon != 0.0
+                ),
             }
+            if state["gps_calibrated"]:
+                state["gps_pose"] = {
+                    "lat": self.pipeline.pose.lat,
+                    "lon": self.pipeline.pose.lon,
+                    "alt_m": self.pipeline.pose.alt_m,
+                    "pan_enc_per_deg": self.pipeline.pose.pan_enc_per_deg,
+                }
+            return state
 
     def validate_calibration_capture(self, req: CalibrationBaseRequest) -> JSONResponse | None:
         if self.pipeline.owner.killed:
@@ -688,6 +714,58 @@ class ControlApiAdapter:
             self._calibration["updated_at_unix_ms"] = captured_at
             if step == "heading":
                 self._calibration["reference_heading"] = entry["heading_deg"]
+                # P1: wire to CameraPose — read pan encoder, calibrate pan aim
+                heading_deg = entry.get("heading_deg")
+                if heading_deg is not None and self.pipeline.ptz is not None:
+                    enc = self.pipeline.ptz.inquire_pan_tilt()
+                    if enc is not None:
+                        self.pipeline.pose.calibrate_pan_aim(
+                            enc=float(enc[0]),
+                            bearing_deg=float(heading_deg),
+                            enc_per_deg=4.47,
+                        )
+                        self._save_pose()
+            elif step == "base_lock":
+                # P1: lock base GPS position for camera reference
+                from .camera_pose import lock_base_position
+                if self.pipeline.gps is not None:
+                    cam_pos = self.pipeline.gps.get_camera_position()
+                    if cam_pos is not None:
+                        # Single-fix lock (averaging done by GPS chip)
+                        fixes = [(cam_pos[0], cam_pos[1], cam_pos[2], None)]
+                        base = lock_base_position(fixes)
+                        if base is not None:
+                            self.pipeline.pose.lat = base[0]
+                            self.pipeline.pose.lon = base[1]
+                            self.pipeline.pose.alt_m = base[2]
+                            self._save_pose()
+            elif step == "tilt":
+                # P1: tilt calibration (two-point)
+                tilt_deg = entry.get("tilt_deg")
+                if tilt_deg is not None and self.pipeline.ptz is not None:
+                    enc = self.pipeline.ptz.inquire_pan_tilt()
+                    if enc is not None:
+                        prev = self._calibration.get("tilt")
+                        if prev and prev.get("tilt_deg") is not None:
+                            prev_enc = self.pipeline.ptz.inquire_pan_tilt()
+                            if prev_enc is not None:
+                                # Use the tilt value from the encoder result
+                                pass  # Two-point requires storing prev tilt enc
+                        # Single-point tilt for now (sets anchor)
+                        self.pipeline.pose.tilt_anchor_enc = float(enc[1])
+                        self.pipeline.pose.tilt_anchor_elev = float(tilt_deg)
+                        self._save_pose()
+
+    def _save_pose(self) -> None:
+        """Persist CameraPose to disk so calibration survives restarts."""
+        try:
+            path = os.environ.get(
+                "WAVECAM_POSE_PATH",
+                os.path.join(os.path.dirname(__file__), "..", "..", "camera_pose.json"),
+            )
+            self.pipeline.pose.save(path)
+        except Exception as e:
+            print(f"[control_api] pose save failed: {e}")
 
     def resume_without_autostart(self) -> None:
         with self._lock:
