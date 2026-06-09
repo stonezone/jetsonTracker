@@ -23,15 +23,13 @@ import urllib.request
 from dataclasses import dataclass
 
 DEFAULT_API = "http://127.0.0.1:8088/api/v1"
-DEFAULT_UNITS = ("wavecam.service", "gps-server.service", "cloudflared.service")
+DEFAULT_UNITS = ("wavecam.service",)
 DEFAULT_HEALTH_PATH = "/run/wavecam/supervisor.json"
 DEFAULT_INTERVAL_SEC = 2.0
 
 # status-snapshot short name -> systemd unit (for control_api integration)
 SNAPSHOT_SERVICE_NAMES = {
     "wavecam": "wavecam.service",
-    "gps_server": "gps-server.service",
-    "cloudflared": "cloudflared.service",
 }
 
 
