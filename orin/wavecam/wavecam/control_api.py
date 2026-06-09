@@ -1916,7 +1916,7 @@ def build_tracking(legacy: dict) -> dict:
     }
 
 
-STALE_THRESHOLD_SEC = 10.0
+STALE_THRESHOLD_SEC = 60.0  # matches config.orin.servo.yaml gps.stale_threshold_sec
 
 
 def build_gps(pipeline, legacy: dict) -> dict:
