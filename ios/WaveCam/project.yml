@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.stonezone
   deploymentTarget:
     iOS: "17.0"
+    watchOS: "10.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -24,3 +25,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.stonezone.WaveCam
         INFOPLIST_FILE: Info.plist
+    dependencies:
+      - target: WaveCamWatch
+        embed: true
+
+  WaveCamWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - Sources-Watch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.stonezone.WaveCam.watchkitapp
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.stonezone.WaveCam
+        INFOPLIST_KEY_WKApplication: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"
+        TARGETED_DEVICE_FAMILY: "4"
