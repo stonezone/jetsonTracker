@@ -141,22 +141,28 @@ struct TuneView: View {
                 colorCard
                 advancedMotionCard
 
-                if !restartKeys.isEmpty {
-                    OperatorCard(title: "SERVICE") {
+                // Always visible — restarting the service is beach first-aid (GPS
+                // Ingest DOWN, wedged camera link), not just a restart-keys helper.
+                OperatorCard(title: "SERVICE") {
+                    Text("First aid: restarts the vision service on the Orin (PTZ stops first). Fixes GPS Ingest DOWN and a wedged camera link. ~15 s outage.")
+                        .font(WCFont.caption).foregroundStyle(WC.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if !restartKeys.isEmpty {
+                        OperatorDivider()
                         Text("Restart-only settings (change on the Orin web UI, then restart):")
                             .font(WCFont.caption).foregroundStyle(WC.muted)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text(restartKeys.joined(separator: ", "))
                             .font(WCFont.captionMono).foregroundStyle(WC.faint)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        GlassButton(
-                            label: "Restart WaveCam",
-                            icon: "arrow.clockwise.circle",
-                            role: .normal,
-                            disabled: client.mode != .live,
-                            action: { showRestartConfirm = true }
-                        )
                     }
+                    GlassButton(
+                        label: "Restart WaveCam",
+                        icon: "arrow.clockwise.circle",
+                        role: .normal,
+                        disabled: client.mode != .live,
+                        action: { showRestartConfirm = true }
+                    )
                 }
 
                 Text("Tuning changes apply live (no restart). Restart-only keys are under Service.")

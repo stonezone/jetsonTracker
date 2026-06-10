@@ -595,6 +595,8 @@ private struct GlassGPSChip: View {
 /// base-fix line is the usual culprit when GPS is live but the camera isn't pointing).
 private struct GPSDetailCard: View {
     let gps: WCStatus.GPS
+    @Environment(WaveCamClient.self) private var client
+    @State private var confirmRestart = false
 
     var body: some View {
         OperatorCard(title: "GPS") {
@@ -608,9 +610,25 @@ private struct GPSDetailCard: View {
                 row("Base fix", baseText, gps.baseAgeSec != nil ? WC.ok : WC.warn)
                 if let alive = gps.readerAlive {
                     row("Ingest", ingestText(alive), alive ? WC.ok : WC.warn)
+                    // The fix for a dead reader IS a service restart — put the button
+                    // where the operator is looking when they discover it.
+                    if !alive {
+                        GlassButton(
+                            label: "Restart WaveCam service",
+                            icon: "arrow.clockwise.circle",
+                            role: .normal,
+                            disabled: client.mode != .live,
+                            action: { confirmRestart = true }
+                        )
+                    }
                 }
             }
             .frame(width: 230, alignment: .leading)
+        }
+        .confirmationDialog("Restart the vision service? PTZ stops first; ~15 s outage.",
+                            isPresented: $confirmRestart, titleVisibility: .visible) {
+            Button("Restart", role: .destructive) { Task { await client.systemRestart() } }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
