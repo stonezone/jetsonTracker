@@ -279,6 +279,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_config_routes(app, adapter)
     register_system_routes(app, adapter)
     register_agent_routes(app, adapter)
+    register_health_routes(app, adapter)
 
 
 def register_version_routes(app: FastAPI) -> None:
@@ -636,6 +637,27 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/agent/summon", dependencies=[Depends(require(SERVICE))])
     def agent_summon(req: AgentSummonRequest | None = None):
         return api.request_agent_summon(req or AgentSummonRequest())
+
+
+def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/health", dependencies=[Depends(require(READ))])
+    def health():
+        reg = getattr(api.pipeline, "health", None)
+        snap = reg.snapshot() if reg else {"ok": False, "components": {}}
+        gps = getattr(api.pipeline, "gps", None)
+        if gps is not None:
+            alive = gps.reader_alive() if callable(getattr(gps, "reader_alive", None)) else None
+            age = gps.last_poll_age_sec() if callable(getattr(gps, "last_poll_age_sec", None)) else None
+            snap["components"]["gps_reader"] = {"ok": bool(alive), "age_sec": age, "detail": {}}
+            snap["ok"] = snap["ok"] and bool(alive)
+        try:
+            import shutil
+            free_gb = shutil.disk_usage(str(api.pipeline.recorder.config.rec_dir)).free / 1e9
+            snap["components"]["disk"] = {"ok": free_gb > 5.0, "age_sec": 0,
+                                          "detail": {"free_gb": round(free_gb, 1)}}
+        except Exception:
+            pass
+        return snap
 
 
 class ControlApiAdapter:

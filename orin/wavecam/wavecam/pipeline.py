@@ -86,6 +86,9 @@ class Pipeline(threading.Thread):
         self.pose = CameraPose()
         # GPS source — set by run.py after connect(); None if GPS disabled
         self.gps = None
+        # Health registry — every loop beat()s each component; /health exposes staleness
+        from .health import HealthRegistry
+        self.health = HealthRegistry()
         self._last_abs_cmd_key = None
         self._last_abs_cmd_time = 0.0
         self._arbiter_state = "idle"
@@ -264,6 +267,7 @@ class Pipeline(threading.Thread):
                 continue
 
             h, w = frame.shape[:2]
+            self.health.beat("capture", {"fps": round(fps, 1), "connected": self.grab.connected})
             blobs, mask = ([], None)
             if self.color is not None:
                 blobs, mask = self.color.detect(frame)
@@ -281,6 +285,7 @@ class Pipeline(threading.Thread):
                         print(f"[pipeline] YOLO inference error: {e}")
                 if (t0 - self._last_boxes_time) <= self.cfg.detector.box_ttl_sec:
                     persons = self._last_boxes
+            self.health.beat("detector", {"enabled": self.detector is not None})
 
             # P2: GPS-cue boost — when gps_tracker owned last frame the camera is
             # already aimed at the subject; boost blobs near frame center.
@@ -401,6 +406,8 @@ class Pipeline(threading.Thread):
                            else f"p{cmd.pan_speed}/t{cmd.tilt_speed}")),
                 zoom_cmd=zoom_cmd or "hold",
             )
+
+            self.health.beat("loop")
 
             # fps bookkeeping
             n_fps += 1
