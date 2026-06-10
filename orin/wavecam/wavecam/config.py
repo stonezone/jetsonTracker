@@ -1,8 +1,28 @@
 """Config loading and typed access. Single responsibility: parse YAML -> dataclasses."""
 from __future__ import annotations
+import os
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 import yaml
+
+_persist_lock = threading.Lock()
+
+
+def persist_hot_values(yaml_path: str, values: dict) -> None:
+    """Write hot-applied config keys back to the live yaml (atomic replace) so the
+    file on the rig is always the single source of truth. ``values`` maps dotted
+    keys ("gps.stale_threshold_sec") to plain scalars."""
+    with _persist_lock:
+        with open(yaml_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        for dotted, v in values.items():
+            section, key = dotted.split(".", 1)
+            data.setdefault(section, {})[key] = v
+        tmp = yaml_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+        os.replace(tmp, yaml_path)
 
 
 def _d(src: dict, key: str, default: Any) -> Any:
@@ -123,6 +143,7 @@ class Config:
     web: WebCfg
     loop: LoopCfg
     gps: GpsCfg = field(default_factory=GpsCfg)
+    source_path: str = ""   # set by load_config; the rig yaml; empty in unit tests
 
 
 def load_config(path: str) -> Config:
@@ -135,7 +156,7 @@ def load_config(path: str) -> Config:
     if isinstance(src, str) and src.isdigit():
         src = int(src)
 
-    return Config(
+    cfg = Config(
         camera=CameraCfg(
             source=src,
             use_gstreamer=bool(_d(cam, "use_gstreamer", False)),
@@ -151,3 +172,5 @@ def load_config(path: str) -> Config:
         loop=LoopCfg(**{**LoopCfg().__dict__, **_d(raw, "loop", {})}),
         gps=GpsCfg(**{**GpsCfg().__dict__, **_d(raw, "gps", {})}),
     )
+    cfg.source_path = path
+    return cfg

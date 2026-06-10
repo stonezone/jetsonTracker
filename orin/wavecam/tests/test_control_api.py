@@ -7,6 +7,8 @@ import time
 from fastapi.testclient import TestClient
 
 from wavecam.camera_pose import CameraPose
+from wavecam.events import EventRing
+from wavecam.health import HealthRegistry
 from wavecam.ptz_owner import PtzOwner
 from wavecam.control_api import map_axis
 from wavecam.ptz_visca import PAN_RIGHT, TILT_DOWN, TILT_STOP, TILT_UP
@@ -120,6 +122,8 @@ class DummyPipeline:
         # P1: the adapter reads pose (calibration state) + gps (snapshot/reader health)
         self.pose = CameraPose()
         self.gps = None
+        self.health = HealthRegistry()
+        self.events = EventRing()
         self.arbiter = types.SimpleNamespace(lock_frames=5, grace_sec=1.0)
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
@@ -175,9 +179,11 @@ class DummyPipeline:
             self.owner.kill()
             self.ptz.stop()
             self.ptz.zoom("stop")
+            self.events.record("kill", "killed")
         else:
             self.owner.resume()
             self.owner.request("testbed")
+            self.events.record("kill", "resumed")
 
     def restart_service(self, unit):
         self.restart_calls.append(unit)

@@ -5,6 +5,7 @@ import types
 sys.modules.setdefault("cv2", types.SimpleNamespace())
 
 from wavecam.controller import STOP_CMD
+from wavecam.events import EventRing
 from wavecam.pipeline import Pipeline, SharedState
 from wavecam.ptz_owner import PtzOwner
 
@@ -36,6 +37,7 @@ def make_pipeline(ptz_enabled=True):
     pipe._last_cmd_time = 0.0
     pipe._last_zoom_key = None
     pipe._last_zoom_time = 0.0
+    pipe.events = EventRing()
     return pipe
 
 

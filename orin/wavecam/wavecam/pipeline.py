@@ -86,6 +86,14 @@ class Pipeline(threading.Thread):
         self.pose = CameraPose()
         # GPS source — set by run.py after connect(); None if GPS disabled
         self.gps = None
+        # Health registry — every loop beat()s each component; /health exposes staleness
+        from .health import HealthRegistry
+        self.health = HealthRegistry()
+        # Event ring — records lock/owner/gps/kill transitions for /events
+        from .events import EventRing
+        self.events = EventRing(maxlen=500)
+        self._prev_locked: Optional[bool] = None
+        self._prev_gps_viable: Optional[bool] = None
         self._last_abs_cmd_key = None
         self._last_abs_cmd_time = 0.0
         self._arbiter_state = "idle"
@@ -108,11 +116,13 @@ class Pipeline(threading.Thread):
             if self.cfg.ptz.enabled:
                 self.ptz.stop()                # immediate pan/tilt stop
                 self.ptz.zoom("stop")          # + zoom stop
+            self.events.record("kill", "killed")
         else:
             self.state.set_status(killed=False, state="SEARCHING")
             self.owner.resume()
             if self.cfg.ptz.enabled:
                 self.owner.request("testbed")  # re-acquire on RESUME
+            self.events.record("kill", "resumed")
 
     def _send_cmd(self, cmd):
         """Rate-limited, de-duped VISCA send. STOP always allowed through."""
@@ -264,6 +274,7 @@ class Pipeline(threading.Thread):
                 continue
 
             h, w = frame.shape[:2]
+            self.health.beat("capture", {"fps": round(fps, 1), "connected": self.grab.connected})
             blobs, mask = ([], None)
             if self.color is not None:
                 blobs, mask = self.color.detect(frame)
@@ -281,6 +292,7 @@ class Pipeline(threading.Thread):
                         print(f"[pipeline] YOLO inference error: {e}")
                 if (t0 - self._last_boxes_time) <= self.cfg.detector.box_ttl_sec:
                     persons = self._last_boxes
+            self.health.beat("detector", {"enabled": self.detector is not None})
 
             # P2: GPS-cue boost — when gps_tracker owned last frame the camera is
             # already aimed at the subject; boost blobs near frame center.
@@ -324,6 +336,16 @@ class Pipeline(threading.Thread):
                                                base_locked, t0)
                 prev_state = self._arbiter_state
                 self._arbiter_state = decision.owner
+
+                # Record state transitions (once per change, not per frame)
+                if self._prev_locked != fr.locked:
+                    self.events.record("lock", "acquired" if fr.locked else "lost")
+                    self._prev_locked = fr.locked
+                if decision.owner != prev_state:
+                    self.events.record("owner", decision.owner)
+                if self._prev_gps_viable != gps_fresh:
+                    self.events.record("gps", "viable" if gps_fresh else "unviable")
+                    self._prev_gps_viable = gps_fresh
 
                 # Atomic zoom handoff: kill old zoom before new owner takes zoom
                 if decision.owner != prev_state:
@@ -401,6 +423,8 @@ class Pipeline(threading.Thread):
                            else f"p{cmd.pan_speed}/t{cmd.tilt_speed}")),
                 zoom_cmd=zoom_cmd or "hold",
             )
+
+            self.health.beat("loop")
 
             # fps bookkeeping
             n_fps += 1

@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from .auth import CONFIG, PTZ, READ, SAFETY, SERVICE, install_auth, require, websocket_authorized
 from .color_presets import COLOR_PRESETS, preset_hsv_ranges
+from .config import persist_hot_values
 from .ptz_owner import AUTONOMOUS, IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
 from .supervisor import read_health, restart_systemd_unit, snapshot_services
@@ -267,6 +268,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     app.state.control_api = adapter
     install_auth(app)
     register_guide_routes(app)
+    register_version_routes(app)
     register_status_routes(app, adapter)
     register_safety_routes(app, adapter)
     register_ptz_routes(app, adapter)
@@ -277,6 +279,27 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_config_routes(app, adapter)
     register_system_routes(app, adapter)
     register_agent_routes(app, adapter)
+    register_health_routes(app, adapter)
+    register_events_routes(app, adapter)
+
+
+def register_version_routes(app: FastAPI) -> None:
+    @app.get("/api/v1/version", dependencies=[Depends(require(READ))])
+    def version():
+        path = os.environ.get(
+            "WAVECAM_VERSION_PATH",
+            os.path.join(os.path.dirname(__file__), "..", "version.json"),
+        )
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+        return {
+            "git_sha": data.get("git_sha"),
+            "branch": data.get("branch"),
+            "deployed_at": data.get("deployed_at"),
+        }
 
 
 def register_guide_routes(app: FastAPI) -> None:
@@ -585,6 +608,22 @@ def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         refusal = api.apply_hot_config(req.patch)
         if refusal is not None:
             return refusal
+        # Persist the successfully applied keys back to the live yaml so the rig file
+        # is always the single source of truth. Failure must not fail the request —
+        # the in-memory apply already succeeded.
+        # Read post-coercion values from the live cfg rather than persisting req.patch
+        # directly — set_float/set_int coerce e.g. "0.3" → 0.3, so persisting the raw
+        # request string would write a yaml string and corrupt the dataclass type on restart.
+        src = getattr(getattr(api.pipeline, "cfg", None), "source_path", "")
+        if src and req.patch:
+            try:
+                coerced = {}
+                for dotted in req.patch:
+                    section, attr = dotted.split(".", 1)
+                    coerced[dotted] = getattr(getattr(api.pipeline.cfg, section), attr)
+                persist_hot_values(src, coerced)
+            except Exception as e:
+                print(f"[control_api] hot-config persist failed (live value still applied): {e}")
         api.bump_revision()
         return api.ok()
 
@@ -599,6 +638,35 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/agent/summon", dependencies=[Depends(require(SERVICE))])
     def agent_summon(req: AgentSummonRequest | None = None):
         return api.request_agent_summon(req or AgentSummonRequest())
+
+
+def register_events_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/events", dependencies=[Depends(require(READ))])
+    def events(since: float = 0.0):
+        ring = getattr(api.pipeline, "events", None)
+        items = ring.since(since) if ring is not None else []
+        return {"events": items}
+
+
+def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/health", dependencies=[Depends(require(READ))])
+    def health():
+        reg = getattr(api.pipeline, "health", None)
+        snap = reg.snapshot() if reg else {"ok": False, "components": {}}
+        gps = getattr(api.pipeline, "gps", None)
+        if gps is not None:
+            alive = gps.reader_alive() if callable(getattr(gps, "reader_alive", None)) else None
+            age = gps.last_poll_age_sec() if callable(getattr(gps, "last_poll_age_sec", None)) else None
+            snap["components"]["gps_reader"] = {"ok": bool(alive), "age_sec": age, "detail": {}}
+            snap["ok"] = snap["ok"] and bool(alive)
+        try:
+            import shutil
+            free_gb = shutil.disk_usage(str(api.pipeline.recorder.config.rec_dir)).free / 1e9
+            snap["components"]["disk"] = {"ok": free_gb > 5.0, "age_sec": 0,
+                                          "detail": {"free_gb": round(free_gb, 1)}}
+        except Exception:
+            pass
+        return snap
 
 
 class ControlApiAdapter:
@@ -619,20 +687,20 @@ class ControlApiAdapter:
         self._restart_timer: threading.Timer | None = None
         self._restart_pending = False
         self._restart_unit = "wavecam.service"
-        self._calibration = empty_calibration_state()
-        # P1: load CameraPose from disk so calibration survives restarts
+        # Unified calibration store — replaces split _calibration dict + camera_pose.json.
+        # One file holds pose, reference_heading, and step log so a restart can no longer
+        # give "gps_calibrated true but reference_heading null".
         _pose_path = os.environ.get(
             "WAVECAM_POSE_PATH",
             os.path.join(os.path.dirname(__file__), "..", "..", "camera_pose.json"),
         )
-        try:
-            from .camera_pose import CameraPose
-            loaded = CameraPose.load(_pose_path)
-            pipeline.pose = loaded
-            if loaded.calibrated:
-                print(f"[control_api] loaded calibrated pose from {_pose_path}")
-        except Exception:
-            pass  # no saved pose yet — start uncalibrated
+        from .calibration_store import CalibrationStore
+        self._store = CalibrationStore.load(_pose_path)
+        # The pipeline must point at the SAME CameraPose object the store owns so that
+        # GPS/pointing code always reads the live calibration and we never have two copies.
+        pipeline.pose = self._store.pose
+        if self._store.pose.calibrated:
+            print(f"[control_api] loaded calibrated pose from {_pose_path}")
         self._pending_restart_config: dict[str, Any] = {}
         self.presets = PresetStore(self)
         self.logs = LogAdapter(self)
@@ -698,12 +766,13 @@ class ControlApiAdapter:
 
     def calibration_state(self) -> dict:
         with self._lock:
+            steps = self._store.steps
             state = {
-                "reference_heading": self._calibration["reference_heading"],
-                "heading": copy_optional_dict(self._calibration["heading"]),
-                "tilt": copy_optional_dict(self._calibration["tilt"]),
-                "zoom": copy_optional_dict(self._calibration["zoom"]),
-                "updated_at_unix_ms": self._calibration["updated_at_unix_ms"],
+                "reference_heading": self._store.reference_heading,
+                "heading": copy_optional_dict(steps.get("heading")),
+                "tilt": copy_optional_dict(steps.get("tilt")),
+                "zoom": copy_optional_dict(steps.get("zoom")),
+                "updated_at_unix_ms": self._store.updated_at_unix_ms,
                 # P1: GPS calibration status
                 "gps_calibrated": self.pipeline.pose.calibrated,
                 "base_locked": (
@@ -740,22 +809,16 @@ class ControlApiAdapter:
         if step == "base_lock" and self.pipeline.gps is not None:
             cam_pos = self.pipeline.gps.get_camera_position()
 
-        captured_at = int(time.time() * 1000)
-        entry = {**values, "captured_at_unix_ms": captured_at}
         with self._lock:
-            self._calibration[step] = entry
-            self._calibration["updated_at_unix_ms"] = captured_at
             if step == "heading":
-                self._calibration["reference_heading"] = entry["heading_deg"]
                 # P1: wire to CameraPose — read pan encoder, calibrate pan aim
-                heading_deg = entry.get("heading_deg")
+                heading_deg = values.get("heading_deg")
                 if heading_deg is not None and enc is not None:
                     self.pipeline.pose.calibrate_pan_aim(
                         enc=float(enc[0]),
                         bearing_deg=float(heading_deg),
                         enc_per_deg=4.47,
                     )
-                    self._save_pose()
             elif step == "base_lock":
                 # P1: lock base GPS position for camera reference
                 from .camera_pose import lock_base_position
@@ -767,25 +830,20 @@ class ControlApiAdapter:
                         self.pipeline.pose.lat = base[0]
                         self.pipeline.pose.lon = base[1]
                         self.pipeline.pose.alt_m = base[2]
-                        self._save_pose()
             elif step == "tilt":
                 # P1: tilt calibration — single-point anchor (two-point deferred)
-                tilt_deg = entry.get("tilt_deg")
+                tilt_deg = values.get("tilt_deg")
                 if tilt_deg is not None and enc is not None:
                     self.pipeline.pose.tilt_anchor_enc = float(enc[1])
                     self.pipeline.pose.tilt_anchor_elev = float(tilt_deg)
-                    self._save_pose()
-
-    def _save_pose(self) -> None:
-        """Persist CameraPose to disk so calibration survives restarts."""
-        try:
-            path = os.environ.get(
-                "WAVECAM_POSE_PATH",
-                os.path.join(os.path.dirname(__file__), "..", "..", "camera_pose.json"),
-            )
-            self.pipeline.pose.save(path)
-        except Exception as e:
-            print(f"[control_api] pose save failed: {e}")
+            # Always persist after set_step so reference_heading survives restart even
+            # when enc=None (VISCA timeout or DummyPtz in tests) prevented pose update.
+            # Test isolation is handled by the WAVECAM_POSE_PATH env var (conftest.py).
+            self._store.set_step(step, values)
+            try:
+                self._store.save()
+            except Exception as e:
+                print(f"[control_api] calibration save failed: {e}")
 
     def resume_without_autostart(self) -> None:
         with self._lock:
