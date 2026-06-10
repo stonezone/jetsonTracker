@@ -97,10 +97,9 @@ struct CalibrateView: View {
     // MARK: - Capture dispatch
 
     private func captureActiveStep() {
-        // Steps without a backend endpoint (preflight, baseLock, dryRun) advance locally.
+        // Steps without a backend endpoint (preflight, dryRun) advance locally.
         let localSteps: Set<Int> = [
             CalibrationStep.preflight.id,
-            CalibrationStep.baseLock.id,
             CalibrationStep.dryRun.id
         ]
         if localSteps.contains(activeStepID) {
@@ -138,6 +137,8 @@ struct CalibrateView: View {
         let result: Result<WCCalibrationState, WaveCamCalibrationError>
 
         switch activeStepID {
+        case CalibrationStep.baseLock.id:
+            result = await client.captureCalibrationBaseLock()
         case CalibrationStep.heading.id:
             result = await client.captureCalibrationHeading(headingDeg: resolvedHeadingDeg())
         case CalibrationStep.tilt.id:
@@ -219,8 +220,8 @@ private struct CalibrationStep: Identifiable, Equatable {
         id: 2,
         title: "Base lock (GPS)",
         headline: "Lock the base location",
-        detail: "Use the Orin/base position as the fixed reference point before heading and tilt are solved.",
-        actionTitle: "Confirm base",
+        detail: "Latches the base GPS position as the camera reference. Needs the base tracker to have a fix — watch for the Base fix line on the GPS chip first.",
+        actionTitle: "Capture base lock",
         systemImage: "location.fill"
     )
 

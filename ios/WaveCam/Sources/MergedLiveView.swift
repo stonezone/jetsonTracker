@@ -596,6 +596,9 @@ private struct GPSDetailCard: View {
                     gps.bearingDeg != nil ? WC.accent : WC.faint)
                 row("Target", targetText, (gps.stale ?? false) ? WC.warn : WC.ok)
                 row("Base fix", baseText, gps.baseAgeSec != nil ? WC.ok : WC.warn)
+                if let alive = gps.readerAlive {
+                    row("Ingest", ingestText(alive), alive ? WC.ok : WC.warn)
+                }
             }
             .frame(width: 230, alignment: .leading)
         }
@@ -619,6 +622,13 @@ private struct GPSDetailCard: View {
     private var baseText: String {
         if let a = gps.baseAgeSec { return "LOCKED · \(age(a))" }
         return "NO FIX — sky"
+    }
+    // Reader DOWN = the Orin's serial ingest thread is dead/disconnected (the
+    // "silently stale GPS" failure) — restart wavecam.service, not the Wios.
+    private func ingestText(_ alive: Bool) -> String {
+        guard alive else { return "DOWN — restart svc" }
+        if let p = gps.lastPollAgeSec { return "OK · \(age(p))" }
+        return "OK"
     }
     private func age(_ s: Double) -> String {
         s < 60 ? "\(Int(s.rounded()))s" : "\(Int((s / 60).rounded()))m"

@@ -94,6 +94,9 @@ struct WCStatus: Codable, Sendable {
         var distanceM: Double?
         var bearingDeg: Double?
         var stale: Bool?
+        // Reader-health fields (backend ≥ P1 review build); nil on older backends.
+        var readerAlive: Bool?
+        var lastPollAgeSec: Double?
     }
     struct Media: Codable, Sendable {
         var recording: Bool
@@ -234,6 +237,7 @@ enum WaveCamCalibrationError: LocalizedError, Sendable {
     case killed
     case ownerBusy
     case unavailable   // endpoint not present (backend not yet deployed)
+    case gpsUnavailable   // base Wio has no fix yet — base-lock refused
     case httpError(Int, String?)
     case networkError(String)
 
@@ -243,6 +247,8 @@ enum WaveCamCalibrationError: LocalizedError, Sendable {
             return "KILL is latched — resume before capturing calibration."
         case .ownerBusy:
             return "Another PTZ owner holds the camera. Try again or take over."
+        case .gpsUnavailable:
+            return "Base GPS has no fix yet — give the base tracker open sky and wait for the Base fix line on the GPS chip."
         case .unavailable:
             return "On-device calibration requires the latest Orin build — checklist only for now."
         case let .httpError(code, msg):
@@ -788,6 +794,23 @@ final class WaveCamClient {
         return await sendCalibrationCapture("calibration/zoom", body: body)
     }
 
+    /// POST /api/v1/calibration/base-lock — latch the averaged base GPS position as the
+    /// camera reference. Backend refuses with `gps_unavailable` until the base has a fix.
+    /// Fields: requested_owner, takeover, source, note (optional)
+    func captureCalibrationBaseLock(
+        source: String = "ios_native",
+        note: String? = nil
+    ) async -> Result<WCCalibrationState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "requested_owner": "manual",
+            "takeover": true,
+            "source": source
+        ]
+        if let note { body["note"] = note }
+        return await sendCalibrationCapture("calibration/base-lock", body: body)
+    }
+
     private func sendCalibrationCapture(
         _ path: String,
         body: [String: Any]
@@ -808,6 +831,7 @@ final class WaveCamClient {
                 switch code {
                 case "killed":  return .failure(.killed)
                 case "owner_busy": return .failure(.ownerBusy)
+                case "gps_unavailable": return .failure(.gpsUnavailable)
                 default: return .failure(.httpError(apiError.statusCode, message ?? code))
                 }
             }
