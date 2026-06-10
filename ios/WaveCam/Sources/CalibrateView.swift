@@ -255,8 +255,8 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let dryRun = CalibrationStep(
         id: 6,
         title: "Dry-run",
-        headline: "Run without recording",
-        detail: "Exercise GPS pointing, vision lock, and PTZ authority while recording stays optional and the stop latch remains visible.",
+        headline: "Prove it before the water",
+        detail: "Walk the remote around and watch GPS point the camera, then step into frame and confirm vision lock takes over. First session at a new spot: run all six steps in the yard before any water session. Emergency Stop stays visible throughout.",
         actionTitle: "Mark ready",
         systemImage: "play.circle.fill"
     )

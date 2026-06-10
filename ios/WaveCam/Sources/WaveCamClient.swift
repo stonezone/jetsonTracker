@@ -159,6 +159,7 @@ struct WCConfig: Codable, Sendable {
         var color: ColorCfg
         var detector: Detector
         var web: Web
+        var gps: GPSCfg?   // absent on backends before the P2 deploy — feature-detected
 
         struct PTZ: Codable, Sendable {
             var deadzone: Double
@@ -179,6 +180,13 @@ struct WCConfig: Codable, Sendable {
             var lockThreshold: Double?
             var unlockThreshold: Double?
             var matchDist: Double?
+            var gpsBoost: Double?
+            var gpsBoostRadiusFrac: Double?
+        }
+        struct GPSCfg: Codable, Sendable {
+            var staleThresholdSec: Double?
+            var graceSec: Double?
+            var driveZoom: Bool?
         }
         struct ColorCfg: Codable, Sendable {
             var preset: String

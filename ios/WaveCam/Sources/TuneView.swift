@@ -43,6 +43,11 @@ struct TuneView: View {
     // STREAM
     @State private var jpegQuality: Int? = nil
     @State private var showHud: Bool? = nil
+    // GPS (feature-detected; appears once the P2 backend is deployed)
+    @State private var gpsBoost: Double? = nil
+    @State private var gpsStale: Double? = nil
+    @State private var gpsGrace: Double? = nil
+    @State private var gpsDriveZoom: Bool? = nil
 
     // PRESETS feature state
     @State private var presetsSupported = false
@@ -131,6 +136,7 @@ struct TuneView: View {
                     }
                 }
 
+                gpsCard
                 advancedDetectionCard
                 colorCard
                 advancedMotionCard
@@ -396,10 +402,43 @@ struct TuneView: View {
         if let v = invertPan           { d["ptz.invert_pan"]            = .bool(v) }
         if let v = jpegQuality         { d["web.jpeg_quality"]          = .int(v) }
         if let h = showHud             { d["web.show_hud"]              = .bool(h) }
+        if let v = gpsBoost            { d["fusion.gps_boost"]          = .double(v) }
+        if let v = gpsStale            { d["gps.stale_threshold_sec"]   = .double(v) }
+        if let v = gpsGrace            { d["gps.grace_sec"]             = .double(v) }
+        if let v = gpsDriveZoom        { d["gps.drive_zoom"]            = .bool(v) }
         return d
     }
 
     // MARK: - Feature-detected advanced cards
+
+    @ViewBuilder private var gpsCard: some View {
+        let anyVisible = gpsBoost != nil || gpsStale != nil || gpsGrace != nil || gpsDriveZoom != nil
+        if anyVisible {
+            OperatorCard(title: "GPS TRACKING") {
+                if let b = gpsBoost {
+                    sliderRow("GPS lock boost", value: Binding(get: { b }, set: { gpsBoost = $0 }),
+                              range: 0.0...0.4, step: 0.05, readout: fmt(b), key: "fusion.gps_boost")
+                    tuneCaption("Confidence added to a color blob near frame center while GPS is pointing the camera — lets the rashguard lock at distance where YOLO sees nothing. 0 = off.")
+                }
+                if let s = gpsStale {
+                    if gpsBoost != nil { OperatorDivider() }
+                    sliderRow("GPS stale after", value: Binding(get: { s }, set: { gpsStale = $0 }),
+                              range: 2...60, step: 1, readout: "\(Int(s))s", key: "gps.stale_threshold_sec", isInt: true)
+                    tuneCaption("Max age of the surfer fix before GPS pointing pauses. Lower = never chase old positions; raise only if LoRa updates are slow.")
+                }
+                if let g = gpsGrace {
+                    if gpsBoost != nil || gpsStale != nil { OperatorDivider() }
+                    sliderRow("Vision-loss grace", value: Binding(get: { g }, set: { gpsGrace = $0 }),
+                              range: 0.5...5.0, step: 0.5, readout: fmt1(g), key: "gps.grace_sec")
+                }
+                if let dz = gpsDriveZoom {
+                    if gpsBoost != nil || gpsStale != nil || gpsGrace != nil { OperatorDivider() }
+                    toggleRow("GPS drives zoom", isOn: Binding(get: { dz }, set: { gpsDriveZoom = $0 }), key: "gps.drive_zoom")
+                    tuneCaption("Zoom from GPS distance while GPS points the camera. Leave off until the zoom curve is field-tuned.")
+                }
+            }
+        }
+    }
 
     @ViewBuilder private var advancedDetectionCard: some View {
         let anyVisible = everyN != nil || lockThreshold != nil || unlockThreshold != nil || matchDist != nil
@@ -616,6 +655,10 @@ struct TuneView: View {
         lockThreshold = cfg.current.fusion.lockThreshold
         unlockThreshold = cfg.current.fusion.unlockThreshold
         matchDist = cfg.current.fusion.matchDist
+        gpsBoost = cfg.current.fusion.gpsBoost
+        gpsStale = cfg.current.gps?.staleThresholdSec
+        gpsGrace = cfg.current.gps?.graceSec
+        gpsDriveZoom = cfg.current.gps?.driveZoom
         colorMinArea = cfg.current.color.minArea
         colorMaxArea = cfg.current.color.maxArea
         morphKernel = cfg.current.color.morphKernel
