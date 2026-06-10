@@ -78,6 +78,8 @@ class FusionCfg:
     lost_grace_sec: float = 0.8
     person_aim_x: float = 0.5
     person_aim_y: float = 0.5
+    gps_boost: float = 0.2
+    gps_boost_radius_frac: float = 0.25
 
 
 @dataclass

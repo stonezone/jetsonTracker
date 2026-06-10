@@ -282,7 +282,15 @@ class Pipeline(threading.Thread):
                 if (t0 - self._last_boxes_time) <= self.cfg.detector.box_ttl_sec:
                     persons = self._last_boxes
 
-            fr = self.fusion.update(blobs, persons)
+            # P2: GPS-cue boost — when gps_tracker owned last frame the camera is
+            # already aimed at the subject; boost blobs near frame center.
+            gps_cue_px = None
+            if self._arbiter_state == "gps_tracker":
+                radius_frac = float(getattr(self.cfg.fusion, "gps_boost_radius_frac", 0.25))
+                r = radius_frac * min(w, h)
+                gps_cue_px = (w / 2.0, h / 2.0, r)
+
+            fr = self.fusion.update(blobs, persons, gps_cue_px=gps_cue_px)
 
             # control: always compute (for the overlay); SEND only while we own
             # the PTZ and are not killed.
@@ -307,6 +315,11 @@ class Pipeline(threading.Thread):
                 gps_calibrated = self.pose.calibrated
                 # C1: base position latched once at setup; tripod is stationary.
                 base_locked = self.pose.has_base
+                # Sync arbiter hysteresis params from cfg so hot-config takes effect.
+                self.arbiter.lock_frames = int(getattr(self.cfg.gps, "lock_frames",
+                                                       self.arbiter.lock_frames))
+                self.arbiter.grace_sec = float(getattr(self.cfg.gps, "grace_sec",
+                                                       self.arbiter.grace_sec))
                 decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
                                                base_locked, t0)
                 prev_state = self._arbiter_state

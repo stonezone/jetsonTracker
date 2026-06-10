@@ -63,6 +63,8 @@ fusion:
   lost_grace_sec: 0.8
   person_aim_x: 0.5
   person_aim_y: 0.5
+  gps_boost: 0.2
+  gps_boost_radius_frac: 0.25
 
 web:
   host: "0.0.0.0"

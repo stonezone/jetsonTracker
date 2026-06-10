@@ -120,6 +120,7 @@ class DummyPipeline:
         # P1: the adapter reads pose (calibration state) + gps (snapshot/reader health)
         self.pose = CameraPose()
         self.gps = None
+        self.arbiter = types.SimpleNamespace(lock_frames=5, grace_sec=1.0)
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
                 enabled=True,
@@ -137,6 +138,8 @@ class DummyPipeline:
                 match_dist=120,
                 person_aim_x=0.5,
                 person_aim_y=0.5,
+                gps_boost=0.2,
+                gps_boost_radius_frac=0.25,
             ),
             color=types.SimpleNamespace(
                 enabled=True,
@@ -155,6 +158,15 @@ class DummyPipeline:
                 box_ttl_sec=0.6,
             ),
             web=types.SimpleNamespace(jpeg_quality=70, show_hud=True),
+            gps=types.SimpleNamespace(
+                enabled=True,
+                stale_threshold_sec=10.0,
+                grace_sec=1.0,
+                lock_frames=5,
+                drive_zoom=False,
+                max_pan_speed=4,
+                max_tilt_speed=3,
+            ),
         )
 
     def kill(self, on=True):

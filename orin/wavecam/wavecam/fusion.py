@@ -11,6 +11,15 @@ Fusion (vision-only, no GPS, no camera-AI):
   - target center is EMA-smoothed to keep the servo calm.
   - a short grace window holds lock through brief dropouts.
 
+P2 GPS-cue boost (gps_cue_px in update()):
+  When the TrackingArbiter hands ownership to gps_tracker, the camera is already
+  aimed at the GPS-predicted subject position. A color blob near frame center is
+  therefore very likely the subject and deserves a confidence boost that can cross
+  the lock threshold. The cue is (cue_x, cue_y, radius_px); a blob within that
+  radius gets +gps_boost (cfg.fusion.gps_boost), capped at 0.95. The boost is only
+  applied when gps_cue_px is not None (caller gates it on GPS ownership), so a
+  random orange object cannot self-lock when GPS isn't directing the camera.
+
 Returns a FusionResult the controller and overlay consume.
 """
 from __future__ import annotations
@@ -92,11 +101,15 @@ class Fusion:
         return [p for p in persons
                 if any(_dist((b.cx, b.cy), _person_center(p)) <= md for b in blobs)]
 
-    def _select(self, blobs, persons):
+    def _select(self, blobs, persons,
+                gps_cue_px: Optional[Tuple[float, float, float]] = None):
         """(raw_xy, bbox, person_bbox, conf, matched) by priority + continuity.
         While tracking, a person near the last target keeps the lock so an
         unmatched far blob can't steal it; color-blob outranks person-only only
-        for acquisition."""
+        for acquisition.
+
+        gps_cue_px = (cue_x, cue_y, radius_px) when the camera is GPS-pointed;
+        blobs within radius get a confidence boost (see module docstring)."""
         confirmed = self._confirmed(blobs, persons)
         if confirmed:
             p = self._continuity(confirmed, self._person_aim)
@@ -108,22 +121,41 @@ class Fusion:
             p, d = self._nearest_person(persons, self._ema)
             if p is not None and d <= self.cfg.match_dist:
                 bbox = _person_xywh(p)
-                return self._person_aim(p), bbox, bbox, 0.45, False      # locked subject -> sustain
+                conf = 0.45
+                if gps_cue_px is not None:
+                    cx, cy, r = gps_cue_px
+                    if _dist(self._person_aim(p), (cx, cy)) <= r:
+                        boost = float(getattr(self.cfg, "gps_boost", 0.2))
+                        conf = min(0.95, conf + boost)
+                return self._person_aim(p), bbox, bbox, conf, False
         if blobs:
-            b = self._continuity(blobs, lambda x: (x.cx, x.cy))
-            return (b.cx, b.cy), b.bbox, None, 0.45, False
+            if gps_cue_px is not None and self._ema is None:
+                # No existing EMA track: choose the blob nearest the GPS cue
+                # (camera is already pointed there; prefer that signal over continuity).
+                cx, cy, r = gps_cue_px
+                b = min(blobs, key=lambda x: _dist((x.cx, x.cy), (cx, cy)))
+            else:
+                b = self._continuity(blobs, lambda x: (x.cx, x.cy))
+            conf = 0.45
+            if gps_cue_px is not None:
+                cx, cy, r = gps_cue_px
+                if _dist((b.cx, b.cy), (cx, cy)) <= r:
+                    boost = float(getattr(self.cfg, "gps_boost", 0.2))
+                    conf = min(0.95, conf + boost)
+            return (b.cx, b.cy), b.bbox, None, conf, False
         if persons:
             p = self._continuity(persons, self._person_aim)
             bbox = _person_xywh(p)
             return self._person_aim(p), bbox, bbox, 0.2, False
         return None, None, None, 0.0, False
 
-    def update(self, blobs: List[Blob], persons: Optional[List[PersonBox]]) -> FusionResult:
+    def update(self, blobs: List[Blob], persons: Optional[List[PersonBox]],
+               gps_cue_px: Optional[Tuple[float, float, float]] = None) -> "FusionResult":
         now = time.time()
         persons = persons or []
         has_color, has_person = len(blobs) > 0, len(persons) > 0
 
-        raw_xy, bbox, person_bbox, conf, matched = self._select(blobs, persons)
+        raw_xy, bbox, person_bbox, conf, matched = self._select(blobs, persons, gps_cue_px)
 
         if conf >= self.cfg.lock_threshold:
             self._locked = True

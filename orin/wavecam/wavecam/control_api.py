@@ -55,6 +55,14 @@ HOT_CONFIG_KEYS = (
     "fusion.match_dist",
     "fusion.person_aim_x",
     "fusion.person_aim_y",
+    "fusion.gps_boost",
+    "fusion.gps_boost_radius_frac",
+    "gps.stale_threshold_sec",
+    "gps.grace_sec",
+    "gps.lock_frames",
+    "gps.drive_zoom",
+    "gps.max_pan_speed",
+    "gps.max_tilt_speed",
     "color.preset",
     "color.min_area",
     "color.max_area",
@@ -1034,6 +1042,14 @@ class ControlApiAdapter:
             "fusion.match_dist": lambda: set_float(cfg.fusion, "match_dist", value, 20.0, 500.0, dry_run=dry_run),
             "fusion.person_aim_x": lambda: set_float(cfg.fusion, "person_aim_x", value, 0.0, 1.0, dry_run=dry_run),
             "fusion.person_aim_y": lambda: set_float(cfg.fusion, "person_aim_y", value, 0.0, 1.0, dry_run=dry_run),
+            "fusion.gps_boost": lambda: set_float(cfg.fusion, "gps_boost", value, 0.0, 0.5, dry_run=dry_run),
+            "fusion.gps_boost_radius_frac": lambda: set_float(cfg.fusion, "gps_boost_radius_frac", value, 0.05, 0.75, dry_run=dry_run),
+            "gps.stale_threshold_sec": lambda: self.apply_gps_float("stale_threshold_sec", value, 1.0, 120.0, dry_run=dry_run),
+            "gps.grace_sec": lambda: self.apply_gps_float("grace_sec", value, 0.1, 10.0, dry_run=dry_run),
+            "gps.lock_frames": lambda: self.apply_gps_int("lock_frames", value, 1, 30, dry_run=dry_run),
+            "gps.drive_zoom": lambda: self.apply_gps_bool("drive_zoom", value, dry_run=dry_run),
+            "gps.max_pan_speed": lambda: self.apply_gps_int("max_pan_speed", value, 1, 24, dry_run=dry_run),
+            "gps.max_tilt_speed": lambda: self.apply_gps_int("max_tilt_speed", value, 1, 20, dry_run=dry_run),
             "color.preset": lambda: self.apply_color_preset(value, dry_run=dry_run),
             "color.min_area": lambda: set_int(cfg.color, "min_area", value, 1, 500000, dry_run=dry_run),
             "color.max_area": lambda: set_int(cfg.color, "max_area", value, 100, 1000000, dry_run=dry_run),
@@ -1081,6 +1097,52 @@ class ControlApiAdapter:
         if color is not None:
             color.update_kernel()
         return None
+
+    def _gps_cfg(self):
+        """Return cfg.gps, or None if GPS is disabled/absent."""
+        return getattr(self.pipeline.cfg, "gps", None)
+
+    def apply_gps_float(self, attr: str, value: Any, lo: float, hi: float,
+                        dry_run: bool = False) -> str | None:
+        gps_cfg = self._gps_cfg()
+        if gps_cfg is None:
+            return f"gps.{attr}: GPS section not present in config."
+        error = set_float(gps_cfg, attr, value, lo, hi, dry_run=dry_run)
+        if error is not None:
+            return error
+        if not dry_run:
+            self._sync_arbiter_from_gps()
+        return None
+
+    def apply_gps_int(self, attr: str, value: Any, lo: int, hi: int,
+                      dry_run: bool = False) -> str | None:
+        gps_cfg = self._gps_cfg()
+        if gps_cfg is None:
+            return f"gps.{attr}: GPS section not present in config."
+        error = set_int(gps_cfg, attr, value, lo, hi, dry_run=dry_run)
+        if error is not None:
+            return error
+        if not dry_run:
+            self._sync_arbiter_from_gps()
+        return None
+
+    def apply_gps_bool(self, attr: str, value: Any, dry_run: bool = False) -> str | None:
+        gps_cfg = self._gps_cfg()
+        if gps_cfg is None:
+            return f"gps.{attr}: GPS section not present in config."
+        error = set_bool(gps_cfg, attr, value, dry_run=dry_run)
+        if error is not None:
+            return error
+        return None
+
+    def _sync_arbiter_from_gps(self) -> None:
+        """Push hot-updated gps.lock_frames / gps.grace_sec into the running arbiter."""
+        arbiter = getattr(self.pipeline, "arbiter", None)
+        gps_cfg = self._gps_cfg()
+        if arbiter is None or gps_cfg is None:
+            return
+        arbiter.lock_frames = int(getattr(gps_cfg, "lock_frames", arbiter.lock_frames))
+        arbiter.grace_sec = float(getattr(gps_cfg, "grace_sec", arbiter.grace_sec))
 
     def request_service_restart(self, req: RestartRequest) -> JSONResponse:
         if self.restart_pending:
@@ -1799,6 +1861,17 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "match_dist": cfg.fusion.match_dist,
                 "person_aim_x": getattr(cfg.fusion, "person_aim_x", 0.5),
                 "person_aim_y": getattr(cfg.fusion, "person_aim_y", 0.5),
+                "gps_boost": getattr(cfg.fusion, "gps_boost", 0.2),
+                "gps_boost_radius_frac": getattr(cfg.fusion, "gps_boost_radius_frac", 0.25),
+            },
+            "gps": {
+                "enabled": getattr(getattr(cfg, "gps", None), "enabled", False),
+                "stale_threshold_sec": getattr(getattr(cfg, "gps", None), "stale_threshold_sec", 10.0),
+                "grace_sec": getattr(getattr(cfg, "gps", None), "grace_sec", 1.0),
+                "lock_frames": getattr(getattr(cfg, "gps", None), "lock_frames", 5),
+                "drive_zoom": getattr(getattr(cfg, "gps", None), "drive_zoom", False),
+                "max_pan_speed": getattr(getattr(cfg, "gps", None), "max_pan_speed", 4),
+                "max_tilt_speed": getattr(getattr(cfg, "gps", None), "max_tilt_speed", 3),
             },
             "color": {
                 "enabled": cfg.color.enabled,
