@@ -310,27 +310,152 @@
     <!-- CALIBRATE -->
     <section id="calibrate">
       <div class="sec-head">
-        <div class="kicker">Calibrate tab</div>
+        <div class="kicker">Calibrate tab · field procedure</div>
         <h2>Teach it where it's pointing</h2>
-        <p class="sub">Calibration solves the camera-to-world geometry so coarse GPS pointing and zoom framing land on target. Each capture now writes a real solve to the Orin (it survives a restart) — and GPS coarse-pointing only switches on once this is done. Run it once per setup spot, and again if you move the tripod or the horizon shifts.</p>
+        <p class="sub">Calibration solves the camera-to-world geometry so GPS coarse-pointing and zoom framing land on target. The solve is stored on the Orin and survives restarts. Run it once per setup spot; re-run Heading + Tilt if you move the tripod. The app walks you through <b>6 steps</b> in order — you cannot skip ahead.</p>
       </div>
-      <div class="grid g2" style="align-items:start">
-        <ol class="steps">
-          <li><b>Preflight</b> — confirm feed, camera link, and that KILL is reachable before anything moves.</li>
-          <li><b>Base lock</b> — latches the base Wio's GPS position as the camera's fixed ground reference. <b>Requires a base GPS fix</b> — watch the "Base fix" line in the GPS chip; the step is refused with a clear message until the base Wio has a sky view and a valid fix. One capture per session is enough; base Wio dropouts after this point do not stop GPS tracking.</li>
-          <li><b>Heading</b> — aim the camera at the remote tracker and confirm bearing. Needs both base and remote fixes for a live bearing readout. This is WaveCam's compass — no magnetometer (motors near magnets make those useless).</li>
-          <li><b>Tilt</b> — set the horizon / water-level reference so vertical aim is true.</li>
-          <li><b>Zoom FOV</b> — map zoom positions to field-of-view so framing math knows how tight each zoom is.</li>
-          <li><b>Dry-run</b> — a no-stakes follow to confirm the solve before you paddle out. <b>Do a full yard dry-run before every water session.</b></li>
-        </ol>
-        <div class="grid" style="gap:0.8rem; align-content:start">
-          <figure class="shot phone">
-            <img src="guide_assets/calibrate.png" alt="WaveCam Calibrate wizard step" />
-            <figcaption>Calibrate — six guided steps.</figcaption>
-          </figure>
-          <div class="callout"><h3>When to recalibrate</h3><p>Moved the tripod, changed beach/orientation, or framing feels biased off-center at distance? Re-run Heading + Tilt at minimum.</p></div>
-          <div class="callout teal"><h3>How GPS pointing works once calibrated</h3><p>At long range a small orange dot is hard for vision to find in a wide frame. With calibration done and the base locked, GPS becomes a <b>spotter</b>: it aims (and zooms) the camera at your latest fix so YOLO + color can acquire, then hands off — <b>vision refines</b> the instant it locks. It only takes over when all three line up: a fresh GPS fix, a completed calibration, and a locked base. <span style="color:var(--kill)">KILL</span> overrides it like everything else.</p></div>
+
+      <!-- ── BEFORE YOU LEAVE ─────────────────────────────────── -->
+      <div class="callout teal" style="margin-bottom:1.1rem">
+        <h3>Before you leave — hardware checklist</h3>
+        <ul>
+          <li><b>Charge both Wios.</b> Remote (<code>!9f5802d5</code>) goes on you; base (<code>!38c3f1fd</code>) plugs into the Orin's USB-A port.</li>
+          <li><b>Tripod:</b> camera, Orin, and phone all mounted and stable before you run calibration.</li>
+          <li><b>Open sky:</b> both Wios need an unobstructed view of the sky for their first fix. A cold-start (first fix after power-on) can take 2–5 minutes — plan for it.</li>
+          <li><b>Do not cold-boot the Orin with the base Wio plugged in</b> — U-Boot stalls. Unplug Wio → boot Orin → replug Wio → restart <code>wavecam.service</code>.</li>
+        </ul>
+      </div>
+
+      <!-- ── WIO CONFIG EXCEPTION PATH ─────────────────────────── -->
+      <details style="margin-bottom:1.1rem; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface2); padding:0.9rem 1rem;">
+        <summary style="cursor:pointer; font-weight:700; color:var(--text); font-size:0.97rem;">
+          When to run <code>verify_wios.sh</code> — exception path (expand)
+        </summary>
+        <div style="margin-top:0.8rem; color:var(--muted); font-size:0.91rem; display:grid; gap:0.6rem;">
+          <p style="margin:0"><b>Only run this from the Mac</b> — not every session. Trigger it when: the Orin had a cold boot, either Wio was power-cycled, or the app's Preflight shows the mesh misbehaving (remote not heard, base fix never appears).</p>
+          <p style="margin:0"><b>Remote Wio:</b> Plug into your Mac USB-C, then:</p>
+          <code style="display:block; white-space:pre-wrap; padding:0.5rem 0.75rem; border-radius:8px; font-size:0.83rem;">cd docs/hardware/wio-config
+./verify_wios.sh /dev/cu.usbmodem1101</code>
+          <p style="margin:0"><b>Base Wio (via the Orin):</b></p>
+          <code style="display:block; white-space:pre-wrap; padding:0.5rem 0.75rem; border-radius:8px; font-size:0.83rem;">ssh orin
+sudo systemctl stop wavecam.service
+python3 -m meshtastic --get position --get lora.modem_preset
+# re-apply if needed:  python3 -m meshtastic --configure docs/hardware/wio-config/base.yaml
+sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
+          <p style="margin:0"><b>What good looks like:</b> <code>gps_mode ENABLED</code>, <code>modem_preset SHORT_FAST</code> on both units, <code>position_broadcast_secs 30</code> on base, smart broadcast on with 2 s / 5 m. If anything reverted, re-apply from the canonical YAMLs in <code>docs/hardware/wio-config/</code> using a single <code>--configure</code> write per device.</p>
         </div>
+      </details>
+
+      <!-- ── THE SIX STEPS ──────────────────────────────────────── -->
+      <p style="color:var(--muted); font-size:0.9rem; margin:0 0 0.8rem">The app shows <b>STEP N OF 6</b> in the header as you progress. Each step has a Confirm or Capture button — tap it only when the expected result is met. Steps below match the app's order exactly.</p>
+
+      <!-- Step 1 -->
+      <div class="card" style="margin-bottom:0.7rem">
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 1 of 6</span><h3 style="margin:0">Preflight</h3></div>
+        <p style="margin:0 0 0.55rem">The app shows a live checklist — every row must be green before you can proceed. Here is what each row means:</p>
+        <div class="tablewrap" style="border-radius:var(--radius-sm)">
+          <table style="min-width:0">
+            <thead><tr><th>Row</th><th>Green means</th><th>If not green</th></tr></thead>
+            <tbody>
+              <tr><td><b>GPS ingest</b></td><td>The Orin's serial reader is getting data from the base Wio.</td><td>Check that <code>wavecam.service</code> is running (<code>ssh orin; sudo systemctl status wavecam</code>). If Ingest shows DOWN, restart the service — do not touch the Wios.</td></tr>
+              <tr><td><b>Remote heard</b></td><td>A LoRa packet from your remote Wio (<code>!9f5802d5</code>) arrived within the last stale threshold.</td><td>Power-cycle the remote Wio; confirm both are on <code>SHORT_FAST</code> preset. Give it 60 s after power-on for mesh to link.</td></tr>
+              <tr><td><b>Base fix</b></td><td>The base Wio has a valid GPS fix (latitude + longitude present, not zero).</td><td>Move the tripod to open sky. Cold-start takes 2–5 min. If it never comes, run <code>verify_wios.sh</code> on the base (see exception path above).</td></tr>
+              <tr><td><b>Camera link</b></td><td>The Orin can send VISCA commands to the PTZ camera at <code>192.168.100.88:1259</code>.</td><td>Check camera power and the LAN cable between camera and Orin. Restart <code>wavecam.service</code> if the camera was powered on after the service started.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin:0.55rem 0 0; color:var(--ok); font-size:0.88rem">All four rows green → tap <b>Confirm</b>.</p>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="card" style="margin-bottom:0.7rem">
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 2 of 6</span><h3 style="margin:0">Base Lock</h3></div>
+        <ol class="steps" style="margin:0">
+          <li>Watch the <b>Base fix</b> line in the app — it shows the base Wio's latitude, longitude, and age.</li>
+          <li>Wait until the fix age is stable (a few seconds old, not "null" or "—"). First fix of the day takes the longest; subsequent fixes are near-instant.</li>
+          <li>Tap <b>Capture</b>. The Orin latches the base Wio's current position as the camera's fixed ground reference for this session.</li>
+        </ol>
+        <p style="margin:0.55rem 0 0; color:var(--muted); font-size:0.88rem"><b>You should see:</b> the step advances and the position is confirmed on-screen.</p>
+        <p style="margin:0.3rem 0 0; color:var(--warn); font-size:0.88rem"><b>If the button is greyed out or shows "No base fix yet":</b> the base Wio does not have a valid fix. Give it more sky and wait. If it never fixes → exception path above.</p>
+        <p style="margin:0.3rem 0 0; color:var(--muted); font-size:0.88rem">One capture per session is enough. If the base Wio loses its fix later during a session, GPS tracking continues using the latched position — no need to redo this step.</p>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="card" style="margin-bottom:0.7rem">
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 3 of 6</span><h3 style="margin:0">Heading — aim-at-remote</h3></div>
+        <div class="callout" style="margin-bottom:0.6rem; padding:0.7rem 0.85rem"><h3 style="font-size:0.88rem; margin:0 0 0.25rem">This is the accuracy-critical step</h3><p style="margin:0; font-size:0.85rem">A sloppy aim here skews every GPS point by the same angular offset. Take your time — every degree of error shifts the camera's aim at 100 m by ~1.7 m.</p></div>
+        <ol class="steps" style="margin:0">
+          <li>Put the remote tracker (<code>!9f5802d5</code>) on your person and walk to a spot <b>at least 20 m from the tripod</b> and ideally in the direction of the water. Farther is more accurate — 50 m is better than 20 m.</li>
+          <li>The app shows a live bearing from the base fix to the remote fix. Wait until both fixes are fresh (the bearing value is stable, not bouncing).</li>
+          <li>Use the joystick in the app to pan/tilt the camera until <b>you</b> (or the remote tracker) are centered in the live feed.</li>
+          <li>Tap <b>Capture</b>.</li>
+        </ol>
+        <p style="margin:0.55rem 0 0; color:var(--muted); font-size:0.88rem"><b>You should see:</b> the app confirms the heading offset and advances to Step 4.</p>
+        <p style="margin:0.3rem 0 0; color:var(--warn); font-size:0.88rem"><b>If the Capture button is disabled:</b> the app requires both a base fix and a remote fix with a live bearing. Move to open sky, wait 60 s, and check that the remote Wio is powered on and linked (Preflight > Remote heard was green).</p>
+        <p style="margin:0.3rem 0 0; color:var(--muted); font-size:0.88rem"><b>Re-run this step</b> (at minimum, along with Tilt) any time you move the tripod or the setup faces a different direction.</p>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="card" style="margin-bottom:0.7rem">
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 4 of 6</span><h3 style="margin:0">Tilt — horizon reference</h3></div>
+        <ol class="steps" style="margin:0">
+          <li>Use the joystick to tilt the camera until the horizon (water surface) is level and centered vertically in the live feed. You are setting the tilt-zero reference.</li>
+          <li>Tap <b>Capture</b>.</li>
+        </ol>
+        <p style="margin:0.55rem 0 0; color:var(--muted); font-size:0.88rem"><b>You should see:</b> the step advances. If the camera is clearly tilted high or low in the water session, re-run this step and re-aim at the level horizon.</p>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="card" style="margin-bottom:0.7rem">
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 5 of 6</span><h3 style="margin:0">Zoom — wide reference</h3></div>
+        <ol class="steps" style="margin:0">
+          <li>The camera should already be at or near its widest zoom. Leave it there.</li>
+          <li>Tap <b>Capture</b>.</li>
+        </ol>
+        <p style="margin:0.55rem 0 0; color:var(--muted); font-size:0.88rem"><b>You should see:</b> the step advances. This capture sets the wide reference for the GPS zoom curve. The zoom curve is field-tuned later via Tune → GPS Cueing; <code>gps.drive_zoom</code> ships <b>off</b> so it will not drive zoom until you enable it.</p>
+      </div>
+
+      <!-- Step 6 -->
+      <div class="card" style="margin-bottom:1rem">
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 6 of 6</span><h3 style="margin:0">Dry-run — verify before water</h3></div>
+        <p style="margin:0 0 0.55rem; color:var(--muted); font-size:0.92rem"><b>Do not skip this.</b> This is your chance to catch a bad heading solve on dry land, not mid-session offshore.</p>
+        <ol class="steps" style="margin:0">
+          <li>Put the remote tracker on and <b>walk along the beach</b> — parallel to the water, varying your distance.</li>
+          <li><b>You should see:</b> the camera GPS-points and pans to follow you coarsely. It may be slightly off-angle; that is normal if heading was approximate.</li>
+          <li>Step into clear view of the camera with open sky above you. <b>You should see:</b> the lock chip on the Live HUD switch to <b>LOCKED</b> as vision acquires your orange rashguard.</li>
+          <li>Now test the kill: tap <b>KILL</b> in the app. <b>You should see:</b> all camera motion stops immediately and the KILL chip turns solid red. Hold to Resume.</li>
+          <li>Tap <b>Resume</b>, then <b>AUTO</b> to re-arm. Confirm the camera resumes following.</li>
+          <li>If everything checks out, tap <b>Done</b> to close the Calibrate wizard and proceed to Live.</li>
+        </ol>
+        <p style="margin:0.55rem 0 0; color:var(--warn); font-size:0.88rem"><b>If the camera GPS-points way off bearing:</b> re-run Step 3 (Heading) — stand farther away and aim more carefully.</p>
+        <p style="margin:0.3rem 0 0; color:var(--warn); font-size:0.88rem"><b>If the camera won't lock even up close:</b> confirm <code>Color preset = orange</code> in Tune, enable <code>Show mask</code> to verify the rashguard is in the mask, and lower <code>Lock threshold</code> if needed.</p>
+      </div>
+
+      <!-- ── TELEMETRY / FIRST AID ──────────────────────────────── -->
+      <div class="grid g2" style="align-items:start; margin-top:0.2rem">
+        <div class="card">
+          <h3>Good telemetry during a session</h3>
+          <p>On the Live HUD GPS chip, healthy numbers look like:</p>
+          <ul>
+            <li><b>GPS chip dot:</b> <span style="color:var(--ok)">green</span> — fix is fresh (within the stale threshold).</li>
+            <li><b>Ingest row:</b> <span style="color:var(--ok)">OK</span> — serial reader alive.</li>
+            <li><b>Base status:</b> <span style="color:var(--ok)">LOCKED</span> — base position was captured this session.</li>
+            <li><b>target_age_sec</b> staying under ~5 s at the 2-second remote broadcast rate.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Three field first-aid moves</h3>
+          <ul>
+            <li><b>Ingest DOWN:</b> the Orin's serial reader died. Fix → <code>ssh orin; sudo systemctl restart wavecam.service</code>. Do not touch the Wios.</li>
+            <li><b>GPS age climbing / remote not heard:</b> LoRa preset mismatch or remote Wio off. Check both Wios are on <code>SHORT_FAST</code> with <code>meshtastic --get lora</code>.</li>
+            <li><b>Won't lock at long range even with GPS pointing:</b> raise <code>fusion.gps_boost</code> in Tune → GPS Cueing. Start at 0.15 and increase in 0.05 increments.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="grid g2" style="margin-top:0.9rem; align-items:start">
+        <div class="callout"><h3>When to recalibrate</h3><p>Moved the tripod, changed beach or orientation, or framing feels biased at distance? Re-run Steps 3 (Heading) and 4 (Tilt) at minimum. Step 2 (Base Lock) must always be run first in any new session.</p></div>
+        <div class="callout teal"><h3>How GPS pointing works once calibrated</h3><p>At long range a small orange dot is hard for vision to find in a wide frame. With calibration done and the base locked, GPS becomes a <b>spotter</b>: it aims the camera at your latest fix so YOLO + color can acquire, then hands off — vision refines the instant it locks. GPS cueing only activates when all three conditions hold: a fresh fix, a completed calibration, and a locked base. <span style="color:var(--kill)">KILL</span> overrides everything.</p></div>
       </div>
     </section>
 
