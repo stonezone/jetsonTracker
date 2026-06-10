@@ -42,15 +42,16 @@ struct EmergencyStopButton: View {
             .background(WC.kill, in: .rect(cornerRadius: 16))
             .shadow(color: WC.kill.opacity(0.25), radius: 18, y: 8)
         case .chip:
+            // Solid red + white text like every other variant — the faint red-on-red
+            // version washed out in sunlight, and this chip is the always-visible KILL.
             HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2).fill(WC.kill).frame(width: 9, height: 9)
-                Text("KILL").font(.system(size: 12, weight: .bold)).tracking(1)
+                Image(systemName: "stop.fill").font(.system(size: 11, weight: .black))
+                Text("KILL").font(.system(size: 12, weight: .black)).tracking(1)
             }
-            .foregroundStyle(WC.kill)
+            .foregroundStyle(.white)
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(WC.kill.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(WC.kill.opacity(0.4)))
+            .padding(.vertical, 8)
+            .background(WC.kill, in: RoundedRectangle(cornerRadius: 10))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         case .icon:

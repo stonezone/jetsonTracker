@@ -97,10 +97,9 @@ struct CalibrateView: View {
     // MARK: - Capture dispatch
 
     private func captureActiveStep() {
-        // Steps without a backend endpoint (preflight, baseLock, dryRun) advance locally.
+        // Steps without a backend endpoint (preflight, dryRun) advance locally.
         let localSteps: Set<Int> = [
             CalibrationStep.preflight.id,
-            CalibrationStep.baseLock.id,
             CalibrationStep.dryRun.id
         ]
         if localSteps.contains(activeStepID) {
@@ -113,6 +112,15 @@ struct CalibrateView: View {
         if calibrationAvailable == false {
             capturedStepIDs.insert(activeStepID)
             if activeStepID < CalibrationStep.dryRun.id { activeStepID += 1 }
+            return
+        }
+
+        // Heading is the aim-at-remote capture: it pairs the pan-motor position with
+        // the GPS base→remote bearing, so it needs a live bearing (base + remote fixes).
+        // Never capture the 0° fallback — that would write a bogus reference_heading.
+        if activeStepID == CalibrationStep.heading.id,
+           client.status?.gps?.bearingDeg == nil {
+            refusalMessage = "GPS bearing needed — aim at the remote and wait for base + remote GPS fixes (the GPS chip shows distance + bearing)."
             return
         }
 
@@ -129,6 +137,8 @@ struct CalibrateView: View {
         let result: Result<WCCalibrationState, WaveCamCalibrationError>
 
         switch activeStepID {
+        case CalibrationStep.baseLock.id:
+            result = await client.captureCalibrationBaseLock()
         case CalibrationStep.heading.id:
             result = await client.captureCalibrationHeading(headingDeg: resolvedHeadingDeg())
         case CalibrationStep.tilt.id:
@@ -153,17 +163,16 @@ struct CalibrateView: View {
 
     // MARK: - Capture value resolution
     //
-    // These are placeholder capture values sent with each POST.
-    // The heading/tilt/zoom steps instruct the operator to aim the camera
-    // manually; the backend reads motor position directly from the PTZ — the
-    // iOS app supplies only the annotation fields (source, note). The numeric
-    // fields below are required by the Pydantic models but carry the operator's
-    // current intent annotation rather than a computed motor value.
-    // TODO(calibration): once the backend exposes a "read current PTZ position"
-    // endpoint, replace these with live motor-position reads.
+    // The operator aims the camera manually; the backend reads the pan-motor position
+    // directly from the PTZ. The iOS app supplies the reference angle for each step.
+    //
+    // Heading is the real aim-at-remote value — the GPS base→remote bearing (the
+    // capture is gated on it being present in captureActiveStep, so the 0.0 fallback
+    // never reaches the backend). Tilt/zoom remain canonical anchors (level horizon /
+    // wide FOV) until their own captures are wired.
 
     private func resolvedHeadingDeg() -> Double {
-        // Use last known GPS bearing as a sensible default; fall back to 0.
+        // GPS base→remote bearing — captureActiveStep gates on this being non-nil.
         client.status?.gps?.bearingDeg ?? 0.0
     }
 
@@ -202,7 +211,7 @@ private struct CalibrationStep: Identifiable, Equatable {
         id: 1,
         title: "Preflight checks",
         headline: "Confirm camera and network",
-        detail: "Verify the camera feed, PTZ link, GPS source, storage, and safety latch before alignment begins.",
+        detail: "Live checks below verify the rig end-to-end: camera feed, GPS ingest, remote tracker heard, base fix. All green → confirm. Amber rows tell you exactly what to fix first.",
         actionTitle: "Confirm preflight",
         systemImage: "checklist"
     )
@@ -211,16 +220,16 @@ private struct CalibrationStep: Identifiable, Equatable {
         id: 2,
         title: "Base lock (GPS)",
         headline: "Lock the base location",
-        detail: "Use the Orin/base position as the fixed reference point before heading and tilt are solved.",
-        actionTitle: "Confirm base",
+        detail: "Latches the base GPS position as the camera reference. Needs the base tracker to have a fix — watch for the Base fix line on the GPS chip first.",
+        actionTitle: "Capture base lock",
         systemImage: "location.fill"
     )
 
     static let heading = CalibrationStep(
         id: 3,
-        title: "Heading - landmark",
-        headline: "Aim at a known landmark",
-        detail: "Center the camera on a fixed point you can identify on the map, such as a pier end or channel marker. WaveCam reads motor position and solves reference_heading without a magnetometer.",
+        title: "Heading — aim at remote",
+        headline: "Aim the camera at the remote tracker",
+        detail: "Place the LoRa remote where you can see it, center the camera on it, then capture. WaveCam reads the pan-motor position and pairs it with the GPS base→remote bearing to solve reference_heading — no magnetometer. Needs base + remote GPS fixes (the GPS chip shows distance + bearing).",
         actionTitle: "Capture heading",
         systemImage: "safari.fill"
     )
@@ -246,8 +255,8 @@ private struct CalibrationStep: Identifiable, Equatable {
     static let dryRun = CalibrationStep(
         id: 6,
         title: "Dry-run",
-        headline: "Run without recording",
-        detail: "Exercise GPS pointing, vision lock, and PTZ authority while recording stays optional and the stop latch remains visible.",
+        headline: "Prove it before the water",
+        detail: "Walk the remote around and watch GPS point the camera, then step into frame and confirm vision lock takes over. First session at a new spot: run all six steps in the yard before any water session. Emergency Stop stays visible throughout.",
         actionTitle: "Mark ready",
         systemImage: "play.circle.fill"
     )
@@ -400,6 +409,58 @@ private struct StepBadge: View {
     }
 }
 
+// MARK: - Preflight live checks
+
+/// The in-app version of the verify_wios.sh OUTCOME: instead of reading radio
+/// config over USB, verify the observable behavior — ingest alive, remote heard,
+/// base fix, camera feed. Green rows = the mesh is actually flowing. Config-level
+/// verification (presets/intervals) stays a Mac-side script; the guide's
+/// calibrate section covers when to escalate to it.
+private struct PreflightChecklist: View {
+    @Environment(WaveCamClient.self) private var client
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WCSpace.sm) {
+            checkRow("Camera feed",
+                     ok: client.connected && (client.status?.tracking.fps ?? 0) > 10,
+                     okText: "live · \(Int(client.status?.tracking.fps ?? 0)) fps",
+                     failText: client.connected ? "no frames" : "Orin offline")
+            if let alive = client.status?.gps?.readerAlive {
+                checkRow("GPS ingest",
+                         ok: alive,
+                         okText: "OK",
+                         failText: "DOWN — restart wavecam service")
+            }
+            checkRow("Remote tracker",
+                     ok: (client.status?.gps?.targetAgeSec ?? .infinity) < 120,
+                     okText: "heard \(Int(client.status?.gps?.targetAgeSec ?? 0))s ago",
+                     failText: client.status?.gps?.targetAgeSec == nil
+                        ? "not heard — power it on, give it sky"
+                        : "stale — check it's on and within range")
+            checkRow("Base GPS fix",
+                     ok: client.status?.gps?.baseAgeSec != nil,
+                     okText: "fix acquired",
+                     failText: "no fix — needs open sky (minutes on first fix; if it never comes, run verify_wios.sh — see Guide)")
+        }
+        .padding(WCSpace.sm)
+        .background(WC.ink.opacity(0.6), in: .rect(cornerRadius: WCRadius.sm))
+    }
+
+    private func checkRow(_ label: String, ok: Bool, okText: String, failText: String) -> some View {
+        HStack(spacing: WCSpace.sm) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(ok ? WC.ok : WC.warn)
+            Text(label).font(WCFont.label).foregroundStyle(WC.txt)
+            Spacer(minLength: WCSpace.sm)
+            Text(ok ? okText : failText)
+                .font(WCFont.caption)
+                .foregroundStyle(ok ? WC.muted : WC.warn)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+}
+
 // MARK: - Active step card
 
 private struct CalibrationActiveCard: View {
@@ -416,10 +477,10 @@ private struct CalibrationActiveCard: View {
     let onForward: () -> Void
     let onDismissRefusal: () -> Void
 
-    /// Steps whose capture is local-only (no backend POST).
+    /// Steps whose capture is local-only (no backend POST). Must mirror the
+    /// localSteps set in captureActiveStep — baseLock became a real POST 2026-06-10.
     private static let localStepIDs: Set<Int> = [
         CalibrationStep.preflight.id,
-        CalibrationStep.baseLock.id,
         CalibrationStep.dryRun.id
     ]
 
@@ -440,10 +501,10 @@ private struct CalibrationActiveCard: View {
                         .frame(width: 38, height: 38)
                         .background(WC.accent.opacity(0.12), in: .rect(cornerRadius: WCRadius.sm))
                     VStack(alignment: .leading, spacing: WCSpace.xs) {
-                        Text("STEP \(step.id)")
+                        Text("STEP \(step.id) OF \(CalibrationStep.all.count)")
                             .font(WCFont.label)
                             .tracking(1.4)
-                            .foregroundStyle(WC.faint)
+                            .foregroundStyle(WC.muted)
                         Text(step.headline)
                             .font(WCFont.title)
                             .foregroundStyle(WC.txt)
@@ -456,6 +517,10 @@ private struct CalibrationActiveCard: View {
                     .font(WCFont.body)
                     .foregroundStyle(WC.muted)
                     .lineSpacing(4)
+
+                if step.id == CalibrationStep.preflight.id {
+                    PreflightChecklist()
+                }
 
                 // Refusal message strip — appears only when a capture was refused.
                 if let msg = refusalMessage {

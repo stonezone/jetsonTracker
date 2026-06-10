@@ -97,9 +97,28 @@ A single landmark gives pan; tilt-at-distance and the zoom-vs-distance curve get
 ## Phased build + lane split (collaborative)
 
 - **P0 — data correct + visible** (no camera motion yet): port `gps_geo`/`camera_pose`/`gps_pointing` + unit tests; real `gps_fix_snapshot`; web UI + iOS GPS readout. Low risk, immediately testable.
-- **P1 — GPS aims (pan)**: arbiter handoff + controller absolute path + `gps_tracker` owner + aim-at-remote calibration endpoint/flow. On-rig.
-- **P2 — full**: zoom-by-distance + tilt + tuning. On-rig → field.
+- **P1 — GPS aims (pan)**: arbiter handoff + controller absolute path + `gps_tracker` owner + aim-at-remote calibration endpoint/flow + an optional `search_roi` field on the arbiter output (interface only, always `None` — a zero-behavior P2 seam). On-rig.
+- **P2 — full**: zoom-by-distance + tilt + tuning + **GPS-cued reacquisition** (see *P2 refinement* below). On-rig → field.
 - **Lane split** (Zack wants Claude + DeepSeek): **DeepSeek leads the backend control-loop** integration (arbiter, controller absolute path, `control_api` snapshot — its lane + control_api expertise); **Claude leads** the `gps_geo`/`camera_pose`/`gps_pointing` port (I built the ingest) + the iOS/web-UI displays + the calibration flow. **Cross-review every PR** (anti-vibe). **Zack** does on-rig + field calibration. Deploy stays Zack/Codex.
+
+## P2 refinement: GPS-cued reacquisition
+
+When vision **loses lock** (wipeout, subject turns away, goes under), GPS can shorten re-lock. Two distinct cases — **only the second is net-new**:
+
+- **Subject left the frame** (the ~90% case): already handled by the **P1 arbiter handoff** — vision-unlocked + GPS-fresh → `gps_tracker` owns → absolute-pan re-points the camera onto the bearing. No new mechanism; this is the high-leverage win and it falls out of P1 for free.
+- **Subject still in frame, lock dropped** (the narrower case): a GPS-cued **search ROI** narrows where vision looks. This is the only new piece — and it is the *least* valuable and *most* error-sensitive part, hence P2 and hence gated.
+
+**The hard constraint — error budget vs FoV.** To frame a subject at 300 m the camera sits at a **2–4° FoV**. The GPS→image error is the RSS of: single-point aim-at-remote calibration (~1–2°), GPS position noise (~1° at 300 m), and **staleness** (a 2 s-old fix at 10 m/s ≈ 3.8° at 300 m — and in the field we have seen fixes go far staler). That error is ~the size of the entire zoomed FoV, so an ROI centered on the GPS prediction can land on open water. The ROI only pays off when **GPS error ≪ FoV** → zoomed wide and/or GPS very fresh.
+
+**ROI value is sensitivity, not scan speed.** Narrowing 640×360→200×100 barely changes YOLO cost (it scans the frame either way). The real payoff is a GPS-cued **digital-zoom crop**: upscale the cued region so a distant orange blob is larger to YOLO → detect it further out. But that *tightens* the accuracy required (smaller effective FoV), so it is only safe with fresh GPS + good calibration + bounded range.
+
+**The pattern (P2):** re-point (P1 pan) → **zoom wide to reacquire** → **GPS-cued ROI sized to the live error estimate** (NOT a fixed 200×100) → re-lock → zoom back in. Gated on GPS freshness (disable the ROI when stale — a stale ROI is worse than a full scan) and on the calibration residual.
+
+**Build split:**
+- **P1 (cheap, interface only):** add an optional `search_roi: Optional[(cx, cy, w, h)]` field to the `TrackingArbiter` output, always `None` for now. Defines the seam so P2 has somewhere to plug in; zero behavior change, zero risk.
+- **P2 (consumer), only after field measurement:** implement the detector ROI / digital-zoom consumer **after measuring the real GPS→image error at the actual tracking zoom in the field** — that number decides whether the ROI helps or hurts, and sets the ROI sizing. Do not hard-code the window.
+
+`Validated` that re-point reacquisition ≈ free from the P1 handoff (confidence 8/10). `Unvalidated` that the ROI helps at tracking zoom — likely a win only at the wider reacquire zoom; **measure the field error budget before building the consumer** (5/10 until then).
 
 ## Open items to confirm during P0/P1
 

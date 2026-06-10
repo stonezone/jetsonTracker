@@ -99,9 +99,19 @@ struct MergedLiveView: View {
             feedCard(fullscreen: true)
                 .ignoresSafeArea()
 
-            // Exit — top-right, same toggle/position as the in-feed control
-            fullscreenToggleButton
+            // Telemetry HUD — fullscreen is the tripod-monitoring mode, so lock/GPS
+            // state must stay visible (it was dropped here pre-2026-06-10, leaving
+            // the operator blind to LOCKED/GPS while in fullscreen).
+            VStack {
+                HStack(alignment: .top) {
+                    GlassLockChip(status: client.status, connected: client.connected)
+                    GlassGPSChip(status: client.status, connected: client.connected)
+                    Spacer()
+                    fullscreenToggleButton
+                }
                 .padding(WCSpace.md)
+                Spacer()
+            }
 
             // Floating STOP — always reachable in fullscreen (safety invariant)
             VStack {
@@ -526,36 +536,130 @@ private struct GlassLockChip: View {
 
 /// At-a-glance LoRa GPS health on the feed. Feature-detected: shown only once the
 /// backend reports a gps.source, so the HUD stays clean until GPS is live. Colour +
-/// dot = freshness (green/live vs amber/stale); label carries the camera→target range.
+/// dot = freshness (green/live vs amber/stale); label carries the camera→target range
+/// and bearing — or "NO FIX" when GPS is live but the camera-reference (base) position
+/// hasn't locked yet (distance/bearing null), so the field operator sees *why* it's not
+/// pointing without SSHing the Orin.
 private struct GlassGPSChip: View {
     let status: WCStatus?
     let connected: Bool
+    @State private var showDetail = false
 
     private var gps: WCStatus.GPS? {
         guard connected, let g = status?.gps, g.source != nil else { return nil }
         return g
     }
 
+    // distance/bearing are null until BOTH the remote fix (source) and the base fix
+    // exist; with source live, a null distance means the base hasn't locked its 3D fix.
+    private var hasFix: Bool { gps?.distanceM != nil }
+    private var stale: Bool { gps?.stale ?? false }
+
     var body: some View {
         if let g = gps {
-            GlassChip(text: label(g),
-                      color: (g.stale ?? false) ? WC.warn : WC.ok,
-                      dot: !(g.stale ?? false))
-                .accessibilityLabel(voiceOver(g))
+            Button { showDetail = true } label: {
+                GlassChip(text: label(g),
+                          color: (!hasFix || stale) ? WC.warn : WC.ok,
+                          dot: hasFix && !stale)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(voiceOver(g))
+            .accessibilityHint("Shows GPS detail")
+            .popover(isPresented: $showDetail) {
+                GPSDetailCard(gps: g)
+                    .presentationCompactAdaptation(.popover)
+            }
         }
     }
 
     private func label(_ g: WCStatus.GPS) -> String {
-        if let d = g.distanceM { return "GPS \(Int(d.rounded()))m" }
-        return "GPS"
+        guard let d = g.distanceM else { return "GPS·NO FIX" }
+        if let b = g.bearingDeg {
+            return "GPS \(Int(d.rounded()))m·\(Int(b.rounded()))°"
+        }
+        return "GPS \(Int(d.rounded()))m"
     }
 
     private func voiceOver(_ g: WCStatus.GPS) -> String {
+        guard g.distanceM != nil else { return "GPS live, no base fix yet" }
         var parts = ["GPS"]
         if let d = g.distanceM { parts.append("\(Int(d.rounded())) meters") }
         if let b = g.bearingDeg { parts.append("bearing \(Int(b.rounded())) degrees") }
-        parts.append((g.stale ?? false) ? "stale" : "live")
+        parts.append(stale ? "stale" : "live")
         return parts.joined(separator: ", ")
+    }
+}
+
+/// Tap-through detail for the GPS chip — a solid, outdoor-legible readout so the field
+/// operator can see source, range/bearing, target freshness, and base-fix status (the
+/// base-fix line is the usual culprit when GPS is live but the camera isn't pointing).
+private struct GPSDetailCard: View {
+    let gps: WCStatus.GPS
+    @Environment(WaveCamClient.self) private var client
+    @State private var confirmRestart = false
+
+    var body: some View {
+        OperatorCard(title: "GPS") {
+            VStack(alignment: .leading, spacing: WCSpace.sm) {
+                row("Source", gps.source?.uppercased() ?? "—", WC.accent)
+                row("Range", gps.distanceM.map { "\(Int($0.rounded())) m" } ?? "—",
+                    gps.distanceM != nil ? WC.accent : WC.faint)
+                row("Bearing", gps.bearingDeg.map { "\(Int($0.rounded()))°" } ?? "—",
+                    gps.bearingDeg != nil ? WC.accent : WC.faint)
+                row("Target", targetText, (gps.stale ?? false) ? WC.warn : WC.ok)
+                row("Base fix", baseText, gps.baseAgeSec != nil ? WC.ok : WC.warn)
+                if let alive = gps.readerAlive {
+                    row("Ingest", ingestText(alive), alive ? WC.ok : WC.warn)
+                    // The fix for a dead reader IS a service restart — put the button
+                    // where the operator is looking when they discover it.
+                    if !alive {
+                        GlassButton(
+                            label: "Restart WaveCam service",
+                            icon: "arrow.clockwise.circle",
+                            role: .normal,
+                            disabled: client.mode != .live,
+                            action: { confirmRestart = true }
+                        )
+                    }
+                }
+            }
+            .frame(width: 230, alignment: .leading)
+        }
+        .confirmationDialog("Restart the vision service? PTZ stops first; ~15 s outage.",
+                            isPresented: $confirmRestart, titleVisibility: .visible) {
+            Button("Restart", role: .destructive) { Task { await client.systemRestart() } }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func row(_ label: String, _ value: String, _ tint: Color) -> some View {
+        HStack(spacing: WCSpace.md) {
+            Text(label).font(WCFont.label).tracking(1.0).foregroundStyle(WC.faint)
+            Spacer(minLength: WCSpace.md)
+            Text(value).font(WCFont.mono).foregroundStyle(tint).lineLimit(1)
+        }
+    }
+
+    // null target_age with source present = remote hasn't reported a position yet.
+    private var targetText: String {
+        let fresh = !(gps.stale ?? false)
+        if let a = gps.targetAgeSec { return "\(fresh ? "LIVE" : "STALE") · \(age(a))" }
+        return fresh ? "LIVE" : "STALE"
+    }
+    // null base_age with source present = base GPS has no 3D fix (needs open sky).
+    private var baseText: String {
+        if let a = gps.baseAgeSec { return "LOCKED · \(age(a))" }
+        return "NO FIX — sky"
+    }
+    // Reader DOWN = the Orin's serial ingest thread is dead/disconnected (the
+    // "silently stale GPS" failure) — restart wavecam.service, not the Wios.
+    private func ingestText(_ alive: Bool) -> String {
+        guard alive else { return "DOWN — restart svc" }
+        if let p = gps.lastPollAgeSec { return "OK · \(age(p))" }
+        return "OK"
+    }
+    private func age(_ s: Double) -> String {
+        s < 60 ? "\(Int(s.rounded()))s" : "\(Int((s / 60).rounded()))m"
     }
 }
 

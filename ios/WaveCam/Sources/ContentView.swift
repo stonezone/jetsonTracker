@@ -64,12 +64,6 @@ private struct TopBar: View {
         return client.connected ? WC.ok : WC.faint
     }
 
-    private var appVersion: String {
-        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        return "v\(v) (\(b))"
-    }
-
     var body: some View {
         HStack {
             HStack(spacing: 8) {
@@ -81,11 +75,6 @@ private struct TopBar: View {
                 .font(.system(size: 16, weight: .bold))
                 .tracking(1)
             }
-            Text(appVersion)
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(WC.faint)
-                .padding(.leading, 6)
-                .accessibilityLabel("App version \(appVersion)")
             Spacer()
             HStack(spacing: 6) {
                 Circle().fill(connectionColor).frame(width: 7, height: 7)
