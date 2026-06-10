@@ -267,6 +267,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     app.state.control_api = adapter
     install_auth(app)
     register_guide_routes(app)
+    register_version_routes(app)
     register_status_routes(app, adapter)
     register_safety_routes(app, adapter)
     register_ptz_routes(app, adapter)
@@ -277,6 +278,25 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_config_routes(app, adapter)
     register_system_routes(app, adapter)
     register_agent_routes(app, adapter)
+
+
+def register_version_routes(app: FastAPI) -> None:
+    @app.get("/api/v1/version", dependencies=[Depends(require(READ))])
+    def version():
+        path = os.environ.get(
+            "WAVECAM_VERSION_PATH",
+            os.path.join(os.path.dirname(__file__), "..", "version.json"),
+        )
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+        return {
+            "git_sha": data.get("git_sha"),
+            "branch": data.get("branch"),
+            "deployed_at": data.get("deployed_at"),
+        }
 
 
 def register_guide_routes(app: FastAPI) -> None:
