@@ -6,6 +6,7 @@ import time
 
 from fastapi.testclient import TestClient
 
+from wavecam.camera_pose import CameraPose
 from wavecam.ptz_owner import PtzOwner
 from wavecam.control_api import map_axis
 from wavecam.ptz_visca import PAN_RIGHT, TILT_DOWN, TILT_STOP, TILT_UP
@@ -54,6 +55,10 @@ class DummyPtz:
 
     def home(self):
         self.calls.append(("home",))
+
+    def inquire_pan_tilt(self):
+        self.calls.append(("inquire_pan_tilt",))
+        return None  # no encoder readback in tests — pose stays unmodified
 
 
 class DummyRecorder:
@@ -112,6 +117,9 @@ class DummyPipeline:
         self.recorder = DummyRecorder()
         self.zoom_suppressed = []
         self.restart_calls = []
+        # P1: the adapter reads pose (calibration state) + gps (snapshot/reader health)
+        self.pose = CameraPose()
+        self.gps = None
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
                 enabled=True,
