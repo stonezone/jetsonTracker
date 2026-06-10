@@ -44,3 +44,32 @@ def test_hot_config_endpoint_persists_to_yaml(tmp_path, monkeypatch):
 
     data = yaml.safe_load(p.read_text())
     assert data["fusion"]["gps_boost"] == 0.35
+
+
+def test_hot_config_string_value_persists_as_coerced_type(tmp_path):
+    """Regression: set_float coerces "0.3" (str) to 0.3 (float) in memory, but the old
+    code persisted req.patch directly — so "0.3" (a YAML string) would be written to
+    the rig yaml and corrupt the dataclass type on next restart.
+
+    set_float accepts strings and converts them via float(), so apply succeeds.
+    The fix reads back the post-coercion value from the live cfg object and persists
+    that float, not the original string from the request.
+    """
+    p = tmp_path / "config.yaml"
+    p.write_text("fusion:\n  gps_boost: 0.2\n")
+
+    pipe = DummyPipeline()
+    pipe.cfg.source_path = str(p)
+
+    client = TestClient(build_app(pipe))
+    # Send gps_boost as a string — set_float will coerce it, apply must succeed
+    resp = client.post("/api/v1/config/hot", json={"patch": {"fusion.gps_boost": "0.3"}})
+    assert resp.status_code == 200, f"apply should accept a numeric string; got: {resp.json()}"
+
+    data = yaml.safe_load(p.read_text())
+    persisted = data["fusion"]["gps_boost"]
+    # The yaml value must be a Python float, not the string "0.3"
+    assert isinstance(persisted, float), (
+        f"Expected float in yaml after coercion, got {type(persisted).__name__!r}: {persisted!r}"
+    )
+    assert persisted == 0.3

@@ -609,10 +609,17 @@ def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         # Persist the successfully applied keys back to the live yaml so the rig file
         # is always the single source of truth. Failure must not fail the request —
         # the in-memory apply already succeeded.
+        # Read post-coercion values from the live cfg rather than persisting req.patch
+        # directly — set_float/set_int coerce e.g. "0.3" → 0.3, so persisting the raw
+        # request string would write a yaml string and corrupt the dataclass type on restart.
         src = getattr(getattr(api.pipeline, "cfg", None), "source_path", "")
         if src and req.patch:
             try:
-                persist_hot_values(src, req.patch)
+                coerced = {}
+                for dotted in req.patch:
+                    section, attr = dotted.split(".", 1)
+                    coerced[dotted] = getattr(getattr(api.pipeline.cfg, section), attr)
+                persist_hot_values(src, coerced)
             except Exception as e:
                 print(f"[control_api] hot-config persist failed (live value still applied): {e}")
         api.bump_revision()
@@ -772,7 +779,6 @@ class ControlApiAdapter:
             cam_pos = self.pipeline.gps.get_camera_position()
 
         with self._lock:
-            pose_changed = False
             if step == "heading":
                 # P1: wire to CameraPose — read pan encoder, calibrate pan aim
                 heading_deg = values.get("heading_deg")
@@ -782,7 +788,6 @@ class ControlApiAdapter:
                         bearing_deg=float(heading_deg),
                         enc_per_deg=4.47,
                     )
-                    pose_changed = True
             elif step == "base_lock":
                 # P1: lock base GPS position for camera reference
                 from .camera_pose import lock_base_position
@@ -794,24 +799,20 @@ class ControlApiAdapter:
                         self.pipeline.pose.lat = base[0]
                         self.pipeline.pose.lon = base[1]
                         self.pipeline.pose.alt_m = base[2]
-                        pose_changed = True
             elif step == "tilt":
                 # P1: tilt calibration — single-point anchor (two-point deferred)
                 tilt_deg = values.get("tilt_deg")
                 if tilt_deg is not None and enc is not None:
                     self.pipeline.pose.tilt_anchor_enc = float(enc[1])
                     self.pipeline.pose.tilt_anchor_elev = float(tilt_deg)
-                    pose_changed = True
-            # Record step in the unified store (sets reference_heading for "heading").
-            # Only persist to disk when the pose actually changed (encoder/GPS data
-            # was available) — same gate as the old _save_pose() calls, so tests
-            # with DummyPtz (enc=None) don't write to the default path.
+            # Always persist after set_step so reference_heading survives restart even
+            # when enc=None (VISCA timeout or DummyPtz in tests) prevented pose update.
+            # Test isolation is handled by the WAVECAM_POSE_PATH env var (conftest.py).
             self._store.set_step(step, values)
-            if pose_changed:
-                try:
-                    self._store.save()
-                except Exception as e:
-                    print(f"[control_api] calibration save failed: {e}")
+            try:
+                self._store.save()
+            except Exception as e:
+                print(f"[control_api] calibration save failed: {e}")
 
     def resume_without_autostart(self) -> None:
         with self._lock:
