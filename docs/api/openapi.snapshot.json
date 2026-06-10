@@ -8,6 +8,7 @@
  "/api/v1/calibration/zoom",
  "/api/v1/config",
  "/api/v1/config/hot",
+ "/api/v1/events",
  "/api/v1/health",
  "/api/v1/logs",
  "/api/v1/media/download/{name}",

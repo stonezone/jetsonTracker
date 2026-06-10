@@ -280,6 +280,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_system_routes(app, adapter)
     register_agent_routes(app, adapter)
     register_health_routes(app, adapter)
+    register_events_routes(app, adapter)
 
 
 def register_version_routes(app: FastAPI) -> None:
@@ -637,6 +638,14 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/agent/summon", dependencies=[Depends(require(SERVICE))])
     def agent_summon(req: AgentSummonRequest | None = None):
         return api.request_agent_summon(req or AgentSummonRequest())
+
+
+def register_events_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    @app.get("/api/v1/events", dependencies=[Depends(require(READ))])
+    def events(since: float = 0.0):
+        ring = getattr(api.pipeline, "events", None)
+        items = ring.since(since) if ring is not None else []
+        return {"events": items}
 
 
 def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
