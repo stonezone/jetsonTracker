@@ -77,4 +77,6 @@ loop:
 gps:
   enabled: true
   dev_path: /dev/ttyACM0
-  # remote_id: "!9f5802d5"   # optional; "" => auto-detect the non-local node
+  remote_id: "!9f5802d5"
+  stale_threshold_sec: 10
+  drive_zoom: false

@@ -130,23 +130,24 @@ class ViscaIP:
     def inquire_pan_tilt(self):
         """Pan/tilt position inquiry -> (pan_counts, tilt_counts) signed, or None.
         Raw reply: 90 50 0p 0p 0p 0p 0t 0t 0t 0t FF (no 8-byte header). Reads past
-        stale ACK/completion frames (90 4x / 90 5x with x!=0), like the backend."""
+        stale ACK/completion frames. Lock held only for the sendto, not the blocking
+        recv loop (same pattern as inquire_zoom)."""
         self._drain()
         with self._lock:
             self._sock.sendto(bytes([self.addr, 0x09, 0x06, 0x12, 0xFF]), (self.ip, self.port))
-            for _ in range(4):
-                try:
-                    data, _ = self._sock.recvfrom(64)
-                except socket.timeout:
-                    break
-                if len(data) >= 11 and data[0] == 0x90 and data[1] == 0x50:
-                    pan = (data[2] << 12) | (data[3] << 8) | (data[4] << 4) | data[5]
-                    tilt = (data[6] << 12) | (data[7] << 8) | (data[8] << 4) | data[9]
-                    if pan & 0x8000:
-                        pan -= 0x10000
-                    if tilt & 0x8000:
-                        tilt -= 0x10000
-                    return pan, tilt
+        for _ in range(4):
+            try:
+                data, _ = self._sock.recvfrom(64)
+            except socket.timeout:
+                break
+            if len(data) >= 11 and data[0] == 0x90 and data[1] == 0x50:
+                pan = (data[2] << 12) | (data[3] << 8) | (data[4] << 4) | data[5]
+                tilt = (data[6] << 12) | (data[7] << 8) | (data[8] << 4) | data[9]
+                if pan & 0x8000:
+                    pan -= 0x10000
+                if tilt & 0x8000:
+                    tilt -= 0x10000
+                return pan, tilt
         return None
 
     def close(self) -> None:

@@ -260,3 +260,145 @@ def test_reader_populates_camera_age():
     assert g._thread is None
     assert fake.closed is True
     assert g.enabled is False
+
+
+# --- Task 6: RuntimeError-during-nodes → no reconnect (Task 6b) ---------------
+
+class _FakeIfaceRuntimeError:
+    """Raises RuntimeError on the first .nodes access, succeeds after."""
+
+    def __init__(self, good_nodes):
+        self._calls = 0
+        self._good_nodes = good_nodes
+        self.closed = False
+
+    @property
+    def nodes(self):
+        self._calls += 1
+        if self._calls == 1:
+            raise RuntimeError("dict changed size during iteration")
+        return self._good_nodes
+
+    def getMyNodeInfo(self):
+        return {"num": 1}
+
+    def close(self):
+        self.closed = True
+
+
+def test_runtime_error_during_nodes_does_not_reconnect():
+    """RuntimeError from nodes dict mutation skips the poll cycle without
+    closing the interface or reconnecting."""
+    good_nodes = {
+        "!base": {"num": 1, "position": {"time": 1}},
+        "!rem": {"num": 2, "user": {"id": "!rem"},
+                 "position": {"latitude": 21.0, "longitude": -158.0, "time": 500}},
+    }
+    g = MeshtasticGps(poll_sec=0.02)
+    fake = _FakeIfaceRuntimeError(good_nodes)
+    g._iface = fake
+    g._my_num = 1
+    g.enabled = True
+    g._stop.clear()
+    g._thread = threading.Thread(target=g._reader_loop, name="meshtastic-gps", daemon=True)
+    g._thread.start()
+    time.sleep(0.12)  # enough for several poll cycles
+
+    assert g._thread.is_alive()
+    # Interface was NOT closed (no reconnect triggered by RuntimeError)
+    assert fake.closed is False
+    # After the first (failed) cycle, subsequent polls succeed and populate snapshot
+    fix = g.get_fix()
+    assert fix is not None and fix.lat == 21.0
+
+    g.close()
+
+
+# --- Task 6c/d: reader_alive / last_poll_age_sec / status gps block -----------
+
+def test_reader_alive_false_before_connect():
+    g = MeshtasticGps()
+    assert g.reader_alive() is False
+
+
+def test_reader_alive_and_last_poll_age_after_connect():
+    g = MeshtasticGps(poll_sec=0.02)
+    good_nodes = {
+        "!base": {"num": 1, "position": {"time": 1}},
+        "!rem": {"num": 2, "user": {"id": "!rem"},
+                 "position": {"latitude": 21.0, "longitude": -158.0, "time": 500}},
+    }
+    fake = _FakeIface()
+    fake.nodes = good_nodes
+    g._iface = fake
+    g._my_num = 1
+    g.enabled = True
+    g._stop.clear()
+    g._thread = threading.Thread(target=g._reader_loop, name="meshtastic-gps", daemon=True)
+    g._thread.start()
+    time.sleep(0.1)
+
+    assert g.reader_alive() is True
+    age = g.last_poll_age_sec()
+    assert age is not None and 0.0 <= age < 2.0
+
+    g.close()
+
+
+def test_last_poll_age_sec_none_before_first_poll():
+    g = MeshtasticGps()
+    assert g.last_poll_age_sec() is None
+
+
+# --- Task 6d: reader_alive / last_poll_age_sec in /status gps block ----------
+
+def test_status_gps_block_includes_reader_health_with_gps():
+    from wavecam.control_api import build_gps
+    import types
+
+    g = MeshtasticGps(poll_sec=0.02)
+    good_nodes = {
+        "!base": {"num": 1, "position": {"time": 1}},
+        "!rem": {"num": 2, "user": {"id": "!rem"},
+                 "position": {"latitude": 21.0, "longitude": -158.0, "time": 500}},
+    }
+    fake = _FakeIface()
+    fake.nodes = good_nodes
+    g._iface = fake
+    g._my_num = 1
+    g.enabled = True
+    g._stop.clear()
+    g._thread = threading.Thread(target=g._reader_loop, name="meshtastic-gps", daemon=True)
+    g._thread.start()
+    time.sleep(0.1)
+
+    pipeline = types.SimpleNamespace(
+        gps=g,
+        gps_status=None,
+        cfg=types.SimpleNamespace(gps=types.SimpleNamespace(stale_threshold_sec=10.0)),
+        state=types.SimpleNamespace(get_status=lambda: {}),
+    )
+    result = build_gps(pipeline, {})
+    assert "reader_alive" in result
+    assert "last_poll_age_sec" in result
+    assert result["reader_alive"] is True
+    assert result["last_poll_age_sec"] is not None
+
+    g.close()
+
+
+def test_status_gps_block_includes_reader_health_without_gps():
+    from wavecam.control_api import build_gps
+    import types
+
+    pipeline = types.SimpleNamespace(
+        gps=None,
+        gps_status=None,
+        cfg=types.SimpleNamespace(gps=types.SimpleNamespace(stale_threshold_sec=10.0)),
+        state=types.SimpleNamespace(get_status=lambda: {}),
+    )
+    result = build_gps(pipeline, {})
+    assert "reader_alive" in result
+    assert "last_poll_age_sec" in result
+    assert result["reader_alive"] is None
+    assert result["last_poll_age_sec"] is None

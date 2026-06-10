@@ -721,6 +721,17 @@ class ControlApiAdapter:
         return None
 
     def capture_calibration(self, step: str, values: dict) -> None:
+        # Perform blocking PTZ I/O BEFORE acquiring the adapter lock so the request
+        # thread never holds the lock across a recvfrom (same class of bug as the
+        # 2026-06-08 API hang when meshtastic was called under the lock).
+        enc = None
+        if step in ("heading", "tilt") and self.pipeline.ptz is not None:
+            enc = self.pipeline.ptz.inquire_pan_tilt()
+
+        cam_pos = None
+        if step == "base_lock" and self.pipeline.gps is not None:
+            cam_pos = self.pipeline.gps.get_camera_position()
+
         captured_at = int(time.time() * 1000)
         entry = {**values, "captured_at_unix_ms": captured_at}
         with self._lock:
@@ -730,45 +741,32 @@ class ControlApiAdapter:
                 self._calibration["reference_heading"] = entry["heading_deg"]
                 # P1: wire to CameraPose — read pan encoder, calibrate pan aim
                 heading_deg = entry.get("heading_deg")
-                if heading_deg is not None and self.pipeline.ptz is not None:
-                    enc = self.pipeline.ptz.inquire_pan_tilt()
-                    if enc is not None:
-                        self.pipeline.pose.calibrate_pan_aim(
-                            enc=float(enc[0]),
-                            bearing_deg=float(heading_deg),
-                            enc_per_deg=4.47,
-                        )
-                        self._save_pose()
+                if heading_deg is not None and enc is not None:
+                    self.pipeline.pose.calibrate_pan_aim(
+                        enc=float(enc[0]),
+                        bearing_deg=float(heading_deg),
+                        enc_per_deg=4.47,
+                    )
+                    self._save_pose()
             elif step == "base_lock":
                 # P1: lock base GPS position for camera reference
                 from .camera_pose import lock_base_position
-                if self.pipeline.gps is not None:
-                    cam_pos = self.pipeline.gps.get_camera_position()
-                    if cam_pos is not None:
-                        # Single-fix lock (averaging done by GPS chip)
-                        fixes = [(cam_pos[0], cam_pos[1], cam_pos[2], None)]
-                        base = lock_base_position(fixes)
-                        if base is not None:
-                            self.pipeline.pose.lat = base[0]
-                            self.pipeline.pose.lon = base[1]
-                            self.pipeline.pose.alt_m = base[2]
-                            self._save_pose()
-            elif step == "tilt":
-                # P1: tilt calibration (two-point)
-                tilt_deg = entry.get("tilt_deg")
-                if tilt_deg is not None and self.pipeline.ptz is not None:
-                    enc = self.pipeline.ptz.inquire_pan_tilt()
-                    if enc is not None:
-                        prev = self._calibration.get("tilt")
-                        if prev and prev.get("tilt_deg") is not None:
-                            prev_enc = self.pipeline.ptz.inquire_pan_tilt()
-                            if prev_enc is not None:
-                                # Use the tilt value from the encoder result
-                                pass  # Two-point requires storing prev tilt enc
-                        # Single-point tilt for now (sets anchor)
-                        self.pipeline.pose.tilt_anchor_enc = float(enc[1])
-                        self.pipeline.pose.tilt_anchor_elev = float(tilt_deg)
+                if cam_pos is not None:
+                    # Single-fix lock (averaging done by GPS chip)
+                    fixes = [(cam_pos[0], cam_pos[1], cam_pos[2], None)]
+                    base = lock_base_position(fixes)
+                    if base is not None:
+                        self.pipeline.pose.lat = base[0]
+                        self.pipeline.pose.lon = base[1]
+                        self.pipeline.pose.alt_m = base[2]
                         self._save_pose()
+            elif step == "tilt":
+                # P1: tilt calibration — single-point anchor (two-point deferred)
+                tilt_deg = entry.get("tilt_deg")
+                if tilt_deg is not None and enc is not None:
+                    self.pipeline.pose.tilt_anchor_enc = float(enc[1])
+                    self.pipeline.pose.tilt_anchor_elev = float(tilt_deg)
+                    self._save_pose()
 
     def _save_pose(self) -> None:
         """Persist CameraPose to disk so calibration survives restarts."""
@@ -1916,19 +1914,35 @@ def build_tracking(legacy: dict) -> dict:
     }
 
 
-STALE_THRESHOLD_SEC = 60.0  # matches config.orin.servo.yaml gps.stale_threshold_sec
-
-
 def build_gps(pipeline, legacy: dict) -> dict:
+    threshold = getattr(getattr(pipeline, "cfg", None), "gps", None)
+    threshold = getattr(threshold, "stale_threshold_sec", 10.0)
     status = unknown_gps()
-    source = gps_snapshot_source(pipeline, legacy)
+    gps = getattr(pipeline, "gps", None)
+    # Collect reader health from the live gps object before snapshot lookup so
+    # these keys survive the status.update() below (normalize_gps passes them
+    # through as None when they aren't in the source dict).
+    reader_alive_val = None
+    last_poll_age_val = None
+    if gps is not None:
+        ra = getattr(gps, "reader_alive", None)
+        lp = getattr(gps, "last_poll_age_sec", None)
+        reader_alive_val = ra() if callable(ra) else None
+        last_poll_age_val = lp() if callable(lp) else None
+    source = gps_snapshot_source(pipeline, legacy, threshold=threshold)
     if source is None:
+        status["reader_alive"] = reader_alive_val
+        status["last_poll_age_sec"] = last_poll_age_val
         return status
     status.update(normalize_gps(source))
+    # Overlay the live reader health (takes precedence over any stale source dict value)
+    if gps is not None:
+        status["reader_alive"] = reader_alive_val
+        status["last_poll_age_sec"] = last_poll_age_val
     return status
 
 
-def gps_snapshot_source(pipeline, legacy: dict):
+def gps_snapshot_source(pipeline, legacy: dict, threshold: float = 10.0):
     legacy_gps = legacy.get("gps")
     if isinstance(legacy_gps, dict):
         return legacy_gps
@@ -1948,11 +1962,11 @@ def gps_snapshot_source(pipeline, legacy: dict):
     if callable(get_fix):
         fix = get_fix()
         if fix is not None:
-            return gps_fix_snapshot(fix, gps)
+            return gps_fix_snapshot(fix, gps, threshold=threshold)
     return None
 
 
-def gps_fix_snapshot(fix, gps=None) -> dict | None:
+def gps_fix_snapshot(fix, gps=None, threshold: float = 10.0) -> dict | None:
     if fix is None:
         return None
     from .gps_meshtastic import bearing_deg, haversine_m
@@ -1977,7 +1991,7 @@ def gps_fix_snapshot(fix, gps=None) -> dict | None:
                 snapshot["bearing_deg"] = round(bearing, 1)
                 snapshot["base_age_sec"] = round(base_age, 1) if base_age is not None else None
                 snapshot["stale"] = (
-                    target_age is not None and target_age > STALE_THRESHOLD_SEC
+                    target_age is not None and target_age > threshold
                 )
                 return snapshot
 
@@ -1987,7 +2001,7 @@ def gps_fix_snapshot(fix, gps=None) -> dict | None:
         "distance_m": None,
         "bearing_deg": None,
         "base_age_sec": None,
-        "stale": target_age is not None and target_age > STALE_THRESHOLD_SEC,
+        "stale": target_age is not None and target_age > threshold,
     })
     return snapshot
 
@@ -2000,6 +2014,8 @@ def normalize_gps(status: dict) -> dict:
         "distance_m": status.get("distance_m"),
         "bearing_deg": status.get("bearing_deg"),
         "stale": bool(status.get("stale", False)),
+        "reader_alive": status.get("reader_alive"),
+        "last_poll_age_sec": status.get("last_poll_age_sec"),
     }
 
 
@@ -2011,6 +2027,8 @@ def unknown_gps() -> dict:
         "distance_m": None,
         "bearing_deg": None,
         "stale": True,
+        "reader_alive": None,
+        "last_poll_age_sec": None,
     }
 
 

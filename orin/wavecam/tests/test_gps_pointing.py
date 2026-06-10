@@ -54,3 +54,85 @@ def test_uncalibrated_pose_raises():
     target = GeoPoint(lat=21.6, lon=-157.999)
     with pytest.raises(RuntimeError):
         compute_target(base, target, CameraPose(), lead_s=0.0)
+
+
+# --- Task 1: _gps_pointing_cmd uses latched pose position ---------------------
+
+import sys
+import types
+sys.modules.setdefault("cv2", types.SimpleNamespace())
+
+from wavecam.gps_stub import NormalizedFix
+from wavecam.pipeline import Pipeline
+
+
+def _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0,
+                             drive_zoom=False, gps=None):
+    """Build a minimal Pipeline instance for _gps_pointing_cmd tests."""
+    pipe = Pipeline.__new__(Pipeline)
+    pipe.cfg = types.SimpleNamespace(
+        ptz=types.SimpleNamespace(enabled=False, command_min_interval=0.0),
+        gps=types.SimpleNamespace(
+            max_pan_speed=4, max_tilt_speed=3, drive_zoom=drive_zoom,
+        ),
+    )
+    from wavecam.camera_pose import CameraPose
+    pose = CameraPose(lat=lat, lon=lon, alt_m=alt_m)
+    pose.calibrate_pan_aim(enc=1000.0, bearing_deg=90.0, enc_per_deg=4.47)
+    pipe.pose = pose
+    pipe.gps = gps
+    pipe._last_abs_cmd_key = None
+    pipe._last_abs_cmd_time = 0.0
+    return pipe
+
+
+def test_gps_pointing_cmd_uses_latched_pose_without_live_gps():
+    """With has_base=True and gps=None, _gps_pointing_cmd still produces a command."""
+    pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0, gps=None)
+    fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
+                        ts=1000.0, age_sec=2.0, src="lora")
+    cmd = pipe._gps_pointing_cmd(fix)
+    assert cmd is not None
+    assert isinstance(cmd.pan_enc, int)
+
+
+def test_gps_pointing_cmd_base_jitter_does_not_change_bearing():
+    """Changing live camera position has no effect once pose is latched."""
+
+    class JitteryGps:
+        def __init__(self, lat):
+            self._lat = lat
+
+        def get_camera_position(self):
+            return (self._lat, -158.0, 2.0)
+
+    pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0)
+    fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
+                        ts=1000.0, age_sec=2.0, src="lora")
+    cmd1 = pipe._gps_pointing_cmd(fix)
+    # Simulate base jitter by wiring a GPS that would return a different position
+    pipe.gps = JitteryGps(21.65)
+    cmd2 = pipe._gps_pointing_cmd(fix)
+    assert cmd1 is not None and cmd2 is not None
+    # Latched pose is used — same bearing regardless of live GPS
+    assert cmd1.pan_enc == cmd2.pan_enc
+
+
+# --- Task 3: drive_zoom gate --------------------------------------------------
+
+def test_gps_pointing_cmd_drive_zoom_false_gives_none_zoom():
+    pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0, drive_zoom=False)
+    fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
+                        ts=1000.0, age_sec=2.0, src="lora")
+    cmd = pipe._gps_pointing_cmd(fix)
+    assert cmd is not None
+    assert cmd.zoom_enc is None
+
+
+def test_gps_pointing_cmd_drive_zoom_true_gives_zoom_enc():
+    pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0, drive_zoom=True)
+    fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
+                        ts=1000.0, age_sec=2.0, src="lora")
+    cmd = pipe._gps_pointing_cmd(fix)
+    assert cmd is not None
+    assert cmd.zoom_enc is not None and cmd.zoom_enc >= 0

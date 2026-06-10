@@ -195,17 +195,27 @@ class Pipeline(threading.Thread):
             self._last_abs_cmd_time = now
 
     def _gps_pointing_cmd(self, fix):
-        """Compute a GPS absolute pointing command from a cached fix, or None."""
-        if self.gps is None:
+        """Compute a GPS absolute pointing command from a cached fix, or None.
+
+        Uses the latched pose position when available (tripod is stationary once
+        locked); falls back to live get_camera_position() for bench/manual flows."""
+        if fix is None or not self.pose.calibrated:
             return None
-        cam = self.gps.get_camera_position()
-        if fix is None or cam is None or not self.pose.calibrated:
+        if self.pose.has_base:
+            base = GeoPoint(lat=self.pose.lat, lon=self.pose.lon, alt_m=self.pose.alt_m)
+        elif self.gps is not None:
+            cam = self.gps.get_camera_position()
+            if cam is None:
+                return None
+            base = GeoPoint(lat=cam[0], lon=cam[1], alt_m=cam[2] if len(cam) > 2 else 0.0)
+        else:
             return None
-        base = GeoPoint(lat=cam[0], lon=cam[1], alt_m=cam[2] if len(cam) > 2 else 0.0)
+        gps_cfg = self.cfg.gps
+        drive_zoom = getattr(gps_cfg, "drive_zoom", False)
         target = GeoPoint(lat=fix.lat, lon=fix.lon,
                           speed_mps=fix.speed, course_deg=fix.course)
         pt = compute_target(base, target, self.pose, lead_s=0.65,
-                            zoom=ZoomCurve())
+                            zoom=ZoomCurve() if drive_zoom else None)
         return PtzAbsoluteCommand(
             pan_enc=int(pt.pan_enc), tilt_enc=int(pt.tilt_enc),
             zoom_enc=int(pt.zoom_enc) if pt.zoom_enc is not None else None,
@@ -295,14 +305,8 @@ class Pipeline(threading.Thread):
                     gps_fix.age_sec < getattr(self.cfg.gps, "stale_threshold_sec", 10.0)
                 ) if gps_fix else False
                 gps_calibrated = self.pose.calibrated
-                # C1: base must have a fresh position fix, not just a cached one
-                _cam_pos = self.gps.get_camera_position() if self.gps else None
-                _cam_age = self.gps.get_camera_age() if self.gps else None
-                base_locked = (
-                    _cam_pos is not None and
-                    _cam_age is not None and
-                    _cam_age < getattr(self.cfg.gps, "stale_threshold_sec", 10.0)
-                )
+                # C1: base position latched once at setup; tripod is stationary.
+                base_locked = self.pose.has_base
                 decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
                                                base_locked, t0)
                 prev_state = self._arbiter_state
