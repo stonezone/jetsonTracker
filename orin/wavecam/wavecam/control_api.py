@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from .auth import CONFIG, PTZ, READ, SAFETY, SERVICE, install_auth, require, websocket_authorized
 from .color_presets import COLOR_PRESETS, preset_hsv_ranges
+from .config import persist_hot_values
 from .ptz_owner import AUTONOMOUS, IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
 from .supervisor import read_health, restart_systemd_unit, snapshot_services
@@ -605,6 +606,15 @@ def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         refusal = api.apply_hot_config(req.patch)
         if refusal is not None:
             return refusal
+        # Persist the successfully applied keys back to the live yaml so the rig file
+        # is always the single source of truth. Failure must not fail the request —
+        # the in-memory apply already succeeded.
+        src = getattr(getattr(api.pipeline, "cfg", None), "source_path", "")
+        if src and req.patch:
+            try:
+                persist_hot_values(src, req.patch)
+            except Exception as e:
+                print(f"[control_api] hot-config persist failed (live value still applied): {e}")
         api.bump_revision()
         return api.ok()
 
