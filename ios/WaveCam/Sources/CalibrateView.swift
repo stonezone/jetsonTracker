@@ -211,7 +211,7 @@ private struct CalibrationStep: Identifiable, Equatable {
         id: 1,
         title: "Preflight checks",
         headline: "Confirm camera and network",
-        detail: "Verify the camera feed, PTZ link, GPS source, storage, and safety latch before alignment begins.",
+        detail: "Live checks below verify the rig end-to-end: camera feed, GPS ingest, remote tracker heard, base fix. All green → confirm. Amber rows tell you exactly what to fix first.",
         actionTitle: "Confirm preflight",
         systemImage: "checklist"
     )
@@ -409,6 +409,58 @@ private struct StepBadge: View {
     }
 }
 
+// MARK: - Preflight live checks
+
+/// The in-app version of the verify_wios.sh OUTCOME: instead of reading radio
+/// config over USB, verify the observable behavior — ingest alive, remote heard,
+/// base fix, camera feed. Green rows = the mesh is actually flowing. Config-level
+/// verification (presets/intervals) stays a Mac-side script; the guide's
+/// calibrate section covers when to escalate to it.
+private struct PreflightChecklist: View {
+    @Environment(WaveCamClient.self) private var client
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WCSpace.sm) {
+            checkRow("Camera feed",
+                     ok: client.connected && (client.status?.tracking.fps ?? 0) > 10,
+                     okText: "live · \(Int(client.status?.tracking.fps ?? 0)) fps",
+                     failText: client.connected ? "no frames" : "Orin offline")
+            if let alive = client.status?.gps?.readerAlive {
+                checkRow("GPS ingest",
+                         ok: alive,
+                         okText: "OK",
+                         failText: "DOWN — restart wavecam service")
+            }
+            checkRow("Remote tracker",
+                     ok: (client.status?.gps?.targetAgeSec ?? .infinity) < 120,
+                     okText: "heard \(Int(client.status?.gps?.targetAgeSec ?? 0))s ago",
+                     failText: client.status?.gps?.targetAgeSec == nil
+                        ? "not heard — power it on, give it sky"
+                        : "stale — check it's on and within range")
+            checkRow("Base GPS fix",
+                     ok: client.status?.gps?.baseAgeSec != nil,
+                     okText: "fix acquired",
+                     failText: "no fix — needs open sky (minutes on first fix; if it never comes, run verify_wios.sh — see Guide)")
+        }
+        .padding(WCSpace.sm)
+        .background(WC.ink.opacity(0.6), in: .rect(cornerRadius: WCRadius.sm))
+    }
+
+    private func checkRow(_ label: String, ok: Bool, okText: String, failText: String) -> some View {
+        HStack(spacing: WCSpace.sm) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(ok ? WC.ok : WC.warn)
+            Text(label).font(WCFont.label).foregroundStyle(WC.txt)
+            Spacer(minLength: WCSpace.sm)
+            Text(ok ? okText : failText)
+                .font(WCFont.caption)
+                .foregroundStyle(ok ? WC.muted : WC.warn)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+}
+
 // MARK: - Active step card
 
 private struct CalibrationActiveCard: View {
@@ -425,10 +477,10 @@ private struct CalibrationActiveCard: View {
     let onForward: () -> Void
     let onDismissRefusal: () -> Void
 
-    /// Steps whose capture is local-only (no backend POST).
+    /// Steps whose capture is local-only (no backend POST). Must mirror the
+    /// localSteps set in captureActiveStep — baseLock became a real POST 2026-06-10.
     private static let localStepIDs: Set<Int> = [
         CalibrationStep.preflight.id,
-        CalibrationStep.baseLock.id,
         CalibrationStep.dryRun.id
     ]
 
@@ -465,6 +517,10 @@ private struct CalibrationActiveCard: View {
                     .font(WCFont.body)
                     .foregroundStyle(WC.muted)
                     .lineSpacing(4)
+
+                if step.id == CalibrationStep.preflight.id {
+                    PreflightChecklist()
+                }
 
                 // Refusal message strip — appears only when a capture was refused.
                 if let msg = refusalMessage {
