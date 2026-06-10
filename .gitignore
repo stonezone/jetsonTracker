@@ -230,3 +230,6 @@ archive/legacy-20260606/stm32-nucleo-stepper/nucleo/images/ STM32 Nucleo-F401RE-
 # =============================================================================
 # End of .gitignore
 # =============================================================================
+
+# Deploy-time artifact (deploy.sh stamps + cleans it; never commit)
+orin/wavecam/version.json

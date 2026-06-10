@@ -3,6 +3,8 @@
 # Usage: ./deploy.sh [--dry-run]
 set -euo pipefail
 cd "$(dirname "$0")"
+# version.json is a deploy-time artifact — never leave it behind on failure
+trap 'rm -f version.json' EXIT
 
 HOST=orin
 DEST=/data/projects/gimbal/wavecam
