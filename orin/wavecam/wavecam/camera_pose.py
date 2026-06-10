@@ -37,6 +37,11 @@ class CameraPose:
         """Pan-calibrated = the bearing→pan mapping is usable."""
         return self.pan_enc_per_deg != 0.0
 
+    @property
+    def has_base(self) -> bool:
+        """True once a base GPS position has been latched (non-zero lat or lon)."""
+        return self.lat != 0.0 or self.lon != 0.0
+
     # --- calibration ---
     def calibrate_pan_aim(self, enc: float, bearing_deg: float, enc_per_deg: float) -> None:
         """Single aim-at-remote: anchor ``(enc, bearing)`` with a known encoder-per-degree

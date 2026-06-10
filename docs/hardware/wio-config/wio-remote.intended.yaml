@@ -1,0 +1,20 @@
+# Wio Tracker L1 Lite — REMOTE (!9f5802d5, on the surfer) — intended config.
+# Format: meshtastic --export-config style. Replace this file with a real
+# `meshtastic --export-config` dump after the first successful apply.
+# Firmware: 2.6.10
+config:
+  position:
+    gpsMode: ENABLED
+    gpsUpdateInterval: 2
+    positionBroadcastSmartEnabled: true
+    broadcastSmartMinimumIntervalSecs: 2
+    broadcastSmartMinimumDistance: 5
+    # Safety floor: even if smart broadcast reverts, positions still flow every 30 s
+    # (was 3600 — a silent revert meant 1-hour updates).
+    positionBroadcastSecs: 30
+    # 938 = HEADING+TIMESTAMP+SEQ_NOS+BATTERY+DOP+ALT_MSL (heading/speed feed lead prediction)
+    positionFlags: 938
+  device:
+    nodeInfoBroadcastSecs: 3600
+  lora:
+    modemPreset: SHORT_FAST   # MUST match the base

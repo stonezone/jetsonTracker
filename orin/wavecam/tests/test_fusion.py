@@ -92,4 +92,74 @@ def test_require_person_rejects_single_source_until_color_and_person_match():
     assert confirmed.person_bbox == (302, 137, 40, 90)
 
 
+# ---------------------------------------------------------------------------
+# P2: GPS-cue confidence boost
+# ---------------------------------------------------------------------------
+
+def _cfg_with_boost(gps_boost=0.2, radius_frac=0.25):
+    cfg = _cfg()
+    cfg.gps_boost = gps_boost
+    cfg.gps_boost_radius_frac = radius_frac
+    return cfg
+
+
+def test_gps_cue_center_blob_locks():
+    """Color-only blob near cue center: 0.45 + 0.2 = 0.65 >= lock_threshold 0.6."""
+    f = Fusion(_cfg_with_boost())
+    # Frame 640x480; cue at center (320, 240) radius 120
+    cue = (320.0, 240.0, 120.0)
+    r = f.update([_blob(320, 240)], [], gps_cue_px=cue)
+    assert r.conf >= 0.6, f"expected conf >= 0.6, got {r.conf}"
+    assert r.locked, "blob within cue should lock"
+
+
+def test_gps_cue_off_cue_blob_stays_045():
+    """Color-only blob outside cue radius stays at 0.45 (no boost)."""
+    f = Fusion(_cfg_with_boost())
+    # Blob at (10, 10), cue at (320, 240) radius 120 — clearly outside
+    cue = (320.0, 240.0, 120.0)
+    r = f.update([_blob(10, 10)], [], gps_cue_px=cue)
+    assert abs(r.conf - 0.45) < 1e-6, f"expected 0.45, got {r.conf}"
+    assert not r.locked
+
+
+def test_gps_cue_absent_stays_045():
+    """No cue at all: color-only blob stays at 0.45 (no boost)."""
+    f = Fusion(_cfg_with_boost())
+    r = f.update([_blob(320, 240)], [], gps_cue_px=None)
+    assert abs(r.conf - 0.45) < 1e-6, f"expected 0.45, got {r.conf}"
+    assert not r.locked
+
+
+def test_gps_cue_boost_caps_at_095():
+    """Boost + base conf cannot exceed 0.95."""
+    f = Fusion(_cfg_with_boost(gps_boost=0.9))
+    cue = (320.0, 240.0, 120.0)
+    r = f.update([_blob(320, 240)], [], gps_cue_px=cue)
+    assert r.conf <= 0.95, f"conf must be capped at 0.95, got {r.conf}"
+
+
+def test_gps_cue_does_not_steal_existing_ema_track():
+    """Once an EMA track is established, cue should not hijack it by stealing
+    the continuity choice — the existing-EMA blob is chosen (anti-flip rule)."""
+    f = Fusion(_cfg_with_boost())
+    # Establish a locked track far from center
+    locked_blob = _blob(50, 50)
+    center_blob = _blob(320, 240)
+    # Build up to lock via confirmed person
+    p_near = _person(52, 52, 0.9)
+    for _ in range(3):
+        r = f.update([locked_blob], [p_near])
+    assert r.locked, "setup: should be locked on far target"
+
+    # Now drop YOLO; present both blobs with a cue at center
+    cue = (320.0, 240.0, 120.0)
+    r2 = f.update([locked_blob, center_blob], [], gps_cue_px=cue)
+    # EMA is near (50,50), so continuity picks locked_blob, not center_blob
+    assert r2.target_xy is not None
+    assert r2.target_xy[0] < 200, (
+        f"cue must not steal existing track: target_xy={r2.target_xy}"
+    )
+
+
 print("\nALL %d CHECKS PASSED (cv2-free)" % _n)

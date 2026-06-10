@@ -110,51 +110,116 @@ class MeshtasticGps:
         self._latest: Optional[NormalizedFix] = None
         self._cam: Optional[Tuple[float, float, float]] = None
         self._cam_ts: float = 0.0
+        self._last_poll_ts: Optional[float] = None
         # Reader lifecycle:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
     def connect(self) -> bool:
-        """Open the serial link to the base Wio and start the reader thread."""
+        """Open the serial link to the base Wio and start the reader thread.
+
+        The reader thread handles initial connection AND reconnection — if the
+        device isn't ready yet (USB enumeration race after reboot), it retries
+        every few seconds. Returns True once the thread is started (even if the
+        device isn't connected yet)."""
+        # Import check: surface the error early but still start the thread so
+        # the reader can retry on each reconnect cycle (the thread does its own
+        # import inside the connect phase and handles ImportError gracefully).
         try:
-            import meshtastic.serial_interface as msi  # lazy: optional dependency
+            import meshtastic.serial_interface  # noqa: F401 — lazy availability check
         except Exception as e:  # pragma: no cover - host without the lib
             log.warning("meshtastic library unavailable: %s", e)
             return False
-        try:
-            self._iface = msi.SerialInterface(devPath=self.dev_path)
-            self._my_num = self._iface.getMyNodeInfo().get("num")
-        except Exception as e:
-            log.warning("MeshtasticGps connect failed on %s: %s", self.dev_path, e)
-            self._iface = None
-            return False
-        self.enabled = True
         self._stop.clear()
         self._thread = threading.Thread(target=self._reader_loop, name="meshtastic-gps", daemon=True)
         self._thread.start()
-        log.info("MeshtasticGps connected on %s (base node %s); reader thread started",
-                 self.dev_path, self._my_num)
         return True
 
     def _reader_loop(self) -> None:
-        """The ONLY place the Meshtastic lib is accessed. Refreshes the locked
-        snapshot (remote fix + camera position) on a timer so the public reads can
-        never block the caller's thread (that was the API-hang bug)."""
+        """The ONLY place the Meshtastic lib is accessed. Handles initial connect
+        AND reconnection — if the device isn't ready (USB enumeration race), it
+        retries every few seconds. Once connected, refreshes the locked snapshot
+        on a timer so the public reads never block the caller's thread."""
+        RECONNECT_SEC = 3.0
+        msi = None
         while not self._stop.is_set():
+            # --- ensure connected ---
+            if self._iface is None:
+                try:
+                    if msi is None:
+                        import meshtastic.serial_interface as msi  # noqa: F811
+                    self._iface = msi.SerialInterface(devPath=self.dev_path)
+                    self._my_num = self._iface.getMyNodeInfo().get("num")
+                    self.enabled = True
+                    log.info("MeshtasticGps connected on %s (base node %s)",
+                             self.dev_path, self._my_num)
+                except Exception as e:
+                    log.warning("MeshtasticGps connect failed on %s: %s — retrying in %ss",
+                                self.dev_path, e, RECONNECT_SEC)
+                    self._iface = None
+                    self.enabled = False
+                    self._stop.wait(RECONNECT_SEC)
+                    continue
+
+            # --- read snapshot ---
             try:
-                nodes = self._iface.nodes or {}
+                # Snapshot the nodes dict to avoid RuntimeError from concurrent
+                # mutation by the Meshtastic RX thread.
+                try:
+                    nodes = dict(self._iface.nodes or {})
+                except RuntimeError:
+                    # Dict mutated mid-iteration by the lib's RX thread — skip
+                    # this poll cycle without tearing down the serial link.
+                    log.debug("MeshtasticGps nodes snapshot skipped (dict modified)")
+                    self._stop.wait(self.poll_sec)
+                    continue
+
                 remote = _remote_from_nodes(nodes, self._my_num, self.remote_id)
-                fix = self._to_fix(*remote[1:], now=time.time()) if remote is not None else None
+                if remote is not None:
+                    _id, lat, lon, ts = remote
+                    fix = self._to_fix(lat, lon, ts, now=time.time())
+                else:
+                    fix = None
                 cam = _camera_from_nodes(nodes, self._my_num)
                 base_node = next((x for x in nodes.values() if x.get("num") == self._my_num), None)
-                cam_ts = float((base_node.get("position") or {}).get("time") or 0.0)
+                cam_ts = float((base_node.get("position") or {}).get("time") or 0.0) if base_node else 0.0
+                now = time.time()
                 with self._lock:
                     self._latest = fix
                     self._cam = cam
                     self._cam_ts = cam_ts
-            except Exception as e:  # a reader error must not kill the thread or the app
-                log.warning("MeshtasticGps reader loop error: %s", e)
+                    self._last_poll_ts = now
+            except Exception as e:
+                # Serial error (device unplugged etc.) — close and reconnect
+                log.warning("MeshtasticGps reader loop error: %s — reconnecting", e)
+                self._close_iface()
+                self.enabled = False
+                self._stop.wait(RECONNECT_SEC)
+                continue
+
             self._stop.wait(self.poll_sec)
+
+    def reader_alive(self) -> bool:
+        """True when the reader thread is running and connected (non-blocking)."""
+        t = self._thread
+        return (t is not None and t.is_alive() and self.enabled)
+
+    def last_poll_age_sec(self) -> Optional[float]:
+        """Seconds since the reader last completed a successful poll cycle, or None."""
+        with self._lock:
+            ts = self._last_poll_ts
+        if ts is None:
+            return None
+        return max(0.0, time.time() - ts)
+
+    def _close_iface(self) -> None:
+        """Close the serial interface if open (best-effort)."""
+        if self._iface is not None:
+            try:
+                self._iface.close()
+            except Exception:
+                pass
+            self._iface = None
 
     def get_fix(self, now: Optional[float] = None) -> Optional[NormalizedFix]:
         """Non-blocking snapshot read (NEVER calls the Meshtastic lib). Returns the
@@ -205,17 +270,12 @@ class MeshtasticGps:
         self._stop.set()
         if self._thread is not None:
             # If the reader is parked in a blocking serial read, Event.set() won't wake
-            # it, so join() times out and we drop the reference. The iface.close() below
-            # then unblocks that read; the daemon thread finishes unwinding on its own (or
+            # it, so join() times out and we drop the reference. The _close_iface()
+            # unblocks that read; the daemon thread finishes unwinding on its own (or
             # is reclaimed at process exit). Abandoning a wedged thread here is intentional.
             self._thread.join(timeout=3.0)
             self._thread = None
-        if self._iface is not None:
-            try:
-                self._iface.close()
-            except Exception:  # pragma: no cover - shutdown best-effort
-                pass
-            self._iface = None
+        self._close_iface()
         self.enabled = False
 
 

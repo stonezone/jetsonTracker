@@ -1,0 +1,716 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		5FBBE450FC854A4C8550A6D8 /* watchTrackerAppFeature in Frameworks */ = {isa = PBXBuildFile; productRef = ED0811CFDB5B453190CAAAF2 /* watchTrackerAppFeature */; };
+		653831212EB6C1130096F91D /* watchTrackerApp Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 653831172EB6C1110096F91D /* watchTrackerApp Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8B41F6832DEDD23B001A66F9 /* iosTrackerAppFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 8B41F6822DEDD23B001A66F9 /* iosTrackerAppFeature */; };
+		8B41F6852DEDD25C001A66F9 /* iosTrackerAppFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 8B41F6842DEDD25C001A66F9 /* iosTrackerAppFeature */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6538311F2EB6C1130096F91D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8B41F63D2DEDD0D5001A66F9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 653831162EB6C1110096F91D;
+			remoteInfo = "watchTrackerApp Watch App";
+		};
+		8B41F65D2DEDD0D6001A66F9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8B41F63D2DEDD0D5001A66F9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8B41F6442DEDD0D5001A66F9;
+			remoteInfo = iosTrackerApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		653831222EB6C1130096F91D /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				653831212EB6C1130096F91D /* watchTrackerApp Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		653831172EB6C1110096F91D /* watchTrackerApp Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "watchTrackerApp Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		8B41F6452DEDD0D5001A66F9 /* iosTrackerApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iosTrackerApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8B41F65C2DEDD0D6001A66F9 /* iosTrackerApp.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = iosTrackerApp.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		658D32FE2EB7571A00BD1C27 /* Exceptions for "iosTrackerApp" folder in "iosTrackerApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8B41F6442DEDD0D5001A66F9 /* iosTrackerApp */;
+		};
+		8BD71C0A2DEE41E000CEDD92 /* Exceptions for "Config" folder in "iosTrackerApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Debug.xcconfig,
+				Release.xcconfig,
+				Shared.xcconfig,
+				Tests.xcconfig,
+			);
+			target = 8B41F6442DEDD0D5001A66F9 /* iosTrackerApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		653831182EB6C1110096F91D /* watchTrackerApp Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "watchTrackerApp Watch App";
+			sourceTree = "<group>";
+		};
+		8B41F6472DEDD0D5001A66F9 /* iosTrackerApp */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				658D32FE2EB7571A00BD1C27 /* Exceptions for "iosTrackerApp" folder in "iosTrackerApp" target */,
+			);
+			path = iosTrackerApp;
+			sourceTree = "<group>";
+		};
+		8B41F65F2DEDD0D6001A66F9 /* iosTrackerAppUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = iosTrackerAppUITests;
+			sourceTree = "<group>";
+		};
+		8BD71C052DEE41D800CEDD92 /* Config */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8BD71C0A2DEE41E000CEDD92 /* Exceptions for "Config" folder in "iosTrackerApp" target */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		653831142EB6C1110096F91D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5FBBE450FC854A4C8550A6D8 /* watchTrackerAppFeature in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B41F6422DEDD0D5001A66F9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8B41F6852DEDD25C001A66F9 /* iosTrackerAppFeature in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B41F6592DEDD0D6001A66F9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8B41F6832DEDD23B001A66F9 /* iosTrackerAppFeature in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8B41F63C2DEDD0D5001A66F9 = {
+			isa = PBXGroup;
+			children = (
+				8BD71C052DEE41D800CEDD92 /* Config */,
+				8B41F6472DEDD0D5001A66F9 /* iosTrackerApp */,
+				8B41F65F2DEDD0D6001A66F9 /* iosTrackerAppUITests */,
+				653831182EB6C1110096F91D /* watchTrackerApp Watch App */,
+				8B41F6812DEDD23B001A66F9 /* Frameworks */,
+				8B41F6462DEDD0D5001A66F9 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8B41F6462DEDD0D5001A66F9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8B41F6452DEDD0D5001A66F9 /* iosTrackerApp.app */,
+				8B41F65C2DEDD0D6001A66F9 /* iosTrackerApp.xctest */,
+				653831172EB6C1110096F91D /* watchTrackerApp Watch App.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8B41F6812DEDD23B001A66F9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		653831162EB6C1110096F91D /* watchTrackerApp Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 653831252EB6C1130096F91D /* Build configuration list for PBXNativeTarget "watchTrackerApp Watch App" */;
+			buildPhases = (
+				653831132EB6C1110096F91D /* Sources */,
+				653831142EB6C1110096F91D /* Frameworks */,
+				653831152EB6C1110096F91D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				653831182EB6C1110096F91D /* watchTrackerApp Watch App */,
+			);
+			name = "watchTrackerApp Watch App";
+			packageProductDependencies = (
+				ED0811CFDB5B453190CAAAF2 /* watchTrackerAppFeature */,
+			);
+			productName = "watchTrackerApp Watch App";
+			productReference = 653831172EB6C1110096F91D /* watchTrackerApp Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		8B41F6442DEDD0D5001A66F9 /* iosTrackerApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8B41F6662DEDD0D6001A66F9 /* Build configuration list for PBXNativeTarget "iosTrackerApp" */;
+			buildPhases = (
+				8B41F6412DEDD0D5001A66F9 /* Sources */,
+				8B41F6422DEDD0D5001A66F9 /* Frameworks */,
+				8B41F6432DEDD0D5001A66F9 /* Resources */,
+				653831222EB6C1130096F91D /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				653831202EB6C1130096F91D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				8B41F6472DEDD0D5001A66F9 /* iosTrackerApp */,
+				8BD71C052DEE41D800CEDD92 /* Config */,
+			);
+			name = iosTrackerApp;
+			packageProductDependencies = (
+				8B41F6842DEDD25C001A66F9 /* iosTrackerAppFeature */,
+			);
+			productName = iosTrackerApp;
+			productReference = 8B41F6452DEDD0D5001A66F9 /* iosTrackerApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		8B41F65B2DEDD0D6001A66F9 /* iosTrackerAppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8B41F66C2DEDD0D6001A66F9 /* Build configuration list for PBXNativeTarget "iosTrackerAppUITests" */;
+			buildPhases = (
+				8B41F6582DEDD0D6001A66F9 /* Sources */,
+				8B41F6592DEDD0D6001A66F9 /* Frameworks */,
+				8B41F65A2DEDD0D6001A66F9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8B41F65E2DEDD0D6001A66F9 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				8B41F65F2DEDD0D6001A66F9 /* iosTrackerAppUITests */,
+			);
+			name = iosTrackerAppUITests;
+			packageProductDependencies = (
+				8B41F6822DEDD23B001A66F9 /* iosTrackerAppFeature */,
+			);
+			productName = iosTrackerAppUITests;
+			productReference = 8B41F65C2DEDD0D6001A66F9 /* iosTrackerApp.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8B41F63D2DEDD0D5001A66F9 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					653831162EB6C1110096F91D = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					8B41F6442DEDD0D5001A66F9 = {
+						CreatedOnToolsVersion = 16.3;
+					};
+					8B41F65B2DEDD0D6001A66F9 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = 8B41F6442DEDD0D5001A66F9;
+					};
+				};
+			};
+			buildConfigurationList = 8B41F6402DEDD0D5001A66F9 /* Build configuration list for PBXProject "iosTrackerApp" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 8B41F63C2DEDD0D5001A66F9;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8B41F6862DEDD300001A66F9 /* XCLocalSwiftPackageReference "iosTrackerAppPackage" */,
+				FC55B80CBB474ABE80EDEFFE /* XCLocalSwiftPackageReference "watchTrackerAppPackage" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 8B41F6462DEDD0D5001A66F9 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8B41F6442DEDD0D5001A66F9 /* iosTrackerApp */,
+				8B41F65B2DEDD0D6001A66F9 /* iosTrackerAppUITests */,
+				653831162EB6C1110096F91D /* watchTrackerApp Watch App */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		653831152EB6C1110096F91D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B41F6432DEDD0D5001A66F9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B41F65A2DEDD0D6001A66F9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		653831132EB6C1110096F91D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B41F6412DEDD0D5001A66F9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B41F6582DEDD0D6001A66F9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		653831202EB6C1130096F91D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 653831162EB6C1110096F91D /* watchTrackerApp Watch App */;
+			targetProxy = 6538311F2EB6C1130096F91D /* PBXContainerItemProxy */;
+		};
+		8B41F65E2DEDD0D6001A66F9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8B41F6442DEDD0D5001A66F9 /* iosTrackerApp */;
+			targetProxy = 8B41F65D2DEDD0D6001A66F9 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		653831232EB6C1130096F91D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/watchTrackerApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 25;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Config/watchTrackerApp-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = watchTrackerApp;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app needs to access your heart rate data to track workout intensity during GPS tracking sessions.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "This app needs to save workout data to track your GPS tracking sessions.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "GPS tracking for relay to iPhone and Jetson";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GPS tracking for relay to iPhone and Jetson";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.iostracker.iosapp;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+					MARKETING_VERSION = 1.0.24;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iostracker.iosapp.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		653831242EB6C1130096F91D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/watchTrackerApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 25;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Config/watchTrackerApp-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = watchTrackerApp;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app needs to access your heart rate data to track workout intensity during GPS tracking sessions.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "This app needs to save workout data to track your GPS tracking sessions.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "GPS tracking for relay to iPhone and Jetson";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GPS tracking for relay to iPhone and Jetson";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.iostracker.iosapp;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+					MARKETING_VERSION = 1.0.24;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iostracker.iosapp.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
+		8B41F6642DEDD0D6001A66F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 78725QX6PZ;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8B41F6652DEDD0D6001A66F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 78725QX6PZ;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		8B41F6672DEDD0D6001A66F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 8BD71C052DEE41D800CEDD92 /* Config */;
+			baseConfigurationReferenceRelativePath = Debug.xcconfig;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/iosTrackerApp.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 78725QX6PZ;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iosTrackerApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "GPS Tracker";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app needs to access health data for GPS tracking workout sessions.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "This app needs to save workout data for GPS tracking sessions.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "GPS tracking for relay to Jetson";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GPS tracking for relay to Jetson";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		8B41F6682DEDD0D6001A66F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 8BD71C052DEE41D800CEDD92 /* Config */;
+			baseConfigurationReferenceRelativePath = Release.xcconfig;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/iosTrackerApp.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 78725QX6PZ;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iosTrackerApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "GPS Tracker";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app needs to access health data for GPS tracking workout sessions.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "This app needs to save workout data for GPS tracking sessions.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "GPS tracking for relay to Jetson";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GPS tracking for relay to Jetson";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8B41F66D2DEDD0D6001A66F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 8BD71C052DEE41D800CEDD92 /* Config */;
+			baseConfigurationReferenceRelativePath = Tests.xcconfig;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = iosTrackerApp;
+			};
+			name = Debug;
+		};
+		8B41F66E2DEDD0D6001A66F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 8BD71C052DEE41D800CEDD92 /* Config */;
+			baseConfigurationReferenceRelativePath = Tests.xcconfig;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = iosTrackerApp;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		653831252EB6C1130096F91D /* Build configuration list for PBXNativeTarget "watchTrackerApp Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				653831232EB6C1130096F91D /* Debug */,
+				653831242EB6C1130096F91D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8B41F6402DEDD0D5001A66F9 /* Build configuration list for PBXProject "iosTrackerApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8B41F6642DEDD0D6001A66F9 /* Debug */,
+				8B41F6652DEDD0D6001A66F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8B41F6662DEDD0D6001A66F9 /* Build configuration list for PBXNativeTarget "iosTrackerApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8B41F6672DEDD0D6001A66F9 /* Debug */,
+				8B41F6682DEDD0D6001A66F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8B41F66C2DEDD0D6001A66F9 /* Build configuration list for PBXNativeTarget "iosTrackerAppUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8B41F66D2DEDD0D6001A66F9 /* Debug */,
+				8B41F66E2DEDD0D6001A66F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		8B41F6862DEDD300001A66F9 /* XCLocalSwiftPackageReference "iosTrackerAppPackage" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = iosTrackerAppPackage;
+		};
+		FC55B80CBB474ABE80EDEFFE /* XCLocalSwiftPackageReference "watchTrackerAppPackage" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = watchTrackerAppPackage;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8B41F6822DEDD23B001A66F9 /* iosTrackerAppFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B41F6862DEDD300001A66F9 /* XCLocalSwiftPackageReference "iosTrackerAppPackage" */;
+			productName = iosTrackerAppFeature;
+		};
+		8B41F6842DEDD25C001A66F9 /* iosTrackerAppFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B41F6862DEDD300001A66F9 /* XCLocalSwiftPackageReference "iosTrackerAppPackage" */;
+			productName = iosTrackerAppFeature;
+		};
+		ED0811CFDB5B453190CAAAF2 /* watchTrackerAppFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC55B80CBB474ABE80EDEFFE /* XCLocalSwiftPackageReference "watchTrackerAppPackage" */;
+			productName = watchTrackerAppFeature;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 8B41F63D2DEDD0D5001A66F9 /* Project object */;
+}

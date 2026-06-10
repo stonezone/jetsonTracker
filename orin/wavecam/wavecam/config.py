@@ -78,6 +78,8 @@ class FusionCfg:
     lost_grace_sec: float = 0.8
     person_aim_x: float = 0.5
     person_aim_y: float = 0.5
+    gps_boost: float = 0.2
+    gps_boost_radius_frac: float = 0.25
 
 
 @dataclass
@@ -99,6 +101,15 @@ class GpsCfg:
     enabled: bool = False
     dev_path: str = "/dev/ttyACM0"
     remote_id: str = ""  # "" => auto-detect the non-local mesh node
+    # P1: GPS-mode PTZ speeds (conservative — GPS has latency + bearing uncertainty)
+    max_pan_speed: int = 4      # 1..24, vision uses up to 10
+    max_tilt_speed: int = 3     # 1..20, vision uses up to 12
+    stale_threshold_sec: float = 10.0  # remote fix age > this → stale
+    # P2: GPS-driven zoom (off by default — untuned; enable when ready)
+    drive_zoom: bool = False
+    # P1: handoff hysteresis
+    lock_frames: int = 5        # K consecutive vision-locked frames → hand to vision
+    grace_sec: float = 1.0      # unlock grace before falling back to GPS
 
 
 @dataclass

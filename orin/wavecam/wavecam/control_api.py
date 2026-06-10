@@ -55,6 +55,14 @@ HOT_CONFIG_KEYS = (
     "fusion.match_dist",
     "fusion.person_aim_x",
     "fusion.person_aim_y",
+    "fusion.gps_boost",
+    "fusion.gps_boost_radius_frac",
+    "gps.stale_threshold_sec",
+    "gps.grace_sec",
+    "gps.lock_frames",
+    "gps.drive_zoom",
+    "gps.max_pan_speed",
+    "gps.max_tilt_speed",
     "color.preset",
     "color.min_area",
     "color.max_area",
@@ -457,6 +465,20 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         api.bump_revision()
         return api.calibration_ok()
 
+    @app.post("/api/v1/calibration/base-lock", dependencies=[Depends(require(PTZ))])
+    def calibration_base_lock(req: CalibrationBaseRequest):
+        refusal = api.validate_calibration_capture(req)
+        if refusal is not None:
+            return refusal
+        if api.pipeline.gps is None or api.pipeline.gps.get_camera_position() is None:
+            return api.refusal("gps_unavailable", "Base GPS has no fix yet.", 503)
+        api.capture_calibration("base_lock", {
+            "source": normalized_text(req.source, "unknown", 64),
+            "note": normalized_optional_text(req.note, 256),
+        })
+        api.bump_revision()
+        return api.calibration_ok()
+
 
 def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/media/status", dependencies=[Depends(require(READ))])
@@ -598,6 +620,19 @@ class ControlApiAdapter:
         self._restart_pending = False
         self._restart_unit = "wavecam.service"
         self._calibration = empty_calibration_state()
+        # P1: load CameraPose from disk so calibration survives restarts
+        _pose_path = os.environ.get(
+            "WAVECAM_POSE_PATH",
+            os.path.join(os.path.dirname(__file__), "..", "..", "camera_pose.json"),
+        )
+        try:
+            from .camera_pose import CameraPose
+            loaded = CameraPose.load(_pose_path)
+            pipeline.pose = loaded
+            if loaded.calibrated:
+                print(f"[control_api] loaded calibrated pose from {_pose_path}")
+        except Exception:
+            pass  # no saved pose yet — start uncalibrated
         self._pending_restart_config: dict[str, Any] = {}
         self.presets = PresetStore(self)
         self.logs = LogAdapter(self)
@@ -663,13 +698,26 @@ class ControlApiAdapter:
 
     def calibration_state(self) -> dict:
         with self._lock:
-            return {
+            state = {
                 "reference_heading": self._calibration["reference_heading"],
                 "heading": copy_optional_dict(self._calibration["heading"]),
                 "tilt": copy_optional_dict(self._calibration["tilt"]),
                 "zoom": copy_optional_dict(self._calibration["zoom"]),
                 "updated_at_unix_ms": self._calibration["updated_at_unix_ms"],
+                # P1: GPS calibration status
+                "gps_calibrated": self.pipeline.pose.calibrated,
+                "base_locked": (
+                    self.pipeline.pose.lat != 0.0 or self.pipeline.pose.lon != 0.0
+                ),
             }
+            if state["gps_calibrated"]:
+                state["gps_pose"] = {
+                    "lat": self.pipeline.pose.lat,
+                    "lon": self.pipeline.pose.lon,
+                    "alt_m": self.pipeline.pose.alt_m,
+                    "pan_enc_per_deg": self.pipeline.pose.pan_enc_per_deg,
+                }
+            return state
 
     def validate_calibration_capture(self, req: CalibrationBaseRequest) -> JSONResponse | None:
         if self.pipeline.owner.killed:
@@ -681,6 +729,17 @@ class ControlApiAdapter:
         return None
 
     def capture_calibration(self, step: str, values: dict) -> None:
+        # Perform blocking PTZ I/O BEFORE acquiring the adapter lock so the request
+        # thread never holds the lock across a recvfrom (same class of bug as the
+        # 2026-06-08 API hang when meshtastic was called under the lock).
+        enc = None
+        if step in ("heading", "tilt") and self.pipeline.ptz is not None:
+            enc = self.pipeline.ptz.inquire_pan_tilt()
+
+        cam_pos = None
+        if step == "base_lock" and self.pipeline.gps is not None:
+            cam_pos = self.pipeline.gps.get_camera_position()
+
         captured_at = int(time.time() * 1000)
         entry = {**values, "captured_at_unix_ms": captured_at}
         with self._lock:
@@ -688,6 +747,45 @@ class ControlApiAdapter:
             self._calibration["updated_at_unix_ms"] = captured_at
             if step == "heading":
                 self._calibration["reference_heading"] = entry["heading_deg"]
+                # P1: wire to CameraPose — read pan encoder, calibrate pan aim
+                heading_deg = entry.get("heading_deg")
+                if heading_deg is not None and enc is not None:
+                    self.pipeline.pose.calibrate_pan_aim(
+                        enc=float(enc[0]),
+                        bearing_deg=float(heading_deg),
+                        enc_per_deg=4.47,
+                    )
+                    self._save_pose()
+            elif step == "base_lock":
+                # P1: lock base GPS position for camera reference
+                from .camera_pose import lock_base_position
+                if cam_pos is not None:
+                    # Single-fix lock (averaging done by GPS chip)
+                    fixes = [(cam_pos[0], cam_pos[1], cam_pos[2], None)]
+                    base = lock_base_position(fixes)
+                    if base is not None:
+                        self.pipeline.pose.lat = base[0]
+                        self.pipeline.pose.lon = base[1]
+                        self.pipeline.pose.alt_m = base[2]
+                        self._save_pose()
+            elif step == "tilt":
+                # P1: tilt calibration — single-point anchor (two-point deferred)
+                tilt_deg = entry.get("tilt_deg")
+                if tilt_deg is not None and enc is not None:
+                    self.pipeline.pose.tilt_anchor_enc = float(enc[1])
+                    self.pipeline.pose.tilt_anchor_elev = float(tilt_deg)
+                    self._save_pose()
+
+    def _save_pose(self) -> None:
+        """Persist CameraPose to disk so calibration survives restarts."""
+        try:
+            path = os.environ.get(
+                "WAVECAM_POSE_PATH",
+                os.path.join(os.path.dirname(__file__), "..", "..", "camera_pose.json"),
+            )
+            self.pipeline.pose.save(path)
+        except Exception as e:
+            print(f"[control_api] pose save failed: {e}")
 
     def resume_without_autostart(self) -> None:
         with self._lock:
@@ -944,6 +1042,14 @@ class ControlApiAdapter:
             "fusion.match_dist": lambda: set_float(cfg.fusion, "match_dist", value, 20.0, 500.0, dry_run=dry_run),
             "fusion.person_aim_x": lambda: set_float(cfg.fusion, "person_aim_x", value, 0.0, 1.0, dry_run=dry_run),
             "fusion.person_aim_y": lambda: set_float(cfg.fusion, "person_aim_y", value, 0.0, 1.0, dry_run=dry_run),
+            "fusion.gps_boost": lambda: set_float(cfg.fusion, "gps_boost", value, 0.0, 0.5, dry_run=dry_run),
+            "fusion.gps_boost_radius_frac": lambda: set_float(cfg.fusion, "gps_boost_radius_frac", value, 0.05, 0.75, dry_run=dry_run),
+            "gps.stale_threshold_sec": lambda: self.apply_gps_float("stale_threshold_sec", value, 1.0, 120.0, dry_run=dry_run),
+            "gps.grace_sec": lambda: self.apply_gps_float("grace_sec", value, 0.1, 10.0, dry_run=dry_run),
+            "gps.lock_frames": lambda: self.apply_gps_int("lock_frames", value, 1, 30, dry_run=dry_run),
+            "gps.drive_zoom": lambda: self.apply_gps_bool("drive_zoom", value, dry_run=dry_run),
+            "gps.max_pan_speed": lambda: self.apply_gps_int("max_pan_speed", value, 1, 24, dry_run=dry_run),
+            "gps.max_tilt_speed": lambda: self.apply_gps_int("max_tilt_speed", value, 1, 20, dry_run=dry_run),
             "color.preset": lambda: self.apply_color_preset(value, dry_run=dry_run),
             "color.min_area": lambda: set_int(cfg.color, "min_area", value, 1, 500000, dry_run=dry_run),
             "color.max_area": lambda: set_int(cfg.color, "max_area", value, 100, 1000000, dry_run=dry_run),
@@ -991,6 +1097,52 @@ class ControlApiAdapter:
         if color is not None:
             color.update_kernel()
         return None
+
+    def _gps_cfg(self):
+        """Return cfg.gps, or None if GPS is disabled/absent."""
+        return getattr(self.pipeline.cfg, "gps", None)
+
+    def apply_gps_float(self, attr: str, value: Any, lo: float, hi: float,
+                        dry_run: bool = False) -> str | None:
+        gps_cfg = self._gps_cfg()
+        if gps_cfg is None:
+            return f"gps.{attr}: GPS section not present in config."
+        error = set_float(gps_cfg, attr, value, lo, hi, dry_run=dry_run)
+        if error is not None:
+            return error
+        if not dry_run:
+            self._sync_arbiter_from_gps()
+        return None
+
+    def apply_gps_int(self, attr: str, value: Any, lo: int, hi: int,
+                      dry_run: bool = False) -> str | None:
+        gps_cfg = self._gps_cfg()
+        if gps_cfg is None:
+            return f"gps.{attr}: GPS section not present in config."
+        error = set_int(gps_cfg, attr, value, lo, hi, dry_run=dry_run)
+        if error is not None:
+            return error
+        if not dry_run:
+            self._sync_arbiter_from_gps()
+        return None
+
+    def apply_gps_bool(self, attr: str, value: Any, dry_run: bool = False) -> str | None:
+        gps_cfg = self._gps_cfg()
+        if gps_cfg is None:
+            return f"gps.{attr}: GPS section not present in config."
+        error = set_bool(gps_cfg, attr, value, dry_run=dry_run)
+        if error is not None:
+            return error
+        return None
+
+    def _sync_arbiter_from_gps(self) -> None:
+        """Push hot-updated gps.lock_frames / gps.grace_sec into the running arbiter."""
+        arbiter = getattr(self.pipeline, "arbiter", None)
+        gps_cfg = self._gps_cfg()
+        if arbiter is None or gps_cfg is None:
+            return
+        arbiter.lock_frames = int(getattr(gps_cfg, "lock_frames", arbiter.lock_frames))
+        arbiter.grace_sec = float(getattr(gps_cfg, "grace_sec", arbiter.grace_sec))
 
     def request_service_restart(self, req: RestartRequest) -> JSONResponse:
         if self.restart_pending:
@@ -1709,6 +1861,17 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "match_dist": cfg.fusion.match_dist,
                 "person_aim_x": getattr(cfg.fusion, "person_aim_x", 0.5),
                 "person_aim_y": getattr(cfg.fusion, "person_aim_y", 0.5),
+                "gps_boost": getattr(cfg.fusion, "gps_boost", 0.2),
+                "gps_boost_radius_frac": getattr(cfg.fusion, "gps_boost_radius_frac", 0.25),
+            },
+            "gps": {
+                "enabled": getattr(getattr(cfg, "gps", None), "enabled", False),
+                "stale_threshold_sec": getattr(getattr(cfg, "gps", None), "stale_threshold_sec", 10.0),
+                "grace_sec": getattr(getattr(cfg, "gps", None), "grace_sec", 1.0),
+                "lock_frames": getattr(getattr(cfg, "gps", None), "lock_frames", 5),
+                "drive_zoom": getattr(getattr(cfg, "gps", None), "drive_zoom", False),
+                "max_pan_speed": getattr(getattr(cfg, "gps", None), "max_pan_speed", 4),
+                "max_tilt_speed": getattr(getattr(cfg, "gps", None), "max_tilt_speed", 3),
             },
             "color": {
                 "enabled": cfg.color.enabled,
@@ -1824,19 +1987,35 @@ def build_tracking(legacy: dict) -> dict:
     }
 
 
-STALE_THRESHOLD_SEC = 10.0
-
-
 def build_gps(pipeline, legacy: dict) -> dict:
+    threshold = getattr(getattr(pipeline, "cfg", None), "gps", None)
+    threshold = getattr(threshold, "stale_threshold_sec", 10.0)
     status = unknown_gps()
-    source = gps_snapshot_source(pipeline, legacy)
+    gps = getattr(pipeline, "gps", None)
+    # Collect reader health from the live gps object before snapshot lookup so
+    # these keys survive the status.update() below (normalize_gps passes them
+    # through as None when they aren't in the source dict).
+    reader_alive_val = None
+    last_poll_age_val = None
+    if gps is not None:
+        ra = getattr(gps, "reader_alive", None)
+        lp = getattr(gps, "last_poll_age_sec", None)
+        reader_alive_val = ra() if callable(ra) else None
+        last_poll_age_val = lp() if callable(lp) else None
+    source = gps_snapshot_source(pipeline, legacy, threshold=threshold)
     if source is None:
+        status["reader_alive"] = reader_alive_val
+        status["last_poll_age_sec"] = last_poll_age_val
         return status
     status.update(normalize_gps(source))
+    # Overlay the live reader health (takes precedence over any stale source dict value)
+    if gps is not None:
+        status["reader_alive"] = reader_alive_val
+        status["last_poll_age_sec"] = last_poll_age_val
     return status
 
 
-def gps_snapshot_source(pipeline, legacy: dict):
+def gps_snapshot_source(pipeline, legacy: dict, threshold: float = 10.0):
     legacy_gps = legacy.get("gps")
     if isinstance(legacy_gps, dict):
         return legacy_gps
@@ -1856,11 +2035,11 @@ def gps_snapshot_source(pipeline, legacy: dict):
     if callable(get_fix):
         fix = get_fix()
         if fix is not None:
-            return gps_fix_snapshot(fix, gps)
+            return gps_fix_snapshot(fix, gps, threshold=threshold)
     return None
 
 
-def gps_fix_snapshot(fix, gps=None) -> dict | None:
+def gps_fix_snapshot(fix, gps=None, threshold: float = 10.0) -> dict | None:
     if fix is None:
         return None
     from .gps_meshtastic import bearing_deg, haversine_m
@@ -1885,7 +2064,7 @@ def gps_fix_snapshot(fix, gps=None) -> dict | None:
                 snapshot["bearing_deg"] = round(bearing, 1)
                 snapshot["base_age_sec"] = round(base_age, 1) if base_age is not None else None
                 snapshot["stale"] = (
-                    target_age is not None and target_age > STALE_THRESHOLD_SEC
+                    target_age is not None and target_age > threshold
                 )
                 return snapshot
 
@@ -1895,7 +2074,7 @@ def gps_fix_snapshot(fix, gps=None) -> dict | None:
         "distance_m": None,
         "bearing_deg": None,
         "base_age_sec": None,
-        "stale": target_age is not None and target_age > STALE_THRESHOLD_SEC,
+        "stale": target_age is not None and target_age > threshold,
     })
     return snapshot
 
@@ -1908,6 +2087,8 @@ def normalize_gps(status: dict) -> dict:
         "distance_m": status.get("distance_m"),
         "bearing_deg": status.get("bearing_deg"),
         "stale": bool(status.get("stale", False)),
+        "reader_alive": status.get("reader_alive"),
+        "last_poll_age_sec": status.get("last_poll_age_sec"),
     }
 
 
@@ -1919,6 +2100,8 @@ def unknown_gps() -> dict:
         "distance_m": None,
         "bearing_deg": None,
         "stale": True,
+        "reader_alive": None,
+        "last_poll_age_sec": None,
     }
 
 

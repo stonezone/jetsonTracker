@@ -1,0 +1,21 @@
+# Wio Tracker L1 Lite — BASE (!38c3f1fd, on the Orin USB-A) — intended config.
+# Format: meshtastic --export-config style. Replace this file with a real
+# `meshtastic --export-config` dump after the first successful apply.
+# Firmware: upgrade 2.5.x -> 2.6.10 (match the remote) BEFORE applying.
+config:
+  position:
+    # EXPLICIT — never verified on the base before; a failed GPS probe can latch
+    # NOT_PRESENT and the base then never even tries to get a fix.
+    gpsMode: ENABLED
+    gpsUpdateInterval: 5
+    positionBroadcastSmartEnabled: true
+    broadcastSmartMinimumIntervalSecs: 2
+    broadcastSmartMinimumDistance: 5
+    # Stationary tripod: smart broadcast never fires, so broadcast on a timer.
+    # Required at 30 until the latched-base backend change deploys; then relax (600).
+    positionBroadcastSecs: 30
+    positionFlags: 10        # DOP + ALT_MSL — minimal; Orin reads base via serial nodeDB
+  device:
+    nodeInfoBroadcastSecs: 3600
+  lora:
+    modemPreset: SHORT_FAST  # MUST match the remote

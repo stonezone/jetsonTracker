@@ -68,3 +68,21 @@ def test_save_load_round_trip(tmp_path):
     q = CameraPose.load(path)
     assert q.calibrated and abs(q.bearing_to_pan_encoder(91.0) - 1004.47) < 1e-6
     assert (q.lat, q.lon, q.alt_m) == (21.6, -158.0, 2.0)
+
+
+# --- has_base property (Task 1) -----------------------------------------------
+
+def test_has_base_false_when_default():
+    assert CameraPose().has_base is False
+
+
+def test_has_base_true_when_lat_set():
+    assert CameraPose(lat=21.6).has_base is True
+
+
+def test_has_base_true_when_lon_set():
+    assert CameraPose(lon=-158.0).has_base is True
+
+
+def test_has_base_true_when_both_set():
+    assert CameraPose(lat=21.6, lon=-158.0, alt_m=2.0).has_base is True

@@ -189,7 +189,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 - **Backend** (`orin/wavecam/`) is **Codex's lane**; **iOS** (`ios/WaveCam/`) is **Claude's lane**.
 - **Codex/Zack deploy to the Orin** and restart `wavecam.service`. **Claude NEVER touches the Orin runtime/deploy.**
-- iOS build/install (xcodegen → xcodebuild → `devicectl`): see `.claude` memory `ios-app-build`.
+- iOS build/install: `ios/WaveCam/build-device.sh` (git-stamped build numbers; current install = build 208). Full recipe: see `.claude` memory `ios-app-build`.
 - SSH to the rig: `ssh orin` (zack@192.168.1.155).
 - "committed" != "deployed" — confirm the live deploy before telling Zack a feature is live.
 
@@ -211,7 +211,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 - **Orin ↔ Camera**: RAW VISCA UDP `192.168.100.88:1259`; video over RTSP.
 - **Orin control API**: `http://<orin>:8088/api/v1` (status / safety / ptz / media / config / telemetry / agent / system).
-- **Live detector model**: `yolov8n.engine` (TensorRT). To confirm what's running, trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`, or read `GET /api/v1/config`. (The `yolo26n.pt` code default is NOT what runs.)
+- **Live detector model**: `yolov8n.engine` (TensorRT) — rebuilt directly on the Orin 2026-06-10 (cross-device export problem is resolved). To confirm what's running: `GET /api/v1/config` or trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`.
 - **Legacy Orin ↔ STM32**: UART `/dev/ttyACM0` @115200 (F401RE gimbal), archived and not part of the active WaveCam runtime.
 - **Two-agent collab**: `.agent-collab/bin/collab.py` (emit / claim-open / claim-close). Claim before editing shared files.
 
@@ -223,8 +223,21 @@ jetsonTracker/                 # master repo (product = WaveCam)
   - **Remote tracker** (on the subject): GPS + an **IMU** (heading/speed/motion) → feeds the pointing predictor to *lead* the surfer. Battery + Qi wireless charging.
   - **Base tracker** (on the Orin, **USB-A serial** `/dev/ttyACM*`): receives the mesh; its own L76K GPS = the **camera/tripod reference position** (averaged once at setup).
 - **Heading reference**: PTZ pan-home = "forward"; pan offset from home maps a GPS bearing to a pan target. No magnetometer on the camera (motor-magnet interference). The IMU lives on the *subject*, far from the motors.
-- **Ingest**: Meshtastic serial client on the base Wio → `NormalizedFix` → the live-validated `orin/gps_fusion/` pointing stack. Spec: `docs/superpowers/specs/2026-06-05-gps-lora-cueing-design.md`.
-- **Status (2026-06-06)**: hardware on the bench; pointing math exists; remaining = Meshtastic ingest + config + wiring.
+- **Ingest**: Meshtastic serial client on the base Wio → `NormalizedFix` → `gps_fix_snapshot` computes real camera→target distance/bearing/stale. GPS data flows through `MeshtasticGps` (off-thread, lock-guarded cache).
+- **Control loop phases**: P0 (data + display, DONE) → P1 (arbiter + absolute positioning, DONE) → P2-v1 (GPS-cue boost, DONE) — all deployed to the rig 2026-06-10 (commit 6db99a5). Current state: `base_locked` = pose-latched (one capture per session); remote stale threshold 10s; GPS boost `fusion.gps_boost=0.2` (hot-tunable); GPS knobs in iOS Tune > GPS TRACKING.
+- **Specs**: `docs/superpowers/specs/2026-06-05-gps-lora-cueing-design.md` (architecture), `docs/superpowers/specs/2026-06-09-gps-control-loop-design.md` (control loop design).
+- **Full GPS config**: `docs/hardware/WIO_TRACKER_GPS_OPTIMIZATION.md` — optimized from 1-hour to 2-second updates (2026-06-09). Canonical sanitized Wio exports + verify script: `docs/hardware/wio-config/` (README + `verify_wios.sh`). Both Wios on fw 2.6.10. Base's earlier no-fix suspected config drift (gps_update_interval reverted to 30s → now 5s); pending outdoor validation.
+
+### Wio Tracker GPS — Operational Gotchas
+
+- **Meshtastic app UI minimum is fake.** The 15-second floor is a dropdown limitation — firmware has NO minimum. CLI can set 2s, 1s, etc.
+- **Both Wios must match LoRa preset** (currently SHORT_FAST). If they drift out of sync, mesh link breaks silently — no errors, just climbing `target_age_sec`.
+- **Config reverts on power-cycle.** After any Orin cold boot, verify both Wios with `meshtastic --get position` and `--get lora`. Re-apply if reverted.
+- **Stationary base needs `position_broadcast_secs`.** Smart broadcast only triggers on movement. Base is on a tripod, so set a non-smart interval (currently 30s) so it broadcasts even when still.
+- **Orin won't cold-boot with Wio plugged into USB.** U-Boot tries to enumerate the Wio's USB-ACM gadget as a boot device. Unplug Wio during cold boots; plug back in after boot, restart wavecam.
+- **Admin key mismatch blocks remote config over mesh.** Remote Wio must be configured via USB (plug into Mac) or Bluetooth (Meshtastic app). Base can't send admin commands to remote over LoRa.
+- **Port contention.** `wavecam.service` holds `/dev/ttyACM0` exclusively. To configure the base Wio: `sudo systemctl stop wavecam.service` → make changes → `sudo systemctl start wavecam.service`.
+- **Config tool:** Use CLI (`python3 -m meshtastic --set`) not the Python library (`Node.writeConfig()` — has protobuf field validation bugs). On Mac: `meshtastic` via pipx.
 
 ## Development Guidelines
 
@@ -290,6 +303,12 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - **iOS networking:** every GET should go through `getWithFallback` (tether→Wi-Fi); a non-failover request surfaces as a false "Orin unreachable."
 - **Orin outage triage:** ping the gateway (`192.168.1.1`) vs the Orin (`.155`). Gateway clean + Orin 100% loss = the Orin (likely DHCP IP-drift, e.g. to `.50`). A `.155` DHCP reservation is in place; full procedure in `docs/ORIN_FIELD_RELIABILITY.md`.
 - **Collab bus:** partners can replay stale events as "fresh" — independently verify any state claim (`git fetch`, your own `curl`/`ping`) before acting. The Stop-hook now drains the inbox backlog to the latest event per turn (fixed 2026-06-05).
+- **Wio config reverts on Orin cold boot.** The base Wio power-cycles when the Orin cold-boots and loses all Meshtastic settings. Verify `position_broadcast_smart_enabled`, LoRa preset, and intervals after any power event. See `docs/hardware/WIO_TRACKER_GPS_OPTIMIZATION.md`.
+- **Orin won't cold-boot with Wio plugged into USB-A.** U-Boot enumerates the Wio's USB-ACM serial gadget as a boot device and stalls. Unplug Wio → boot → replug Wio → `sudo systemctl restart wavecam`. Warm reboots are fine.
+- **LoRa preset mismatch = silent mesh failure.** Both Wios must be on the same preset (currently SHORT_FAST). If they differ, `target_age_sec` climbs with no error. Verify with `meshtastic --get lora` on both.
+- **Stationary nodes need non-smart broadcast.** Smart broadcast triggers on movement only. The base Wio is tripod-mounted — set `position_broadcast_secs` to a low value (currently 30s) or it only sends once per hour.
+- **Meshtastic app UI minimum is fake.** The 15-second dropdown floor is cosmetic — firmware accepts any positive integer. Use CLI to set intervals the app won't allow.
+- **Never call meshtastic lib on the API request thread.** `get_fix()` and `get_camera_position()` must be non-blocking lock reads of a background thread's cached snapshot. The 2026-06-08 incident proved this — direct `iface.nodes` access on the request thread hung the entire HTTP API.
 
 ## IMPORTANT: Project Context
 

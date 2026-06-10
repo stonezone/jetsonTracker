@@ -13,10 +13,13 @@ import cv2
 
 from .capture import FrameGrabber
 from .color_detector import ColorDetector
-from .controller import VisualServo, STOP_CMD
+from .controller import VisualServo, STOP_CMD, PtzAbsoluteCommand
 from .fusion import Fusion
+from .gps_geo import GeoPoint
+from .gps_pointing import compute_target, ZoomCurve
 from .overlay import annotate
 from .ptz_owner import PtzOwner
+from .tracking_arbiter import TrackingArbiter
 
 DEFAULT_STOP_RESEND_INTERVAL_SEC = 0.25
 
@@ -71,6 +74,21 @@ class Pipeline(threading.Thread):
                 self.detector = detector_factory()
             except Exception as e:  # pragma: no cover - depends on torch/ultralytics
                 print(f"[pipeline] YOLO disabled (load failed): {e}")
+
+        # P1: GPS coarse-pointing handoff
+        self.arbiter = TrackingArbiter(
+            lock_frames=getattr(cfg.gps, "lock_frames", 5),
+            grace_sec=getattr(cfg.gps, "grace_sec", 1.0),
+            max_gps_age_sec=getattr(cfg.gps, "stale_threshold_sec", 10.0),
+        )
+        # CameraPose — loaded by calibration endpoint; uncalibrated by default
+        from .camera_pose import CameraPose
+        self.pose = CameraPose()
+        # GPS source — set by run.py after connect(); None if GPS disabled
+        self.gps = None
+        self._last_abs_cmd_key = None
+        self._last_abs_cmd_time = 0.0
+        self._arbiter_state = "idle"
 
         self._stop = threading.Event()
         self._last_cmd_key = None
@@ -156,6 +174,53 @@ class Pipeline(threading.Thread):
     def _auto_zoom_is_moving(self) -> bool:
         return getattr(self, "_last_zoom_key", None) not in (None, ("stop", 0))
 
+    def _send_absolute_cmd(self, cmd):
+        """Rate-limited, de-duped absolute pan/tilt/zoom for GPS mode."""
+        if not self.cfg.ptz.enabled:
+            return
+        now = time.time()
+        key = cmd.key()
+        changed = key != self._last_abs_cmd_key
+        due = (now - self._last_abs_cmd_time) >= self.cfg.ptz.command_min_interval
+        if changed or due:
+            gps_cfg = self.cfg.gps
+            self.ptz.pan_tilt_absolute(
+                cmd.pan_enc, cmd.tilt_enc,
+                pan_speed=getattr(gps_cfg, "max_pan_speed", 4),
+                tilt_speed=getattr(gps_cfg, "max_tilt_speed", 3),
+            )
+            if cmd.zoom_enc is not None:
+                self.ptz.zoom_absolute(cmd.zoom_enc)
+            self._last_abs_cmd_key = key
+            self._last_abs_cmd_time = now
+
+    def _gps_pointing_cmd(self, fix):
+        """Compute a GPS absolute pointing command from a cached fix, or None.
+
+        Uses the latched pose position when available (tripod is stationary once
+        locked); falls back to live get_camera_position() for bench/manual flows."""
+        if fix is None or not self.pose.calibrated:
+            return None
+        if self.pose.has_base:
+            base = GeoPoint(lat=self.pose.lat, lon=self.pose.lon, alt_m=self.pose.alt_m)
+        elif self.gps is not None:
+            cam = self.gps.get_camera_position()
+            if cam is None:
+                return None
+            base = GeoPoint(lat=cam[0], lon=cam[1], alt_m=cam[2] if len(cam) > 2 else 0.0)
+        else:
+            return None
+        gps_cfg = self.cfg.gps
+        drive_zoom = getattr(gps_cfg, "drive_zoom", False)
+        target = GeoPoint(lat=fix.lat, lon=fix.lon,
+                          speed_mps=fix.speed, course_deg=fix.course)
+        pt = compute_target(base, target, self.pose, lead_s=0.65,
+                            zoom=ZoomCurve() if drive_zoom else None)
+        return PtzAbsoluteCommand(
+            pan_enc=int(pt.pan_enc), tilt_enc=int(pt.tilt_enc),
+            zoom_enc=int(pt.zoom_enc) if pt.zoom_enc is not None else None,
+        )
+
     def _maybe_send_cinematic_zoom(self, fr, frame_h: int) -> str | None:
         if not self.cfg.ptz.enabled:
             return None
@@ -164,7 +229,7 @@ class Pipeline(threading.Thread):
                 self._send_zoom("stop")
                 return "hold"
             return None
-        if self.owner.owner != "testbed":
+        if self.owner.owner not in ("testbed", "vision_follow"):
             return None
         if self._cinematic_zoom_suppressed():
             if self._auto_zoom_is_moving():
@@ -217,21 +282,85 @@ class Pipeline(threading.Thread):
                 if (t0 - self._last_boxes_time) <= self.cfg.detector.box_ttl_sec:
                     persons = self._last_boxes
 
-            fr = self.fusion.update(blobs, persons)
+            # P2: GPS-cue boost — when gps_tracker owned last frame the camera is
+            # already aimed at the subject; boost blobs near frame center.
+            gps_cue_px = None
+            if self._arbiter_state == "gps_tracker":
+                radius_frac = float(getattr(self.cfg.fusion, "gps_boost_radius_frac", 0.25))
+                r = radius_frac * min(w, h)
+                gps_cue_px = (w / 2.0, h / 2.0, r)
+
+            fr = self.fusion.update(blobs, persons, gps_cue_px=gps_cue_px)
 
             # control: always compute (for the overlay); SEND only while we own
             # the PTZ and are not killed.
             if self.state.killed:
                 cmd = STOP_CMD
+                abs_cmd = None
                 self._send_cmd(cmd)               # killed -> force stop
                 self._send_zoom("stop")
                 zoom_cmd = "hold"
+                self._arbiter_state = "killed"
             else:
                 cmd = self.servo.compute(fr.target_xy, (w, h))
                 zoom_cmd = None
-                if self.owner.owner == "testbed":
-                    self._send_cmd(cmd)           # else: not owner -> don't drive
-                    zoom_cmd = self._maybe_send_cinematic_zoom(fr, h)
+                abs_cmd = None
+
+                # P1: GPS arbiter handoff
+                gps_fix = self.gps.get_fix() if self.gps else None
+                gps_fresh = (
+                    gps_fix is not None and
+                    gps_fix.age_sec < getattr(self.cfg.gps, "stale_threshold_sec", 10.0)
+                ) if gps_fix else False
+                gps_calibrated = self.pose.calibrated
+                # C1: base position latched once at setup; tripod is stationary.
+                base_locked = self.pose.has_base
+                # Sync arbiter hysteresis params from cfg so hot-config takes effect.
+                self.arbiter.lock_frames = int(getattr(self.cfg.gps, "lock_frames",
+                                                       self.arbiter.lock_frames))
+                self.arbiter.grace_sec = float(getattr(self.cfg.gps, "grace_sec",
+                                                       self.arbiter.grace_sec))
+                decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
+                                               base_locked, t0)
+                prev_state = self._arbiter_state
+                self._arbiter_state = decision.owner
+
+                # Atomic zoom handoff: kill old zoom before new owner takes zoom
+                if decision.owner != prev_state:
+                    self._send_zoom("stop")
+
+                # Release outgoing autonomous owner BEFORE requesting new one.
+                # ptz_owner.request refuses cross-owner steals (idle→owner only).
+                _curr = self.owner.owner
+                _want = decision.owner
+                if _curr in ("vision_follow", "gps_tracker") and _curr != _want:
+                    self.owner.release(_curr)
+
+                if decision.owner == "vision_follow":
+                    if _curr != "vision_follow":
+                        self.owner.request("vision_follow")
+                    if self.owner.owner in ("vision_follow", "testbed"):
+                        self._send_cmd(cmd)
+                        zoom_cmd = self._maybe_send_cinematic_zoom(fr, h)
+
+                elif decision.owner == "gps_tracker":
+                    if _curr != "gps_tracker":
+                        self.owner.request("gps_tracker")
+                    # Only drive GPS if we actually own it (not blocked)
+                    if self.owner.owner == "gps_tracker":
+                        abs_cmd = self._gps_pointing_cmd(gps_fix)
+                        if abs_cmd is not None:
+                            self._send_absolute_cmd(abs_cmd)
+                        else:
+                            self._send_cmd(STOP_CMD)
+                    else:
+                        self._send_cmd(STOP_CMD)
+
+                else:
+                    # idle — hold position, release any autonomous owner
+                    if _curr in ("vision_follow", "gps_tracker", "testbed"):
+                        self.owner.release(_curr)
+                    self._send_cmd(STOP_CMD)
 
             # render
             hud = {
@@ -265,8 +394,11 @@ class Pipeline(threading.Thread):
                 has_color=fr.has_color, has_person=fr.has_person, matched=fr.matched,
                 fps=round(fps, 1), connected=self.grab.connected,
                 ptz_enabled=self.cfg.ptz.enabled,
-                cmd=("stop" if cmd.is_stop or self.owner.owner != "testbed"
-                     else f"p{cmd.pan_speed}/t{cmd.tilt_speed}"),
+                owner=self.owner.owner,
+                arbiter=self._arbiter_state,
+                cmd=("stop" if cmd.is_stop or self.owner.owner not in ("testbed", "vision_follow", "gps_tracker")
+                     else (f"GPS abs" if self._arbiter_state == "gps_tracker"
+                           else f"p{cmd.pan_speed}/t{cmd.tilt_speed}")),
                 zoom_cmd=zoom_cmd or "hold",
             )
 
