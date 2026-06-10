@@ -32,6 +32,12 @@ if TYPE_CHECKING:                       # type-only: keeps fusion importable cv2
     from .color_detector import Blob
     from .detector import PersonBox
 
+# Confidence model (see test_fusion_invariants.py for the asserted semantics):
+CONF_MATCHED_BASE = 0.5     # color+person agree: 0.5 + 0.5*person_conf — acquires
+CONF_SUSTAIN = 0.45         # color-only / person-near-track: holds a lock, never starts one
+CONF_PERSON_ONLY = 0.2      # person with no color: never holds, never starts
+CONF_BOOST_CAP = 0.95
+
 
 @dataclass
 class FusionResult:
@@ -114,19 +120,19 @@ class Fusion:
         if confirmed:
             p = self._continuity(confirmed, self._person_aim)
             bbox = _person_xywh(p)
-            return self._person_aim(p), bbox, bbox, 0.5 + 0.5 * p.conf, True
+            return self._person_aim(p), bbox, bbox, CONF_MATCHED_BASE + CONF_MATCHED_BASE * p.conf, True
         if self.cfg.require_person:
             return None, None, None, 0.0, False
         if self._ema is not None and persons:
             p, d = self._nearest_person(persons, self._ema)
             if p is not None and d <= self.cfg.match_dist:
                 bbox = _person_xywh(p)
-                conf = 0.45
+                conf = CONF_SUSTAIN
                 if gps_cue_px is not None:
                     cx, cy, r = gps_cue_px
                     if _dist(self._person_aim(p), (cx, cy)) <= r:
                         boost = float(getattr(self.cfg, "gps_boost", 0.2))
-                        conf = min(0.95, conf + boost)
+                        conf = min(CONF_BOOST_CAP, conf + boost)
                 return self._person_aim(p), bbox, bbox, conf, False
         if blobs:
             if gps_cue_px is not None and self._ema is None:
@@ -136,17 +142,17 @@ class Fusion:
                 b = min(blobs, key=lambda x: _dist((x.cx, x.cy), (cx, cy)))
             else:
                 b = self._continuity(blobs, lambda x: (x.cx, x.cy))
-            conf = 0.45
+            conf = CONF_SUSTAIN
             if gps_cue_px is not None:
                 cx, cy, r = gps_cue_px
                 if _dist((b.cx, b.cy), (cx, cy)) <= r:
                     boost = float(getattr(self.cfg, "gps_boost", 0.2))
-                    conf = min(0.95, conf + boost)
+                    conf = min(CONF_BOOST_CAP, conf + boost)
             return (b.cx, b.cy), b.bbox, None, conf, False
         if persons:
             p = self._continuity(persons, self._person_aim)
             bbox = _person_xywh(p)
-            return self._person_aim(p), bbox, bbox, 0.2, False
+            return self._person_aim(p), bbox, bbox, CONF_PERSON_ONLY, False
         return None, None, None, 0.0, False
 
     def update(self, blobs: List[Blob], persons: Optional[List[PersonBox]],
