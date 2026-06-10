@@ -237,6 +237,7 @@
         <a href="#agent">Agent</a>
         <a href="#connect">Connect</a>
         <a href="#media">Media</a>
+        <a href="#wio-config">Wio</a>
         <a href="#safety">Safety</a>
         <a href="#troubleshooting">Fixes</a>
       </div>
@@ -257,7 +258,7 @@
       <div class="summary-row"><b>iPhone</b><span>The WaveCam app is your console: Live feed, PTZ joystick, Calibrate, Tune, Connect, Media. It auto-picks USB&nbsp;tether or Wi-Fi and labels the active route.</span></div>
       <div class="summary-row"><b>Orin</b><span>Jetson Orin Nano runs the backend (<code>:8088</code>): vision tracking (YOLOv8n + color), the camera link, safety, tuning, and the MJPEG preview.</span></div>
       <div class="summary-row"><b>Camera</b><span>Prisual NDI PTZ does the pan / tilt / zoom. Only the Orin talks to it — the phone never commands the camera directly.</span></div>
-      <div class="summary-row"><b>You</b><span>Wear orange, hit <span style="color:var(--accent)">AUTO</span>, and keep <span style="color:var(--kill)">KILL</span> within reach. Vision keeps you framed; LoRa GPS (coming) will point it at long range.</span></div>
+      <div class="summary-row"><b>You</b><span>Wear orange, hit <span style="color:var(--accent)">AUTO</span>, and keep <span style="color:var(--kill)">KILL</span> within reach. Vision keeps you framed; LoRa GPS now reads your range on the HUD and — once calibrated — coarse-points the camera at long range.</span></div>
     </div>
   </header>
 
@@ -297,6 +298,7 @@
           <div class="card"><h3>Zoom &amp; Fullscreen</h3><p>The vertical slider zooms in/out. Tap the expand icon (top-right of the feed) for fullscreen; tap again to exit. Works in portrait and landscape — the phone tripod-mounts either way.</p></div>
           <div class="card"><h3>Record</h3><p>The red record button starts/stops an MP4 on the Orin. Find clips later in <a href="#media">Media</a>.</p></div>
           <div class="card"><h3>Lock HUD</h3><p>The reticle and lock readout show what the tracker sees: searching, locked, or holding. Turn on <code>Show mask</code> in <a href="#tune">Tune</a> to see the color detection overlaid.</p></div>
+          <div class="card"><span class="pill subj">GPS</span><h3>GPS HUD chip</h3><p>When LoRa GPS is live, a GPS chip appears showing your <b>range, bearing, and fix age</b> from the camera — <span style="color:var(--ok)">green</span> dot when fresh, <span style="color:var(--warn)">amber</span> when stale. Tap it to expand: source, range, bearing, target freshness, base fix status, and an <b>Ingest</b> row. If Ingest reads <b>DOWN — restart svc</b>, the Orin's serial reader died; fix is restarting <code>wavecam.service</code> on the Orin, not touching the Wios. The chip (along with the lock chip) persists in fullscreen. <span style="color:var(--kill)">KILL</span> chip is solid red at all times.</p></div>
         </div>
       </div>
       <div class="grid g2" style="margin-top:0.9rem">
@@ -310,16 +312,16 @@
       <div class="sec-head">
         <div class="kicker">Calibrate tab</div>
         <h2>Teach it where it's pointing</h2>
-        <p class="sub">Calibration solves the camera-to-world geometry so coarse GPS pointing (coming) and zoom framing land on target. Run it once per setup spot, and again if you move the tripod or the horizon shifts.</p>
+        <p class="sub">Calibration solves the camera-to-world geometry so coarse GPS pointing and zoom framing land on target. Each capture now writes a real solve to the Orin (it survives a restart) — and GPS coarse-pointing only switches on once this is done. Run it once per setup spot, and again if you move the tripod or the horizon shifts.</p>
       </div>
       <div class="grid g2" style="align-items:start">
         <ol class="steps">
           <li><b>Preflight</b> — confirm feed, camera link, and that KILL is reachable before anything moves.</li>
-          <li><b>Base lock</b> — fix the tripod and set the camera's resting "forward" reference.</li>
-          <li><b>Heading</b> — align pan-home to a known bearing; this is WaveCam's compass without a magnetometer (motors near magnets make those useless).</li>
+          <li><b>Base lock</b> — latches the base Wio's GPS position as the camera's fixed ground reference. <b>Requires a base GPS fix</b> — watch the "Base fix" line in the GPS chip; the step is refused with a clear message until the base Wio has a sky view and a valid fix. One capture per session is enough; base Wio dropouts after this point do not stop GPS tracking.</li>
+          <li><b>Heading</b> — aim the camera at the remote tracker and confirm bearing. Needs both base and remote fixes for a live bearing readout. This is WaveCam's compass — no magnetometer (motors near magnets make those useless).</li>
           <li><b>Tilt</b> — set the horizon / water-level reference so vertical aim is true.</li>
           <li><b>Zoom FOV</b> — map zoom positions to field-of-view so framing math knows how tight each zoom is.</li>
-          <li><b>Dry-run</b> — a no-stakes follow to confirm the solve before you paddle out.</li>
+          <li><b>Dry-run</b> — a no-stakes follow to confirm the solve before you paddle out. <b>Do a full yard dry-run before every water session.</b></li>
         </ol>
         <div class="grid" style="gap:0.8rem; align-content:start">
           <figure class="shot phone">
@@ -327,6 +329,7 @@
             <figcaption>Calibrate — six guided steps.</figcaption>
           </figure>
           <div class="callout"><h3>When to recalibrate</h3><p>Moved the tripod, changed beach/orientation, or framing feels biased off-center at distance? Re-run Heading + Tilt at minimum.</p></div>
+          <div class="callout teal"><h3>How GPS pointing works once calibrated</h3><p>At long range a small orange dot is hard for vision to find in a wide frame. With calibration done and the base locked, GPS becomes a <b>spotter</b>: it aims (and zooms) the camera at your latest fix so YOLO + color can acquire, then hands off — <b>vision refines</b> the instant it locks. It only takes over when all three line up: a fresh GPS fix, a completed calibration, and a locked base. <span style="color:var(--kill)">KILL</span> overrides it like everything else.</p></div>
         </div>
       </div>
     </section>
@@ -609,6 +612,47 @@
         </div>
       </div>
 
+      <!-- GPS Tuning -->
+      <div class="ctrl-group">
+        <h3><span class="pill subj">D</span> GPS Cueing <span class="tag">visible once new backend is deployed · all keys hot</span></h3>
+        <p class="card" style="margin-bottom:0.8rem">GPS cueing controls appear in the Tune tab once the backend with P1/P2 support is running. They let you dial in how aggressively GPS takes over at long range and hands off to vision.</p>
+        <div class="ctrls">
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS stale threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.stale_threshold_sec</span></div>
+            <div class="ctrl-what">Age (seconds) at which a GPS fix is considered too stale to use for pointing.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Tolerates slower updates (weak LoRa day, partial sky).</span></div>
+              <div class="adj"><b>Lower</b><span>Demand fresh fixes; GPS cues cut out sooner when the mesh lags.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS drive zoom</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.drive_zoom</span></div>
+            <div class="ctrl-what">When on, GPS also drives zoom-by-distance while it's pointing. Off = GPS pans/tilts only; Cinematic Zoom handles framing independently.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>On</b><span>Let GPS pull back to wide when you're far out.</span></div>
+              <div class="adj"><b>Off</b><span>If GPS zoom is overshooting; let Cinematic Zoom handle it instead.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS boost</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.gps_boost</span></div>
+            <div class="ctrl-what">When GPS is pointing the camera, an orange blob near frame center gets this confidence boost — helping vision lock at distances where it otherwise can't.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Easier lock at 200–300 m (small blob). Watch for false locks on other orange.</span></div>
+              <div class="adj"><b>Lower</b><span>Strict — requires a strong blob even with GPS assist.</span></div>
+              <div class="see"><b>You'll see</b><span>Lock engaging at greater range when GPS is active.</span></div>
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS grace period</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.grace_sec</span></div>
+            <div class="ctrl-what">How long GPS keeps pointing after a fix goes stale, before handing fully back to vision.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Ride out brief LoRa gaps without losing aim.</span></div>
+              <div class="adj"><b>Lower</b><span>Hand off to vision faster when GPS signal drops.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="callout" style="margin-top:1rem">
         <h3>Presets &amp; restart-required keys</h3>
         <p>Save the current set as a named <b>Preset</b> (e.g. <em>Tow Foil, Wing Foil, Land Chase, Sunny, Cloudy</em>) and re-apply it in one tap. Most keys are Hot and apply instantly; a handful (camera source/codec, PTZ address, detector model) are <span class="pill restart">Restart</span> and the app will prompt you to restart the service for them to take effect.</p>
@@ -681,10 +725,51 @@
           <tbody>
             <tr><td><b>Compute</b></td><td>Jetson Orin Nano — runs vision (YOLOv8n TensorRT + color), fusion, servo, the API.</td><td>Orin's camera-LAN interface <code>192.168.100.10</code>; serves the app on <code>:8088</code>.</td></tr>
             <tr><td><b>Camera</b></td><td>Prisual NDI PTZ — the pan/tilt/zoom actuator and video source.</td><td>Orin-only control via VISCA over UDP <code>192.168.100.88:1259</code>; video over RTSP.</td></tr>
-            <tr><td><b>GPS</b> <span class="pill">Planned</span></td><td>SeeedStudio Wio Tracker L1 Lite (LoRa / Meshtastic) — coarse point &amp; zoom at long range; vision refines in-frame.</td><td>Not yet live; the stub returns empty. Heading comes from pan-home, no magnetometer.</td></tr>
+            <tr><td><b>GPS</b> <span class="pill ok">Live · data</span></td><td>SeeedStudio Wio Tracker L1 Lite (LoRa / Meshtastic) — a remote unit on you, a base unit on the Orin. Coarse point &amp; zoom at long range; vision refines in-frame.</td><td>Range / bearing / freshness are live on the HUD now. Coarse auto-pointing is wired and switches on once Calibrate is done and the base is locked. Heading comes from calibration, no magnetometer.</td></tr>
             <tr><td><b>Console</b></td><td>The iOS WaveCam app — your operator screen.</td><td>USB tether <code>172.20.10.8</code> or Wi-Fi <code>192.168.1.155</code>, port <code>:8088</code>.</td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- WIO CONFIG -->
+    <section id="wio-config">
+      <div class="sec-head">
+        <div class="kicker">Wio tracker configuration</div>
+        <h2>Keep both Wios in sync</h2>
+        <p class="sub">Settings revert on power events. Verify before every session and re-apply if anything is off. Canonical configs live in <code>docs/hardware/wio-config/</code> — use <code>verify_wios.sh</code> as your pre-session checklist.</p>
+      </div>
+
+      <div class="grid g2" style="align-items:start; margin-bottom:0.9rem">
+        <div class="callout teal">
+          <h3>Golden rule — one batched write</h3>
+          <p>Each individual <code>--set</code> call commits a reboot. Apply all settings in a <b>single</b> <code>--configure</code> (or one batched command with all flags) so the device reboots once. Piecemeal writes in the field are how settings drift out of sync.</p>
+        </div>
+        <div class="callout">
+          <h3>After any Orin cold boot</h3>
+          <p>The base Wio power-cycles with the Orin and loses all settings. Run <code>verify_wios.sh</code> on both devices after every cold boot before starting a session. Also: <b>unplug the base Wio before a cold boot</b> — U-Boot stalls trying to boot from it.</p>
+        </div>
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Remote (on you)</th><th>Base (on Orin)</th><th>Why it matters</th></tr></thead>
+          <tbody>
+            <tr><td><code>gps_update_interval</code></td><td>2 s</td><td>5 s</td><td>How often the GPS chip polls. Remote at 2 s for fast tracking; base is USB-powered so 5 s is fine.</td></tr>
+            <tr><td><code>position_broadcast_smart_enabled</code></td><td>true</td><td>true</td><td>Without this, positions send only once per hour (the firmware default). Must be on.</td></tr>
+            <tr><td><code>broadcast_smart_minimum_interval_secs</code></td><td>2 s</td><td>2 s</td><td>Floor between sends when moving. 2 s at 10 m/s = 20 m max position error.</td></tr>
+            <tr><td><code>broadcast_smart_minimum_distance</code></td><td>5 m</td><td>5 m</td><td>Triggers a send on any 5 m movement.</td></tr>
+            <tr><td><code>position_broadcast_secs</code></td><td>3600 s (smart handles it)</td><td><b>30 s</b></td><td>The base is stationary on a tripod — smart broadcast never triggers. The 30 s timed floor ensures the base always broadcasts its position.</td></tr>
+            <tr><td><code>lora.modem_preset</code></td><td colspan="2" style="text-align:center"><b>SHORT_FAST on both</b></td><td>Mismatch = silent mesh failure — GPS age climbs with no errors. Verify on both after any power event.</td></tr>
+            <tr><td><code>position.gps_mode</code></td><td>ENABLED</td><td>ENABLED</td><td>If this reads anything else, the GPS chip is off — no fix is possible regardless of other settings.</td></tr>
+            <tr><td><code>power.ls_secs</code></td><td>disabled (4294967295)</td><td>N/A (nRF ignores it)</td><td>Light sleep after 5 min would kill GPS polling on the remote. Disabled. The "300 readback" on the base is cosmetic — the nRF52840 ignores this setting entirely.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout teal" style="margin-top:0.9rem">
+        <h3>The app's 15-second minimum is a UI limit, not firmware</h3>
+        <p>The Meshtastic app dropdown bottoms out at 15 seconds, but the nRF52840 firmware accepts any positive integer. Always use the CLI (<code>meshtastic --set</code> or <code>--configure</code>) — not the app — to apply these settings. On Mac: <code>meshtastic</code> via pipx.</p>
       </div>
     </section>
 
@@ -721,6 +806,10 @@
             <tr><td>Zoom stuck / too tight</td><td>Cinematic Zoom state, or the camera held a zoom</td><td>Long-press joystick center for Home (wide); check <code>Subject size</code>; disable Cinematic Zoom and retest pan/tilt.</td></tr>
             <tr><td>Can't connect</td><td>Wrong route or Orin not up</td><td>Check the route label in Connect; re-plug USB; confirm the Wi-Fi static IP; the app falls back automatically.</td></tr>
             <tr><td>Camera won't move</td><td>Killed latch is set</td><td>Tap Resume, then AUTO. KILL stays latched on purpose until you clear it.</td></tr>
+            <tr><td>GPS age climbing / stale</td><td>LoRa preset mismatch between the two Wios</td><td>Run <code>meshtastic --get lora</code> on both. Both must show <code>SHORT_FAST</code>. Re-apply if one reverted (common after a power event).</td></tr>
+            <tr><td><code>base_age</code> is null / Base fix missing</td><td>Base Wio has no GPS fix — no sky view, or settings reverted</td><td>Give the base Wio clear sky. Run <code>verify_wios.sh</code>; check <code>gps_mode</code> = ENABLED and <code>position_broadcast_secs</code> = 30. If settings reverted, re-apply from <code>docs/hardware/wio-config/</code>.</td></tr>
+            <tr><td>GPS Ingest shows DOWN</td><td>Orin's serial reader died (wavecam.service lost the port)</td><td><code>sudo systemctl restart wavecam.service</code> on the Orin. Do <em>not</em> touch or replug the Wios — it's an Orin-side issue.</td></tr>
+            <tr><td>Won't lock at long range (GPS is active)</td><td>Person detector can't resolve you at that size; gps_boost too low</td><td>Confirm YOLO engine is running (<code>GET /api/v1/config</code> → detector.model). Lower <code>fusion.lock_threshold</code> or raise <code>fusion.gps_boost</code> in Tune → GPS Cueing.</td></tr>
           </tbody>
         </table>
       </div>
@@ -729,7 +818,7 @@
 
   <footer class="footer">
     <span>WaveCam — Operator Guide</span>
-    <span>Tracking: YOLOv8n + orange-color fusion · Orin :8088 · KILL always reachable</span>
+    <span>Tracking: YOLOv8n + orange-color fusion · LoRa GPS coarse-point · Orin :8088 · KILL always reachable</span>
   </footer>
 </body>
 </html>
