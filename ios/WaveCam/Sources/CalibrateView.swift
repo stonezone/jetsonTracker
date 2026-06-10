@@ -449,10 +449,10 @@ private struct CalibrationActiveCard: View {
                         .frame(width: 38, height: 38)
                         .background(WC.accent.opacity(0.12), in: .rect(cornerRadius: WCRadius.sm))
                     VStack(alignment: .leading, spacing: WCSpace.xs) {
-                        Text("STEP \(step.id)")
+                        Text("STEP \(step.id) OF \(CalibrationStep.all.count)")
                             .font(WCFont.label)
                             .tracking(1.4)
-                            .foregroundStyle(WC.faint)
+                            .foregroundStyle(WC.muted)
                         Text(step.headline)
                             .font(WCFont.title)
                             .foregroundStyle(WC.txt)

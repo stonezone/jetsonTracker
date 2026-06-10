@@ -99,9 +99,19 @@ struct MergedLiveView: View {
             feedCard(fullscreen: true)
                 .ignoresSafeArea()
 
-            // Exit — top-right, same toggle/position as the in-feed control
-            fullscreenToggleButton
+            // Telemetry HUD — fullscreen is the tripod-monitoring mode, so lock/GPS
+            // state must stay visible (it was dropped here pre-2026-06-10, leaving
+            // the operator blind to LOCKED/GPS while in fullscreen).
+            VStack {
+                HStack(alignment: .top) {
+                    GlassLockChip(status: client.status, connected: client.connected)
+                    GlassGPSChip(status: client.status, connected: client.connected)
+                    Spacer()
+                    fullscreenToggleButton
+                }
                 .padding(WCSpace.md)
+                Spacer()
+            }
 
             // Floating STOP — always reachable in fullscreen (safety invariant)
             VStack {

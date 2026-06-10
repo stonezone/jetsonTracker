@@ -162,6 +162,9 @@ private struct ConnectionStatusCard: View {
                         .foregroundStyle(WC.txt)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    Text("App \(Self.appVersion)")
+                        .font(WCFont.captionMono)
+                        .foregroundStyle(WC.muted)
                     if let lastError {
                         Text(lastError)
                             .font(WCFont.caption)
@@ -171,6 +174,14 @@ private struct ConnectionStatusCard: View {
                 }
             }
         }
+    }
+
+    // Moved from the TopBar (2026-06-10): dev/build info belongs on Connect, not on
+    // every screen. Used to confirm which build is installed after a device push.
+    private static var appVersion: String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "v\(v) (\(b))"
     }
 }
 

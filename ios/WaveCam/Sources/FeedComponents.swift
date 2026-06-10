@@ -265,12 +265,12 @@ struct FeedLockReason: View {
         if let reason {
             VStack {
                 Text(reason.text)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .semibold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(reason.color)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(Color.black.opacity(0.62), in: .rect(cornerRadius: 8))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.78), in: .rect(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(reason.color.opacity(0.45)))
                     .frame(maxWidth: 280)
                     .padding(.top, 44)
