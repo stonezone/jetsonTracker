@@ -394,6 +394,47 @@ extension WCMediaListResponse {
     }
 }
 
+// MARK: - Health models
+
+/// Component health entry from GET /api/v1/health.
+/// `detail` carries mixed scalars (fps, free_gb, etc.) decoded via JSONValue.
+struct WCComponent: Codable, Sendable {
+    var ok: Bool?
+    var ageSec: Double?
+    var detail: [String: JSONValue]?
+}
+
+/// Top-level response from GET /api/v1/health.
+/// nil response → feature not yet deployed → UI hides the card entirely.
+struct WCHealth: Codable, Sendable {
+    var ok: Bool?
+    var components: [String: WCComponent]?
+}
+
+// MARK: - Event models
+
+/// One event entry from GET /api/v1/events.
+struct WCEvent: Codable, Sendable, Identifiable {
+    var t: Double?
+    var kind: String?
+    var detail: String?
+
+    /// Stable identity: timestamp float → string; collisions within the same
+    /// second are disambiguated by kind.
+    var id: String {
+        let ts = t.map { String($0) } ?? "0"
+        return "\(ts)-\(kind ?? "")"
+    }
+
+    var timestamp: Date {
+        Date(timeIntervalSince1970: t ?? 0)
+    }
+}
+
+private struct WCEventsResponse: Codable, Sendable {
+    var events: [WCEvent]
+}
+
 // MARK: - Log models
 
 /// One log line returned by GET /api/v1/logs.
@@ -985,6 +1026,33 @@ final class WaveCamClient {
             // to Wi-Fi instead of returning nil (same class as the "false unreachable" bug).
             let data = try await getWithFallback("logs", queryItems: queryItems)
             return try Self.decoder.decode(WCLogsResponse.self, from: data).lines
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: health + events (observability; feature-detected — nil = not deployed)
+
+    /// GET /api/v1/health — returns nil when the endpoint is absent or on any network error.
+    /// Callers hide their UI if this returns nil.
+    func health() async -> WCHealth? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("health")
+            return try Self.decoder.decode(WCHealth.self, from: data)
+        } catch {
+            return nil
+        }
+    }
+
+    /// GET /api/v1/events?since=<unix_ts> — returns nil on network/server error.
+    /// `since` is a Unix timestamp; pass 0 to fetch the full ring.
+    func events(since: Double) async -> [WCEvent]? {
+        guard mode == .live else { return nil }
+        let queryItems = [URLQueryItem(name: "since", value: String(since))]
+        do {
+            let data = try await getWithFallback("events", queryItems: queryItems)
+            return try Self.decoder.decode(WCEventsResponse.self, from: data).events
         } catch {
             return nil
         }

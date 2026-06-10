@@ -17,6 +17,8 @@ struct ConnectionView: View {
     @State private var tokenText = ""
     @State private var mockFallbackEnabled = false
     @State private var validationError: String?
+    @State private var health: WCHealth? = nil
+    @State private var healthTimer: Timer? = nil
 
     var body: some View {
         ScrollView {
@@ -28,6 +30,9 @@ struct ConnectionView: View {
                     baseURL: client.baseURL,
                     lastError: client.lastError
                 )
+                if let health {
+                    HealthCard(health: health)
+                }
                 ConnectionFormCard(
                     selectedMode: $selectedMode,
                     tetherURLText: $tetherURLText,
@@ -46,7 +51,22 @@ struct ConnectionView: View {
         }
         .background(WC.bg.ignoresSafeArea())
         .scrollIndicators(.hidden)
-        .task { loadStoredSettings() }
+        .task {
+            loadStoredSettings()
+            await refreshHealth()
+            healthTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+                Task { await refreshHealth() }
+            }
+        }
+        .onDisappear {
+            healthTimer?.invalidate()
+            healthTimer = nil
+        }
+    }
+
+    @MainActor
+    private func refreshHealth() async {
+        health = await client.health()
     }
 
     private func loadStoredSettings() {
@@ -297,6 +317,88 @@ private struct FieldLabel: View {
             .font(WCFont.label)
             .tracking(1.3)
             .foregroundStyle(WC.muted)
+    }
+}
+
+// MARK: - Health card
+
+/// Rig component heartbeat display. Feature-detected: hidden when health() returns nil.
+/// Matches the PreflightChecklist row style from CalibrateView.
+private struct HealthCard: View {
+    let health: WCHealth
+
+    var body: some View {
+        OperatorCard {
+            VStack(alignment: .leading, spacing: WCSpace.sm) {
+                HStack {
+                    OperatorSectionLabel("Rig health")
+                    Spacer()
+                    Circle()
+                        .fill(health.ok == true ? WC.ok : WC.kill)
+                        .frame(width: 8, height: 8)
+                    Text(health.ok == true ? "OK" : "FAULT")
+                        .font(WCFont.label)
+                        .tracking(1.0)
+                        .foregroundStyle(health.ok == true ? WC.ok : WC.kill)
+                }
+                if let components = health.components, !components.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(components.keys.sorted(), id: \.self) { name in
+                            if let comp = components[name] {
+                                HealthRow(name: name, component: comp)
+                                if name != components.keys.sorted().last {
+                                    Divider().overlay(WC.line)
+                                }
+                            }
+                        }
+                    }
+                    .background(WC.ink.opacity(0.6), in: .rect(cornerRadius: WCRadius.sm))
+                } else {
+                    Text("No components reported.")
+                        .font(WCFont.caption)
+                        .foregroundStyle(WC.muted)
+                }
+            }
+        }
+    }
+}
+
+private struct HealthRow: View {
+    let name: String
+    let component: WCComponent
+
+    var body: some View {
+        HStack(spacing: WCSpace.sm) {
+            Image(systemName: component.ok == true ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(component.ok == true ? WC.ok : WC.warn)
+            Text(name)
+                .font(WCFont.label)
+                .foregroundStyle(WC.txt)
+            Spacer(minLength: WCSpace.sm)
+            Text(rowDetail)
+                .font(WCFont.captionMono)
+                .foregroundStyle(component.ok == true ? WC.muted : WC.warn)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, WCSpace.sm)
+        .padding(.vertical, WCSpace.xs + 2)
+    }
+
+    private var rowDetail: String {
+        var parts: [String] = []
+        if let age = component.ageSec {
+            parts.append("\(String(format: "%.1f", age))s ago")
+        }
+        if let detail = component.detail {
+            if case .double(let fps) = detail["fps"] {
+                parts.append("\(Int(fps)) fps")
+            }
+            if case .double(let gb) = detail["free_gb"] {
+                parts.append("\(String(format: "%.1f", gb)) GB free")
+            }
+        }
+        return parts.isEmpty ? (component.ok == true ? "ok" : "stale") : parts.joined(separator: " · ")
     }
 }
 
