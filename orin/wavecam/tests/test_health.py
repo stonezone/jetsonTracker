@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import time
+import types
 from fastapi.testclient import TestClient
 from test_control_api import DummyPipeline
 from wavecam.health import HealthRegistry
@@ -27,8 +28,6 @@ def test_stale_component_flips_overall_not_ok():
 
 
 def test_health_endpoint_returns_capture_and_disk(tmp_path):
-    import types
-    from pathlib import Path
     pl = DummyPipeline()
     # Point rec_dir at a real directory so the disk check succeeds
     pl.recorder.config = types.SimpleNamespace(rec_dir=tmp_path)
@@ -40,3 +39,19 @@ def test_health_endpoint_returns_capture_and_disk(tmp_path):
     assert "capture" in body["components"]
     assert "disk" in body["components"]
     assert body["components"]["capture"]["ok"] is True
+
+
+def test_watchdog_health_paths_exist(tmp_path):
+    pl = DummyPipeline()
+    pl.recorder.config = types.SimpleNamespace(rec_dir=tmp_path)
+    pl.gps = types.SimpleNamespace(
+        reader_alive=lambda: False,
+        last_poll_age_sec=lambda: 12.3,
+    )
+    client = TestClient(build_app(pl))
+
+    body = client.get("/api/v1/health").json()
+
+    assert body["components"]["gps_reader"]["ok"] is False
+    assert body["components"]["gps_reader"]["age_sec"] == 12.3
+    assert isinstance(body["components"]["disk"]["detail"]["free_gb"], float)
