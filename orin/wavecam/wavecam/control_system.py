@@ -97,9 +97,9 @@ class SystemManager:
         return self.pipeline.owner.owner != IDLE
 
     def prepare_for_restart(self) -> None:
-        self._api._ptz.cancel_manual_deadman()
-        self._api._ptz.cancel_zoom_deadman()
-        self._api._ptz.reset_restore_owner()
+        self._api.cancel_manual_deadman()
+        self._api.cancel_zoom_deadman()
+        self._api.reset_restore_owner()
         self.pipeline.ptz.stop()
         self.pipeline.ptz.zoom("stop")
         current_owner = self.pipeline.owner.owner

@@ -649,6 +649,13 @@ class ControlApiAdapter:
         self._calibration.capture_calibration(step, values)
 
     def resume_without_autostart(self) -> None:
+        # NOTE (lock non-atomicity): pre-split this was a single atomic sequence.
+        # Post-split, the deadman-cancel calls (ptz._lock) and the state mutations
+        # below (adapter._lock) are no longer mutually atomic.  A concurrent
+        # safety/kill may interleave between them.  This has no hardware-safety
+        # consequence because kill sets a sticky latch and kill always wins;
+        # any interleaving leaves the system in the safer (killed) state.
+        # Revisit only if a real interleaving is observed in the event log.
         self._ptz.cancel_manual_deadman()
         self._ptz.cancel_zoom_deadman()
         self._ptz.reset_restore_owner()
@@ -703,6 +710,9 @@ class ControlApiAdapter:
 
     def cancel_zoom_deadman(self) -> None:
         self._ptz.cancel_zoom_deadman()
+
+    def reset_restore_owner(self) -> None:
+        self._ptz.reset_restore_owner()
 
     def zoom_deadman_expired(self, generation: int | None = None) -> None:
         self._ptz.zoom_deadman_expired(generation)
