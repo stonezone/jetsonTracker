@@ -175,11 +175,21 @@ This is the **MASTER REPO** for all WaveCam code:
 jetsonTracker/                 # master repo (product = WaveCam)
 ├── orin/
 │   └── wavecam/               # CANONICAL backend: FastAPI control API (/api/v1),
-│                              #   vision tracker, fusion, supervisor (Codex's lane)
+│                              #   vision tracker, fusion, supervisor (Codex's lane).
+│                              #   control_api was SPLIT 2026-06-12 (PR #25) into
+│                              #   control_{utils,snapshots,media,logs,presets,config,
+│                              #   ptz,calibration,system}.py + an 811-line coordinator.
+│                              #   estimator.py (Plan-3 shadow filter) + wavecam/tools/sim/
+│                              #   (synthetic-scenario harness) exist as of PR #27.
+│                              #   Tests: 216+ (tests/), CI runs them on every push
+│                              #   (.github/workflows/backend-tests.yml).
 ├── ios/WaveCam/               # native iOS operator app, SwiftUI (xcodegen) (Claude's lane)
+│                              #   + WaveCamWatch Tier-1 companion (Sources-Watch/)
 ├── docs/
 │   ├── superpowers/specs/     # design specs (control API, iOS app, cinematic zoom, supervisor)
-│   └── hardware/              # current field-power wiring and hardware notes
+│   ├── superpowers/plans/     # ACTIVE plans: roadmap HTML (start here), prewater (done),
+│   │                          #   closed-loop-pointing (bench-gated), target-estimator (live)
+│   └── hardware/              # field-power wiring, Wio canonical configs (wio-config/)
 ├── archive/legacy-20260606/   # archived legacy GPS relay, Nucleo, stepper gimbal, dashboard docs/code
 ├── .agent-collab/             # Claude+Codex coordination bus (claims, events, audit log)
 └── archive/                   # preserved retired material; do not delete without explicit request
