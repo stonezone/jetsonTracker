@@ -105,6 +105,17 @@ class ConfigManager:
             "web.show_mask": lambda: set_bool(self.pipeline.state, "show_mask", value, dry_run=dry_run),
             "web.show_hud": lambda: set_bool(self.pipeline.state, "show_hud", value, dry_run=dry_run),
             "web.jpeg_quality": lambda: set_int(cfg.web, "jpeg_quality", value, 30, 95, dry_run=dry_run),
+            "estimator.shadow": lambda: self.apply_estimator_bool("shadow", value, dry_run=dry_run),
+            "estimator.enabled": lambda: self.apply_estimator_bool("enabled", value, dry_run=dry_run),
+            "estimator.q_accel": lambda: self.apply_estimator_float("q_accel", value, 0.1, 20.0, dry_run=dry_run),
+            "estimator.p0_pos": lambda: self.apply_estimator_float("p0_pos", value, 0.01, 1000.0, dry_run=dry_run),
+            "estimator.p0_vel": lambda: self.apply_estimator_float("p0_vel", value, 0.01, 100.0, dry_run=dry_run),
+            "estimator.r_gps_fresh": lambda: self.apply_estimator_float("r_gps_fresh", value, 0.01, 1000.0, dry_run=dry_run),
+            "estimator.r_gps_age_scale": lambda: self.apply_estimator_float("r_gps_age_scale", value, 0.0, 100.0, dry_run=dry_run),
+            "estimator.r_vis_deg": lambda: self.apply_estimator_float("r_vis_deg", value, 0.1, 45.0, dry_run=dry_run),
+            "estimator.zoom_cov_wide_deg": lambda: self.apply_estimator_float("zoom_cov_wide_deg", value, 0.1, 90.0, dry_run=dry_run),
+            "estimator.zoom_cov_narrow_deg": lambda: self.apply_estimator_float("zoom_cov_narrow_deg", value, 0.1, 45.0, dry_run=dry_run),
+            "estimator.log_every_n": lambda: self.apply_estimator_int("log_every_n", value, 1, 100, dry_run=dry_run),
         }
         setter = setters.get(key)
         if setter is None:
@@ -190,3 +201,32 @@ class ConfigManager:
             return
         arbiter.lock_frames = int(getattr(gps_cfg, "lock_frames", arbiter.lock_frames))
         arbiter.grace_sec = float(getattr(gps_cfg, "grace_sec", arbiter.grace_sec))
+
+    # ------------------------------------------------------------------
+    # Estimator config helpers
+    # ------------------------------------------------------------------
+
+    def _est_cfg(self):
+        """Return cfg.estimator, or None if estimator section is absent."""
+        return getattr(self.pipeline.cfg, "estimator", None)
+
+    def apply_estimator_float(self, attr: str, value: Any, lo: float, hi: float,
+                              dry_run: bool = False) -> str | None:
+        est_cfg = self._est_cfg()
+        if est_cfg is None:
+            return f"estimator.{attr}: estimator section not present in config."
+        return set_float(est_cfg, attr, value, lo, hi, dry_run=dry_run)
+
+    def apply_estimator_int(self, attr: str, value: Any, lo: int, hi: int,
+                            dry_run: bool = False) -> str | None:
+        est_cfg = self._est_cfg()
+        if est_cfg is None:
+            return f"estimator.{attr}: estimator section not present in config."
+        return set_int(est_cfg, attr, value, lo, hi, dry_run=dry_run)
+
+    def apply_estimator_bool(self, attr: str, value: Any,
+                             dry_run: bool = False) -> str | None:
+        est_cfg = self._est_cfg()
+        if est_cfg is None:
+            return f"estimator.{attr}: estimator section not present in config."
+        return set_bool(est_cfg, attr, value, dry_run=dry_run)

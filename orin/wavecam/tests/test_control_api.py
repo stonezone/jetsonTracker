@@ -171,6 +171,19 @@ class DummyPipeline:
                 max_pan_speed=4,
                 max_tilt_speed=3,
             ),
+            estimator=types.SimpleNamespace(
+                shadow=True,
+                enabled=True,
+                q_accel=2.0,
+                p0_pos=25.0,
+                p0_vel=9.0,
+                r_gps_fresh=4.0,
+                r_gps_age_scale=0.5,
+                r_vis_deg=1.0,
+                zoom_cov_wide_deg=4.0,
+                zoom_cov_narrow_deg=1.5,
+                log_every_n=3,
+            ),
         )
 
     def kill(self, on=True):
