@@ -9,6 +9,7 @@ struct WaveCamApp: App {
     @AppStorage(WaveCamDefaults.mockFallbackKey) private var mockFallbackEnabled = false
 
     @State private var client = WaveCamClient(mode: .live)
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -23,6 +24,15 @@ struct WaveCamApp: App {
                     KeychainStore.migrateLegacyToken(legacyDefaultsKey: WaveCamDefaults.tokenKey)
                     applyStoredSettings()
                     await client.refresh()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    // Pause the 1Hz status poll in the background (beach battery);
+                    // .inactive is transient (app switcher, Control Center) — ignore.
+                    switch phase {
+                    case .background: client.setPollingActive(false)
+                    case .active: client.setPollingActive(true)
+                    default: break
+                    }
                 }
         }
     }
