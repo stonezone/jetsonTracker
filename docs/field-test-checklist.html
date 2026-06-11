@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveCam Field Test Checklist — 2026-06-11</title>
+<style>
+  :root { --ink:#111; --paper:#fff; --accent:#0a7a2f; --warn:#b00020; --dim:#555; --box:#f2f2f2; }
+  * { box-sizing:border-box; }
+  body { font:17px/1.5 -apple-system,system-ui,sans-serif; color:var(--ink); background:var(--paper);
+         max-width:680px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.5em; margin:.2em 0 .1em; }
+  .sub { color:var(--dim); margin-bottom:1.2em; }
+  .phase { margin:1.6em 0 .6em; font-size:1.15em; font-weight:700; border-bottom:3px solid var(--ink); padding-bottom:4px; }
+  .step { background:var(--box); border-radius:10px; padding:12px 14px; margin:10px 0; }
+  .step.done { opacity:.45; }
+  .step label { display:flex; gap:10px; align-items:flex-start; font-weight:700; cursor:pointer; }
+  .step input[type=checkbox] { width:26px; height:26px; flex:none; margin-top:1px; }
+  .do { margin:8px 0 0 36px; }
+  .expect { margin:6px 0 0 36px; color:var(--accent); font-weight:600; }
+  .ifnot { margin:6px 0 0 36px; color:var(--warn); }
+  .expect::before { content:"EXPECT: "; font-weight:800; }
+  .ifnot::before { content:"IF NOT: "; font-weight:800; }
+  code { background:#e6e6e6; padding:1px 5px; border-radius:4px; font-size:.92em; }
+  .claude { border-left:6px solid #7b2ff2; }
+  .claude .who { color:#7b2ff2; font-weight:800; font-size:.85em; }
+  .note { background:#fff8e1; border:1px solid #e0c200; border-radius:10px; padding:10px 14px; margin:12px 0; }
+  .trouble { background:#fdecec; border:1px solid var(--warn); border-radius:10px; padding:10px 14px; margin:18px 0; }
+  .trouble h3 { margin:.2em 0 .4em; }
+  .trouble dt { font-weight:700; margin-top:.6em; }
+  .trouble dd { margin:0 0 0 0; color:#333; }
+</style>
+</head>
+<body>
+<h1>Field Test Checklist</h1>
+<div class="sub">2026-06-11 &middot; rig <code>a305ee0</code> &middot; phone build <code>278</code> &middot; goal: first <b>shadow-mode</b> session + Plan-2 bench numbers</div>
+
+<div class="note"><b>Safety first:</b> the KILL / Emergency-Stop button in the app must stay reachable the whole session. The shadow estimator <b>never moves the camera</b> — if the camera does anything unexpected, that's the existing tracker: hit STOP and tell Claude.</div>
+
+<div class="phase">A — Before you walk out (2 min)</div>
+
+<div class="step"><label><input type="checkbox" id="s1"><span>1. Verify the phone app version</span></label>
+  <div class="do">Open WaveCam &rarr; Connect tab.</div>
+  <div class="expect">Build <code>278</code>, rig version <code>a305ee0</code> once connected.</div>
+  <div class="ifnot">Wrong build = yesterday's app — come back inside, tell Claude "rebuild".</div>
+</div>
+
+<div class="phase">B — Power &amp; connect (outside)</div>
+
+<div class="step"><label><input type="checkbox" id="s2"><span>2. Power the rig</span></label>
+  <div class="do">Battery &rarr; Orin + camera + base Wio. Wait ~90 s.</div>
+  <div class="expect">Camera does its init pan/tilt dance; Orin boots headless from NVMe.</div>
+  <div class="ifnot">No camera dance after 2 min &rarr; check the camera's power lead first, then troubleshooting box below.</div>
+</div>
+
+<div class="step"><label><input type="checkbox" id="s3"><span>3. Phone &harr; Orin link</span></label>
+  <div class="do">Plug the iPhone into the Orin's USB-A port (tether), or enable Personal Hotspot as fallback. Open the app.</div>
+  <div class="expect">Connect tab green; version line shows <code>a305ee0</code>.</div>
+  <div class="ifnot">Toggle the tether cable once; then hotspot; then troubleshooting box.</div>
+</div>
+
+<div class="step"><label><input type="checkbox" id="s4"><span>4. Wio / GPS sanity (always after a power event)</span></label>
+  <div class="do">App &rarr; GPS detail card. Put the remote Wio on (worn, outside, clear sky).</div>
+  <div class="expect"><code>reader_alive</code> true; base fix arrives within ~2 min; remote <code>target_age_sec</code> drops under 10 s and stays there.</div>
+  <div class="ifnot"><code>target_age_sec</code> climbing forever = LoRa config reverted on power-cycle. Tap <b>Ingest restart</b> first; if still climbing, tell Claude — do not fiddle with Meshtastic settings by hand.</div>
+</div>
+
+<div class="step"><label><input type="checkbox" id="s5"><span>5. Base lock (once per session)</span></label>
+  <div class="do">Let the base GPS settle ~2 min after fix, then Calibration tab &rarr; capture <b>Base Lock</b>.</div>
+  <div class="expect"><code>base_locked</code> true in status; stays latched for the whole session.</div>
+  <div class="ifnot">No base fix after 5 min in clear sky &rarr; step 4's IF-NOT path.</div>
+</div>
+
+<div class="phase">C — With Claude on the line</div>
+
+<div class="step claude"><label><input type="checkbox" id="s6"><span>6. FOV calibration (~10 min) — unlocks shadow mode</span></label>
+  <div class="who">CLAUDE DRIVES — you confirm framing</div>
+  <div class="do">Rig powered, camera with a clear view of a distinct landmark. Say <b>"calibrate"</b> in the Claude session (or Telegram). Claude moves the camera through wide / mid / tele and posts 3+ entries to <code>/calibration/fov</code>.</div>
+  <div class="expect">Within seconds of the 3rd entry, <code>shadow_mode: true</code> in the app status, and purple <b>shadow</b> rows start appearing in the Log tab.</div>
+  <div class="ifnot">Shadow stays false &rarr; Claude checks the estimator init log remotely; nothing for you to do.</div>
+</div>
+
+<div class="step claude"><label><input type="checkbox" id="s7"><span>7. Plan-2 bench script (15 min, automated)</span></label>
+  <div class="who">CLAUDE STARTS IT — zero hands needed</div>
+  <div class="do">Camera idle (not tracking). Say <b>"bench"</b>. The camera will make small repeated test moves — that's the script measuring encoder poll rate and VISCA reply latency/loss.</div>
+  <div class="expect">Camera twitches periodically for ~15 min, then stops. Claude confirms the measured constants.</div>
+  <div class="ifnot">Nothing visible after Claude says it started &rarr; tell Claude; don't restart anything yourself.</div>
+</div>
+
+<div class="phase">D — The actual session</div>
+
+<div class="step"><label><input type="checkbox" id="s8"><span>8. Shadow tracking session (&ge;20 min)</span></label>
+  <div class="do">Wear the remote Wio + orange rashguard. Start AUTO tracking. Move around 50&ndash;300 m out — vary distance, do real turns.</div>
+  <div class="expect">Camera follows (GPS owner far out, vision lock when close). Log tab keeps filling with purple shadow rows showing bearing/distance. Session JSONL grows on the rig (Claude verifies remotely).</div>
+  <div class="ifnot">Tracking misbehaves &rarr; STOP, note what happened, keep the session running if safe — bad-tracking data is exactly what the shadow comparison needs.</div>
+</div>
+
+<div class="phase">E — Optional hardware (if time)</div>
+
+<div class="step"><label><input type="checkbox" id="s9"><span>9. 18650 on the base Wio</span></label>
+  <div class="do"><b>CHECK POLARITY before connecting</b> — Wio battery ports are not all wired the same. Connect the 18650 to the base Wio's battery port.</div>
+  <div class="expect">Base Wio stays up through an Orin power-cycle; its config stops reverting.</div>
+  <div class="ifnot">Any doubt about polarity = skip; a reversed cell kills the board.</div>
+</div>
+
+<div class="phase">F — Wrap up</div>
+
+<div class="step"><label><input type="checkbox" id="s10"><span>10. Tell Claude "done"</span></label>
+  <div class="do">Nothing else — leave the rig powered until Claude confirms.</div>
+  <div class="expect">Claude pulls the shadow JSONL + bench results off the rig, reviews them, and reports whether this counts as shadow session 1 of 2.</div>
+</div>
+
+<div class="trouble">
+<h3>Troubleshooting</h3>
+<dl>
+<dt>App can't reach the Orin</dt>
+<dd>Ping test from phone is useless — just toggle tether &rarr; hotspot. If both fail and you have cell signal, tell Claude; gateway-vs-Orin triage is documented and remote.</dd>
+<dt>GPS stale mid-session</dt>
+<dd>GPS card &rarr; <b>Ingest restart</b> button. Fixes the stale-serial-after-Wio-reboot case in ~10 s.</dd>
+<dt>Service wedged / app shows stale everything</dt>
+<dd>Tools &rarr; Service &rarr; Restart. The new watchdog also auto-recovers a wedged service within 2 min on its own.</dd>
+<dt>Camera won't move at all</dt>
+<dd>Check E-stop state in the app first — a latched stop looks identical to a fault.</dd>
+</dl>
+</div>
+
+<script>
+  document.querySelectorAll('.step input[type=checkbox]').forEach(cb => {
+    cb.checked = localStorage.getItem('ftc-' + cb.id) === '1';
+    cb.closest('.step').classList.toggle('done', cb.checked);
+    cb.addEventListener('change', () => {
+      localStorage.setItem('ftc-' + cb.id, cb.checked ? '1' : '0');
+      cb.closest('.step').classList.toggle('done', cb.checked);
+    });
+  });
+</script>
+</body>
+</html>
