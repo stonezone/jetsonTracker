@@ -24,6 +24,7 @@ from .config import persist_hot_values
 from .control_calibration import CalibrationManager
 from .control_config import ConfigManager
 from .control_logs import LogAdapter
+from .control_system import SystemManager
 from .control_presets import PresetStore
 from .control_ptz import PtzDispatcher
 from .control_media import (
@@ -49,7 +50,6 @@ from .control_utils import (
     normalized_text,
 )
 from .ptz_owner import AUTONOMOUS, IDLE
-from .supervisor import restart_systemd_unit
 
 
 FrameSource = Callable[[], Any]
@@ -564,9 +564,6 @@ class ControlApiAdapter:
         self.media = MediaAdapter(getattr(pipeline, "recorder", None))
         self._lock = threading.RLock()
         self._revision = 0
-        self._restart_timer: threading.Timer | None = None
-        self._restart_pending = False
-        self._restart_unit = "wavecam.service"
         # Unified calibration store — replaces split _calibration dict + camera_pose.json.
         # One file holds pose, reference_heading, and step log so a restart can no longer
         # give "gps_calibrated true but reference_heading null".
@@ -585,6 +582,7 @@ class ControlApiAdapter:
         self._ptz = PtzDispatcher(pipeline, self.bump_revision)
         self._calibration = CalibrationManager(self._store, pipeline, self._lock, self)
         self._config = ConfigManager(pipeline, self)
+        self._system = SystemManager(pipeline, self._lock, self)
         self.presets = PresetStore(self)
         self.logs = LogAdapter(self)
 
@@ -740,94 +738,29 @@ class ControlApiAdapter:
     def apply_gps_bool(self, attr: str, value: Any, dry_run: bool = False) -> str | None:
         return self._config.apply_gps_bool(attr, value, dry_run)
 
+    # --- System delegation stubs (behavior lives in SystemManager) ---
+
     def request_service_restart(self, req: RestartRequest) -> JSONResponse:
-        if self.restart_pending:
-            return self.refusal(
-                "restart_pending",
-                "A WaveCam restart request is already pending.",
-            )
-        if self.restart_requires_confirmation() and not req.confirm_moving:
-            return self.refusal(
-                "restart_confirmation_required",
-                "Camera control is active; retry with confirm_moving=true to stop PTZ and restart.",
-            )
-        self.prepare_for_restart()
-        self.schedule_service_restart(req.delay_seconds)
-        self.bump_revision()
-        return JSONResponse(
-            {
-                "ok": True,
-                "request_id": make_request_id(),
-                "action": "restart",
-                "unit": self._restart_unit,
-                "scheduled": True,
-                "delay_seconds": req.delay_seconds,
-                "status": self.status_snapshot(),
-            },
-            status_code=202,
-        )
+        return self._system.request_service_restart(req)
 
     def request_agent_summon(self, req: AgentSummonRequest) -> JSONResponse:
-        source = normalized_text(req.source, "unknown", 64)
-        reason = normalized_text(req.reason, "operator_diagnostics", 256)
-        return JSONResponse(
-            {
-                "ok": True,
-                "request_id": make_request_id(),
-                "action": "agent_summon",
-                "accepted": True,
-                "source": source,
-                "reason": reason,
-                "message": (
-                    "Agent diagnostics request accepted; no automatic shell, service, "
-                    "or camera movement command was run."
-                ),
-                "status": self.status_snapshot(),
-            },
-            status_code=202,
-        )
+        return self._system.request_agent_summon(req)
 
     @property
     def restart_pending(self) -> bool:
-        with self._lock:
-            return self._restart_pending
+        return self._system.restart_pending
 
     def restart_requires_confirmation(self) -> bool:
-        if self.pipeline.owner.killed:
-            return False
-        return self.pipeline.owner.owner != IDLE
+        return self._system.restart_requires_confirmation()
 
     def prepare_for_restart(self) -> None:
-        self._ptz.cancel_manual_deadman()
-        self._ptz.cancel_zoom_deadman()
-        self._ptz.reset_restore_owner()
-        self.pipeline.ptz.stop()
-        self.pipeline.ptz.zoom("stop")
-        current_owner = self.pipeline.owner.owner
-        if current_owner != IDLE:
-            self.pipeline.owner.release(current_owner)
-        self.pipeline.state.set_status(state="RESTARTING", cmd="stop")
+        self._system.prepare_for_restart()
 
     def schedule_service_restart(self, delay_seconds: float) -> None:
-        with self._lock:
-            self._restart_pending = True
-        timer = threading.Timer(delay_seconds, self.run_service_restart)
-        timer.daemon = True
-        with self._lock:
-            self._restart_timer = timer
-        timer.start()
+        self._system.schedule_service_restart(delay_seconds)
 
     def run_service_restart(self) -> None:
-        try:
-            restart = getattr(self.pipeline, "restart_service", None)
-            if callable(restart):
-                restart(self._restart_unit)
-            else:
-                restart_systemd_unit(self._restart_unit)
-        finally:
-            with self._lock:
-                self._restart_pending = False
-                self._restart_timer = None
+        self._system.run_service_restart()
 
 
 def guide_root_candidates() -> list[Path]:
