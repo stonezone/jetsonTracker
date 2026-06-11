@@ -12,6 +12,7 @@ SHA=$(git rev-parse --short HEAD)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 DIRTY=$(git status --porcelain -- . | head -1)
 [ -n "$DIRTY" ] && { echo "REFUSED: orin/wavecam has uncommitted changes"; exit 1; }
+python3 -m pytest -q tests || { echo "REFUSED: tests red — fix before deploying"; exit 1; }
 
 printf '{"git_sha": "%s", "branch": "%s", "deployed_at": "%s"}\n' \
   "$SHA" "$BRANCH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > version.json
