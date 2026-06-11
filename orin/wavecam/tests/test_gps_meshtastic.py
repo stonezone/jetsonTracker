@@ -209,6 +209,41 @@ def test_reader_thread_populates_snapshot_and_close_stops_it():
     assert fake.closed is True
 
 
+class _RaisingIface:
+    """Serial died: any nodes access raises like a yanked USB device."""
+
+    @property
+    def nodes(self):
+        raise OSError("device disconnected")
+
+    def getMyNodeInfo(self):
+        return {"num": 1}
+
+    def close(self):
+        pass
+
+
+def test_reader_error_clears_cached_fix():
+    g = MeshtasticGps(poll_sec=0.02)
+    g._iface = _RaisingIface()
+    g._my_num = 1
+    g.enabled = True
+    with g._lock:
+        g._latest = NormalizedFix(lat=21.0, lon=-158.0, course=0.0, speed=0.0,
+                                  ts=time.time(), age_sec=0.0, src="lora")
+    g._stop.clear()
+    t = threading.Thread(target=g._reader_loop, daemon=True)
+    t.start()
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and g.get_fix() is not None:
+        time.sleep(0.01)
+    g._stop.set()
+    t.join(timeout=5.0)
+
+    assert g.get_fix() is None  # a frozen fix must not survive a serial error
+    assert g.enabled is False
+
+
 # --- camera age ---------------------------------------------------------------
 
 class _FakeIfaceWithBase:
