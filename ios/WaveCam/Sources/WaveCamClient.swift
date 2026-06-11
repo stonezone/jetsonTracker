@@ -61,6 +61,9 @@ struct WCStatus: Codable, Sendable {
     var media: Media?
     var services: [String: String]?
     var network: Network?
+    /// True when the TargetEstimator is running in shadow mode (never commands).
+    /// Absent on older backends — UI hides shadow indicator when nil.
+    var shadowMode: Bool?
 
     struct Session: Codable, Sendable {
         var state: String
@@ -413,11 +416,36 @@ struct WCHealth: Codable, Sendable {
 
 // MARK: - Event models
 
+/// Estimator shadow-tick detail, present when kind == "shadow".
+/// All fields are optional — absent on older backends or non-shadow events.
+struct ShadowDetail: Codable, Sendable {
+    var bearingDeg: Double?
+    var distM: Double?
+    var panEncWould: Int?
+    var bearingStdDeg: Double?
+    var ownerActual: String?
+    var gpsUpdated: Bool?
+    var visionUpdated: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case bearingDeg = "bearing_deg"
+        case distM = "dist_m"
+        case panEncWould = "pan_enc_would"
+        case bearingStdDeg = "bearing_std_deg"
+        case ownerActual = "owner_actual"
+        case gpsUpdated = "gps_updated"
+        case visionUpdated = "vision_updated"
+    }
+}
+
 /// One event entry from GET /api/v1/events.
 struct WCEvent: Codable, Sendable, Identifiable {
     var t: Double?
     var kind: String?
+    /// String detail for non-shadow events (lock, kill, owner, gps, etc.).
     var detail: String?
+    /// Structured detail for kind == "shadow" events; nil for all other kinds.
+    var shadowDetail: ShadowDetail?
 
     /// Stable identity: timestamp float → string; collisions within the same
     /// second are disambiguated by kind.
@@ -428,6 +456,28 @@ struct WCEvent: Codable, Sendable, Identifiable {
 
     var timestamp: Date {
         Date(timeIntervalSince1970: t ?? 0)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        t = try c.decodeIfPresent(Double.self, forKey: .t)
+        kind = try c.decodeIfPresent(String.self, forKey: .kind)
+        // `detail` is a string for most events but a dict for kind=shadow.
+        // Try string first; fall back to nil so the view can use shadowDetail.
+        detail = try? c.decodeIfPresent(String.self, forKey: .detail)
+        // Attempt shadow dict decode regardless of kind — harmless no-op for string detail.
+        shadowDetail = try? c.decodeIfPresent(ShadowDetail.self, forKey: .detail)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(t, forKey: .t)
+        try c.encodeIfPresent(kind, forKey: .kind)
+        try c.encodeIfPresent(detail, forKey: .detail)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case t, kind, detail
     }
 }
 

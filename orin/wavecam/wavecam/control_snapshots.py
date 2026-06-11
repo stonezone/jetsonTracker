@@ -144,6 +144,10 @@ def build_status_snapshot(pipeline, revision: int, media: dict | None = None) ->
         "media": media if media is not None else unknown_media(),
         "services": snapshot_services(read_health()),
         "network": build_network(legacy),
+        "shadow_mode": bool(
+            getattr(pipeline, "_est_active_shadow", False)
+            and getattr(pipeline, "estimator", None) is not None
+        ),
     }
 
 

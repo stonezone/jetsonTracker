@@ -121,7 +121,7 @@ private struct EventRow: View {
 
             kindChip
 
-            Text(event.detail ?? "")
+            Text(detailText)
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .foregroundStyle(WC.txt)
                 .lineLimit(3)
@@ -130,6 +130,21 @@ private struct EventRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+    }
+
+    /// Human-readable detail string for the row.
+    /// Shadow events format the structured ShadowDetail into a compact field scan.
+    private var detailText: String {
+        if event.kind?.lowercased() == "shadow", let sd = event.shadowDetail {
+            var parts: [String] = []
+            if let b = sd.bearingDeg  { parts.append(String(format: "b=%.1f°", b)) }
+            if let d = sd.distM       { parts.append(String(format: "d=%.0fm", d)) }
+            if let s = sd.bearingStdDeg { parts.append(String(format: "std=%.1f°", s)) }
+            if let g = sd.gpsUpdated, g { parts.append("gps✓") }
+            if let v = sd.visionUpdated, v { parts.append("vis✓") }
+            return parts.isEmpty ? "SHADOW" : parts.joined(separator: "  ")
+        }
+        return event.detail ?? ""
     }
 
     private var kindChip: some View {
@@ -146,11 +161,12 @@ private struct EventRow: View {
 
     private var kindFg: Color {
         switch event.kind?.lowercased() ?? "" {
-        case "lock":         return WC.ok
-        case "kill", "killed": return WC.kill
-        case "owner":        return WC.accent
-        case "gps":          return WC.warn
-        default:             return WC.muted
+        case "lock":              return WC.ok
+        case "kill", "killed":    return WC.kill
+        case "owner":             return WC.accent
+        case "gps":               return WC.warn
+        case "shadow":            return Color.purple.opacity(0.8)
+        default:                  return WC.muted
         }
     }
 }
