@@ -22,6 +22,7 @@ class CalibrationStore:
     reference_heading: Optional[float] = None
     steps: dict = field(default_factory=dict)       # step name -> capture entry
     updated_at_unix_ms: Optional[int] = None
+    fov_curve: list = field(default_factory=list)   # [(zoom_enc, fov_deg), ...]
 
     def set_step(self, step: str, entry: dict) -> None:
         now = int(time.time() * 1000)
@@ -32,7 +33,8 @@ class CalibrationStore:
 
     def save(self) -> None:
         doc = {"pose": asdict(self.pose), "reference_heading": self.reference_heading,
-               "steps": self.steps, "updated_at_unix_ms": self.updated_at_unix_ms}
+               "steps": self.steps, "updated_at_unix_ms": self.updated_at_unix_ms,
+               "fov_curve": [list(e) for e in self.fov_curve]}
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(doc, f, indent=2)
@@ -48,8 +50,17 @@ class CalibrationStore:
         if "pose" not in doc and _POSE_FIELDS & set(doc):
             return cls(path=path, pose=CameraPose(**{k: v for k, v in doc.items()
                                                      if k in _POSE_FIELDS}))   # legacy migration
+        raw_curve = doc.get("fov_curve", [])
+        fov_curve = []
+        for entry in raw_curve:
+            try:
+                z, f = entry
+                fov_curve.append((int(z), float(f)))
+            except Exception:
+                print(f"[calibration_store] skipping malformed fov_curve entry: {entry!r}")
         return cls(path=path,
                    pose=CameraPose(**doc.get("pose", {})),
                    reference_heading=doc.get("reference_heading"),
                    steps=doc.get("steps", {}),
-                   updated_at_unix_ms=doc.get("updated_at_unix_ms"))
+                   updated_at_unix_ms=doc.get("updated_at_unix_ms"),
+                   fov_curve=fov_curve)

@@ -108,6 +108,12 @@ class Pipeline(threading.Thread):
         self._last_boxes_time = 0.0
         self._frame_i = 0
 
+        # P3: estimator shadow wiring — instantiated lazily via _init_estimator()
+        # once the FOV curve is available (G2 gate).
+        self.estimator: Optional["TargetEstimator"] = None
+        self._shadow_writer: Optional["ShadowWriter"] = None
+        self._est_tick = 0
+
     def kill(self, on: bool = True):
         self.state.killed = on
         if on:
@@ -160,6 +166,25 @@ class Pipeline(threading.Thread):
     def _cinematic_zoom_suppressed(self, now: float | None = None) -> bool:
         now = time.time() if now is None else now
         return now < getattr(self, "_cinematic_zoom_suppressed_until", 0.0)
+
+    def _init_estimator(self, fov_curve: list) -> None:
+        """Create/replace the estimator once the FOV curve is populated (G2 gate).
+
+        Called from run() when the curve first becomes non-empty, or from tests
+        directly. No-ops when estimator.enabled is False or cfg.estimator is absent.
+        """
+        from .estimator import TargetEstimator
+        est_cfg = getattr(self.cfg, "estimator", None)
+        if est_cfg is None or not getattr(est_cfg, "enabled", False):
+            return
+        try:
+            self.estimator = TargetEstimator(
+                cfg=est_cfg, gps_cfg=self.cfg.gps,
+                pose=self.pose, fov_curve=fov_curve,
+            )
+        except RuntimeError as e:
+            print(f"[pipeline] estimator not started: {e}")
+            self.estimator = None
 
     def _send_zoom(self, direction: str, speed: int = 0) -> None:
         """Rate-limited, de-duped zoom send. Separate from pan/tilt de-dupe."""
@@ -259,6 +284,19 @@ class Pipeline(threading.Thread):
         self.grab.start()
         if self.cfg.ptz.enabled and not self.start_paused:
             self.owner.request("testbed")
+
+        # Initialise estimator if FOV curve is ready (G2 gate); best-effort — failure is logged
+        est_cfg = getattr(self.cfg, "estimator", None)
+        if est_cfg and getattr(est_cfg, "enabled", False) and self.estimator is None:
+            fov_curve = getattr(getattr(self, "_store", None), "fov_curve", [])
+            if fov_curve:
+                self._init_estimator(fov_curve)
+                if self.estimator is not None:
+                    log_dir = getattr(self.cfg, "shadow_log_dir", "/data/shadow")
+                    session_id = time.strftime("%Y%m%dT%H%M%S")
+                    from .shadow_writer import ShadowWriter
+                    self._shadow_writer = ShadowWriter(log_dir=log_dir, session_id=session_id)
+                    print(f"[pipeline] estimator shadow started, log_dir={log_dir}")
         period = 1.0 / max(1.0, self.cfg.loop.target_fps)
         t_fps = time.time()
         n_fps = 0
@@ -424,6 +462,55 @@ class Pipeline(threading.Thread):
                 zoom_cmd=zoom_cmd or "hold",
             )
 
+            # Estimator shadow tick — additive read-only side channel; never commands.
+            if self.estimator is not None:
+                self._est_tick += 1
+                _est_cfg = getattr(self.cfg, "estimator", None)
+                _log_every_n = int(getattr(_est_cfg, "log_every_n", 3))
+                _gps_updated = False
+                _vision_updated = False
+
+                _gps_fix = self.gps.get_fix() if self.gps else None
+                if _gps_fix is not None:
+                    self.estimator.update_gps(_gps_fix, now=t0)
+                    _gps_updated = True
+
+                # Vision update: only when locked and encoder data is fresh
+                _ptz_state = getattr(self, "ptz_state", None)
+                if _ptz_state is not None and fr.locked and fr.target_xy is not None:
+                    _enc, _enc_age = _ptz_state.latest()
+                    if _enc is not None and (_enc_age is None or _enc_age < 0.5):
+                        # zoom_enc: read from ptz_state when zoom encoder is available
+                        _zoom_enc = 0
+                        self.estimator.update_vision(
+                            pan_enc=_enc[0],
+                            pixel_cx=fr.target_xy[0], frame_w=w,
+                            zoom_enc=_zoom_enc, now=t0,
+                        )
+                        _vision_updated = True
+
+                if self._est_tick % _log_every_n == 0:
+                    _out = self.estimator.predict_output(now=t0)
+                    if _out is not None:
+                        _record = {
+                            "t": t0,
+                            "e": round(_out.e, 2), "n": round(_out.n, 2),
+                            "ve": round(_out.ve, 3), "vn": round(_out.vn, 3),
+                            "cov_trace": round(sum(_out.cov[i][i] for i in range(4)), 4),
+                            "bearing_deg": round(_out.bearing_deg, 2),
+                            "dist_m": round(_out.dist_m, 1),
+                            "pan_enc_would": _out.pan_enc_would,
+                            "tilt_enc_would": _out.tilt_enc_would,
+                            "bearing_std_deg": round(_out.bearing_std_deg, 3),
+                            "owner_actual": self._arbiter_state,
+                            "cmd_actual": self.state.get_status().get("cmd", ""),
+                            "gps_updated": _gps_updated,
+                            "vision_updated": _vision_updated,
+                        }
+                        self.events.record("shadow", _record)
+                        if self._shadow_writer is not None:
+                            self._shadow_writer.write(_record)
+
             self.health.beat("loop")
 
             # fps bookkeeping
@@ -444,6 +531,8 @@ class Pipeline(threading.Thread):
                 time.sleep(period - dt)
 
         # shutdown
+        if self._shadow_writer is not None:
+            self._shadow_writer.close()
         if self.cfg.ptz.enabled:
             self.ptz.stop()
             self.owner.release("testbed")

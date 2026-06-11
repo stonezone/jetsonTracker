@@ -3,6 +3,7 @@
  "/api/v1/agent/summon",
  "/api/v1/calibration",
  "/api/v1/calibration/base-lock",
+ "/api/v1/calibration/fov",
  "/api/v1/calibration/heading",
  "/api/v1/calibration/tilt",
  "/api/v1/calibration/zoom",

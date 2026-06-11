@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from .control_utils import copy_optional_dict, make_request_id
 
 
+
 class CalibrationManager:
     """Owns the CalibrationStore and exposes calibration routes."""
 
@@ -49,6 +50,8 @@ class CalibrationManager:
                 "base_locked": (
                     self.pipeline.pose.lat != 0.0 or self.pipeline.pose.lon != 0.0
                 ),
+                # P3: FOV curve for estimator vision bearing
+                "fov_entries": [list(e) for e in self._store.fov_curve],
             }
             if state["gps_calibrated"]:
                 state["gps_pose"] = {
@@ -58,6 +61,31 @@ class CalibrationManager:
                     "pan_enc_per_deg": self.pipeline.pose.pan_enc_per_deg,
                 }
             return state
+
+    def get_fov_curve(self) -> dict:
+        """Return the current FOV curve as a JSON-serialisable dict."""
+        with self._lock:
+            return {"fov_entries": [list(e) for e in self._store.fov_curve]}
+
+    def post_fov_entry(self, zoom_enc: Any, fov_deg: Any) -> JSONResponse:
+        """Upsert a zoom-level FOV measurement. Returns ok or 422 on bad input."""
+        try:
+            z = int(zoom_enc)
+            f = float(fov_deg)
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "zoom_enc and fov_deg must be numbers"}, 422)
+        if f <= 0:
+            return JSONResponse({"ok": False, "error": "fov_deg must be > 0"}, 422)
+        with self._lock:
+            curve = [(ze, fe) for ze, fe in self._store.fov_curve if ze != z]
+            curve.append((z, f))
+            curve.sort(key=lambda x: x[0])
+            self._store.fov_curve = curve
+            try:
+                self._store.save()
+            except Exception as e:
+                print(f"[control_calibration] fov_curve save failed: {e}")
+        return JSONResponse({"ok": True, "fov_entries": [list(e) for e in curve]})
 
     def validate_calibration_capture(self, req) -> JSONResponse | None:
         if self.pipeline.owner.killed:

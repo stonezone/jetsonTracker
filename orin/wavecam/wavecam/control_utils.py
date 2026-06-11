@@ -57,6 +57,17 @@ HOT_CONFIG_KEYS = (
     "web.show_mask",
     "web.show_hud",
     "web.jpeg_quality",
+    "estimator.shadow",
+    "estimator.enabled",
+    "estimator.q_accel",
+    "estimator.p0_pos",
+    "estimator.p0_vel",
+    "estimator.r_gps_fresh",
+    "estimator.r_gps_age_scale",
+    "estimator.r_vis_deg",
+    "estimator.zoom_cov_wide_deg",
+    "estimator.zoom_cov_narrow_deg",
+    "estimator.log_every_n",
 )
 
 RESTART_REQUIRED_KEYS = (

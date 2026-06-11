@@ -15,7 +15,7 @@ import time
 import uuid
 from typing import Any, Callable, Dict
 
-from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Body, Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -388,6 +388,14 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         api.bump_revision()
         return api.calibration_ok()
 
+    @app.get("/api/v1/calibration/fov", dependencies=[Depends(require(READ))])
+    def calibration_fov_get():
+        return api.get_fov_curve()
+
+    @app.post("/api/v1/calibration/fov", dependencies=[Depends(require(CONFIG))])
+    def calibration_fov_post(body: dict = Body(...)):
+        return api.post_fov_entry(body.get("zoom_enc"), body.get("fov_deg"))
+
 
 def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/media/status", dependencies=[Depends(require(READ))])
@@ -567,15 +575,16 @@ class ControlApiAdapter:
         # Unified calibration store — replaces split _calibration dict + camera_pose.json.
         # One file holds pose, reference_heading, and step log so a restart can no longer
         # give "gps_calibrated true but reference_heading null".
+        from .calibration_store import CalibrationStore
         _pose_path = os.environ.get(
             "WAVECAM_POSE_PATH",
             os.path.join(os.path.dirname(__file__), "..", "..", "camera_pose.json"),
         )
-        from .calibration_store import CalibrationStore
         self._store = CalibrationStore.load(_pose_path)
         # The pipeline must point at the SAME CameraPose object the store owns so that
         # GPS/pointing code always reads the live calibration and we never have two copies.
         pipeline.pose = self._store.pose
+        pipeline._store = self._store   # expose back so tests and callers can inspect
         if self._store.pose.calibrated:
             print(f"[control_api] loaded calibrated pose from {_pose_path}")
         self._pending_restart_config: dict[str, Any] = {}
@@ -647,6 +656,12 @@ class ControlApiAdapter:
 
     def capture_calibration(self, step: str, values: dict) -> None:
         self._calibration.capture_calibration(step, values)
+
+    def get_fov_curve(self) -> dict:
+        return self._calibration.get_fov_curve()
+
+    def post_fov_entry(self, zoom_enc, fov_deg):
+        return self._calibration.post_fov_entry(zoom_enc, fov_deg)
 
     def resume_without_autostart(self) -> None:
         # NOTE (lock non-atomicity): pre-split this was a single atomic sequence.
