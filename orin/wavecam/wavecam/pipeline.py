@@ -113,6 +113,7 @@ class Pipeline(threading.Thread):
         self.estimator: Optional["TargetEstimator"] = None
         self._shadow_writer: Optional["ShadowWriter"] = None
         self._est_tick = 0
+        self._est_active_shadow: bool = False
 
     def kill(self, on: bool = True):
         self.state.killed = on
@@ -182,9 +183,11 @@ class Pipeline(threading.Thread):
                 cfg=est_cfg, gps_cfg=self.cfg.gps,
                 pose=self.pose, fov_curve=fov_curve,
             )
+            self._est_active_shadow = bool(getattr(est_cfg, "shadow", True))
         except RuntimeError as e:
             print(f"[pipeline] estimator not started: {e}")
             self.estimator = None
+            self._est_active_shadow = False
 
     def _send_zoom(self, direction: str, speed: int = 0) -> None:
         """Rate-limited, de-duped zoom send. Separate from pan/tilt de-dupe."""
