@@ -1,4 +1,6 @@
 # REMOTE Wio !9f5802d5 — real export 2026-06-09 (fw 2.6.10), sanitized
+# 2026-06-11: positionBroadcastSecs 30→10 (field test 1: stationary subject only
+# broadcasts via this fallback — 30s starved GPS reacquire against the stale gate)
 # start of Meshtastic configure yaml
 # channel_url: REDACTED (contains channel PSK — restore channels via the Meshtastic app QR)
 config:
@@ -28,7 +30,7 @@ config:
     broadcastSmartMinimumIntervalSecs: 2
     gpsMode: ENABLED
     gpsUpdateInterval: 2
-    positionBroadcastSecs: 30
+    positionBroadcastSecs: 10
     positionBroadcastSmartEnabled: true
     positionFlags: 938
   power:

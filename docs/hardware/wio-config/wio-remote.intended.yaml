@@ -9,9 +9,12 @@ config:
     positionBroadcastSmartEnabled: true
     broadcastSmartMinimumIntervalSecs: 2
     broadcastSmartMinimumDistance: 5
-    # Safety floor: even if smart broadcast reverts, positions still flow every 30 s
-    # (was 3600 — a silent revert meant 1-hour updates).
-    positionBroadcastSecs: 30
+    # Safety floor AND the only broadcast path while the subject is stationary
+    # (smart broadcast needs ≥5 m movement). Field test 1 (2026-06-11): 30 s here
+    # starved GPS reacquire when Zack stood still waiting to be found — 10 s keeps
+    # fixes flowing inside the rig's 45 s stale window. (Was 3600 once — a silent
+    # revert meant 1-hour updates.)
+    positionBroadcastSecs: 10
     # 938 = HEADING+TIMESTAMP+SEQ_NOS+BATTERY+DOP+ALT_MSL (heading/speed feed lead prediction)
     positionFlags: 938
   device:
