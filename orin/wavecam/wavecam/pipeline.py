@@ -284,6 +284,12 @@ class Pipeline(threading.Thread):
         return "hold" if direction == "stop" else f"{direction}{speed}"
 
     def run(self):
+        try:
+            self._run()
+        finally:
+            self._shutdown()
+
+    def _run(self):
         self.grab.start()
         if self.cfg.ptz.enabled and not self.start_paused:
             self.owner.request("testbed")
@@ -511,17 +517,17 @@ class Pipeline(threading.Thread):
                             "vision_updated": _vision_updated,
                         }
                         self.events.record("shadow", _record)
-                        if self._shadow_writer is not None:
-                            self._shadow_writer.write(_record)
+                        self._shadow_write(_record)
 
             self.health.beat("loop")
 
             # fps bookkeeping
             n_fps += 1
-            if time.time() - t_fps >= 1.0:
-                fps = n_fps / (time.time() - t_fps)
+            t_now = time.time()
+            if t_now - t_fps >= 1.0:
+                fps = n_fps / (t_now - t_fps)
                 n_fps = 0
-                t_fps = time.time()
+                t_fps = t_now
             if time.time() - t_log >= self.cfg.loop.log_every_sec:
                 s = self.state.get_status()
                 print(f"[loop] {s['state']:9s} conf={s.get('conf',0):.2f} "
@@ -533,13 +539,35 @@ class Pipeline(threading.Thread):
             if dt < period:
                 time.sleep(period - dt)
 
-        # shutdown
+    def _shadow_write(self, record: dict) -> None:
+        """Shadow logging must never take down the vision loop (e.g. disk full)."""
+        if self._shadow_writer is None:
+            return
+        try:
+            self._shadow_writer.write(record)
+        except OSError as e:
+            print(f"[pipeline] shadow write failed ({e}); shadow logging disabled")
+            try:
+                self._shadow_writer.close()
+            except OSError:
+                pass
+            self._shadow_writer = None
+
+    def _shutdown(self):
+        """Runs even when the loop crashes — the camera must never be left
+        holding its last velocity command."""
         if self._shadow_writer is not None:
-            self._shadow_writer.close()
-        if self.cfg.ptz.enabled:
-            self.ptz.stop()
-            self.owner.release("testbed")
-        self.grab.stop()
+            try:
+                self._shadow_writer.close()
+            except OSError:
+                pass
+            self._shadow_writer = None
+        try:
+            if self.cfg.ptz.enabled:
+                self.ptz.stop()
+                self.owner.release("testbed")
+        finally:
+            self.grab.stop()
 
     def stop(self):
         self._stop.set()

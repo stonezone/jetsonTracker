@@ -78,6 +78,41 @@ def test_pipeline_repeats_stop_commands_when_stop_state_persists():
     assert pipe.ptz.calls == ["stop", "stop", ("zoom", "stop", 0), ("zoom", "stop", 0)]
 
 
+class _CrashingGrab:
+    def __init__(self):
+        self.stopped = False
+
+    def start(self):
+        pass
+
+    def read(self):
+        raise RuntimeError("frame source exploded")
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_run_stops_ptz_even_when_the_loop_crashes():
+    import threading
+
+    import pytest
+
+    pipe = make_pipeline()
+    pipe.cfg.loop = types.SimpleNamespace(target_fps=30, log_every_sec=10)
+    pipe.grab = _CrashingGrab()
+    pipe.start_paused = False
+    pipe._stop = threading.Event()
+    pipe._shadow_writer = None
+    pipe.estimator = None
+
+    with pytest.raises(RuntimeError):
+        pipe.run()
+
+    assert "stop" in pipe.ptz.calls          # camera halted despite the crash
+    assert pipe.grab.stopped is True
+    assert pipe.owner.owner == "idle"
+
+
 if __name__ == "__main__":
     test_kill_stops_camera_and_sets_status()
     test_resume_clears_killed_status_without_waiting_for_next_frame()
