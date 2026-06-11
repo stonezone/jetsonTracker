@@ -322,6 +322,130 @@ Bench-only checklist:
 Do not remove the microSD yet. Current state still mounts `/boot/efi` from it, and `BootCurrent`
 shows the SD device.
 
+**STATUS (2026-06-11): The microSD died mid-migration.** The rig now boots pure NVMe via
+systemd-boot. See the section below.
+
+## Boot Architecture & Recovery (2026-06-11)
+
+The 64 GB microSD failed 2026-06-11 during the in-place ESP migration (FAT writes appeared to
+succeed but were garbage; the card eventually stopped mounting read-only on any host). The rig was
+recovered to a working state that no longer needs the SD card for normal operation.
+
+### Current Boot Chain
+
+```
+UEFI Boot000B "WaveCam NVMe boot" (first in order)
+  └─ systemd-boot  on  nvme0n1p3  (FAT16 ESP, ~256 MiB, mounted at /boot/efi)
+       └─ /boot/efi/boot/Image   (kernel COPY on the ESP)
+       └─ /boot/efi/boot/initrd  (initrd COPY on the ESP)
+            └─ root  nvme0n1p1  (ext4, label NVME_ROOT, /)
+               └─ /boot/Image   (kernel on rootfs — source of truth for apt)
+               └─ /boot/initrd  (initrd on rootfs)
+```
+
+UEFI Boot000A "WaveCam card boot" is the WAVEBOOT spare SD card (tested fallback, second in
+boot order). The L4T launcher (`BOOTAA64.l4t`) is preserved on the ESP for reference but is not
+in the active boot path — its A/B machinery died with the SD card.
+
+Verified current state:
+
+| Item | Value |
+|---|---|
+| Boot entry | Boot000B "WaveCam NVMe boot" (first) |
+| ESP device | `/dev/nvme0n1p3`, FAT16, mounted at `/boot/efi` |
+| Kernel on ESP | `/boot/efi/boot/Image` |
+| Initrd on ESP | `/boot/efi/boot/initrd` |
+| Root | `/dev/nvme0n1p1`, ext4, label `NVME_ROOT` |
+| Fallback | Boot000A "WaveCam card boot" (WAVEBOOT spare SD, insert and power on) |
+
+### KERNEL UPDATE RULE
+
+`apt` updates the kernel and initrd on the rootfs (`/boot/Image`, `/boot/initrd`) but does NOT
+touch the ESP copies. After any kernel or initrd change the ESP copies must be updated or the rig
+will silently boot the old kernel on next restart.
+
+**After every `apt upgrade` or `apt install nvidia-l4t-kernel*`:**
+
+```bash
+sudo bash /data/projects/gimbal/wavecam/tools/sync-esp.sh
+```
+
+The script compares sha256 hashes, copies rootfs→ESP if they differ, re-verifies, and exits 2
+if it had to fix anything (exit 0 = already in sync, exit 1 = verify failure). Check it before
+restarting:
+
+```bash
+sudo bash /data/projects/gimbal/wavecam/tools/sync-esp.sh --check
+# exit 0 = in sync; exit 2 = stale (run without --check to fix)
+```
+
+`deploy.sh` runs `--check` automatically and prints a warning when the ESP is stale, but does
+not block the deploy. The kernel gap is an operator action, not a deploy blocker.
+
+### WAVEBOOT Fallback Card Procedure
+
+The WAVEBOOT spare SD card is pre-loaded and tested. Use it if the NVMe ESP becomes unbootable.
+
+1. Insert the WAVEBOOT card into the Orin SD slot.
+2. Power on (or reboot). UEFI tries Boot000B first; if that fails, it falls through to
+   Boot000A which reads the WAVEBOOT card.
+3. If the UEFI order was changed and the card entry is not second, enter UEFI setup at
+   power-on (hold or spam **Esc**) and move "WaveCam card boot" above "WaveCam NVMe boot"
+   temporarily.
+4. Once booted from the card, the NVMe root and data are still available — the card only
+   provides the bootloader. Repair the NVMe ESP from the running system.
+5. Do not write to the WAVEBOOT card while using it as a boot device. Keep it as a clean spare.
+
+### UEFI Shell Recovery Basics
+
+Enter the UEFI Shell from the UEFI setup menu (Esc at power-on → Boot Manager → EFI Shell), or
+from the UEFI boot-order menu.
+
+**Volume map:**
+
+```
+Shell> map -r -b
+```
+
+Identifies volumes. Lines containing `HD(1,` are NVMe; `HD(0,` is the SD slot. To confirm:
+
+```
+Shell> vol FS0:
+```
+
+Look for the label (WAVEBOOT on the spare card; the NVMe ESP has no label by default).
+
+**Binary verify (never use `cp` for binary verification — it silently corrupts):**
+
+```
+Shell> comp FS0:\EFI\BOOT\Image FSn:\EFI\BOOT\Image
+```
+
+Then sha256 separately from Linux once the system is booted.
+
+**Leading-slash echo quirk:** the UEFI Shell `echo` command treats a leading `\` in an argument
+as a path escape. Quote or escape if you need to print a path that begins with `\`.
+
+**Booting a specific entry from the shell:**
+
+```
+Shell> bcfg boot dump
+Shell> bootorder
+```
+
+Then select by entry number or use `exit` to return to the UEFI menu and pick an entry
+manually.
+
+### L4T Traps (Hard-Won)
+
+| Trap | Detail |
+|---|---|
+| Kernel ignores `initrd=` on cmdline | This L4T kernel (5.15.148-tegra) uses LoadFile2 for the initrd; the cmdline `initrd=` loader is compiled out. Direct kernel boots from the UEFI shell stall at "Waiting for root device /dev/nvme0n1p1" because NVMe is modular (in initrd). |
+| EFI shell `cp` silently corrupts | FAT writes to the failed SD "succeeded" but were garbage. Always `comp` + sha256 after copying. |
+| OS chain A flips Unbootable | After failed boot attempts L4T's A/B records "OS chain A status: Unbootable" in NVRAM. The rig will then skip Boot000B. Reset: UEFI setup → Device Manager → NVIDIA Configuration → L4T Configuration → reset chain A status to Bootable. |
+| Grace-form save quirk | In L4T Configuration, pressing **F10** alone sometimes fails to save. Press **D** first (to mark dirty), then **F10**. |
+| Odd-sector / forced-FAT32 ESP is firmware-hostile | The failed in-place mkfs.vfat -F32 partition caused "unable to locate partition" in UEFI. Use FAT16 for small ESPs (<256 MiB) on this firmware, or dd-clone a known-good ESP. |
+
 ## Reference Links
 
 - NVIDIA JetPack 6.2.2 page: https://developer.nvidia.com/embedded/jetpack-sdk-622
