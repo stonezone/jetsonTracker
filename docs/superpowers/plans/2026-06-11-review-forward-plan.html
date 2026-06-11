@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveCam — Full Review &amp; Forward Plan · 2026-06-11</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --line:#2d333b;
+    --txt:#e6edf3; --muted:#9aa4b2; --faint:#6e7681;
+    --brand:#ff8c42; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --info:#58a6ff;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  .wrap{max-width:920px;margin:0 auto;padding:28px 20px 80px}
+  header{border-bottom:2px solid var(--brand);padding-bottom:18px;margin-bottom:26px}
+  h1{font-size:26px;margin:0 0 6px}
+  h1 .accent{color:var(--brand)}
+  .sub{color:var(--muted);font-size:14px}
+  h2{font-size:19px;margin:38px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h3{font-size:15.5px;margin:22px 0 8px;color:var(--brand)}
+  p{margin:8px 0}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .badge{font:600 12px var(--mono);padding:4px 10px;border-radius:20px;border:1px solid}
+  .b-ok{color:var(--ok);border-color:var(--ok);background:rgba(63,185,80,.08)}
+  .b-info{color:var(--info);border-color:var(--info);background:rgba(88,166,255,.08)}
+  .b-warn{color:var(--warn);border-color:var(--warn);background:rgba(210,153,34,.08)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .tldr{border-left:4px solid var(--brand)}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+  th{color:var(--muted);text-align:left;font-weight:600;padding:8px 10px;border-bottom:2px solid var(--line);white-space:nowrap}
+  td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  code{font:12.5px var(--mono);background:var(--panel2);padding:1.5px 6px;border-radius:5px;color:#ffb98a}
+  pre{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+      overflow-x:auto;font:12.5px/1.6 var(--mono);color:#d8e1ea}
+  .sev{font:700 10.5px var(--mono);padding:2px 8px;border-radius:4px;white-space:nowrap;display:inline-block}
+  .s-crit{background:rgba(248,81,73,.15);color:var(--bad);border:1px solid var(--bad)}
+  .s-high{background:rgba(255,140,66,.13);color:var(--brand);border:1px solid var(--brand)}
+  .s-med{background:rgba(210,153,34,.12);color:var(--warn);border:1px solid var(--warn)}
+  .s-low{background:rgba(110,118,129,.15);color:var(--muted);border:1px solid var(--faint)}
+  .st{font:700 10.5px var(--mono);padding:2px 8px;border-radius:4px;white-space:nowrap;display:inline-block}
+  .fixed{background:rgba(63,185,80,.12);color:var(--ok);border:1px solid var(--ok)}
+  .planned{background:rgba(88,166,255,.12);color:var(--info);border:1px solid var(--info)}
+  .decide{background:rgba(210,153,34,.12);color:var(--warn);border:1px solid var(--warn)}
+  .rejected{background:rgba(110,118,129,.14);color:var(--muted);border:1px solid var(--faint)}
+  .tag{font:600 10.5px var(--mono);color:var(--faint)}
+  .v{color:var(--ok)} .u{color:var(--warn)}
+  ol.steps{counter-reset:step;list-style:none;padding-left:0}
+  ol.steps>li{position:relative;padding:10px 0 10px 46px;border-bottom:1px dashed var(--line)}
+  ol.steps>li:last-child{border-bottom:none}
+  ol.steps>li::before{counter-increment:step;content:counter(step);
+    position:absolute;left:0;top:10px;width:28px;height:28px;border-radius:50%;
+    background:var(--brand);color:#0d1117;font:700 14px var(--mono);
+    display:flex;align-items:center;justify-content:center}
+  .small{font-size:12.5px;color:var(--muted)}
+  .feas{font:700 12px var(--mono);color:var(--info)}
+  footer{margin-top:46px;padding-top:14px;border-top:1px solid var(--line);color:var(--faint);font-size:12px}
+  a{color:var(--info)}
+</style>
+</head>
+<body><div class="wrap">
+
+<header>
+  <h1>WAVE<span class="accent">CAM</span> — Full Review &amp; Forward Plan</h1>
+  <div class="sub">2026-06-11 · branch <code>fix/review-20260611</code> (8 commits, local only — nothing pushed) · reviewed by 3 parallel audit agents + hand verification, vibe-checked</div>
+  <div class="badges">
+    <span class="badge b-ok">backend 236/236 tests PASS (3.28s)</span>
+    <span class="badge b-ok">iOS xcodebuild ** BUILD SUCCEEDED **</span>
+    <span class="badge b-info">API contract snapshot untouched</span>
+    <span class="badge b-warn">rig NOT touched — deploy is your call</span>
+  </div>
+</header>
+
+<div class="card tldr">
+  <h3 style="margin-top:0">TL;DR</h3>
+  <p><strong>The project is in good shape</strong> — today's field test root causes were real, and the review found the code-level holes behind them plus a few latent safety bugs nobody had hit yet. <strong>11 issues are fixed and verified on the branch</strong> (4 backend, 4 iOS, 3 ops), including the two worst: hot-config could re-create today's inverted-hysteresis failure at any time, and a crashed vision loop left the camera moving with no <code>ptz.stop()</code>. The untracked FOV tool that was <strong>blocking every deploy</strong> is reviewed, fixed, and committed.</p>
+  <p><strong>What needs you:</strong> push the branch + open the PR (I can't push), one tuning decision (<code>gps_boost</code> — it can still steal lock onto the wrong orange object during GPS slews), a phone rebuild, and the next deploy window. Everything else is ranked below.</p>
+</div>
+
+<h2>1 · What was verified, and how</h2>
+<div class="card">
+  <table>
+    <tr><th>Check</th><th>Command / method</th><th>Result</th></tr>
+    <tr><td>Backend suite (before)</td><td><code>python3 -m pytest -q</code></td><td>232 passed, 2.79s</td></tr>
+    <tr><td>Backend suite (after fixes)</td><td><code>python3 -m pytest -q</code></td><td><strong>236 passed</strong>, 3.28s (4 new tests)</td></tr>
+    <tr><td>iOS compile (before + after)</td><td><code>xcodegen + xcodebuild</code> (sim, Debug)</td><td><strong>BUILD SUCCEEDED</strong> both times</td></tr>
+    <tr><td>Shell scripts</td><td><code>bash -n</code> + shellcheck (audit agent)</td><td>clean, incl. edited deploy.sh</td></tr>
+    <tr><td>scenePhase pattern</td><td>Context7 → Apple SwiftUI docs</td><td>App-level aggregate pattern confirmed correct</td></tr>
+    <tr><td>.gitignore fix</td><td><code>git check-ignore -v</code></td><td><code>**/.DS_Store</code> now wins after <code>!docs/**</code></td></tr>
+  </table>
+  <p class="small">NOT verified (out of reach by design): anything on the live rig — it stays untouched per the standing rule. On-device iOS behavior (landscape, popover dismiss, background poll) needs a phone build to confirm visually.</p>
+</div>
+
+<h2>2 · Findings — ranked, with status</h2>
+<p class="small">Status: <span class="st fixed">FIXED</span> = on the branch, test/build-verified · <span class="st decide">DECIDE</span> = needs your call · <span class="st planned">PLANNED</span> = backlog, ordered in §5 · <span class="st rejected">REJECTED</span> = reviewer finding I checked and turned down.</p>
+
+<h3>Safety-critical</h3>
+<table>
+  <tr><th></th><th>Finding</th><th>Where</th><th>Status</th></tr>
+  <tr><td><span class="sev s-crit">CRIT</span></td>
+      <td><strong>Inverted hysteresis could come back any time.</strong> Hot-config validated keys only individually; <code>unlock ≥ lock</code> (today's false-orange-lock failure) sailed through. Now refused with 422, including single-key patches checked against the live counterpart.</td>
+      <td><code>control_config.py</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-crit">CRIT</span></td>
+      <td><strong>A crashed vision loop never sent <code>ptz.stop()</code>.</strong> Cleanup sat after the <code>while</code> loop; any uncaught exception (most plausibly disk-full on the shadow JSONL write) left the camera holding its last velocity until systemd restarted it (~2s of uncontrolled pan). Now <code>run() → _run()</code> with <code>_shutdown()</code> in a <code>finally</code>.</td>
+      <td><code>pipeline.py</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-crit">CRIT</span></td>
+      <td><strong>Disk-full killed the vision loop.</strong> Shadow writes were unguarded; one <code>OSError</code> took down tracking. Now shadow logging disables itself and the loop keeps running.</td>
+      <td><code>pipeline.py</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-high">HIGH</span></td>
+      <td><strong>GPS boost can lock the wrong orange object.</strong> During a GPS reacquire slew, a color-only blob near frame center gets 0.45 + 0.2 boost = 0.65 &gt; 0.6 lock threshold → vision steals ownership from gps_tracker (the &lt;2s flip-flops in today's event ring). Tuning decision — see §4 option table.</td>
+      <td><code>fusion.py</code> / config</td><td><span class="st decide">DECIDE</span></td></tr>
+  <tr><td><span class="sev s-high">HIGH</span></td>
+      <td><strong>Frozen GPS fix could be served as fresh.</strong> After a serial error the cached fix survived; a fast port reset (USB hiccup, not a Wio reboot) could slew the camera on a stale position within the 10s window. Reader now drops the cached fix on error.</td>
+      <td><code>gps_meshtastic.py</code></td><td><span class="st fixed">FIXED</span></td></tr>
+</table>
+
+<h3>iOS operator app</h3>
+<table>
+  <tr><th></th><th>Finding</th><th>Where</th><th>Status</th></tr>
+  <tr><td><span class="sev s-crit">CRIT</span></td>
+      <td><strong>One renamed backend field blanked the whole app.</strong> <code>WCStatus</code>'s nested structs (Safety.killed, Tracking.locked/confidence/fps, Session.state, PTZ.owner, Media.recording) plus logs/events/media models had required fields with no tolerant decoder — a single missing key threw the entire decode and the app went OFFLINE with zero telemetry. All now have H4-pattern extension <code>init(from:)</code> with <code>decodeIfPresent ?? default</code>. <br><span class="small">⚠️ <strong>Your veto:</strong> a missing <code>safety.killed</code> now decodes as <code>false</code> (not-killed) — matches the backend's at-rest default and the optimistic latch covers operator stops, but say the word if you'd rather surface "unknown" as latched.</span></td>
+      <td><code>WaveCamClient.swift</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-high">HIGH</span></td>
+      <td><strong>Color-only locks looked identical to confirmed locks</strong> (today's explicit ask). Locked with <code>has_person == false</code> now shows an amber <code>CLR LOCK</code> chip instead of green <code>LOCKED</code>; older backends without the field keep the old look.</td>
+      <td><code>MergedLiveView.swift</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-high">HIGH</span></td>
+      <td><strong>1Hz status poll ran forever in the background</strong> (beach battery + Orin load). App-level <code>scenePhase</code> hook pauses it on <code>.background</code>, resumes on <code>.active</code> — pattern validated against current Apple docs via Context7.</td>
+      <td><code>WaveCamApp.swift</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-high">HIGH</span></td>
+      <td><strong>GPS popover could hide the STOP LATCHED overlay.</strong> System popovers float above the ZStack; the latch overlay was occluded while the popover was up. The popover now dismisses the instant a KILL latches. <span class="small">Remaining presentation sites (Tools restart dialog, media delete confirms) audited in §5.</span></td>
+      <td><code>MergedLiveView.swift</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-med">MED</span></td>
+      <td><strong>Optimistic-KILL clears on a successful poll even if the kill POST failed.</strong> I checked the code and the comments: this is a deliberate, reviewed design — a false "STOP LATCHED" while the camera still moves is worse, and <code>lastCommandError</code> raises a loud alert. Keeping as-is. <span class="tag">Validated · confidence 0.75</span></td>
+      <td><code>WaveCamClient.swift</code></td><td><span class="st rejected">KEPT AS-IS</span></td></tr>
+  <tr><td><span class="sev s-med">MED</span></td>
+      <td>MJPEG stream doesn't tear down on app background (LAN + Orin load); coordinator/watchdog handles reconnect. Needs on-device verification — not a blind change.</td>
+      <td><code>FeedComponents.swift</code></td><td><span class="st planned">PLANNED</span></td></tr>
+  <tr><td><span class="sev s-low">LOW</span></td>
+      <td>Perf niceties: <code>reversed()</code> allocations per render in log/event lists, <code>groupedDays</code> recomputed per redraw in Media, double <code>refresh()</code> at launch.</td>
+      <td>various</td><td><span class="st planned">PLANNED</span></td></tr>
+</table>
+
+<h3>Ops / repo / docs</h3>
+<table>
+  <tr><th></th><th>Finding</th><th>Where</th><th>Status</th></tr>
+  <tr><td><span class="sev s-high">HIGH</span></td>
+      <td><strong>deploy.sh had no test gate</strong> — a red suite deployed fine. Now refuses unless <code>pytest</code> is green (~3s).</td>
+      <td><code>deploy.sh</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-high">HIGH</span></td>
+      <td><strong>The GPS optimization doc would reinstate today's bug.</strong> It still said the remote Wio stays at the 1h fallback ("smart broadcast handles it") — following it during a config re-apply (which happens after power events!) would starve GPS reacquire again. Corrected to 10s with a pointer to the canonical <code>wio-config/</code> exports.</td>
+      <td><code>WIO_TRACKER_GPS_OPTIMIZATION.md</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-med">MED</span></td>
+      <td><strong>calibrate_fov.py was untracked (blocking ALL deploys via the dirty-check) and had 3 ownership traps:</strong> no <code>takeover</code> (a 409 mid-sweep aborted it), 700ms deadman vs slower loop iterations (tracker could steal the camera back mid-measurement), and the post-zoom <code>value=0.0</code> silently <em>released manual ownership</em>. All fixed; committed. Every API payload/signature verified against the real backend (the audit table found zero shape mismatches).</td>
+      <td><code>tools/calibrate_fov.py</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-med">MED</span></td>
+      <td><strong>Stray <code>:memory:</code> file root-caused</strong> (forensics: an abandoned test-design from the PR #27 estimator work wrote a CalibrationStore doc to a literal <code>":memory:"</code> path at 08:54 this morning; nothing references it). Deleted, along with <code>docs/hardware/.DS_Store</code> — whose recurrence was caused by <code>!docs/**</code> in .gitignore overriding the .DS_Store ban. Re-banned after the negation.</td>
+      <td>repo root / <code>.gitignore</code></td><td><span class="st fixed">FIXED</span></td></tr>
+  <tr><td><span class="sev s-med">MED</span></td>
+      <td><code>requirements.txt</code> fully unpinned (numpy/fastapi/ultralytics float — next rig <code>pip install</code> can break) · CI never compiles <code>tools/</code> · CI is Python 3.12, rig version unconfirmed. Dependency/CI changes need explicit sign-off, so they're queued, not done.</td>
+      <td><code>requirements.txt</code>, CI</td><td><span class="st decide">DECIDE</span></td></tr>
+  <tr><td><span class="sev s-low">LOW</span></td>
+      <td>Docs drift: CLAUDE.md says "216+ tests" (now 236) and dates the split 06-12 (merged 06-11); PROJECT_STATUS.md still says P2 "not built" (deployed 06-10); 4 expired collab claims; <code>control_api.py</code> dead imports (deferred — collides with Codex's beach-ops routes); wio yaml "45s" comment (file Codex is moving).</td>
+      <td>docs / collab</td><td><span class="st planned">PLANNED</span></td></tr>
+</table>
+
+<h3>Estimator (Plan-3, shadow-only — does not affect live control)</h3>
+<table>
+  <tr><th></th><th>Finding</th><th>Status</th></tr>
+  <tr><td><span class="sev s-med">MED</span></td>
+      <td><strong>The vision-update path is dead code:</strong> <code>ptz_state</code> is never set anywhere, so shadow runs GPS-only and logs <code>vision_updated: false</code> forever; <code>zoom_enc</code> is hardcoded 0 for when it does wire up. Known-unfinished Plan-3 work — but the shadow logs slightly oversell their coverage.</td>
+      <td><span class="st planned">PLANNED</span></td></tr>
+  <tr><td><span class="sev s-med">MED</span></td>
+      <td><strong>Kalman covariance update uses an approximate diagonal form</strong> (code admits "approximate but stable"). Harmless while vision updates are dead; switch to Joseph form when wiring them. The shadow's <code>bearing_std_deg</code> reads slightly conservative.</td>
+      <td><span class="st planned">PLANNED</span></td></tr>
+  <tr><td><span class="sev s-low">LOW</span></td>
+      <td>ShadowWriter has no rotation (~8-9 MB/h at current cadence). The new OSError guard removes the catastrophic path; rotation is hygiene.</td>
+      <td><span class="st planned">PLANNED</span></td></tr>
+  <tr><td><span class="sev s-low">LOW</span></td>
+      <td>Estimator never initializes if the FOV curve lands <em>after</em> service start — calibrate FOV, then restart the service (or we wire re-init into the FOV endpoint later). Matters for your first shadow session: <strong>calibrate first, then restart.</strong></td>
+      <td><span class="st planned">PLANNED</span></td></tr>
+</table>
+
+<h2>3 · What's on the branch (8 commits)</h2>
+<div class="card"><pre>ba04064 feat(tools): FOV calibration pan-sweep, ownership-safe
+f8b1e34 docs(hardware): remote Wio stationary fallback is 10s, not 1h
+7e6cae8 fix(deploy): refuse to deploy on a red test suite
+52ece91 chore(repo): re-ban .DS_Store after the docs/** negation
+35ff4d4 fix(ios): decode tolerance, color-only lock chip, background poll pause, popover vs KILL latch
+dba1b10 fix(gps): drop the cached fix when the serial reader errors
+5f346df fix(pipeline): stop the camera even when the loop crashes; survive shadow-write failures
+a9df680 fix(config): reject inverted fusion hysteresis on hot-apply</pre>
+<p class="small">Commits are scoped one-concern-each so you (or Codex) can cherry-pick into separate PRs if you prefer lane-split PRs over one review-fixes PR. No collision with Codex's beach-ops surface (<code>control_api.py</code> routes, <code>web.py</code>, <code>ops/</code>, the wio-config move) — claims were opened on the bus and he was notified.</p></div>
+
+<h2>4 · Decisions that need you</h2>
+
+<h3>D1 · gps_boost — stop wrong-object lock steals during GPS slews</h3>
+<div class="card">
+<table>
+  <tr><th>Option</th><th>What</th><th>Trade-off</th><th>Feasibility</th></tr>
+  <tr><td><strong>A — lower <code>fusion.gps_boost</code> 0.2 → 0.1</strong> <span class="tag">(recommended)</span></td>
+      <td>Hot-config knob, no code. 0.45 sustain + 0.1 = 0.55 &lt; 0.6 lock → color-only blobs can no longer <em>acquire</em> during slews, but the boost still helps genuine re-detection (person+color scores higher).</td>
+      <td>Slightly slower reacquire when you really are the centered blob; field-tunable live from the Tune tab.</td>
+      <td><span class="feas">9/10</span></td></tr>
+  <tr><td><strong>B — boost-can't-acquire rule</strong></td>
+      <td>Code change in fusion: GPS boost contributes to <em>sustain</em> but a color-only detection can never cross the lock threshold on boost alone (require person OR pre-existing lock).</td>
+      <td>The durable structural fix; needs tests + a sim scenario; touches fusion logic Codex may also be near.</td>
+      <td><span class="feas">7/10</span></td></tr>
+  <tr><td><strong>C — require_person while gps_tracker owns</strong></td>
+      <td>Context-dependent <code>require_person</code> during reacquire phases only.</td>
+      <td>Risky at 200m+: YOLO may not fire at distance → reacquire could stall entirely. Least preferred.</td>
+      <td><span class="feas">5/10</span></td></tr>
+</table>
+<p class="small"><span class="tag">Unvalidated (not field-tested) · confidence 0.8</span> — A for the next session via Tune, B as the follow-up PR if A proves out.</p>
+</div>
+
+<h3>D2 · The rest</h3>
+<div class="card">
+<table>
+  <tr><th>Decision</th><th>My recommendation</th></tr>
+  <tr><td><code>safety.killed</code> decode default (see §2 iOS)</td><td>Keep <code>false</code> + optimistic latch. Veto if you want "unknown = latched". <span class="tag">confidence 0.7</span></td></tr>
+  <tr><td>Pin <code>requirements.txt</code></td><td>Yes — pin majors (<code>numpy&lt;3</code>, <code>fastapi&lt;1</code>, <code>ultralytics~=8.x</code> as installed on the rig); snapshot the rig's <code>pip freeze</code> at the next deploy window as the constraints source. <span class="feas">8/10</span></td></tr>
+  <tr><td>CI: add <code>python -m compileall tools</code> + decide rig-Python parity</td><td>Yes, one line; check <code>python3 --version</code> on the rig at the deploy window and match CI to it. <span class="feas">9/10</span></td></tr>
+  <tr><td>One PR or split per lane?</td><td>One PR titled "review fixes 2026-06-11" is fine — commits are already clean; Codex isn't touching these files.</td></tr>
+</table>
+</div>
+
+<h2>5 · Forward plan (in order)</h2>
+<ol class="steps">
+  <li><strong>Push the branch &amp; open the PR</strong> (your hands — I don't push):<br>
+      <code>git push -u origin fix/review-20260611</code> → PR → merge after CI green. Codex can review if you want a second pass.</li>
+  <li><strong>Phone build</strong> after merge so the next field day has the iOS fixes (CLR LOCK chip especially):<br>
+      <span class="small">the usual <code>build-device.sh</code> / device-build recipe; verify the amber chip by covering the lens with anything orange and watching has_person stay false.</span></li>
+  <li><strong>Deploy window</strong> (Codex/your lane, rig powered on): <code>./deploy.sh</code> — note it now runs the suite first and the dirty-check no longer trips on the FOV tool. Same window: install watchdog units, first <code>sync-esp</code> run, grab <code>pip freeze</code> + <code>python3 --version</code> for D2.</li>
+  <li><strong>Set <code>fusion.gps_boost = 0.1</code></strong> (D1-A) via Tune before the next outing; watch for slower-but-honest reacquires.</li>
+  <li><strong>FOV calibration</strong> — now unblocked: orange subject 15-25m out, <code>--dry</code> first, then wide + tele sweeps; POST results to <code>/calibration/fov</code>; <strong>then restart the service</strong> so the estimator initializes (§2 estimator note). That makes shadow session #1 of the two G3 gates.</li>
+  <li><strong>Field test 2</strong> with the existing checklist (PR #31) + two additions: confirm CLR LOCK appears on a decoy orange object, and confirm GPS reacquire under the 10s remote fallback while standing still.</li>
+  <li><strong>Debug Telegram delivery</strong> (API returns sent IDs, you receive nothing — from today's field memory). Don't rely on it in the field until proven.</li>
+  <li><strong>Backlog batch</strong> (small PRs, post-beach-ops to avoid Codex collisions): estimator vision wiring (+ Joseph-form covariance), ShadowWriter rotation, MJPEG background teardown (on-device verify), presentation-site KILL audit (Tools restart dialog etc.), docs refresh (CLAUDE.md counts/dates, PROJECT_STATUS.md), dead imports, expired collab claims cleanup, fusion option B if D1-A proves out.</li>
+</ol>
+
+<h2>6 · Reviewer findings I rejected (transparency)</h2>
+<div class="card">
+<table>
+  <tr><th>Claimed finding</th><th>Why rejected</th></tr>
+  <tr><td>"AgentView's <code>onChange(of:) { }</code> single-closure form is deprecated"</td>
+      <td>The zero-parameter closure <em>is</em> the modern iOS 17+ variant (the deprecated one takes a single value parameter). Verified against the code and API docs. No change.</td></tr>
+  <tr><td>"Optimistic KILL clears too early on failed kill" (HIGH)</td>
+      <td>Read the implementation + its review-cited comments: clearing on authoritative status while surfacing <code>lastCommandError</code> loudly is the deliberate design — a false STOP LATCHED over a moving camera is the worse failure. Kept; logged in D2 if you disagree.</td></tr>
+</table>
+</div>
+
+<footer>
+  Generated 2026-06-11 · session: full-project review · constraints honored: no push, no PR creation, no rig/Orin access, collab claims opened &amp; closed, Codex notified on the bus.<br>
+  Verification evidence: pytest 236/236 (two runs), xcodebuild BUILD SUCCEEDED (two runs), bash -n + shellcheck, git check-ignore, Context7/Apple docs for scenePhase.
+</footer>
+
+</div></body></html>
