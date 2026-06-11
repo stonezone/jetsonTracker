@@ -33,9 +33,9 @@ uint32_t getConfiguredOrDefaultMs(uint32_t configuredInterval) {
 | `gps_update_interval` | 30s | **5s** | **2s** | How often GPS chip polls. Remote at 2s for fastest tracking; base at 5s (USB-powered, can afford it). |
 | `broadcast_smart_minimum_interval_secs` | 15s | **2s** | **2s** | Floor between sends when moving. 2s on a surfer at 10 m/s = 20m max position error. |
 | `broadcast_smart_minimum_distance` | 10m | **5m** | **5m** | Sends when moved this far. 5m catches small movements. |
-| `position_broadcast_secs` | 3600s | **30s** | 3600s | **Critical for base:** base is stationary (tripod), so smart broadcast never triggers. This ensures it sends position every 30s regardless so the remote always has the current camera reference position. Remote stays at 1h — it moves, so smart broadcast handles it. |
+| `position_broadcast_secs` | 3600s | **30s** | **10s** | **Critical for BOTH:** base is stationary (tripod), so smart broadcast never triggers — 30s keeps the camera reference position flowing. Remote at **10s** (field test 2026-06-11): a surfer standing still waiting to be re-found is ALSO stationary, and a 1h fallback starved GPS reacquire. Canonical values: `docs/hardware/wio-config/`. |
 
-**Net effect:** Remote sends position every 2s when moving >5m. Base sends position every 30s even when stationary. Previously: once per hour for both.
+**Net effect:** Remote sends position every 2s when moving >5m and every 10s even when still; base sends every 30s even when stationary. Previously: once per hour for both.
 
 ### LoRa Radio Settings (both devices must match)
 
