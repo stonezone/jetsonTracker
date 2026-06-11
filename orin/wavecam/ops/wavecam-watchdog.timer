@@ -1,0 +1,11 @@
+[Unit]
+Description=Run WaveCam Tier-0 watchdog every 60 seconds
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=wavecam-watchdog.service
+
+[Install]
+WantedBy=timers.target

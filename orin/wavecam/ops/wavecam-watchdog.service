@@ -1,0 +1,9 @@
+[Unit]
+Description=WaveCam Tier-0 deterministic watchdog
+Documentation=file:/data/projects/gimbal/wavecam/ops/watchdog.sh
+After=network-online.target wavecam.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/data/projects/gimbal/wavecam/ops/watchdog.sh
