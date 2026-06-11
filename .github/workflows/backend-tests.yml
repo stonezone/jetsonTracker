@@ -1,0 +1,45 @@
+name: Backend tests
+
+on:
+  push:
+    paths:
+      - 'orin/wavecam/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    paths:
+      - 'orin/wavecam/**'
+      - '.github/workflows/backend-tests.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        # Minimal set derived from test imports.
+        # torch/ultralytics: detector.py imports ultralytics lazily (inside a method);
+        #   test_fusion/test_controller_extra assert cv2-free import and pass without them.
+        # meshtastic: gps_meshtastic.py imports it inside a try/except; tests use stubs.
+        # cv2 (opencv-python): color_detector/capture/overlay import it at module level,
+        #   and test_color.py uses it directly, so it IS required.
+        # httpx: pulled in transitively by fastapi[testclient] (starlette dep); listed
+        #   explicitly for clarity — TestClient uses it for the HTTP transport.
+        run: |
+          pip install \
+            fastapi \
+            "pydantic>=2" \
+            pyyaml \
+            httpx \
+            pytest \
+            "opencv-python" \
+            numpy
+
+      - name: Run backend test suite
+        run: cd orin/wavecam && python -m pytest -q
