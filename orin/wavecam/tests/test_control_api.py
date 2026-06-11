@@ -904,6 +904,46 @@ def test_api_v1_config_hot_rejects_persist_without_mutating():
     assert after["current"]["ptz"]["deadzone"] == before["current"]["ptz"]["deadzone"]
 
 
+def test_api_v1_config_hot_rejects_inverted_fusion_hysteresis():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    lock_before = pipe.cfg.fusion.lock_threshold
+    unlock_before = pipe.cfg.fusion.unlock_threshold
+    before = client.get("/api/v1/config").json()
+
+    # the 2026-06-11 field failure: both keys inverted in one patch
+    refused = client.post(
+        "/api/v1/config/hot",
+        json={"patch": {"fusion.lock_threshold": 0.25, "fusion.unlock_threshold": 0.5}},
+    )
+    assert refused.status_code == 422
+    assert refused.json()["code"] == "invalid_request"
+    assert pipe.cfg.fusion.lock_threshold == lock_before
+    assert pipe.cfg.fusion.unlock_threshold == unlock_before
+    assert client.get("/api/v1/config").json()["revision"] == before["revision"]
+
+    # single-key patches are checked against the live counterpart value
+    refused = client.post(
+        "/api/v1/config/hot",
+        json={"patch": {"fusion.unlock_threshold": lock_before}},
+    )
+    assert refused.status_code == 422
+    refused = client.post(
+        "/api/v1/config/hot",
+        json={"patch": {"fusion.lock_threshold": unlock_before}},
+    )
+    assert refused.status_code == 422
+
+    # a valid pair still applies
+    ok = client.post(
+        "/api/v1/config/hot",
+        json={"patch": {"fusion.lock_threshold": 0.7, "fusion.unlock_threshold": 0.4}},
+    )
+    assert ok.status_code == 200
+    assert pipe.cfg.fusion.lock_threshold == 0.7
+    assert pipe.cfg.fusion.unlock_threshold == 0.4
+
+
 def test_api_v1_cinematic_zoom_hot_config_round_trips_in_snapshot():
     client = make_client()
 
