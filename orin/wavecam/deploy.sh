@@ -33,3 +33,20 @@ sleep 12
 ssh $HOST 'systemctl is-active wavecam.service'
 DEPLOYED=$(ssh $HOST "curl -s localhost:8088/api/v1/version" | python3 -c 'import json,sys; print(json.load(sys.stdin)["git_sha"])')
 [ "$DEPLOYED" = "$SHA" ] && echo "DEPLOY OK: $SHA live" || { echo "DEPLOY MISMATCH: rig=$DEPLOYED local=$SHA"; exit 1; }
+
+# ESP freshness check — non-fatal: kernel staleness is an operator action, not a deploy blocker.
+# sync-esp.sh --check exits 0 (in-sync) or 2 (stale); 1 = preflight error (wrong device, etc.)
+if ssh $HOST "sudo bash $DEST/tools/sync-esp.sh --check" 2>&1; then
+  echo "ESP: in sync"
+else
+  _esp_rc=$?
+  if [ $_esp_rc -eq 2 ]; then
+    echo ""
+    echo "WARNING: ESP kernel/initrd copies are STALE."
+    echo "  The rig will boot the OLD kernel until you run:"
+    echo "    ssh $HOST 'sudo bash $DEST/tools/sync-esp.sh'"
+    echo ""
+  else
+    echo "WARNING: sync-esp.sh --check returned unexpected exit code $_esp_rc (preflight error — check SSH/path)"
+  fi
+fi
