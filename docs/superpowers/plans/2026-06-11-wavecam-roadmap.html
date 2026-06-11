@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveCam Roadmap — Current State → Target Architecture (2026-06-11)</title>
+<style>
+  :root{
+    --bg:#070B0F; --ink:#0D141B; --panel:#121B24; --panel2:#16212C; --line:rgba(255,255,255,.09);
+    --txt:#E9EFF4; --muted:#8A99A6; --faint:#5B6873;
+    --zack:#FF6A1F; --claude:#37D6C2; --sonnet:#A78BFA; --codex:#4ADE80; --joint:#F0ABFC;
+    --done:#4ADE80; --ready:#37D6C2; --gated:#FFB020; --cond:#8A99A6; --risk:#FF3B30;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.55 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:32px 18px 80px}
+  main{max-width:980px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px} h1 b{color:var(--zack)}
+  h2{font-size:19px;margin:36px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+  h3{font-size:15px;margin:18px 0 6px;color:var(--txt)}
+  p{color:var(--muted);margin:6px 0}
+  .sub{color:var(--faint);font-size:12.5px}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:14px 0}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+  th{color:var(--faint);text-transform:uppercase;font-size:10.5px;letter-spacing:.08em;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--txt)}
+  td.dim{color:var(--muted)}
+  .chip{display:inline-block;border-radius:999px;padding:1px 9px;font-size:10.5px;font-weight:700;letter-spacing:.05em;white-space:nowrap}
+  .zack{background:rgba(255,106,31,.16);color:var(--zack);border:1px solid var(--zack)}
+  .claude{background:rgba(55,214,194,.13);color:var(--claude);border:1px solid var(--claude)}
+  .sonnet{background:rgba(167,139,250,.14);color:var(--sonnet);border:1px solid var(--sonnet)}
+  .codex{background:rgba(74,222,128,.12);color:var(--codex);border:1px solid var(--codex)}
+  .joint{background:rgba(240,171,252,.12);color:var(--joint);border:1px solid var(--joint)}
+  .done{background:rgba(74,222,128,.13);color:var(--done);border:1px solid var(--done)}
+  .ready{background:rgba(55,214,194,.13);color:var(--ready);border:1px solid var(--ready)}
+  .gated{background:rgba(255,176,32,.13);color:var(--gated);border:1px solid var(--gated)}
+  .cond{background:rgba(138,153,166,.13);color:var(--cond);border:1px solid var(--cond)}
+  .gate{border-left:3px solid var(--gated);background:var(--panel2);padding:8px 12px;border-radius:0 8px 8px 0;font-size:13px;color:var(--muted);margin:8px 0}
+  .milestone{border:1px solid var(--done);background:rgba(74,222,128,.07);border-radius:10px;padding:10px 14px;margin:12px 0;font-size:14px}
+  .milestone b{color:var(--done)}
+  .risk{border-left:3px solid var(--risk)}
+  .legend span{margin-right:10px}
+  .phase-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .unval{color:var(--gated);font-size:11px;font-weight:700}
+  footer{margin-top:40px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+  a{color:var(--claude)}
+</style>
+</head>
+<body>
+<main>
+
+<h1><b>WaveCam</b> Roadmap — from here to the target architecture</h1>
+<p class="sub">2026-06-11 · authored by Claude (Fable 5) at Zack's request · repo <span class="mono">stonezone/jetsonTracker</span> · rig deployed at <span class="mono">9e6c776</span> · status anchors are session-verified facts, not aspirations</p>
+
+<div class="card legend">
+  <b>Owners:</b>
+  <span class="chip zack">ZACK</span> physical/field — hands, sky, water, hardware
+  <span class="chip claude">CLAUDE</span> design, review, rig ops, iOS, plans
+  <span class="chip sonnet">SONNET</span> plan-driven implementation (Claude-gated)
+  <span class="chip codex">CODEX</span> backend lane partner — any <span class="chip sonnet">SONNET</span> step may be executed by Codex instead, same review gates
+  <span class="chip joint">JOINT</span> requires two parties together
+  <br><br>
+  <b>Status:</b>
+  <span class="chip done">DONE</span> verified this session
+  <span class="chip ready">READY</span> no gate — can start anytime
+  <span class="chip gated">GATED</span> blocked on a named milestone
+  <span class="chip cond">CONDITIONAL</span> only if data says so
+</div>
+
+<h2>Where we are (verified baseline)</h2>
+<div class="card">
+<table>
+  <tr><th>Area</th><th>State</th><th>Evidence</th></tr>
+  <tr><td>Boot</td><td>Pure-NVMe via systemd-boot, hands-free; WAVEBOOT card = tested fallback; Wio-plugged cold boot verified clean</td><td class="dim mono">Boot000B first; card-free boot 06-11; CLAUDE.md 199b4f4</td></tr>
+  <tr><td>Tracking core</td><td>P0/P1/P2-v1 deployed: arbiter handoff + latched base pose + GPS-cue boost (hot-tunable)</td><td class="dim mono">rig /version = 9e6c776; PR #16/#20</td></tr>
+  <tr><td>Config truth</td><td>Hot-config persists to the rig yaml (proven live); /version SHA-gates deploys; unified calibration document with restart-survival regression test</td><td class="dim mono">on-rig 0.21↔0.2 round-trip 06-11</td></tr>
+  <tr><td>Observability</td><td>/health heartbeats + /events transition ring; iOS health card + session Log tab</td><td class="dim mono">diagnosed unplugged Wio + unpowered camera in seconds, first boot</td></tr>
+  <tr><td>Quality gates</td><td>197 tests / 0 fail; 43-route API snapshot; iOS/watch client-path contract tests (proven by deliberate breaks)</td><td class="dim mono">PR #20 description</td></tr>
+  <tr><td>iOS</td><td>Build 242 on phone: real base-lock capture, live preflight checks, GPS tune card, beach restart, fullscreen HUD, health + log</td><td class="dim mono">installed 06-11</td></tr>
+  <tr><td>Watch</td><td>Tier-1 companion built &amp; merged (status/record/E-stop), device-proven embed; on-wrist validation pending</td><td class="dim mono">PR #19</td></tr>
+  <tr><td>LoRa GPS</td><td>Remote at 2s updates w/ 30s safety floor; canonical sanitized configs + verify_wios.sh; reader auto-reconnects; mesh link verified indoors</td><td class="dim mono">target_age 6s on 06-11 boot</td></tr>
+  <tr><td>Known not-yet-proven</td><td class="dim">Base Wio outdoor fix after the 5s-polling fix <span class="unval">UNVALIDATED</span> · LoRa at 300m over water <span class="unval">UNVALIDATED</span> · buzzer-on-message behavior <span class="unval">UNVALIDATED</span></td><td class="dim">Phase 1/5 resolve these</td></tr>
+</table>
+</div>
+
+<h2>The target (the architecture I'd own)</h2>
+<div class="card">
+<p><b style="color:var(--txt)">One sentence:</b> a world-frame <b style="color:var(--claude)">target estimator</b> at the center — GPS fixes and vision detections are just weighted measurements, the controller always points at the estimate, zoom widens with uncertainty — wrapped in closed-loop pointing, full solo-operation tooling (phone + wrist + on-body buzzer), deterministic self-healing, and a codebase a stranger could inherit.</p>
+<p>What gets <b style="color:var(--risk)">deleted</b> on arrival: the TrackingArbiter, the release-before-request handoff dance, and the GPS-cue boost — all bridges to be burned once the estimator flies. The sequencing below exists because the estimator must be tuned against <i>real session telemetry</i>, which only Phases 1-2 can produce.</p>
+</div>
+
+<!-- ================= PHASE 0 ================= -->
+<h2 class="phase-head">Phase 0 — Reassembly &amp; housekeeping <span class="chip ready">READY</span></h2>
+<p class="sub">No gates. Everything here can happen today, in any order.</p>
+<div class="card">
+<table>
+  <tr><th>Step</th><th>Owner</th><th>Action</th><th>Verification / output</th></tr>
+  <tr><td>0.1</td><td><span class="chip zack">ZACK</span></td><td>Reassemble the box: camera power, Wio in USB, cabling</td><td class="dim">App health card: capture + gps_reader green</td></tr>
+  <tr><td>0.2</td><td><span class="chip zack">ZACK</span></td><td>18650 onto the base Wio battery port — <b>meter-check polarity against the board silkscreen first</b>; protected cell or holder w/ PCB preferred; keep it shaded</td><td class="dim">Wio survives an Orin power-cycle with settings intact</td></tr>
+  <tr><td>0.3</td><td><span class="chip zack">ZACK</span></td><td>Rotate the MacBook (.70) password; tell Claude keep-or-remove for the installed ssh key</td><td class="dim">Old password dead; key decision recorded</td></tr>
+  <tr><td>0.4</td><td><span class="chip zack">ZACK</span></td><td>Decide: disable legacy <span class="mono">gps-server.service</span> (dropped watch-relay architecture; auto-starts each boot, held /data during surgery)</td><td class="dim">yes → Claude disables; service absent next boot</td></tr>
+  <tr><td>0.5</td><td><span class="chip claude">CLAUDE</span></td><td>Push pending doc commits + this roadmap; PR → main</td><td class="dim">main carries the boot-architecture truth</td></tr>
+  <tr><td>0.6</td><td><span class="chip sonnet">SONNET</span></td><td>Fold the SD-death recovery runbook into <span class="mono">docs/ORIN_MAINTENANCE_RUNBOOK.md</span>; add the kernel-update→ESP-copy step to <span class="mono">deploy.sh</span> + docs</td><td class="dim">A stranger could recover the rig from docs alone; deploys can't strand an old kernel on the ESP</td></tr>
+</table>
+<div class="milestone"><b>M0 — “Boxed and green.”</b> Rig assembled, health all-green indoors (GPS fix excepted), repo clean on main.</div>
+</div>
+
+<!-- ================= PHASE 1 ================= -->
+<h2 class="phase-head">Phase 1 — Field validation day <span class="chip ready">READY after M0</span></h2>
+<p class="sub">One outdoor session. The current stack, untouched — it is both the baseline and the telemetry source. Claude on the phone link for live support.</p>
+<div class="card">
+<table>
+  <tr><th>Step</th><th>Owner</th><th>Action</th><th>Verification / output</th></tr>
+  <tr><td>1.1</td><td><span class="chip zack">ZACK</span></td><td>Both Wios under open sky; watch the app Preflight until all four checks are green (first fix of the day can take minutes)</td><td class="dim">Preflight green incl. <b>Base fix</b> — also settles the base-Wio-hardware question for good</td></tr>
+  <tr><td>1.2</td><td><span class="chip zack">ZACK</span></td><td>Six-step calibration per the guide (<span class="mono">:8088/guide#calibrate</span>): Preflight → Base Lock → Heading (20m+, the accuracy-critical one) → Tilt → Zoom → Dry-run incl. KILL/RESUME drill</td><td class="dim">GET /calibration: gps_calibrated + base_locked true, reference_heading set — and it must SURVIVE a service restart (the old bug's tombstone)</td></tr>
+  <tr><td>1.3</td><td><span class="chip zack">ZACK</span></td><td>Yard tracking: walk/run with the remote; observe GPS-point → orange-near-center → lock handoff (the P2 boost earning its keep)</td><td class="dim">Tools→Log shows owner/lock transitions; tune fusion.gps_boost ladder if acquisition is shy</td></tr>
+  <tr><td>1.4</td><td><span class="chip zack">ZACK</span></td><td>Dirtbike speed run — the lead-prediction stress test (8-15 m/s, direction changes)</td><td class="dim">Event log + footage: where does pointing lag turns? This single dataset decides Phase 6</td></tr>
+  <tr><td>1.5</td><td><span class="chip claude">CLAUDE</span></td><td>Pull /events + journal from the session; write the findings note (lock stats, loss causes, lead error) into the repo</td><td class="dim mono">docs/field-notes/2026-MM-DD-session1.md</td></tr>
+</table>
+<div class="milestone"><b>M1 — “First instrumented tracking session.”</b> Calibration proven end-to-end; evidence file exists; Plan 2 gate opens.</div>
+</div>
+
+<!-- ================= PHASE 2 ================= -->
+<h2 class="phase-head">Phase 2 — Water sessions <span class="chip gated">GATED on M1</span></h2>
+<p class="sub">The actual mission. Current stack still untouched; tuning via the app only.</p>
+<div class="card">
+<table>
+  <tr><th>Step</th><th>Owner</th><th>Action</th><th>Verification / output</th></tr>
+  <tr><td>2.1</td><td><span class="chip zack">ZACK</span></td><td>Water session 1: tripod + calibration on the beach, then surf. LoRa-at-range and salt-spray reality get their first test <span class="unval">UNVALIDATED→validated here</span></td><td class="dim">Footage + event log; GPS chip ages observed at 50-300m</td></tr>
+  <tr><td>2.2</td><td><span class="chip zack">ZACK</span></td><td>Water session 2 (the estimator gate needs ≥2 telemetry sessions)</td><td class="dim">Second telemetry archive</td></tr>
+  <tr><td>2.3</td><td><span class="chip claude">CLAUDE</span></td><td>Session debriefs: quantify lock %, loss events, pointing error vs footage; update field notes</td><td class="dim">The estimator's tuning targets, written down</td></tr>
+</table>
+<div class="milestone"><b>M2 — “First water footage.”</b> The SoloShot replacement has filmed actual surfing. Everything after this is refinement.</div>
+</div>
+
+<!-- ================= PHASE 3 ================= -->
+<h2 class="phase-head">Phase 3 — Closed-loop pointing (Plan 2) <span class="chip gated">GATED on M1</span></h2>
+<p class="sub">Encoder feedback enters the control loop. Prereq for the estimator. Runs fine in parallel with Phase 2 surf days.</p>
+<div class="card">
+<table>
+  <tr><th>Step</th><th>Owner</th><th>Action</th><th>Verification / output</th></tr>
+  <tr><td>3.1</td><td><span class="chip joint">JOINT</span></td><td>Bench hour (Zack powers the camera, Claude drives): blast velocity commands at 10Hz while polling <span class="mono">inquire_pan_tilt</span> at 2/5/10Hz for 5 min; measure reply rate, latency, interleaving on the shared socket</td><td class="dim">The numbers that design the poller — written into the plan doc</td></tr>
+  <tr><td>3.2</td><td><span class="chip claude">CLAUDE</span></td><td>Write <span class="mono">2026-MM-DD-closed-loop-pointing.md</span> from the bench data (PtzState poller, last-known-encoders cache + staleness, verify-and-resend after absolute moves, /status.ptz encoder fields)</td><td class="dim">Plan passes the no-placeholder bar</td></tr>
+  <tr><td>3.3</td><td><span class="chip sonnet">SONNET</span></td><td>Implement plan task-by-task, Claude-gated, tests-first (the proven overnight pattern)</td><td class="dim">Suite grows, 0 failures; encoder telemetry visible in /events</td></tr>
+  <tr><td>3.4</td><td><span class="chip claude">CLAUDE</span></td><td>Deploy via deploy.sh; on-rig verification incl. KILL-during-inquiry timing</td><td class="dim mono">DEPLOY OK + /status.ptz.pan_enc live</td></tr>
+</table>
+<div class="milestone"><b>M3 — “The camera reports where it actually points.”</b> Estimator prereq #1 done.</div>
+</div>
+
+<!-- ================= PHASE 4 ================= -->
+<h2 class="phase-head">Phase 4 — The estimator (Plan 3) <span class="chip gated">GATED on M2 + M3 + zoom curve</span></h2>
+<p class="sub">The architectural heart. Shadow mode makes it safe; telemetry makes it tunable.</p>
+<div class="card">
+<table>
+  <tr><th>Step</th><th>Owner</th><th>Action</th><th>Verification / output</th></tr>
+  <tr><td>4.1</td><td><span class="chip joint">JOINT</span></td><td>Zoom/FOV calibration session: measure FOV at wide/mid/tele (known target at known distance) — the vision-bearing math needs the real curve, today's single-point capture isn't enough</td><td class="dim">Populated zoom→FOV table in the calibration document</td></tr>
+  <tr><td>4.2</td><td><span class="chip claude">CLAUDE</span></td><td>Write the estimator plan: constant-velocity world-frame filter; GPS fix = position observation (R from fix age), vision = bearing/elevation observation (encoders + pixel offset + FOV curve); controller points at the estimate; simulation harness from recorded session logs</td><td class="dim">Flip criterion committed IN ADVANCE in the plan</td></tr>
+  <tr><td>4.3</td><td><span class="chip sonnet">SONNET</span></td><td>Implement in <b>shadow mode</b>: runs in the loop, never commands, logs (t, est, cov, would-cmd, actual-owner, actual-cmd) to events + session file</td><td class="dim">Suite green; shadow fields in /events</td></tr>
+  <tr><td>4.4</td><td><span class="chip zack">ZACK</span></td><td>≥2 surf/dirtbike sessions with shadow logging on</td><td class="dim">Shadow archives</td></tr>
+  <tr><td>4.5</td><td><span class="chip claude">CLAUDE</span></td><td>Judge against the pre-committed criterion: estimator tracks subject (post-hoc vs footage) with fewer dropouts than the arbiter, zero divergence events</td><td class="dim">Written verdict in field notes</td></tr>
+  <tr><td>4.6</td><td><span class="chip sonnet">SONNET</span></td><td>Flip <span class="mono">tracking.mode: estimator</span>; one session later, <b>delete</b> the arbiter, the handoff dance, and the gps-cue boost; zoom-from-uncertainty lands here</td><td class="dim">Dead code gone; suite green; the system finally answers “how is GPS weighted?” with math</td></tr>
+</table>
+<div class="milestone"><b>M4 — “The estimator flies the camera.”</b> The target architecture exists. Confidence: the one estimate in this roadmap below 0.8 — shadow data decides if this is 3 sessions or 5.</div>
+</div>
+
+<!-- ================= PHASE 5 ================= -->
+<h2 class="phase-head">Phase 5 — Solo-operation layer <span class="chip ready">READY after M1 (parallel-friendly)</span></h2>
+<p class="sub">Nothing here touches the control core — safe to interleave with Phases 2-4.</p>
+<div class="card">
+<table>
+  <tr><th>Step</th><th>Owner</th><th>Action</th><th>Verification / output</th></tr>
+  <tr><td>5.1</td><td><span class="chip claude">CLAUDE</span></td><td>The 5-minute buzzer proof: send a text to the remote Wio from the rig, observe buzz <span class="unval">UNVALIDATED</span> — gates the feature</td><td class="dim">Buzz heard → build; silent → tune externalNotification first</td></tr>
+  <tr><td>5.2</td><td><span class="chip sonnet">SONNET</span></td><td>Lock-state buzzer beacon: debounced lock/lost transitions → LoRa message via the reader thread (one burst = locked, two = lost); config-gated, hot-tunable debounce</td><td class="dim">The SoloShot LED done right; field-tuned on a surf day</td></tr>
+  <tr><td>5.3</td><td><span class="chip sonnet">SONNET</span></td><td>Tier-0 watchdog: systemd Restart=on-failure hardening + rule daemon (reader stale→restart, API unresponsive→restart, disk low→stop recording), every action event-logged. <b>No LLM in the loop</b> — deterministic only</td><td class="dim">Kill -9 the service on the bench → self-heals; events show it</td></tr>
+  <tr><td>5.4</td><td><span class="chip joint">JOINT</span></td><td>Optional: Cloudflare tunnel + auth (CF Access service token AND the existing backend role auth enabled — never bare) for remote status/control from anywhere; watch gets the public URL as last fallback</td><td class="dim">KILL works from LTE; 403 without the token</td></tr>
+  <tr><td>5.5</td><td><span class="chip zack">ZACK</span></td><td>Watch app on-wrist validation during a beach setup (it's merged; it needs reality)</td><td class="dim">Status/record/E-stop verified from the wrist at the tripod</td></tr>
+</table>
+<div class="milestone"><b>M5 — “Fully solo.”</b> Set up, verify, film, recover — one person, no keyboard, told by your own gear when it loses you.</div>
+</div>
+
+<!-- ================= PHASE 6 ================= -->
+<h2 class="phase-head">Phase 6 — Sensor upgrade <span class="chip cond">CONDITIONAL on Phase 4 data</span></h2>
+<p class="sub">Built only if the dirtbike/shadow telemetry shows turn-lag the estimator can't fix with GPS alone. Do not build speculatively.</p>
+<div class="card">
+<table>
+  <tr><th>Step</th><th>Owner</th><th>Action</th><th>Verification / output</th></tr>
+  <tr><td>6.1</td><td><span class="chip claude">CLAUDE</span></td><td>Decision memo from M4 telemetry: is heading lag the residual error source?</td><td class="dim">Go/no-go with numbers</td></tr>
+  <tr><td>6.2</td><td><span class="chip zack">ZACK</span></td><td>If go: bench pair — RAK WisBlock (RAK4631 + GPS + IMU modules, ~$50/node) or reflash the existing Wios; the BNO085 breakout joins here</td><td class="dim">Hardware on desk; Meshtastic pair stays as fallback</td></tr>
+  <tr><td>6.3</td><td><span class="chip sonnet">SONNET</span></td><td>~200-line custom LoRa firmware: 20-byte binary frame (pos/speed/course/battery/IMU heading) at 1Hz + native beacon downlink; Orin reader gets simpler than the Meshtastic one</td><td class="dim">Bench range + rate test; estimator consumes IMU heading as one more measurement</td></tr>
+  <tr><td>6.4</td><td><span class="chip cond">OPT</span></td><td>Detector refresh on the same gate: Ultralytics now ships <span class="mono">yolo26n</span>; export on-device (<span class="mono">yolo export format=engine</span>, optional DLA offload w/ half=True) — same on-device-build discipline that fixed the cross-device engine</td><td class="dim">A/B FPS + recall vs yolov8n before adopting</td></tr>
+</table>
+</div>
+
+<!-- ================= PHASE 7 ================= -->
+<h2 class="phase-head">Phase 7 — Engineering close-out <span class="chip ready">READY (trailing, interleave anytime)</span></h2>
+<div class="card">
+<table>
+  <tr><th>Step</th><th>Owner</th><th>Action</th><th>Verification / output</th></tr>
+  <tr><td>7.1</td><td><span class="chip sonnet">SONNET</span></td><td>Execute the existing <span class="mono">docs/control-api-split-plan.md</span> — the 2,100-line monolith becomes routed modules (contract tests make this refactor safe: routes can't silently drift)</td><td class="dim">Snapshot unchanged; suite green; no file owns two unrelated reasons to change</td></tr>
+  <tr><td>7.2</td><td><span class="chip sonnet">SONNET</span></td><td>CI: GitHub Actions running the backend suite on push/PR (tests are host-agnostic — proven on the Mac); optional iOS sim-build job</td><td class="dim">A red X on GitHub when the suite breaks — the 53-failure rot class becomes impossible to ignore</td></tr>
+  <tr><td>7.3</td><td><span class="chip claude">CLAUDE</span></td><td>Docs sweep after M4: guide, CLAUDE.md, runbook reflect the estimator architecture; archive the superseded specs</td><td class="dim">No doc claims the arbiter exists</td></tr>
+</table>
+<div class="milestone"><b>M6 — “Inheritable.”</b> A competent stranger (or a future Claude with empty context) can operate, recover, and extend the system from the repo alone.</div>
+</div>
+
+<!-- ================= RISKS ================= -->
+<h2>Risk register (top 4)</h2>
+<div class="card risk">
+<table>
+  <tr><th>Risk</th><th>Phase</th><th>Mitigation already in place</th></tr>
+  <tr><td>Base Wio still won't fix outdoors (config fix unproven under sky)</td><td>1</td><td class="dim">Fallback designed: phone-position endpoint (~70 lines) decouples calibration from base GPS entirely; build only if 1.1 fails</td></tr>
+  <tr><td>LoRa range/reliability at 300m over water</td><td>2</td><td class="dim">SHORT_FAST is line-of-sight-friendly; GPS chip shows live ages so degradation is visible, not mysterious; antenna elevation on the tripod is the first knob</td></tr>
+  <tr><td>Estimator tuning drags (the 0.65-confidence item)</td><td>4</td><td class="dim">Shadow mode = zero field risk while iterating; simulation harness replays recorded sessions; flip criterion fixed in advance prevents goalpost drift</td></tr>
+  <tr><td>Li-ion in a hot beach enclosure</td><td>0+</td><td class="dim">Protected cell, shade, charge current is trickle-level; the cell's job is UPS not capacity</td></tr>
+</table>
+</div>
+
+<!-- ================= MACHINE-READABLE ================= -->
+<script type="application/json" id="roadmap-data">
+{
+  "version": "1.0", "date": "2026-06-11", "repo": "stonezone/jetsonTracker", "rig_sha": "9e6c776",
+  "owners": {"ZACK": "physical/field", "CLAUDE": "design/review/rig-ops/iOS", "SONNET": "plan-driven implementation (Claude-gated)", "CODEX": "backend lane partner", "JOINT": "two parties"},
+  "milestones": {
+    "M0": "Boxed and green", "M1": "First instrumented tracking session", "M2": "First water footage",
+    "M3": "Encoder feedback live", "M4": "Estimator flies the camera; arbiter deleted",
+    "M5": "Fully solo operation", "M6": "Inheritable codebase"
+  },
+  "phases": [
+    {"id": 0, "name": "Reassembly & housekeeping", "status": "READY", "gate": null,
+     "steps": [
+       {"id": "0.1", "owner": "ZACK", "action": "reassemble box: camera power, Wio USB"},
+       {"id": "0.2", "owner": "ZACK", "action": "18650 on base Wio (polarity-check first)"},
+       {"id": "0.3", "owner": "ZACK", "action": "rotate .70 Mac password; ssh-key keep/remove decision"},
+       {"id": "0.4", "owner": "ZACK", "action": "decide gps-server.service disable"},
+       {"id": "0.5", "owner": "CLAUDE", "action": "push doc commits + roadmap, PR to main"},
+       {"id": "0.6", "owner": "SONNET", "action": "runbook fold-in; deploy.sh kernel-to-ESP step"}]},
+    {"id": 1, "name": "Field validation day", "status": "READY", "gate": "M0",
+     "steps": [
+       {"id": "1.1", "owner": "ZACK", "action": "both Wios fix under sky; preflight green", "resolves_unvalidated": "base Wio outdoor fix"},
+       {"id": "1.2", "owner": "ZACK", "action": "six-step calibration incl. KILL drill; reference_heading survives restart"},
+       {"id": "1.3", "owner": "ZACK", "action": "yard tracking; gps_boost tuning"},
+       {"id": "1.4", "owner": "ZACK", "action": "dirtbike speed run (lead-prediction stress; feeds Phase 6 decision)"},
+       {"id": "1.5", "owner": "CLAUDE", "action": "telemetry pull + field-notes doc"}]},
+    {"id": 2, "name": "Water sessions", "status": "GATED", "gate": "M1",
+     "steps": [
+       {"id": "2.1", "owner": "ZACK", "action": "water session 1", "resolves_unvalidated": "LoRa at range over water"},
+       {"id": "2.2", "owner": "ZACK", "action": "water session 2 (estimator telemetry gate)"},
+       {"id": "2.3", "owner": "CLAUDE", "action": "debriefs: lock %, loss causes, pointing error"}]},
+    {"id": 3, "name": "Closed-loop pointing (Plan 2)", "status": "GATED", "gate": "M1",
+     "steps": [
+       {"id": "3.1", "owner": "JOINT", "action": "bench protocol: 10Hz commands + 2/5/10Hz inquiry polling, 5 min"},
+       {"id": "3.2", "owner": "CLAUDE", "action": "write closed-loop plan from bench numbers"},
+       {"id": "3.3", "owner": "SONNET", "action": "implement task-by-task, Claude-gated"},
+       {"id": "3.4", "owner": "CLAUDE", "action": "deploy + on-rig verification incl. KILL timing"}]},
+    {"id": 4, "name": "Target estimator (Plan 3)", "status": "GATED", "gate": "M2+M3+zoom-curve", "confidence": 0.65,
+     "steps": [
+       {"id": "4.1", "owner": "JOINT", "action": "zoom/FOV calibration session"},
+       {"id": "4.2", "owner": "CLAUDE", "action": "estimator plan w/ pre-committed flip criterion + sim harness"},
+       {"id": "4.3", "owner": "SONNET", "action": "shadow-mode implementation (never commands)"},
+       {"id": "4.4", "owner": "ZACK", "action": ">=2 shadow-logged sessions"},
+       {"id": "4.5", "owner": "CLAUDE", "action": "judge vs criterion"},
+       {"id": "4.6", "owner": "SONNET", "action": "flip; delete arbiter + handoff + boost; zoom-from-uncertainty"}]},
+    {"id": 5, "name": "Solo-operation layer", "status": "READY-after-M1", "gate": "M1 (parallel-friendly)",
+     "steps": [
+       {"id": "5.1", "owner": "CLAUDE", "action": "5-minute buzzer proof (sendtext -> remote Wio)", "resolves_unvalidated": "buzzer-on-message"},
+       {"id": "5.2", "owner": "SONNET", "action": "lock-state buzzer beacon (debounced, via reader thread)"},
+       {"id": "5.3", "owner": "SONNET", "action": "tier-0 deterministic watchdog (no LLM in loop)"},
+       {"id": "5.4", "owner": "JOINT", "action": "optional: CF tunnel + dual auth for remote control"},
+       {"id": "5.5", "owner": "ZACK", "action": "watch app on-wrist validation"}]},
+    {"id": 6, "name": "Sensor upgrade", "status": "CONDITIONAL", "gate": "M4 telemetry shows turn-lag",
+     "steps": [
+       {"id": "6.1", "owner": "CLAUDE", "action": "go/no-go memo from telemetry"},
+       {"id": "6.2", "owner": "ZACK", "action": "bench pair (RAK WisBlock or reflashed Wios) + BNO085"},
+       {"id": "6.3", "owner": "SONNET", "action": "custom LoRa firmware: 1Hz binary frames + IMU + native downlink"},
+       {"id": "6.4", "owner": "OPT", "action": "detector refresh to yolo26n via on-device export (Context7-verified path)"}]},
+    {"id": 7, "name": "Engineering close-out", "status": "READY-trailing", "gate": null,
+     "steps": [
+       {"id": "7.1", "owner": "SONNET", "action": "execute control-api split plan (contract tests guard it)"},
+       {"id": "7.2", "owner": "SONNET", "action": "GitHub Actions CI for the backend suite"},
+       {"id": "7.3", "owner": "CLAUDE", "action": "post-M4 docs sweep"}]}
+  ],
+  "deletions_on_arrival": ["TrackingArbiter", "release-before-request handoff", "fusion gps-cue boost"],
+  "unvalidated_claims": ["base Wio outdoor fix (resolves 1.1)", "LoRa 300m over water (resolves 2.1)", "buzzer-on-message (resolves 5.1)"]
+}
+</script>
+
+<footer>
+Maintenance owner: <b style="color:var(--claude)">CLAUDE</b> updates the status chips + JSON island at each milestone (ask "update the roadmap" after any session that moves one). This document supersedes nothing — the executable plans live beside it in <span class="mono">docs/superpowers/plans/</span>. Authored 2026-06-11 by Claude (Fable 5) with Zack; statuses anchored to session evidence through rig SHA <span class="mono">9e6c776</span>.
+</footer>
+</main>
+</body>
+</html>
