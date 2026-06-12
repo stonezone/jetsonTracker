@@ -24,13 +24,25 @@ from .ptz_state import POINTING_TOLERANCE_ENC, VERIFY_DELAY_SEC
 
 
 class PointingVerifier:
-    def __init__(self, ptz, ptz_state, events):
+    def __init__(self, ptz, ptz_state, events, blocked=None):
         self._ptz = ptz
         self._ptz_state = ptz_state
         self._events = events
+        # blocked(): True while resends are forbidden (KILL latched, or the
+        # PTZ owner is no longer the one whose move we recorded). Checked at
+        # tick entry AND immediately before commanding the camera, so a kill
+        # landing mid-tick can never be followed by a verifier-issued move.
+        self._blocked = blocked if blocked is not None else (lambda: False)
         self._target: Optional[Tuple[int, int]] = None
         self._issue_t: Optional[float] = None
         self._retry_count: int = 0
+
+    def clear(self) -> None:
+        """Drop any pending verify. Called on KILL and on PTZ owner change —
+        a stale target must never outlive the authority that issued it."""
+        self._target = None
+        self._issue_t = None
+        self._retry_count = 0
 
     def record_move(self, pan_enc: int, tilt_enc: int, t: float | None = None) -> None:
         """Call immediately after issuing an absolute pan/tilt command.
@@ -45,6 +57,9 @@ class PointingVerifier:
 
     def tick(self) -> None:
         """Call once per pipeline loop. Verifies and retries if conditions are met."""
+        if self._blocked():
+            self.clear()
+            return
         if self._target is None or self._issue_t is None:
             return
         if (time.time() - self._issue_t) < VERIFY_DELAY_SEC:
@@ -70,6 +85,9 @@ class PointingVerifier:
         self._events.record("pointing_miss", detail)
 
         if self._retry_count == 0:
+            if self._blocked():           # kill/owner-change landed mid-tick
+                self.clear()
+                return
             self._ptz.pan_tilt_absolute(pan_target, tilt_target)
             self._retry_count += 1
             self._issue_t = time.time()   # reset settle clock for the retry

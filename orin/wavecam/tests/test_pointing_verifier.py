@@ -96,3 +96,40 @@ def test_stale_encoder_skips_verify():
     v.tick()
     assert not ptz._calls
     assert not ev._recorded
+
+
+class _FlippingBlock:
+    """blocked() returns the scripted values in order, then sticks on the last."""
+    def __init__(self, *values):
+        self.values = list(values)
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
+        v = self.values[0] if len(self.values) == 1 else self.values.pop(0)
+        return v
+
+
+def test_tick_while_blocked_clears_and_never_moves():
+    """C1: KILL (or any block) during the settle window must clear the pending
+    verify and never re-issue the absolute move."""
+    ptz = _mock_ptz()
+    ps = _mock_ptz_state((100, 0))   # far from target -> would normally retry
+    v = PointingVerifier(ptz, ps, _mock_events(), blocked=lambda: True)
+    v.record_move(1000, 0, t=time.time() - 10)
+    v.tick()
+    assert ptz._calls == []
+    assert v._target is None
+
+
+def test_block_flipping_true_before_resend_suppresses_move():
+    """C1/C2 race: block engages between tick entry and the resend decision —
+    the verifier must re-check immediately before commanding the camera."""
+    ptz = _mock_ptz()
+    ps = _mock_ptz_state((100, 0))
+    blk = _FlippingBlock(False, True)   # entry check passes, pre-resend check blocks
+    v = PointingVerifier(ptz, ps, _mock_events(), blocked=blk)
+    v.record_move(1000, 0, t=time.time() - 10)
+    v.tick()
+    assert ptz._calls == []
+    assert blk.calls >= 2

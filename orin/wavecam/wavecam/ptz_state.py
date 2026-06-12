@@ -81,10 +81,10 @@ class PtzState:
         self._thread.start()
 
     def stop(self) -> None:
-        """Signal the poll thread to exit and join (blocks ≤ 2 poll periods)."""
+        """Signal the poll thread to exit and join (blocks up to 1.5s (a blocked recv chain can take 4×0.3s))."""
         self._stop_ev.set()
         if self._thread:
-            self._thread.join(timeout=2.0 / max(0.1, self._poll_hz) * 2)
+            self._thread.join(timeout=1.5)
 
     def is_alive(self) -> bool:
         return bool(self._thread and self._thread.is_alive())

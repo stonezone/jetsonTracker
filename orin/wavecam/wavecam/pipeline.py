@@ -98,7 +98,10 @@ class Pipeline(threading.Thread):
         self.ptz_state = PtzState(self.ptz)
         from .pointing_verifier import PointingVerifier
         self._pointing_verifier = PointingVerifier(
-            self.ptz, self.ptz_state, self.events
+            self.ptz, self.ptz_state, self.events,
+            # Resends are only legitimate while the move's author still owns
+            # the camera and no KILL is latched (reviewer finding C1/C2).
+            blocked=lambda: self.owner.killed or self.owner.owner != "gps_tracker",
         )
         self._prev_locked: Optional[bool] = None
         self._prev_gps_viable: Optional[bool] = None
@@ -128,6 +131,7 @@ class Pipeline(threading.Thread):
         if on:
             self.state.set_status(killed=True, state="KILLED")
             self.owner.kill()                  # sticky latch + owner -> idle
+            self._pointing_verifier.clear()    # no resend may outlive a KILL
             if self.cfg.ptz.enabled:
                 self.ptz.stop()                # immediate pan/tilt stop
                 self.ptz.zoom("stop")          # + zoom stop
@@ -269,9 +273,7 @@ class Pipeline(threading.Thread):
             )
             if cmd.zoom_enc is not None:
                 self.ptz.zoom_absolute(cmd.zoom_enc)
-            _pv = getattr(self, "_pointing_verifier", None)
-            if _pv is not None:
-                _pv.record_move(pan_enc=cmd.pan_enc, tilt_enc=cmd.tilt_enc)
+            self._pointing_verifier.record_move(pan_enc=cmd.pan_enc, tilt_enc=cmd.tilt_enc)
             self._last_abs_cmd_key = key
             self._last_abs_cmd_time = now
 
@@ -334,7 +336,7 @@ class Pipeline(threading.Thread):
 
     def _run(self):
         self.grab.start()
-        if self.cfg.ptz.enabled and hasattr(self, "ptz_state"):
+        if self.cfg.ptz.enabled:
             self.ptz_state.start()
         if self.cfg.ptz.enabled and not self.start_paused:
             self.owner.request("testbed")
@@ -521,9 +523,8 @@ class Pipeline(threading.Thread):
                     _gps_updated = True
 
                 # Vision update: only when locked and encoder data is fresh
-                _ptz_state = getattr(self, "ptz_state", None)
-                if _ptz_state is not None and fr.locked and fr.target_xy is not None:
-                    _enc, _enc_age = _ptz_state.latest()
+                if fr.locked and fr.target_xy is not None:
+                    _enc, _enc_age = self.ptz_state.latest()
                     if _enc is not None and (_enc_age is None or _enc_age < 0.5):
                         # zoom_enc: read from ptz_state when zoom encoder is available
                         _zoom_enc = 0
@@ -605,9 +606,7 @@ class Pipeline(threading.Thread):
             except OSError:
                 pass
             self._shadow_writer = None
-        _ps = getattr(self, "ptz_state", None)
-        if _ps is not None:
-            _ps.stop()
+        self.ptz_state.stop()
         try:
             if self.cfg.ptz.enabled:
                 self.ptz.stop()
