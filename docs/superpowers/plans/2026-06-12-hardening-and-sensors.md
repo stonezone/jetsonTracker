@@ -39,6 +39,12 @@ that bug class impossible *before* the phases below add more seams.
 - **T0.3** Test fakes for these seams must be declared as implementing the Protocol
   (a one-line `_: PoseLike = fake` assignment in the test makes mypy check the fake).
   Grep-audit existing fakes; fix or annotate.
+- **T0.4 Boot-smoke test:** instantiate the REAL production assembly (the run.py
+  wiring path: Pipeline + ControlApiAdapter + store, fakes only at the hardware
+  edges — capture, VISCA socket, serial) and tick the loop a few frames. Both
+  2026-06-11 zombie bugs were WIRING bugs green unit suites cannot see; this is
+  the test shape that catches them. mypy (T0.2) catches the type half; this
+  catches the assembly half.
 
 **Guardrails:** scope-capped to the listed modules (drift = STOP); zero behavior
 change (annotations only — suite count must not move except added type-conformance
@@ -115,13 +121,15 @@ can't self-check) — *if* the magnetics cooperate.
     hand… may result in mechanical damage"); ~220 g at 5–8 cm roughly DOUBLES
     pan-axis inertia (estimate; no vendor torque specs exist); and the class uses
     **open-loop steppers** — a stalled/missed step is a SILENT position error.
-  - **⚠ Open-loop implication for the whole stack:** our `pan_enc` may be
-    commanded-step dead reckoning, not measured truth. A missed step (gust, snag,
-    bump) silently shifts the anchor until re-home. This RAISES the value of
-    drift detection here and motivates a periodic home-reindex strategy (track as
-    a Phase-5 servo consideration + verify on the bench: stall the head gently
-    by hand at low speed and see whether inquiry counts diverge from reality).
-- **T3.4 Anchor Ritual (NEW — replaces manual heading capture):** a transient
+  - **⚠ Open-loop question (status: UNKNOWN for our unit — bench decides).** The
+    vendor-class research (PTZOptics manuals, forum reports) says open-loop
+    steppers; our own evidence leans the other way (exact ±2448 stops, exact
+    return-to-anchor after long excursions). Do not treat either as established.
+    Bench test, 2 min: gently resist the head at low speed, compare inquiry
+    counts to visual reality. If counts lie → dead reckoning confirmed → add
+    periodic home-reindex to Phase 5 and elevate drift detection. If counts
+    track → closed-loop enough, claim retired.
+- **T3.4 Anchor Ritual (feasibility ~5/10 until the pre-test passes):** a transient
   head-mount for a 60–90 s guided setup sweep. **Prefer the WATCH** (30–45 g near
   the axis ≈ 1–3 % inertia — low-risk gray zone vs the phone's ~2×; Ultra has a
   compass; WaveCamWatch exists): small printed clip/ring on the head side; app
@@ -132,8 +140,12 @@ can't self-check) — *if* the magnetics cooperate.
   background sensor flow (Apple-documented) or simply foreground the watch app
   during the ritual. Phone-on-side-ring is the fallback dock if watch sampling
   disappoints (same ritual, slower speeds, accepted transient load).
-  - Gate **G-PH** now means: first ritual's fit residuals documented here before
-    any heading observation feeds the estimator (T3.3).
+  - **Pre-test gates the clip (2 min, zero printing):** hold the watch by hand at
+    the planned head position, command the pan through stops, watch the compass
+    app. If heading doesn't track the stops plausibly by hand, the head's own
+    magnetics swamp the compass and the ritual is dead — skip the clip entirely.
+  - Gate **G-PH** now means: pre-test passed AND the first ritual's fit residuals
+    documented here before any heading observation feeds the estimator (T3.3).
 - **T3.1 iOS publisher:** while the app is foregrounded on Live, POST
   `/api/v1/sensors/phone` at 1–2 Hz: `{heading_deg, heading_acc, lat, lon, h_acc,
   bump}` — `bump` = accelerometer spike above threshold (tripod knock). Piggybacks
