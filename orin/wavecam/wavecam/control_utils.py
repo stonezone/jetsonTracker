@@ -68,6 +68,8 @@ HOT_CONFIG_KEYS = (
     "estimator.zoom_cov_wide_deg",
     "estimator.zoom_cov_narrow_deg",
     "estimator.log_every_n",
+    "sensors.enabled",
+    "sensors.drift_alert_deg",
 )
 
 RESTART_REQUIRED_KEYS = (

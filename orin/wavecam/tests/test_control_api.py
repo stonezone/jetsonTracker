@@ -185,6 +185,10 @@ class DummyPipeline:
                 zoom_cov_narrow_deg=1.5,
                 log_every_n=3,
             ),
+            sensors=types.SimpleNamespace(
+                enabled=False,
+                drift_alert_deg=12.0,
+            ),
         )
 
     def kill(self, on=True):

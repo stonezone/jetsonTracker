@@ -141,6 +141,8 @@ class ConfigManager:
             "estimator.use_vision_range": lambda: self.apply_estimator_bool("use_vision_range", value, dry_run=dry_run),
             "estimator.subject_height_m": lambda: self.apply_estimator_float("subject_height_m", value, 0.5, 2.5, dry_run=dry_run),
             "estimator.r_range_frac": lambda: self.apply_estimator_float("r_range_frac", value, 0.05, 1.0, dry_run=dry_run),
+            "sensors.enabled": lambda: self.apply_sensors_bool("enabled", value, dry_run=dry_run),
+            "sensors.drift_alert_deg": lambda: self.apply_sensors_float("drift_alert_deg", value, 1.0, 90.0, dry_run=dry_run),
         }
         setter = setters.get(key)
         if setter is None:
@@ -255,3 +257,25 @@ class ConfigManager:
         if est_cfg is None:
             return f"estimator.{attr}: estimator section not present in config."
         return set_bool(est_cfg, attr, value, dry_run=dry_run)
+
+    # ------------------------------------------------------------------
+    # Sensors config helpers (Phase-3 T3.2)
+    # ------------------------------------------------------------------
+
+    def _sensors_cfg(self):
+        """Return cfg.sensors, or None if sensors section is absent."""
+        return getattr(self.pipeline.cfg, "sensors", None)
+
+    def apply_sensors_float(self, attr: str, value: Any, lo: float, hi: float,
+                            dry_run: bool = False) -> str | None:
+        sensors_cfg = self._sensors_cfg()
+        if sensors_cfg is None:
+            return f"sensors.{attr}: sensors section not present in config."
+        return set_float(sensors_cfg, attr, value, lo, hi, dry_run=dry_run)
+
+    def apply_sensors_bool(self, attr: str, value: Any,
+                           dry_run: bool = False) -> str | None:
+        sensors_cfg = self._sensors_cfg()
+        if sensors_cfg is None:
+            return f"sensors.{attr}: sensors section not present in config."
+        return set_bool(sensors_cfg, attr, value, dry_run=dry_run)

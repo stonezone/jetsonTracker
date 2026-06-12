@@ -29,6 +29,8 @@
  "/api/v1/ptz/zoom",
  "/api/v1/safety/kill",
  "/api/v1/safety/resume",
+ "/api/v1/sensors/phone",
+ "/api/v1/sensors/phone/baseline/reset",
  "/api/v1/status",
  "/api/v1/system/restart",
  "/api/v1/version",

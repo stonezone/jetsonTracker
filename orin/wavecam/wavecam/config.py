@@ -173,6 +173,16 @@ class EstimatorCfg:
 
 
 @dataclass
+class SensorsCfg:
+    # Phase-3 T3.2: phone-on-tripod ingest.  enabled=False means the POST route
+    # still accepts (200) but SensorHub records nothing — cheap field kill-switch.
+    enabled: bool = False
+    # Degrees of deviation from the session heading baseline that, sustained for
+    # >10s, fires an anchor_suspect event (heading-drift monitor).
+    drift_alert_deg: float = 12.0
+
+
+@dataclass
 class Config:
     camera: CameraCfg
     ptz: PtzCfg
@@ -184,6 +194,7 @@ class Config:
     loop: LoopCfg
     gps: GpsCfg = field(default_factory=GpsCfg)
     estimator: EstimatorCfg = field(default_factory=EstimatorCfg)
+    sensors: SensorsCfg = field(default_factory=SensorsCfg)
     source_path: str = ""   # set by load_config; the rig yaml; empty in unit tests
 
 
@@ -212,6 +223,7 @@ def _apply_overlay(cfg: "Config", overlay_path: str) -> None:
         "loop": "loop",
         "gps": "gps",
         "estimator": "estimator",
+        "sensors": "sensors",
     }
     for section, kv in ov.items():
         if section not in _KNOWN_SECTIONS:
@@ -255,6 +267,7 @@ def load_config(path: str) -> Config:
         loop=LoopCfg(**{**LoopCfg().__dict__, **_d(raw, "loop", {})}),
         gps=GpsCfg(**{**GpsCfg().__dict__, **_d(raw, "gps", {})}),
         estimator=EstimatorCfg(**{**EstimatorCfg().__dict__, **_d(raw, "estimator", {})}),
+        sensors=SensorsCfg(**{**SensorsCfg().__dict__, **_d(raw, "sensors", {})}),
     )
 
     # Apply overlay (config.local.yaml) over the base config — rig-owned, deploy-safe.

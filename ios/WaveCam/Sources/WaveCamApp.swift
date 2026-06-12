@@ -11,6 +11,11 @@ struct WaveCamApp: App {
     @State private var client = WaveCamClient(mode: .live)
     @Environment(\.scenePhase) private var scenePhase
 
+    // Phase-3 T3.1: phone-on-tripod sensor publisher. Lifecycle follows the app
+    // foreground state; the publisher posts unconditionally while foregrounded
+    // (server ignores when sensors.enabled=false on the backend).
+    @State private var sensorPublisher: PhoneSensorPublisher? = nil
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -26,13 +31,22 @@ struct WaveCamApp: App {
                     // Activate WatchConnectivity receiver for incoming session JSONL files.
                     WatchSessionReceiver.shared.activate()
                     await client.refresh()
+                    // Start the sensor publisher after settings are applied so it inherits
+                    // the configured client URL and mode.
+                    let publisher = PhoneSensorPublisher(client: client)
+                    sensorPublisher = publisher
+                    publisher.start()
                 }
                 .onChange(of: scenePhase) { _, phase in
                     // Pause the 1Hz status poll in the background (beach battery);
                     // .inactive is transient (app switcher, Control Center) — ignore.
                     switch phase {
-                    case .background: client.setPollingActive(false)
-                    case .active: client.setPollingActive(true)
+                    case .background:
+                        client.setPollingActive(false)
+                        sensorPublisher?.stop()
+                    case .active:
+                        client.setPollingActive(true)
+                        sensorPublisher?.start()
                     default: break
                     }
                 }

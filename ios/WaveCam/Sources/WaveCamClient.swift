@@ -1230,6 +1230,14 @@ final class WaveCamClient {
         }
     }
 
+    /// POST /api/v1/sensors/phone — phone-on-tripod telemetry (Phase-3 T3.1).
+    /// Fire-and-forget: swallows all errors — sensor data is best-effort.
+    /// Only posts in live mode; no-ops in mock/offline so the publisher never needs to know.
+    func postPhoneSensor(_ body: [String: Any]) async {
+        guard mode == .live else { return }
+        _ = try? await post("sensors/phone", body: body)
+    }
+
     /// POST /api/v1/agent/summon — requests an on-demand diagnostic pass from the supervisor.
     /// Returns true when the server accepts the request (2xx). In mock mode always returns true.
     func summonAgent() async -> Bool {

@@ -23,6 +23,7 @@ from .auth import CONFIG, PTZ, READ, SAFETY, SERVICE, install_auth, require, web
 from .config import persist_hot_values
 from .control_calibration import CalibrationManager
 from .control_config import ConfigManager
+from .sensor_hub import PhoneSample, SensorHub
 from .control_logs import LogAdapter
 from .control_system import SystemManager
 from .control_presets import PresetStore
@@ -149,6 +150,20 @@ class AgentSummonRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=256)
 
 
+class PhoneSampleRequest(BaseModel):
+    """POST /api/v1/sensors/phone — phone-on-tripod telemetry (Phase-3 T3.2).
+
+    All fields are optional; the publisher sends whatever sensors are valid.
+    heading_acc < 0 means the iOS heading is invalid (CLLocationManager convention).
+    """
+    heading_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+    heading_acc: float | None = Field(default=None, ge=-1.0, le=360.0)
+    lat: float | None = Field(default=None, ge=-90.0, le=90.0)
+    lon: float | None = Field(default=None, ge=-180.0, le=180.0)
+    h_acc: float | None = Field(default=None, ge=0.0)
+    bump: bool = False
+
+
 def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     adapter = ControlApiAdapter(pipeline, frames)
     app.state.control_api = adapter
@@ -167,6 +182,7 @@ def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
     register_agent_routes(app, adapter)
     register_health_routes(app, adapter)
     register_events_routes(app, adapter)
+    register_sensors_routes(app, adapter)
 
 
 def register_version_routes(app: FastAPI) -> None:
@@ -542,6 +558,36 @@ def register_events_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         return {"events": items}
 
 
+def register_sensors_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
+    """Phase-3 T3.2: phone-on-tripod sensor ingest.
+
+    POST /api/v1/sensors/phone — always 200.  When sensors.enabled is False
+    the hub is a no-op; the route still accepts so the iOS publisher can post
+    unconditionally without knowledge of the backend flag state.
+
+    POST /api/v1/sensors/phone/baseline/reset — force re-capture of the
+    heading baseline on the next valid sample.
+    """
+    @app.post("/api/v1/sensors/phone", dependencies=[Depends(require(READ))])
+    def sensors_phone(req: PhoneSampleRequest):
+        sample = PhoneSample(
+            heading_deg=req.heading_deg,
+            heading_acc=req.heading_acc,
+            lat=req.lat,
+            lon=req.lon,
+            h_acc=req.h_acc,
+            bump=req.bump,
+            received_at=time.time(),
+        )
+        api.sensor_hub.ingest(sample)
+        return {"ok": True, "request_id": make_request_id()}
+
+    @app.post("/api/v1/sensors/phone/baseline/reset", dependencies=[Depends(require(CONFIG))])
+    def sensors_baseline_reset():
+        api.sensor_hub.reset_baseline()
+        return {"ok": True, "request_id": make_request_id()}
+
+
 def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/health", dependencies=[Depends(require(READ))])
     def health():
@@ -594,6 +640,10 @@ class ControlApiAdapter:
         self._system = SystemManager(pipeline, self._lock, self)
         self.presets = PresetStore(self)
         self.logs = LogAdapter(self)
+        self.sensor_hub = SensorHub(
+            events=getattr(pipeline, "events", None),
+            cfg=getattr(pipeline, "cfg", None),
+        )
 
     @property
     def revision(self) -> int:
@@ -762,6 +812,13 @@ class ControlApiAdapter:
 
     def apply_gps_bool(self, attr: str, value: Any, dry_run: bool = False) -> str | None:
         return self._config.apply_gps_bool(attr, value, dry_run)
+
+    def apply_sensors_float(self, attr: str, value: Any, lo: float, hi: float,
+                            dry_run: bool = False) -> str | None:
+        return self._config.apply_sensors_float(attr, value, lo, hi, dry_run)
+
+    def apply_sensors_bool(self, attr: str, value: Any, dry_run: bool = False) -> str | None:
+        return self._config.apply_sensors_bool(attr, value, dry_run)
 
     # --- System delegation stubs (behavior lives in SystemManager) ---
 
