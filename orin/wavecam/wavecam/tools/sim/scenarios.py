@@ -151,3 +151,71 @@ def combined_dropout(
                        start_dist_m=start_dist_m, dropout_start_sec=dropout_start_sec,
                        dropout_dur_sec=dropout_dur_sec, duration_sec=duration_sec,
                        dt_gps=dt_gps)
+
+
+@dataclass
+class SimRangeDetection:
+    """A synthetic vision range observation (person bbox height in pixels)."""
+    t: float
+    bbox_h_px: float
+    frame_h: float = 720.0
+    zoom_enc: int = 0
+
+
+def _range_from_geometry(dist_m: float, subject_height_m: float,
+                         fov_h_deg: float, frame_h: float) -> float:
+    """Compute expected bbox_h_px for a known geometry (inverse range model).
+
+    Useful for synthesising ground-truth bbox heights in sim scenarios.
+    vfov = 2 * atan(tan(hfov/2) * 9/16); bbox_frac = 2*atan(h_m/2/d) / vfov
+    """
+    hfov_rad = math.radians(fov_h_deg)
+    vfov_rad = 2.0 * math.atan(math.tan(hfov_rad / 2.0) * 9.0 / 16.0)
+    angle_sub = 2.0 * math.atan(subject_height_m / 2.0 / max(1.0, dist_m))
+    frac = angle_sub / vfov_rad
+    return frac * frame_h
+
+
+def range_obs_scenario(
+    speed_mps: float = 8.0,
+    course_deg: float = 270.0,
+    start_dist_m: float = 80.0,
+    start_bearing_deg: float = 270.0,
+    duration_sec: float = 30.0,
+    dt_gps: float = 2.0,
+    dt_vis: float = 1.0,
+    subject_height_m: float = 1.0,
+    fov_h_deg: float = 60.0,
+    frame_h: float = 720.0,
+    zoom_enc: int = 0,
+) -> Tuple[List[SimFix], List[SimRangeDetection]]:
+    """Straight run with synthetic range observations from person bbox height.
+
+    The bbox heights are computed from ground-truth geometry (no noise added
+    here — noise comes from R in the Kalman update). Used to compare range-on
+    vs range-off covariance tightening in the sim harness.
+    """
+    start_lat, start_lon = _project(_BASE_LAT, _BASE_LON, start_bearing_deg, start_dist_m)
+    fixes = []
+    range_detections = []
+    t = 0.0
+    lat, lon = start_lat, start_lon
+    t_vis = 0.0
+
+    while t <= duration_sec:
+        dist = ((lat - _BASE_LAT) ** 2 * (111320.0 ** 2) +
+                (lon - _BASE_LON) ** 2 * (111320.0 * math.cos(math.radians(_BASE_LAT))) ** 2) ** 0.5
+        fixes.append(SimFix(lat=lat, lon=lon, speed=speed_mps, course_deg=course_deg,
+                            age_sec=2.0, t=t))
+        if t >= t_vis:
+            bbox_h = _range_from_geometry(dist, subject_height_m, fov_h_deg, frame_h)
+            range_detections.append(SimRangeDetection(
+                t=t, bbox_h_px=bbox_h, frame_h=frame_h, zoom_enc=zoom_enc,
+            ))
+            t_vis += dt_vis
+
+        move_dist = speed_mps * dt_gps
+        lat, lon = _project(lat, lon, course_deg, move_dist)
+        t += dt_gps
+
+    return fixes, range_detections

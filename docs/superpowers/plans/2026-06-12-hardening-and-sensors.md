@@ -107,8 +107,11 @@ goes quiet — and free.
 
 **Guardrails:** flag `estimator.use_vision_range` default **false**; enable via
 overlay only after one shadow session shows divergence stats ≤ the no-range
-baseline. Shadow-only — the flip criterion is unchanged. **Gate G2-R:** the on/off
-sim comparison is in the PR description with numbers.
+baseline. Shadow-only — the flip criterion is unchanged. **Gate G2-R:** flag-off
+merge allowed; ENABLING gated on the zoom curve being multi-point (the model
+consumes fov_at_zoom generically and is exact at a 1-point curve only at wide;
+a multi-point curve is required before trusting zoom-variant range math at tele).
+The on/off sim comparison is in the PR description with numbers.
 **Effort:** ~1 day. **Feasibility 7/10** *(Unvalidated until the noise model meets
 real surf bobbing; confidence 0.7).*
 

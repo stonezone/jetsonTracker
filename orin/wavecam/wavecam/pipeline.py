@@ -185,7 +185,7 @@ class Pipeline(threading.Thread):
         now = time.time() if now is None else now
         return now < getattr(self, "_cinematic_zoom_suppressed_until", 0.0)
 
-    def _estimator_shadow_tick(self, fr, w, t0) -> None:
+    def _estimator_shadow_tick(self, fr, w, t0, frame_h: int = 0) -> None:
         """One shadow-estimator tick. Shadow is observability, never control:
         ANY exception here disables shadow and the vision loop lives (doctrine
         set by the /data/shadow PermissionError zombie and re-proven when a
@@ -216,6 +216,22 @@ class Pipeline(threading.Thread):
                         zoom_enc=_zoom_enc, now=t0,
                     )
                     _vision_updated = True
+
+            # Vision range update: person bbox height → range observation.
+            # Gated on: use_vision_range flag, locked, person bbox available.
+            # Never uses the color blob — blob size is lighting-dependent.
+            _use_vr = bool(getattr(_est_cfg, "use_vision_range", False))
+            if _use_vr and fr.locked and fr.person_bbox is not None:
+                _pb = fr.person_bbox  # (x, y, w, h)
+                _bbox_h = float(_pb[3])
+                # Re-read zoom encoder; fall back to 0 (wide) if unavailable.
+                _vr_z, _vr_z_age = self.ptz_state.latest_zoom()
+                _vr_zoom = _vr_z if (_vr_z is not None and _vr_z_age is not None
+                                     and _vr_z_age < 2.0) else 0
+                self.estimator.update_vision_range(
+                    bbox_h_px=_bbox_h, frame_h=float(frame_h) if frame_h > 0 else 720.0,
+                    zoom_enc=_vr_zoom, now=t0,
+                )
 
             if self._est_tick % _log_every_n == 0:
                 _out = self.estimator.predict_output(now=t0)
@@ -575,7 +591,7 @@ class Pipeline(threading.Thread):
 
             # Estimator shadow tick — additive read-only side channel; never commands.
             if self.estimator is not None:
-                self._estimator_shadow_tick(fr, w, t0)
+                self._estimator_shadow_tick(fr, w, t0, frame_h=h)
 
             self._pointing_verifier.tick()
             enc, enc_age = self.ptz_state.latest()

@@ -348,6 +348,89 @@ class TargetEstimator:
             for j in range(4):
                 self._P[i][j] -= KhP[i][j] * self._P[j][j]  # approximate but stable
 
+    # ── vision range update ──────────────────────────────────────────────────
+
+    def update_vision_range(self, bbox_h_px: float, frame_h: float,
+                            zoom_enc: int, now: float) -> None:
+        """Fuse a range observation derived from the person bbox height.
+
+        Model: the subject is a known-height object; the angular subtense of
+        its height in the frame gives distance.
+
+            vfov = 2 * atan(tan(hfov/2) * 9/16)           (16:9 aspect)
+            angle_sub = vfov * (bbox_h / frame_h)          (subtended fraction)
+            range_m = subject_height_m / (2 * tan(angle_sub / 2))
+
+        H linearised: range r = sqrt(e² + n²); H = [e/r, n/r, 0, 0].
+        R = (r_range_frac * range_m)²
+
+        Args:
+            bbox_h_px: person bbox height in pixels.
+            frame_h: frame height in pixels.
+            zoom_enc: current zoom encoder (for FOV interpolation).
+            now: current timestamp (seconds).
+        """
+        if not self._enabled or not self._initialised:
+            return
+
+        if frame_h <= 0 or bbox_h_px <= 0:
+            return
+
+        hfov_deg = _fov_at_zoom(self._fov_curve, zoom_enc)
+        hfov_rad = math.radians(hfov_deg)
+        # vfov from hfov via 16:9 aspect ratio
+        vfov_rad = 2.0 * math.atan(math.tan(hfov_rad / 2.0) * 9.0 / 16.0)
+
+        bbox_frac = bbox_h_px / frame_h
+        # angular subtense of the subject in the vertical
+        angle_sub_rad = vfov_rad * bbox_frac
+
+        half_angle = angle_sub_rad / 2.0
+        if half_angle <= 0 or math.tan(half_angle) == 0:
+            return
+
+        subject_h = float(getattr(self._cfg, "subject_height_m", 1.0))
+        range_m = subject_h / (2.0 * math.tan(half_angle))
+
+        if range_m < 1.0:
+            return  # geometry degenerate — too close or bbox fills frame
+
+        self._predict(now)
+
+        e, n = self._x[0], self._x[1]
+        r = math.hypot(e, n)
+        if r < 1.0:
+            return  # state not yet far from origin — linearisation unreliable
+
+        # H = [e/r, n/r, 0, 0]  (Jacobian of r = sqrt(e²+n²) w.r.t. state)
+        h = [e / r, n / r, 0.0, 0.0]
+
+        # Predicted range from state
+        pred_range = r
+        innovation = range_m - pred_range
+
+        r_frac = float(getattr(self._cfg, "r_range_frac", 0.3))
+        R_var = (r_frac * range_m) ** 2
+
+        # S = h P h^T + R (scalar)
+        Pht = [sum(self._P[i][j] * h[j] for j in range(4)) for i in range(4)]
+        S = sum(h[j] * Pht[j] for j in range(4)) + R_var
+        if abs(S) < 1e-9:
+            return
+
+        # K = P h^T / S  (4-vector)
+        K = [Pht[i] / S for i in range(4)]
+
+        # State update
+        for i in range(4):
+            self._x[i] += K[i] * innovation
+
+        # Covariance update (standard form)
+        KhP = [[K[i] * h[j] for j in range(4)] for i in range(4)]
+        for i in range(4):
+            for j in range(4):
+                self._P[i][j] -= KhP[i][j] * self._P[j][j]
+
     # ── output ───────────────────────────────────────────────────────────────
 
     def predict_output(self, now: float) -> Optional[EstimatorOutput]:
