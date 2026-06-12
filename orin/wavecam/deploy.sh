@@ -20,6 +20,7 @@ printf '{"git_sha": "%s", "branch": "%s", "deployed_at": "%s"}\n' \
 RSYNC_FLAGS=(-av --delete
   --exclude '__pycache__' --exclude '*.pyc'
   --exclude 'camera_pose.json'          # persisted calibration — rig-owned
+  --exclude 'config.local.yaml'         # hot-config overlay — rig-owned, survives deploys
   --exclude 'auth.json'                 # rig-owned credentials
   --exclude '*.log')
 [ "${1:-}" = "--dry-run" ] && RSYNC_FLAGS+=(--dry-run)

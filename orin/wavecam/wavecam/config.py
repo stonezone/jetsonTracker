@@ -8,21 +8,36 @@ import yaml
 
 _persist_lock = threading.Lock()
 
+# ---------------------------------------------------------------------------
+# Overlay helpers
+# ---------------------------------------------------------------------------
+
+def _overlay_path(main_yaml_path: str) -> str:
+    """Return the path to config.local.yaml in the same directory as the main YAML."""
+    return os.path.join(os.path.dirname(os.path.abspath(main_yaml_path)), "config.local.yaml")
+
 
 def persist_hot_values(yaml_path: str, values: dict) -> None:
-    """Write hot-applied config keys back to the live yaml (atomic replace) so the
-    file on the rig is always the single source of truth. ``values`` maps dotted
-    keys ("gps.stale_threshold_sec") to plain scalars."""
+    """Write hot-applied config keys to config.local.yaml (overlay), never the main YAML.
+
+    The overlay lives alongside the main config and is excluded from rsync so it
+    survives deploys.  ``values`` maps dotted keys ("gps.stale_threshold_sec") to
+    post-coercion scalars (float/int/bool/str — never raw request strings).
+    """
+    overlay = _overlay_path(yaml_path)
     with _persist_lock:
-        with open(yaml_path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+        try:
+            with open(overlay, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            data = {}
         for dotted, v in values.items():
             section, key = dotted.split(".", 1)
             data.setdefault(section, {})[key] = v
-        tmp = yaml_path + ".tmp"
+        tmp = overlay + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-        os.replace(tmp, yaml_path)
+        os.replace(tmp, overlay)
 
 
 def _d(src: dict, key: str, default: Any) -> Any:
@@ -165,6 +180,48 @@ class Config:
     source_path: str = ""   # set by load_config; the rig yaml; empty in unit tests
 
 
+def _apply_overlay(cfg: "Config", overlay_path: str) -> None:
+    """Deep-merge config.local.yaml sections over an already-built Config in-place.
+
+    Uses the same key coercion approach as the main load (dataclass field updates via
+    dict merge).  Unknown section names are ignored with a printed warning; unknown keys
+    within a known section are also silently ignored (matching main load behaviour for
+    extra yaml keys).
+    """
+    try:
+        with open(overlay_path, encoding="utf-8") as f:
+            ov = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return  # no overlay — normal case on a fresh deploy
+
+    _KNOWN_SECTIONS = {
+        "camera": "camera",
+        "ptz": "ptz",
+        "camera_ai": "camera_ai",
+        "color": "color",
+        "detector": "detector",
+        "fusion": "fusion",
+        "web": "web",
+        "loop": "loop",
+        "gps": "gps",
+        "estimator": "estimator",
+    }
+    for section, kv in ov.items():
+        if section not in _KNOWN_SECTIONS:
+            print(f"[config] overlay: unknown section '{section}' — ignored")
+            continue
+        if not isinstance(kv, dict):
+            print(f"[config] overlay: section '{section}' is not a dict — ignored")
+            continue
+        target = getattr(cfg, _KNOWN_SECTIONS[section], None)
+        if target is None:
+            continue
+        for k, v in kv.items():
+            if hasattr(target, k):
+                setattr(target, k, v)
+            # unknown keys within a known section are silently ignored
+
+
 def load_config(path: str) -> Config:
     with open(path, "r") as f:
         raw = yaml.safe_load(f) or {}
@@ -192,10 +249,16 @@ def load_config(path: str) -> Config:
         gps=GpsCfg(**{**GpsCfg().__dict__, **_d(raw, "gps", {})}),
         estimator=EstimatorCfg(**{**EstimatorCfg().__dict__, **_d(raw, "estimator", {})}),
     )
+
+    # Apply overlay (config.local.yaml) over the base config — rig-owned, deploy-safe.
+    _apply_overlay(cfg, _overlay_path(path))
+
     # Inverted hysteresis (unlock >= lock) makes any color blob acquire a full
     # lock instantly — the 2026-06-11 field failure. The hot-config path rejects
     # it; the YAML path must too, but a refusal here would brick the service at
     # the beach, so reset to the designed defaults and say so loudly.
+    # This guard runs AFTER the overlay merge so an inverted pair arriving via
+    # overlay is also caught and reset.
     if cfg.fusion.unlock_threshold >= cfg.fusion.lock_threshold:
         d = FusionCfg()
         print(f"[config] INVALID fusion hysteresis in {path}: unlock "
