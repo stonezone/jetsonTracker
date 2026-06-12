@@ -86,3 +86,19 @@ def test_has_base_true_when_lon_set():
 
 def test_has_base_true_when_both_set():
     assert CameraPose(lat=21.6, lon=-158.0, alt_m=2.0).has_base is True
+
+
+def test_tilt_capture_constants_are_the_measured_truth():
+    """Bench 2026-06-12: tilt hard stops at -432/+1296 counts over -30..+90 deg
+    => 14.4 counts/deg (same scale as pan), encoder zero = horizontal."""
+    from wavecam.camera_pose import (PRISUAL_TILT_ENC_MAX, PRISUAL_TILT_ENC_MIN,
+                                     PRISUAL_TILT_ENC_PER_DEG, CameraPose)
+    assert abs(PRISUAL_TILT_ENC_PER_DEG - 14.4) < 1e-9
+    assert PRISUAL_TILT_ENC_MIN / PRISUAL_TILT_ENC_PER_DEG == -30.0
+    assert PRISUAL_TILT_ENC_MAX / PRISUAL_TILT_ENC_PER_DEG == 90.0
+    p = CameraPose()
+    p.tilt_anchor_enc = 0.0
+    p.tilt_anchor_elev = 0.0
+    p.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
+    assert abs(p.elevation_to_tilt_encoder(-30.0) - PRISUAL_TILT_ENC_MIN) < 1e-6
+    assert abs(p.elevation_to_tilt_encoder(90.0) - PRISUAL_TILT_ENC_MAX) < 1e-6

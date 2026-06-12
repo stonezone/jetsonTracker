@@ -145,8 +145,10 @@ class CalibrationManager:
                 # P1: tilt calibration — single-point anchor (two-point deferred)
                 tilt_deg = values.get("tilt_deg")
                 if tilt_deg is not None and enc is not None:
+                    from .camera_pose import PRISUAL_TILT_ENC_PER_DEG
                     self.pipeline.pose.tilt_anchor_enc = float(enc[1])
                     self.pipeline.pose.tilt_anchor_elev = float(tilt_deg)
+                    self.pipeline.pose.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
             # Always persist after set_step so reference_heading survives restart even
             # when enc=None (VISCA timeout or DummyPtz in tests) prevented pose update.
             # Test isolation is handled by the WAVECAM_POSE_PATH env var (conftest.py).

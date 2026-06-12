@@ -23,6 +23,15 @@ from .gps_geo import normalize_180
 # the way to the target.
 PRISUAL_PAN_ENC_PER_DEG = 4896.0 / 340.0   # 14.4
 
+# Measured 2026-06-12 by driving tilt to both mechanical hard stops with the
+# service stopped: clamps at -432 and +1296 counts over the spec'd -30..+90
+# envelope -> 1728/120 = 14.4 counts/deg, the SAME scale as pan, with encoder
+# zero exactly horizontal. tilt_enc_per_deg had been 0.0 (uncalibrated) on
+# every rig since P1 — the capture stamped an anchor but never a scale.
+PRISUAL_TILT_ENC_PER_DEG = 1728.0 / 120.0  # 14.4
+PRISUAL_TILT_ENC_MIN = -432                # -30 deg (down stop)
+PRISUAL_TILT_ENC_MAX = 1296                # +90 deg (up stop)
+
 
 @dataclass
 class CameraPose:
