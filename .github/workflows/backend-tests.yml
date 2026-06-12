@@ -17,10 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python 3.10 (rig parity — Orin runs 3.10.12, JetPack 6.x)
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.10'
 
       - name: Install dependencies
         # Minimal set derived from test imports.
@@ -33,13 +33,19 @@ jobs:
         #   explicitly for clarity — TestClient uses it for the HTTP transport.
         run: |
           pip install \
-            fastapi \
-            "pydantic>=2" \
+            "fastapi<1" \
+            "pydantic>=2,<3" \
             pyyaml \
             httpx \
             pytest \
             "opencv-python" \
-            numpy
+            "numpy<3"
+
+      - name: Compile-check tools and package
+        # tools/ are deploy-critical scripts the suite never imports; a syntax
+        # error there only surfaced on the rig (FOV tool, 2026-06-11).
+        run: |
+          python -m compileall -q orin/wavecam/tools orin/wavecam/wavecam
 
       - name: Run backend test suite
         run: cd orin/wavecam && python -m pytest -q
