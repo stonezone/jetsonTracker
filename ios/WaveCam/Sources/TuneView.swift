@@ -67,11 +67,15 @@ struct TuneView: View {
         ("orange_red", "Orange / red (rashguard)"), ("orange", "Orange"),
         ("red", "Red"), ("blue", "Blue"), ("cyan", "Cyan"),
         ("green", "Green"), ("yellow", "Yellow"), ("pink", "Pink"),
+        ("purple", "Purple"), ("white", "White (foam risk near water)"),
+        ("black", "Black (wetsuit)"),
     ]
     private let classes: [(id: Int, name: String)] = [
         (0, "person"), (1, "bicycle"), (2, "car"), (3, "motorcycle"),
-        (8, "boat"), (14, "bird"), (15, "cat"), (16, "dog"),
-        (32, "sports ball"), (33, "kite"), (37, "surfboard"), (41, "cup"),
+        (7, "truck"), (8, "boat"), (14, "bird"), (15, "cat"),
+        (16, "dog"), (17, "horse"), (24, "backpack"), (25, "umbrella"),
+        (29, "frisbee"), (32, "sports ball"), (33, "kite"),
+        (36, "skateboard"), (37, "surfboard"), (41, "cup"), (56, "chair"),
     ]
 
     var body: some View {
