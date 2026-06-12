@@ -16,7 +16,8 @@ def test_production_classes_satisfy_seam_protocols():
     assert isinstance(CameraPose(), PoseLike)
     assert isinstance(EventRing(), EventsLike)
     assert isinstance(PtzState(NullPtz()), PtzStateLike)
+    # Explicit member lists: __protocol_attrs__ is Python 3.12+; the rig runs
+    # 3.10 (CI parity caught this — the gate working as designed).
     for cls in (ViscaIP, NullPtz):
-        for proto in (PtzAbsoluteLike, PtzInquiryLike):
-            assert all(hasattr(cls, m) for m in proto.__protocol_attrs__
-                       if not m.startswith("_")), (cls, proto)
+        for member in ("pan_tilt_absolute", "inquire_pan_tilt", "inquire_zoom"):
+            assert hasattr(cls, member), (cls, member)
