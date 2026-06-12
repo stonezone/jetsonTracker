@@ -73,3 +73,27 @@ def test_hot_config_string_value_persists_as_coerced_type(tmp_path):
         f"Expected float in yaml after coercion, got {type(persisted).__name__!r}: {persisted!r}"
     )
     assert persisted == 0.3
+
+
+def test_load_config_resets_inverted_fusion_hysteresis(tmp_path, capsys):
+    """Regression: a YAML with unlock >= lock (the 2026-06-11 field failure,
+    written before the hot-path validation existed) must not load as-is —
+    inverted hysteresis lets any color blob acquire a lock instantly. The
+    loader resets both thresholds to the designed defaults and logs it."""
+    from wavecam.config import load_config, FusionCfg
+    y = tmp_path / "bad.yaml"
+    y.write_text("fusion:\n  lock_threshold: 0.25\n  unlock_threshold: 0.5\n")
+    cfg = load_config(str(y))
+    d = FusionCfg()
+    assert cfg.fusion.lock_threshold == d.lock_threshold
+    assert cfg.fusion.unlock_threshold == d.unlock_threshold
+    assert "INVALID fusion hysteresis" in capsys.readouterr().out
+
+
+def test_load_config_keeps_valid_fusion_hysteresis(tmp_path):
+    from wavecam.config import load_config
+    y = tmp_path / "ok.yaml"
+    y.write_text("fusion:\n  lock_threshold: 0.7\n  unlock_threshold: 0.4\n")
+    cfg = load_config(str(y))
+    assert cfg.fusion.lock_threshold == 0.7
+    assert cfg.fusion.unlock_threshold == 0.4
