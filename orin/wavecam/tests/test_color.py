@@ -75,3 +75,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_all_presets_have_paired_bounds_and_valid_hsv():
+    """Every preset (incl. new red/cyan) must expose *_low/*_high pairs with
+    in-range HSV values — a malformed preset would silently detect nothing."""
+    from wavecam.color_presets import COLOR_PRESETS, preset_hsv_ranges
+    assert "red" in COLOR_PRESETS and "cyan" in COLOR_PRESETS
+    for name in COLOR_PRESETS:
+        d = preset_hsv_ranges(name)
+        lows = [k for k in d if "_low" in k]
+        assert lows, name
+        for k in lows:
+            hk = k.replace("_low", "_high")
+            assert hk in d, f"{name}: {k} missing {hk}"
+            lo, hi = d[k], d[hk]
+            assert len(lo) == 3 and len(hi) == 3
+            assert 0 <= lo[0] <= hi[0] <= 180, f"{name} hue"
+            assert all(0 <= lo[i] <= hi[i] <= 255 for i in (1, 2)), name
+
+
+def test_detector_class_label():
+    from wavecam.detector import class_label
+    assert class_label(0) == "person"
+    assert class_label(3) == "moto"
+    assert class_label(37) == "surfboard"
+    assert class_label(63) == "cls63"

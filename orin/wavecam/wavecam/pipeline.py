@@ -18,6 +18,11 @@ from .fusion import Fusion
 from .gps_geo import GeoPoint
 from .gps_pointing import compute_target, ZoomCurve
 from .overlay import annotate
+from .detector import class_label as _detector_class_label
+
+
+def _cls_label(cfg) -> str:
+    return _detector_class_label(getattr(cfg.detector, "person_class", 0))
 from .ptz_owner import PtzOwner
 from .tracking_arbiter import TrackingArbiter
 
@@ -485,6 +490,7 @@ class Pipeline(threading.Thread):
                     cmd,
                     self.cfg.ptz,
                     hud,
+                    person_label=_cls_label(self.cfg),
                     show_mask=self.state.show_mask,
                 )
                 if self.state.show_hud
