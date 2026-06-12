@@ -113,10 +113,11 @@ class CalibrationManager:
                 # P1: wire to CameraPose — read pan encoder, calibrate pan aim
                 heading_deg = values.get("heading_deg")
                 if heading_deg is not None and enc is not None:
+                    from .camera_pose import PRISUAL_PAN_ENC_PER_DEG
                     self.pipeline.pose.calibrate_pan_aim(
                         enc=float(enc[0]),
                         bearing_deg=float(heading_deg),
-                        enc_per_deg=4.47,
+                        enc_per_deg=PRISUAL_PAN_ENC_PER_DEG,
                     )
             elif step == "base_lock":
                 # P1: lock base GPS position for camera reference

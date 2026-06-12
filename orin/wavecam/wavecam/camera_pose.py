@@ -3,9 +3,9 @@ units, and fix the camera's own geographic position.
 
 Ported from the field-validated legacy ``gps_fusion/camera_pose.py``. VISCA reports raw
 encoder counts (not degrees), so the mapping is an empirical linear fit: an **anchor**
-``(encoder, world-angle)`` plus a **scale** (encoder-per-degree). The scale can come from
-the camera's known ``pan_enc_per_deg`` (~4.47 for the Prisual) for a SINGLE aim-at-remote
-capture, or be derived empirically from TWO aims. Pure given its inputs; persistence is
+``(encoder, world-angle)`` plus a **scale** (encoder-per-degree). The scale comes from
+the camera's measured ``PRISUAL_PAN_ENC_PER_DEG`` for a SINGLE aim-at-remote capture,
+or is derived empirically from TWO aims. Pure given its inputs; persistence is
 plain JSON.
 """
 from __future__ import annotations
@@ -15,6 +15,13 @@ from dataclasses import asdict, dataclass
 from typing import List, Optional, Tuple
 
 from .gps_geo import normalize_180
+
+# Measured 2026-06-11 by driving the pan to both mechanical hard stops:
+# ±2448 encoder counts over the ±170° envelope (the standard VISCA range).
+# Replaces the unmeasured 4.47 folklore value, which made every
+# bearing→encoder conversion ~3.2× short — GPS slews stopped a third of
+# the way to the target.
+PRISUAL_PAN_ENC_PER_DEG = 4896.0 / 340.0   # 14.4
 
 
 @dataclass

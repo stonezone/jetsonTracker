@@ -3,8 +3,9 @@
 The Prisual on UDP 1259 (no auth) speaks RAW VISCA: the classic 0x81..0xFF
 command bytes with NO Sony VISCA-over-IP 8-byte header, and replies arrive raw
 (90 50 .. FF). Bench-validated end-to-end — pan/tilt/zoom, position readback,
-two-point calibration (pan_enc_per_deg=4.47), and the vision-follow loop all ran
-on this transport (ground truth: orin/camera_control/visca_backend.py).
+aim calibration (scale: camera_pose.PRISUAL_PAN_ENC_PER_DEG, measured at the
+hard stops), and the vision-follow loop all ran on this transport (ground
+truth: orin/camera_control/visca_backend.py).
 
 The controller depends only on the method interface (pan_tilt, stop, zoom, home,
 inquire_pan_tilt), so the transport stays swappable if a future camera needs the
