@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
-"""Measure horizontal FOV at the current zoom by pan-sweeping the orange subject.
+"""Measure horizontal FOV at the current zoom by pan-sweeping a color target.
 
 Run ON the rig from the deploy dir:
   PYTHONPATH=/data/projects/gimbal/wavecam python3 tools/calibrate_fov.py --label wide [--zoom-secs N] [--dry]
 
-Method: the subject (orange rashguard) stands still ~15-25 m out. The script
-claims manual PTZ (deadman-protected velocity pulses — a dead script means a
-stopped camera), pans until the orange blob sits near one frame edge, reads the
-pan encoder, pans to the other edge, reads again. HFOV = enc_span / enc_per_deg
-normalized by the fraction of frame width actually traversed. The subject's size
-and distance cancel out — only the encoders and the blob centroid matter.
+Method: a color-matched target (shirt on a stand/bike) sits still 5-25 m out.
+The script claims manual PTZ with takeover (deadman-protected velocity pulses —
+a dead script means a stopped camera), pans until the blob sits near one frame
+edge, reads the pan encoder, pans to the other edge, reads again.
+HFOV = enc_span / enc_per_deg, normalized by the frame-width fraction actually
+traversed; target size and distance cancel out.
 
-Prints one JSON line: {"label", "zoom_enc", "fov_deg", ...}. POST the result to
-/api/v1/calibration/fov yourself (kept manual so a bad sweep is never persisted
-by accident).
+Safety: every API response is checked (refusals abort loudly); pan excursion is
+leashed to ~135 deg from the start anchor; on ANY exit the camera returns to the
+anchor pointing. Frames come from the service's MJPEG preview (no h264
+inter-frame state to corrupt during motion), falling back to RTSP.
+
+Prints one JSON line. POST the result to /api/v1/calibration/fov yourself.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -30,10 +34,11 @@ from wavecam.color_presets import preset_hsv_ranges
 from wavecam.ptz_visca import ViscaIP
 
 API = "http://localhost:8088/api/v1"
-RTSP = "rtsp://192.168.100.88:554/2"
-EDGE_LO, EDGE_HI = 0.12, 0.88     # target blob-centre fractions for the two edges
-MIN_BLOB_PX = 150                  # sweep-time floor; stricter than the tracker's min_area=60 so edge reads are unambiguous
+SNAPSHOT = "http://192.168.100.88/snapshot.jpg"   # camera HTTP still: fresh frame per GET, no stream state
+EDGE_LO, EDGE_HI = 0.12, 0.88
+MIN_BLOB_PX = 300                  # snapshot frames are 1080p — 300px there ≈ 35px at 360p
 PHASE_TIMEOUT_S = 90.0
+LEASH_COUNTS = 600                 # ~135 deg at 4.47 counts/deg
 
 
 def api(path: str, payload: dict | None = None) -> dict:
@@ -47,26 +52,39 @@ def api(path: str, payload: dict | None = None) -> dict:
         return json.loads(r.read())
 
 
-def velocity(pan: float) -> None:
-    # takeover: the live tracker can re-acquire ownership mid-sweep when a deadman
-    # expires; 1500ms rides out a slow grab+decode iteration while a dead script
-    # still stops the camera within 1.5s.
-    api("/ptz/velocity", {"pan": pan, "tilt": 0.0, "zoom": 0.0,
-                          "deadman_ms": 1500, "takeover": True})
+def check(resp: dict, what: str) -> None:
+    if not resp.get("ok", False):
+        sys.exit(f"FATAL: {what} refused: {resp.get('error')} — {resp.get('detail') or resp}")
+
+
+def hold_ownership() -> None:
+    """One API stop with takeover semantics: service releases PTZ to manual and
+    stays quiet; all actual motion below is raw VISCA (proven speed control)."""
+    check(api("/ptz/stop", {}), "stop")
+
+
+_VISCA: ViscaIP | None = None
+
+
+def pan_pulse(sign: float, speed: int, dur: float) -> None:
+    _VISCA.pan_tilt(speed, 0, 0x02 if sign > 0 else 0x01, 0x03)
+    time.sleep(dur)
+    _VISCA.stop()
+    time.sleep(0.15)
 
 
 def stop() -> None:
-    api("/ptz/stop", {})
+    if _VISCA is not None:
+        _VISCA.stop()
 
 
 class Eye:
-    """Fresh-frame reader + orange-blob centroid."""
+    """Fresh-frame reader + color-blob centroid with positional continuity."""
 
     def __init__(self) -> None:
-        self.cap = cv2.VideoCapture(RTSP, cv2.CAP_FFMPEG)
-        if not self.cap.isOpened():
-            sys.exit(f"FATAL: cannot open {RTSP}")
-        import os
+        ok, f = self._read()
+        if not ok:
+            sys.exit("FATAL: camera snapshot endpoint not responding")
         ov = os.environ.get("CAL_HSV", "")
         if ov:                                    # "h1,s1,v1,h2,s2,v2"
             v = [int(x) for x in ov.split(",")]
@@ -79,12 +97,22 @@ class Eye:
             d = preset_hsv_ranges(preset)
             self.ranges = [(d[k], d[k.replace("_low", "_high")]) for k in d if "_low" in k]
         self.last_cx: float | None = None
-        self.w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
+        ok, f = self._read()
+        self.w = f.shape[1] if ok else 640
+
+    def _read(self):
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(SNAPSHOT, timeout=4) as r:
+                    f = cv2.imdecode(np.frombuffer(r.read(), np.uint8), cv2.IMREAD_COLOR)
+                if f is not None:
+                    return True, f
+            except Exception:
+                time.sleep(0.3)
+        return False, None
 
     def blob_cx(self) -> float | None:
-        for _ in range(4):                       # flush stale buffered frames
-            self.cap.grab()
-        ok, frame = self.cap.retrieve()
+        ok, frame = self._read()
         if not ok:
             return None
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -94,14 +122,14 @@ class Eye:
             mask = m if mask is None else cv2.bitwise_or(mask, m)
         mask = cv2.dilate(mask, np.ones((5, 5), np.uint8))
         cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not cnts:
-            return None
         good = [c for c in cnts if cv2.contourArea(c) >= MIN_BLOB_PX]
         if not good:
             return None
+
         def cx_of(c):
             m = cv2.moments(c)
             return m["m10"] / m["m00"] if m["m00"] else None
+
         if self.last_cx is not None:
             near = [c for c in good
                     if cx_of(c) is not None and abs(cx_of(c) - self.last_cx) < 0.3 * self.w]
@@ -122,38 +150,47 @@ def settle_read(eye: Eye, visca: ViscaIP) -> tuple[float | None, tuple | None]:
 
 
 def drive_to_edge(eye: Eye, visca: ViscaIP, pan_sign: float, target_frac: float,
-                  fov_hint_deg: float, anchor_enc: int = 0) -> tuple[float, int]:
-    """Pulse-pan until blob centre crosses target_frac; return (frac, pan_enc)."""
-    # shorter pulses when zoomed in (frame crosses faster)
-    pulse_s = max(0.15, min(0.45, fov_hint_deg / 80.0))
-    speed = 0.08 if fov_hint_deg < 12 else 0.14
+                  fov_hint_deg: float, anchor_enc: int) -> tuple[float, int]:
+    """Pulse-pan until blob centre crosses target_frac; return (frac, pan_enc).
+
+    Never pulses forward while blind: a lost blob stops the camera, waits for
+    clean frames, then backs off until the target is re-found.
+    """
+    # service maps velocity quadratically to VISCA speed: ~0.3 -> speed 1 (0.75 deg/s).
+    # 0.55 ≈ a few deg/s for wide sweeps; 0.3 = creep for tele frames.
+    pulse_s = 0.25 if fov_hint_deg < 20 else 0.4
+    speed = 2 if fov_hint_deg < 20 else 5
     t0 = time.time()
     lost = 0
     while True:
         if time.time() - t0 > PHASE_TIMEOUT_S:
             stop()
-            sys.exit("FATAL: edge-drive timeout — is the subject visible and orange?")
-        enc_now = visca.inquire_pan_tilt()
-        if enc_now is not None and abs(enc_now[0] - anchor_enc) > 600:
-            stop()
-            sys.exit("FATAL: pan excursion leash hit — aborting to protect pointing")
-        velocity(pan_sign * speed)
-        time.sleep(pulse_s)
+            sys.exit("FATAL: edge-drive timeout — is the target visible?")
+
         cx = eye.blob_cx()
         if cx is None:
             lost += 1
-            if lost >= 3:                        # overshot — back off until refound
-                velocity(-pan_sign * 0.06)
-                time.sleep(0.25)
+            stop()
+            if lost <= 3:                         # static re-read: decode recovers when still
+                time.sleep(0.4)
+            else:                                 # genuinely overshot — back off to re-find
+                pan_pulse(-pan_sign, 2, 0.25)
             continue
         lost = 0
         frac = cx / eye.w
+
         if (target_frac > 0.5 and frac >= target_frac) or \
            (target_frac < 0.5 and frac <= target_frac):
             cx2, enc = settle_read(eye, visca)
             if cx2 is None or enc is None:
-                continue                          # settle read failed; keep nudging
+                continue
             return cx2 / eye.w, enc[0]
+
+        enc_now = visca.inquire_pan_tilt()
+        if enc_now is not None and abs(enc_now[0] - anchor_enc) > LEASH_COUNTS:
+            stop()
+            sys.exit("FATAL: pan excursion leash hit — aborting to protect pointing")
+        pan_pulse(pan_sign, speed, pulse_s)
 
 
 def center(eye: Eye, visca: ViscaIP, right_sign: float) -> None:
@@ -162,14 +199,14 @@ def center(eye: Eye, visca: ViscaIP, right_sign: float) -> None:
     while time.time() - t0 < PHASE_TIMEOUT_S:
         cx = eye.blob_cx()
         if cx is None:
+            stop()
             time.sleep(0.3)
             continue
         frac = cx / eye.w
         if 0.44 <= frac <= 0.56:
             stop()
             return
-        velocity((right_sign if frac < 0.5 else -right_sign) * 0.08)
-        time.sleep(0.25)
+        pan_pulse(right_sign if frac < 0.5 else -right_sign, 3, 0.25)
     stop()
     sys.exit("FATAL: centering timeout")
 
@@ -198,32 +235,33 @@ def main() -> None:
                           "enc_per_deg": enc_per_deg}))
         return
 
+    global _VISCA
+    _VISCA = visca
     home_enc = None
     try:
-        stop()                                    # takes manual ownership, halts motion
+        hold_ownership()                          # service releases PTZ; raw VISCA from here
         home_enc = visca.inquire_pan_tilt()       # safety anchor: always return here
         if eye.blob_cx() is None:
-            sys.exit("FATAL: no orange blob in frame — point the camera at the subject first")
+            sys.exit("FATAL: no color blob in frame — point the camera at the target first")
 
-        # learn pan-direction -> cx mapping with one small pulse (valid across zoom levels)
+        # direction probe: three raw pulses ≈ 3 deg — unmistakable at any zoom
         cx_a, _ = settle_read(eye, visca)
-        velocity(0.08)
-        time.sleep(0.4)
+        pan_pulse(1.0, 5, 0.5)
+        pan_pulse(1.0, 5, 0.5)
+        pan_pulse(1.0, 5, 0.5)
         cx_b, _ = settle_read(eye, visca)
-        if cx_a is None or cx_b is None or abs(cx_b - cx_a) < 1.0:
-            sys.exit("FATAL: direction probe saw no blob movement — owner not granted or subject lost")
+        if cx_a is None or cx_b is None or abs(cx_b - cx_a) < 5.0:
+            sys.exit("FATAL: direction probe saw no blob movement — check ownership or target")
         right_sign = 1.0 if cx_b > cx_a else -1.0   # pan sign that moves blob toward +x
 
         center(eye, visca, right_sign)
         if args.zoom_secs > 0:
-            t_end = time.time() + args.zoom_secs
-            while time.time() < t_end:
-                api("/ptz/zoom", {"value": 0.6, "deadman_ms": 1500, "takeover": True})
-                time.sleep(0.4)
-            stop()   # zoom value=0.0 RELEASES manual ownership — stop() halts and keeps it
+            visca.zoom("tele", 3)
+            time.sleep(args.zoom_secs)
+            visca.zoom("stop")
             time.sleep(1.2)
             if eye.blob_cx() is None:
-                sys.exit("FATAL: subject lost after zoom — re-aim and rerun this level")
+                sys.exit("FATAL: target lost after zoom — re-aim and rerun this level")
             center(eye, visca, right_sign)
 
         anchor = home_enc[0] if home_enc else 0
