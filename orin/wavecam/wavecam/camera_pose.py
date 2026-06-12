@@ -79,6 +79,17 @@ class CameraPose:
         self.tilt_anchor_elev = elev1
 
     # --- conversions ---
+    def pan_encoder_to_bearing(self, enc: float) -> Optional[float]:
+        """Inverse of bearing_to_pan_encoder: encoder counts -> true bearing [0,360).
+        None while uncalibrated. The estimator's vision observation depends on
+        this; it was referenced (estimator.py) before it existed — test fakes
+        supplied it, the real class did not, and the first locked frame with
+        live encoders killed the vision loop (2026-06-11)."""
+        if self.pan_enc_per_deg == 0.0:
+            return None
+        return (self.pan_anchor_bearing
+                + (enc - self.pan_anchor_enc) / self.pan_enc_per_deg) % 360.0
+
     def bearing_to_pan_encoder(self, bearing_deg: float) -> float:
         if self.pan_enc_per_deg == 0.0:
             raise RuntimeError("pan not calibrated")
