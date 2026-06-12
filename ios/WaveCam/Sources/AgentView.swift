@@ -4,6 +4,8 @@ import SwiftUI
 struct AgentView: View {
     @Environment(WaveCamClient.self) private var client
     @State private var requestState: AgentRequestState = .idle
+    @State private var provider: AgentProvider = .claude
+    @State private var report: WCAgentReport?
     @State private var config: WCConfig?
     @State private var logLines: [WCLogLine] = []
     @State private var logLevel: LogLevelFilter = .all
@@ -15,7 +17,11 @@ struct AgentView: View {
                 AgentStatusHeader(status: client.status)
                 SupervisorHealthCard(services: serviceRows)
                 AgentAuthorityCard()
-                AgentRequestCard(state: requestState, onSummon: summonDiagnostics)
+                AgentRequestCard(state: requestState, provider: $provider,
+                                 onSummon: summonDiagnostics)
+                if let r = report {
+                    AgentReportCard(report: r)
+                }
                 if config?.supported?.logs == true || client.mode == .mock {
                     AgentLogsCard(
                         lines: filteredLines,
@@ -76,9 +82,72 @@ struct AgentView: View {
     @MainActor
     private func summonDiagnosticsRequest() async {
         requestState = .requesting
-        let ok = await client.summonAgent()
-        requestState = ok ? .requested : .failed(client.lastCommandError ?? "Summon failed.")
-        await client.refresh()
+        report = nil
+        let ok = await client.summonAgent(provider: provider.rawValue)
+        guard ok else {
+            requestState = .failed(client.lastCommandError ?? "Summon failed.")
+            return
+        }
+        requestState = .requested
+        // Poll the advisor until the consultation lands (LLM round-trips
+        // take 5-30s; cap at 90s).
+        for _ in 0..<45 {
+            try? await Task.sleep(for: .seconds(2))
+            guard let r = await client.agentReport() else { continue }
+            report = r
+            if r.status == "done" || r.status == "error" {
+                requestState = r.status == "done" ? .idle
+                    : .failed(r.error ?? "Consultation failed.")
+                return
+            }
+        }
+        requestState = .failed("Timed out waiting for the consultation.")
+    }
+}
+
+enum AgentProvider: String, CaseIterable {
+    case claude, codex, deepseek
+
+    var label: String {
+        switch self {
+        case .claude: "Claude"
+        case .codex: "Codex"
+        case .deepseek: "DeepSeek"
+        }
+    }
+}
+
+private struct AgentReportCard: View {
+    let report: WCAgentReport
+
+    var body: some View {
+        OperatorCard {
+            HStack {
+                OperatorSectionLabel("Supervisor report — \(report.provider ?? "?")")
+                Spacer()
+                if let d = report.durationSec {
+                    Text(String(format: "%.0fs", d))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(WC.muted)
+                }
+            }
+            if report.status == "running" {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Consulting…").font(.system(size: 13)).foregroundStyle(WC.muted)
+                }
+            } else if let err = report.error {
+                Text(err)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(WC.warn)
+                    .textSelection(.enabled)
+            } else if let text = report.text {
+                Text(text)
+                    .font(.system(size: 13))
+                    .foregroundStyle(WC.txt)
+                    .textSelection(.enabled)
+            }
+        }
     }
 }
 
@@ -273,10 +342,18 @@ private struct AgentAuthorityCard: View {
 
 private struct AgentRequestCard: View {
     let state: AgentRequestState
+    @Binding var provider: AgentProvider
     let onSummon: () -> Void
 
     var body: some View {
         OperatorCard {
+            Picker("Provider", selection: $provider) {
+                ForEach(AgentProvider.allCases, id: \.self) { p in
+                    Text(p.label).tag(p)
+                }
+            }
+            .pickerStyle(.segmented)
+
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     OperatorSectionLabel("Diagnostic request")
