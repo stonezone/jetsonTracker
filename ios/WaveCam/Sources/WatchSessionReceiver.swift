@@ -7,6 +7,7 @@ import WatchConnectivity
 /// Activate once at app launch. Thread-safe: WCSessionDelegate callbacks arrive
 /// on an arbitrary thread; file operations use the default POSIX FileManager.
 final class WatchSessionReceiver: NSObject, WCSessionDelegate {
+    static let fileReceivedNotification = Notification.Name("WatchSessionFileReceived")
 
     static let shared = WatchSessionReceiver()
 
@@ -42,6 +43,7 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
         try? FileManager.default.removeItem(at: dest)
         do {
             try FileManager.default.copyItem(at: file.fileURL, to: dest)
+            NotificationCenter.default.post(name: Self.fileReceivedNotification, object: nil)
         } catch {
             // Non-fatal; the temporary source file will be cleaned up by the system.
         }

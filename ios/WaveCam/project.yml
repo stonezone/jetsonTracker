@@ -38,6 +38,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.stonezone.WaveCam.watchkitapp
         TARGETED_DEVICE_FAMILY: "4"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     # Real generated plist: WKBackgroundModes has NO INFOPLIST_KEY_* build
     # setting — the previous key was silently dropped and wrist-down recording
     # would have died with the screen (review 2026-06-12, HIGH).
@@ -51,6 +52,10 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
         WKBackgroundModes:
           - workout-processing
+        # Plain-HTTP to the rig's LAN/tether IPs — same exception the iOS app
+        # carries; without it watchOS blocks every request -> permanent OFFLINE.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSHealthShareUsageDescription: "WaveCam starts a workout session to keep GPS and motion sensors running while the watch face is down during a surf session."
         NSHealthUpdateUsageDescription: "WaveCam records a workout session to keep sensors active during recording."
         NSLocationWhenInUseUsageDescription: "WaveCam records your GPS track during a surf session for offline estimator validation."
