@@ -1,10 +1,13 @@
 # WAVECAM vision-only testbed
 # --- core ---
-numpy
+# Major-version pins per the rig's installed set (pip freeze 2026-06-11:
+# numpy 1.26.4, fastapi 0.136.3, uvicorn 0.48.0, pydantic 2.13.4) — a future
+# `pip install -r` on the Orin must not silently jump a major and break tracking.
+numpy<3
 pyyaml
-fastapi
-uvicorn[standard]
-pydantic>=2
+fastapi<1
+uvicorn[standard]<1
+pydantic>=2,<3
 
 # --- vision ---
 # On a Jetson (JetPack 6.2.x) prefer the SYSTEM OpenCV (CUDA build) over pip.
@@ -13,6 +16,6 @@ opencv-python ; platform_machine != "aarch64"
 
 # --- detector ---
 # Ultralytics pulls torch. DO NOT `pip install torch` blindly on Jetson —
-# use NVIDIA's JetPack 6.2 (cu126) torch wheel, then `pip install ultralytics`.
-# See README. On desktop, plain `pip install ultralytics` is fine.
-ultralytics
+# use NVIDIA's JetPack 6.2 (cu126) torch wheel, then `pip install ultralytics~=8.3        # rig: 8.3.233 (2026-06-11)`.
+# See README. On desktop, plain `pip install ultralytics~=8.3        # rig: 8.3.233 (2026-06-11)` is fine.
+ultralytics~=8.3        # rig: 8.3.233 (2026-06-11)
