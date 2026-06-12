@@ -22,7 +22,8 @@ _WHITE = (240, 240, 240)
 
 def annotate(frame: np.ndarray, mask: Optional[np.ndarray], blobs: List[Blob],
              persons: List[PersonBox], fr: FusionResult, cmd: Optional[PtzCommand],
-             cfg_ptz, hud: dict, show_mask: bool = True) -> np.ndarray:
+             cfg_ptz, hud: dict, show_mask: bool = True,
+             person_label: str = "person") -> np.ndarray:
     out = frame.copy()
     h, w = out.shape[:2]
 
@@ -38,7 +39,7 @@ def annotate(frame: np.ndarray, mask: Optional[np.ndarray], blobs: List[Blob],
     for p in persons:
         x, y, pw, ph = p.xywh
         cv2.rectangle(out, (x, y), (x + pw, y + ph), _GREY, 1)
-        cv2.putText(out, f"person {p.conf:.2f}", (x, max(12, y - 4)),
+        cv2.putText(out, f"{person_label} {p.conf:.2f}", (x, max(12, y - 4)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, _GREY, 1, cv2.LINE_AA)
 
     # center crosshair + deadzone box
