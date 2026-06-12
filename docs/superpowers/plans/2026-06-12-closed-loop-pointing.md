@@ -56,10 +56,10 @@ session complete. Branch from `main` after M1 merges.
 
 | Constant | Candidate | Filled by bench? | Description |
 |---|---|---|---|
-| `POLL_HZ` | 2 / 5 / 10 | `FILL_FROM_BENCH` | Inquiry rate that keeps reply loss below `REPLY_LOSS_PCT` without starving the socket |
-| `REPLY_LATENCY_P95_MS` | — | `FILL_FROM_BENCH` | 95th-percentile round-trip for `inquire_pan_tilt` under 10Hz velocity commands |
-| `REPLY_LOSS_PCT` | — | `FILL_FROM_BENCH` | Fraction of inquiry sends that receive no valid reply in one timeout window |
-| `INTERLEAVE_OBSERVED` | — | `FILL_FROM_BENCH` | `True` if ACK/completion bytes ever arrived interleaved with inquiry replies on the shared socket |
+| `POLL_HZ` | 2 / 5 / 10 | **10** (0.0% loss, p95 81.8ms — bench 2026-06-11) | Inquiry rate that keeps reply loss below `REPLY_LOSS_PCT` without starving the socket |
+| `REPLY_LATENCY_P95_MS` | — | **82** | 95th-percentile round-trip for `inquire_pan_tilt` under 10Hz velocity commands |
+| `REPLY_LOSS_PCT` | — | **0.0** (at 10Hz; 0.5% at 2Hz) | Fraction of inquiry sends that receive no valid reply in one timeout window |
+| `INTERLEAVE_OBSERVED` | — | **True** (5964 events in 300s at 10Hz) | `True` if ACK/completion bytes ever arrived interleaved with inquiry replies on the shared socket |
 
 **Bench procedure (requires camera powered, Orin reachable):**
 
@@ -302,10 +302,10 @@ from typing import Optional, Tuple
 
 # ── Bench parameters ─────────────────────────────────────────────────────────
 # Fill these from the Task 0 bench run before merging. See plan header.
-POLL_HZ: float = 5.0               # FILL_FROM_BENCH — inquiry rate (Hz)
-REPLY_LATENCY_P95_MS: float = 0.0  # FILL_FROM_BENCH — p95 round-trip (ms)
-REPLY_LOSS_PCT: float = 0.0        # FILL_FROM_BENCH — reply loss rate (%)
-INTERLEAVE_OBSERVED: bool = False   # FILL_FROM_BENCH — non-pos frames seen?
+POLL_HZ: float = 10.0              # bench 2026-06-11: 0.0% loss, p95 81.8ms at 10Hz
+REPLY_LATENCY_P95_MS: float = 82.0 # bench 2026-06-11 (under 10Hz velocity traffic)
+REPLY_LOSS_PCT: float = 0.0        # bench 2026-06-11: zero loss at 10Hz (2982 sent)
+INTERLEAVE_OBSERVED: bool = True    # bench 2026-06-11: 5964 non-pos frames in 300s at 10Hz
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Position tolerance for verify-and-resend (encoder counts).
