@@ -56,18 +56,29 @@ tests). **Gate G0:** CI fails on mypy error from this PR onward.
 Pointing math is only as true as its weakest constant (proven at 3.2× cost). Three
 constants remain unmeasured or thin.
 
-- **T1.1 Tilt scale + range:** clamped-absolute drive to both tilt hard stops (the
-  pan method, 2026-06-11), derive `tilt_enc_per_deg` + limits. Store as
-  `PRISUAL_TILT_ENC_PER_DEG` with provenance; `CameraPose.tilt` paths stop treating
-  0.0-uncalibrated as the permanent state.
+- **T1.1 ✅ DONE 2026-06-12 (overnight bench, service stopped):** tilt clamps at
+  **−432 / +1296 counts** over the −30..+90° spec envelope ⇒ **14.4 counts/deg —
+  identical to pan — with encoder zero exactly horizontal** (−432/14.4 = −30.0°,
+  1296/14.4 = +90.0°). `PRISUAL_TILT_ENC_PER_DEG` landed (PR #55); the tilt
+  capture now stamps the scale (it had stamped only an anchor since P1, leaving
+  every rig tilt-uncalibrated).
 - **T1.2 Zoom→FOV curve:** step zoom through 6–8 encoder stops (inquire_zoom at
   each), run the FOV pan-sweep per stop → full `fov_curve` replacing the single
   63.7° point. Target: color-matched object 15–20 m out (mid/tele frames must not
   overfill).
-- **T1.3 Absolute-move dynamics:** scripted slews (50/200/600/1500/3000 counts),
-  trajectory-log each (the existing settle-until-stable harness): settle time vs
-  distance, overshoot curve, hunt amplitude. Output: a constants table feeding
-  verify-and-resend tolerances now and the Phase-5 servo later.
+- **T1.3 ✅ DONE 2026-06-12 — and it rewrote the model.** Uncontended (service
+  stopped), absolute moves are EXACT: err=0, overshoot=0 at 50/200/600/1500
+  counts; settle ≈ 2.4 s + dist/115 counts·s⁻¹, monotone trajectories.
+  **The 2026-06-11 "overshoot ~390 + hunt ±30 for 50 s" was ownership
+  CONTENTION** — that bench ran with the tracker live, fighting the script for
+  the head. Implications: (a) the open-loop missed-step theory loses most of
+  its remaining support (exact landings over 1500-count slews); the hand-probe
+  stays on the bench list as a cheap formality; (b) verify-and-resend's
+  tolerance/retry remain as insurance for contended or obstructed cases, which
+  production CAN still produce (wind load, cable snag); (c) Phase-5 servo
+  constants: cruise ≈ 115 counts/s at default absolute speed, fixed ~2.4 s
+  overhead per move — long slews are cheap, short corrections are overhead-
+  dominated, which argues for velocity-mode corrections under ~100 counts.
 - **T1.4 Plumb real `zoom_enc`:** PtzState gains a slow zoom poll (1–2 Hz —
   `inquire_zoom` exists, unused); shadow tick passes it instead of the hardcoded 0;
   estimator's zoom-dependent covariance becomes real.
