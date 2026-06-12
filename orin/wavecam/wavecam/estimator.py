@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 
 # ── matrix shim (works without numpy; numpy used automatically if present) ───
@@ -103,6 +103,24 @@ def _enu_from_gps(base_lat: float, base_lon: float,
 def _bearing_from_enu(e: float, n: float) -> float:
     """True bearing (degrees) from origin to (e, n)."""
     return (math.degrees(math.atan2(e, n)) + 360.0) % 360.0
+
+if TYPE_CHECKING:
+    from .protocols import GpsFixLike
+
+
+def range_from_bbox_height(fov_curve: list, zoom_enc: int, bbox_h_px: float,
+                           frame_h: float, subject_height_m: float):
+    """Known-size-subject range from apparent bbox height. Pure; shared by the
+    live observation path and the sim/replay harness so the logged observation
+    can never diverge from what was fused. Returns metres, or None when the
+    geometry degenerates (zero bbox)."""
+    import math
+    hfov_rad = math.radians(_fov_at_zoom(fov_curve, zoom_enc))
+    vfov_rad = 2.0 * math.atan(math.tan(hfov_rad / 2.0) * 9.0 / 16.0)
+    half_angle = vfov_rad * (bbox_h_px / frame_h) / 2.0
+    if half_angle <= 0:
+        return None
+    return subject_height_m / (2.0 * math.tan(half_angle))
 
 
 def _fov_at_zoom(fov_curve: list, zoom_enc: int) -> float:
@@ -239,7 +257,7 @@ class TargetEstimator:
 
     # ── GPS update ───────────────────────────────────────────────────────────
 
-    def update_gps(self, fix, now: float) -> None:
+    def update_gps(self, fix: "GpsFixLike", now: float) -> None:
         """Fuse a GPS position observation. `fix` must have .lat, .lon, .age_sec."""
         if not self._enabled:
             return
@@ -390,7 +408,7 @@ class TargetEstimator:
         pred_range = r
         innovation = range_m - pred_range
 
-        r_frac = float(getattr(self._cfg, "r_range_frac", 0.3))
+        r_frac = float(self._cfg.r_range_frac)
         self._scalar_update(h, innovation, (r_frac * range_m) ** 2)
 
     def _scalar_update(self, h: list, innovation: float, r_var: float) -> None:

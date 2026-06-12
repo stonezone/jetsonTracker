@@ -20,6 +20,8 @@ never race.
 from __future__ import annotations
 
 import threading
+
+from .gps_geo import normalize_180 as _normalize_180
 from dataclasses import dataclass
 from typing import Optional
 
@@ -34,14 +36,6 @@ class PhoneSample:
     h_acc: Optional[float]
     bump: bool
     received_at: float                 # time.time() at ingest
-
-
-def _normalize_180(delta: float) -> float:
-    """Wrap an angular delta to (−180, +180]."""
-    delta = delta % 360.0
-    if delta > 180.0:
-        delta -= 360.0
-    return delta
 
 
 class SensorHub:

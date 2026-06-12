@@ -400,6 +400,9 @@ class TestFlagOff:
             called.append(kwargs)
 
         p.estimator.update_vision_range = _capture_range
+        # Range path requires FRESH zoom (skip-on-stale, review 2026-06-12);
+        # the un-started real poller has none.
+        p.ptz_state.latest_zoom = lambda: (8192, 0.1)
 
         from wavecam.fusion import FusionResult
         fr = FusionResult(
@@ -510,3 +513,29 @@ class TestSimRangeComparison:
         # At least some entries should have range_obs_m populated
         with_range = [r for r in results if r.get("range_obs_m") is not None]
         assert len(with_range) > 0, "Expected range_obs_m to appear in some replay entries"
+
+
+def test_range_update_skipped_when_zoom_stale(monkeypatch):
+    """Review 2026-06-12 (HIGH): a wide-FOV fallback at tele understates range
+    ~12x with a falsely tight R. Stale/absent zoom must SKIP the observation."""
+    import types
+    from wavecam.pipeline import Pipeline
+    calls = []
+    p = types.SimpleNamespace(
+        cfg=types.SimpleNamespace(estimator=types.SimpleNamespace(
+            log_every_n=1000, use_vision_range=True)),
+        estimator=types.SimpleNamespace(
+            update_gps=lambda *a, **k: None,
+            update_vision=lambda *a, **k: None,
+            update_vision_range=lambda **k: calls.append(k),
+            predict_output=lambda **k: None),
+        _shadow_writer=None, _est_active_shadow=True, _est_tick=0,
+        gps=None,
+        ptz_state=types.SimpleNamespace(
+            latest=lambda: ((10, 0), 0.05),
+            latest_zoom=lambda: (8192, 5.0)),   # STALE (>2s)
+    )
+    fr = types.SimpleNamespace(locked=True, target_xy=(320.0, 180.0),
+                               person_bbox=(0, 0, 50, 120))
+    Pipeline._estimator_shadow_tick(p, fr, 640, 100.0, frame_h=720)
+    assert calls == [], "stale zoom must skip the range observation"

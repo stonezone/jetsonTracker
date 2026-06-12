@@ -203,34 +203,41 @@ class Pipeline(threading.Thread):
                 self.estimator.update_gps(_gps_fix, now=t0)
                 _gps_updated = True
 
+            # One zoom read per tick. None = no fresh zoom (poller outage or
+            # pre-first-reply); consumers decide their own fallback.
+            from .ptz_state import ZOOM_FRESH_SEC
+            _z, _z_age = self.ptz_state.latest_zoom()
+            _fresh_zoom = _z if (_z is not None and _z_age is not None
+                                 and _z_age < ZOOM_FRESH_SEC) else None
+
             # Vision update: only when locked and encoder data is fresh
             if fr.locked and fr.target_xy is not None:
                 _enc, _enc_age = self.ptz_state.latest()
                 if _enc is not None and (_enc_age is None or _enc_age < 0.5):
-                    _z, _z_age = self.ptz_state.latest_zoom()
-                    _zoom_enc = _z if (_z is not None and _z_age is not None
-                                       and _z_age < 2.0) else 0
+                    # Bearing tolerates a wide-FOV fallback: the innovation is
+                    # bounded by FOV/2 and this matches pre-zoom-plumb behavior.
                     self.estimator.update_vision(
                         pan_enc=_enc[0],
                         pixel_cx=fr.target_xy[0], frame_w=w,
-                        zoom_enc=_zoom_enc, now=t0,
+                        zoom_enc=_fresh_zoom if _fresh_zoom is not None else 0,
+                        now=t0,
                     )
                     _vision_updated = True
 
             # Vision range update: person bbox height → range observation.
-            # Gated on: use_vision_range flag, locked, person bbox available.
-            # Never uses the color blob — blob size is lighting-dependent.
+            # Gated on: use_vision_range flag, locked, person bbox available,
+            # AND a FRESH zoom encoder — a wide-FOV fallback here is not
+            # bounded: at tele it understates range ~12x with a falsely tight
+            # R (review 2026-06-12). A missing observation is strictly better
+            # than a confidently wrong one. Never uses the color blob.
             _use_vr = bool(getattr(_est_cfg, "use_vision_range", False))
-            if _use_vr and fr.locked and fr.person_bbox is not None:
+            if (_use_vr and fr.locked and fr.person_bbox is not None
+                    and _fresh_zoom is not None):
                 _pb = fr.person_bbox  # (x, y, w, h)
-                _bbox_h = float(_pb[3])
-                # Re-read zoom encoder; fall back to 0 (wide) if unavailable.
-                _vr_z, _vr_z_age = self.ptz_state.latest_zoom()
-                _vr_zoom = _vr_z if (_vr_z is not None and _vr_z_age is not None
-                                     and _vr_z_age < 2.0) else 0
                 self.estimator.update_vision_range(
-                    bbox_h_px=_bbox_h, frame_h=float(frame_h) if frame_h > 0 else 720.0,
-                    zoom_enc=_vr_zoom, now=t0,
+                    bbox_h_px=float(_pb[3]),
+                    frame_h=float(frame_h) if frame_h > 0 else 720.0,
+                    zoom_enc=_fresh_zoom, now=t0,
                 )
 
             if self._est_tick % _log_every_n == 0:
