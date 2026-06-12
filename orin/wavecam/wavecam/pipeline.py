@@ -96,6 +96,10 @@ class Pipeline(threading.Thread):
         # ptz.enabled is True. Additive telemetry; does not affect the servo.
         from .ptz_state import PtzState
         self.ptz_state = PtzState(self.ptz)
+        from .pointing_verifier import PointingVerifier
+        self._pointing_verifier = PointingVerifier(
+            self.ptz, self.ptz_state, self.events
+        )
         self._prev_locked: Optional[bool] = None
         self._prev_gps_viable: Optional[bool] = None
         self._last_abs_cmd_key = None
@@ -265,6 +269,9 @@ class Pipeline(threading.Thread):
             )
             if cmd.zoom_enc is not None:
                 self.ptz.zoom_absolute(cmd.zoom_enc)
+            _pv = getattr(self, "_pointing_verifier", None)
+            if _pv is not None:
+                _pv.record_move(pan_enc=cmd.pan_enc, tilt_enc=cmd.tilt_enc)
             self._last_abs_cmd_key = key
             self._last_abs_cmd_time = now
 
@@ -548,6 +555,13 @@ class Pipeline(threading.Thread):
                         self.events.record("shadow", _record)
                         self._shadow_write(_record)
 
+            self._pointing_verifier.tick()
+            enc, enc_age = self.ptz_state.latest()
+            self.health.beat("ptz_poller", {
+                "alive": self.ptz_state.is_alive(),
+                "enc": enc,
+                "age_sec": round(enc_age, 3) if enc_age is not None else None,
+            })
             self.health.beat("loop")
 
             # fps bookkeeping
