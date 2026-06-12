@@ -42,3 +42,15 @@ targets:
         INFOPLIST_KEY_WKApplication: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"
         TARGETED_DEVICE_FAMILY: "4"
+        # T4.1: Privacy strings required for HKWorkoutSession + CLLocation + HealthKit
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "WaveCam starts a workout session to keep GPS and motion sensors running while the watch face is down during a surf session."
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "WaveCam records a workout session to keep sensors active during recording."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "WaveCam records your GPS track during a surf session for offline estimator validation."
+        # T4.1: workout-processing background mode (build setting — injected into generated plist)
+        INFOPLIST_KEY_WKBackgroundModes: workout-processing
+    # T4.1: HealthKit entitlement for HKWorkoutSession (background sensor keep-alive)
+    entitlements:
+      path: WaveCamWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: YES
+        com.apple.developer.healthkit.access: []
