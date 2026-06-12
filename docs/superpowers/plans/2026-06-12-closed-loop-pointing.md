@@ -311,7 +311,7 @@ INTERLEAVE_OBSERVED: bool = True    # bench 2026-06-11: 5964 non-pos frames in 3
 # Position tolerance for verify-and-resend (encoder counts).
 # ±15 counts ≈ ±3.4° at 4.47 counts/deg — coarse enough to survive motor
 # backlash, tight enough to catch a failed absolute move.
-POINTING_TOLERANCE_ENC: int = 15
+POINTING_TOLERANCE_ENC: int = 30   # bench 2026-06-11: post-slew hunt wanders ±30 counts
 
 # How long to wait after issuing an absolute command before reading back
 # the encoder. Must exceed the camera's settle time.

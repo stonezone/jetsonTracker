@@ -38,6 +38,13 @@ def make_pipeline(ptz_enabled=True):
     pipe._last_zoom_key = None
     pipe._last_zoom_time = 0.0
     pipe.events = EventRing()
+    pipe.ptz_state = types.SimpleNamespace(
+        start=lambda: None, latest=lambda: (None, None),
+        is_alive=lambda: False, stop=lambda: None)
+    from wavecam.pointing_verifier import PointingVerifier
+    pipe._pointing_verifier = PointingVerifier(
+        pipe.ptz, pipe.ptz_state, pipe.events,
+        blocked=lambda: pipe.owner.killed or pipe.owner.owner != "gps_tracker")
     return pipe
 
 
@@ -118,3 +125,19 @@ if __name__ == "__main__":
     test_resume_clears_killed_status_without_waiting_for_next_frame()
     test_pipeline_repeats_stop_commands_when_stop_state_persists()
     print("PIPELINE KILL TESTS PASSED")
+
+
+def test_kill_clears_pending_pointing_verify():
+    """Reviewer C1: a KILL during the settle window must drop the pending
+    verify so the verifier can never re-issue the move after resume."""
+    pipe = make_pipeline()
+    pipe.owner.request("gps_tracker")
+    pipe._pointing_verifier.record_move(pan_enc=1000, tilt_enc=0)
+
+    pipe.kill(True)
+    assert pipe._pointing_verifier._target is None
+
+    pipe.kill(False)                       # resume
+    pipe._pointing_verifier.tick()         # nothing pending, nothing blocked-cleared
+    assert pipe.ptz.calls.count("stop") >= 1
+    assert not any(c[0] == "abs" for c in pipe.ptz.calls if isinstance(c, tuple))

@@ -125,6 +125,7 @@ class DummyPipeline:
         self.health = HealthRegistry()
         self.events = EventRing()
         self.arbiter = types.SimpleNamespace(lock_frames=5, grace_sec=1.0)
+        self.ptz_state = types.SimpleNamespace(latest=lambda: (None, None))
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
                 enabled=True,

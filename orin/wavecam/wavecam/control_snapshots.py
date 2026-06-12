@@ -182,11 +182,19 @@ def build_safety(legacy: dict) -> dict:
 
 def build_ptz(legacy: dict, pipeline) -> dict:
     cfg_enabled = getattr(pipeline.cfg.ptz, "enabled", False)
+    ptz_state = getattr(pipeline, "ptz_state", None)
+    if ptz_state is not None:
+        enc, enc_age = ptz_state.latest()
+    else:
+        enc, enc_age = None, None
     return {
         "owner": str(legacy.get("owner", IDLE)),
         "enabled": bool(legacy.get("ptz_enabled", cfg_enabled)),
         "pan_tilt_cmd": legacy.get("cmd"),
         "zoom_state": str(legacy.get("zoom_cmd", "hold")),
+        "pan_enc": enc[0] if enc is not None else None,
+        "tilt_enc": enc[1] if enc is not None else None,
+        "enc_age_sec": round(enc_age, 3) if enc_age is not None else None,
     }
 
 
