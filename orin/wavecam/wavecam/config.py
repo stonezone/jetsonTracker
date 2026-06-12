@@ -192,5 +192,16 @@ def load_config(path: str) -> Config:
         gps=GpsCfg(**{**GpsCfg().__dict__, **_d(raw, "gps", {})}),
         estimator=EstimatorCfg(**{**EstimatorCfg().__dict__, **_d(raw, "estimator", {})}),
     )
+    # Inverted hysteresis (unlock >= lock) makes any color blob acquire a full
+    # lock instantly — the 2026-06-11 field failure. The hot-config path rejects
+    # it; the YAML path must too, but a refusal here would brick the service at
+    # the beach, so reset to the designed defaults and say so loudly.
+    if cfg.fusion.unlock_threshold >= cfg.fusion.lock_threshold:
+        d = FusionCfg()
+        print(f"[config] INVALID fusion hysteresis in {path}: unlock "
+              f"{cfg.fusion.unlock_threshold:g} >= lock {cfg.fusion.lock_threshold:g} "
+              f"— resetting to defaults lock={d.lock_threshold:g}/unlock={d.unlock_threshold:g}")
+        cfg.fusion.lock_threshold = d.lock_threshold
+        cfg.fusion.unlock_threshold = d.unlock_threshold
     cfg.source_path = path
     return cfg
