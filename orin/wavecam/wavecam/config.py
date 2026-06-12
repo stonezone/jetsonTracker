@@ -133,6 +133,24 @@ class GpsCfg:
 
 
 @dataclass
+class EstimatorCfg:
+    # Plan-3 target estimator (shadow mode). enabled=False keeps the estimator
+    # out of the loop entirely until a rig opts in; the G2 FOV-curve gate
+    # still applies after that.
+    enabled: bool = False
+    shadow: bool = True
+    q_accel: float = 2.0
+    p0_pos: float = 25.0
+    p0_vel: float = 9.0
+    r_gps_fresh: float = 4.0
+    r_gps_age_scale: float = 0.5
+    r_vis_deg: float = 1.0
+    zoom_cov_wide_deg: float = 4.0
+    zoom_cov_narrow_deg: float = 1.5
+    log_every_n: int = 3
+
+
+@dataclass
 class Config:
     camera: CameraCfg
     ptz: PtzCfg
@@ -143,6 +161,7 @@ class Config:
     web: WebCfg
     loop: LoopCfg
     gps: GpsCfg = field(default_factory=GpsCfg)
+    estimator: EstimatorCfg = field(default_factory=EstimatorCfg)
     source_path: str = ""   # set by load_config; the rig yaml; empty in unit tests
 
 
@@ -171,6 +190,7 @@ def load_config(path: str) -> Config:
         web=WebCfg(**{**WebCfg().__dict__, **_d(raw, "web", {})}),
         loop=LoopCfg(**{**LoopCfg().__dict__, **_d(raw, "loop", {})}),
         gps=GpsCfg(**{**GpsCfg().__dict__, **_d(raw, "gps", {})}),
+        estimator=EstimatorCfg(**{**EstimatorCfg().__dict__, **_d(raw, "estimator", {})}),
     )
     cfg.source_path = path
     return cfg
