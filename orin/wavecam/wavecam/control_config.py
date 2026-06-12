@@ -138,7 +138,7 @@ class ConfigManager:
             "estimator.zoom_cov_narrow_deg": lambda: self.apply_estimator_float("zoom_cov_narrow_deg", value, 0.1, 45.0, dry_run=dry_run),
             "estimator.log_every_n": lambda: self.apply_estimator_int("log_every_n", value, 1, 100, dry_run=dry_run),
             # Phase-2 vision range observation knobs
-            "estimator.use_vision_range": lambda: self.apply_estimator_bool("use_vision_range", value, dry_run=dry_run),
+            "estimator.use_vision_range": lambda: self.apply_use_vision_range(value, dry_run=dry_run),
             "estimator.subject_height_m": lambda: self.apply_estimator_float("subject_height_m", value, 0.5, 2.5, dry_run=dry_run),
             "estimator.r_range_frac": lambda: self.apply_estimator_float("r_range_frac", value, 0.05, 1.0, dry_run=dry_run),
             "sensors.enabled": lambda: self.apply_sensors_bool("enabled", value, dry_run=dry_run),
@@ -250,6 +250,22 @@ class ConfigManager:
         if est_cfg is None:
             return f"estimator.{attr}: estimator section not present in config."
         return set_int(est_cfg, attr, value, lo, hi, dry_run=dry_run)
+
+    def apply_use_vision_range(self, value, dry_run: bool = False) -> str | None:
+        """Enforce the plan's G2-R gate IN CODE: enabling the range observation
+        requires a multi-point FOV curve. A single-point curve returns wide FOV
+        at every zoom; at tele that understates range ~12x with a falsely tight
+        R (review 2026-06-12). The comment-only gate was one POST away from
+        silently corrupting shadow data."""
+        coerce = str(value).strip().lower() in ("1", "true", "yes", "on")
+        if coerce:
+            store = getattr(self._api, "_store", None)
+            curve = list(getattr(store, "fov_curve", []) or [])
+            if len(curve) < 2:
+                return ("estimator.use_vision_range: refused — FOV curve has "
+                        f"{len(curve)} point(s); the range model needs a multi-point "
+                        "curve (run the zoom/FOV bench, plan T1.2) before enabling.")
+        return self.apply_estimator_bool("use_vision_range", value, dry_run=dry_run)
 
     def apply_estimator_bool(self, attr: str, value: Any,
                              dry_run: bool = False) -> str | None:

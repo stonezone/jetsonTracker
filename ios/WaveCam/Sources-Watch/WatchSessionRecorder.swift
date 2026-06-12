@@ -99,11 +99,13 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
         healthStore.requestAuthorization(toShare: [workoutType], read: []) { [weak self] ok, err in
             DispatchQueue.main.async {
                 guard let self, self.startPending else { return }  // Stop tapped mid-auth
-                if ok {
+                // ok=true only means the request completed — check the actual grant.
+                let granted = self.healthStore.authorizationStatus(for: workoutType) == .sharingAuthorized
+                if ok && granted {
                     self.startWorkoutAndSensors()
                 } else {
                     self.startPending = false
-                    self.statusMessage = "HealthKit denied"
+                    self.statusMessage = granted ? "HealthKit error" : "HealthKit denied"
                 }
             }
         }
@@ -131,7 +133,7 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
         startMotion()
 
         startPending = false
-        isRecording = true
+        // isRecording flips in the HKWorkoutSessionDelegate .running transition.
         gpsSampleCount = 0
         motionSampleCount = 0
         statusMessage = "Recording"
@@ -263,7 +265,13 @@ extension WatchSessionRecorder: HKWorkoutSessionDelegate {
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession,
                                     didChangeTo toState: HKWorkoutSessionState,
                                     from fromState: HKWorkoutSessionState, date: Date) {
-        // State transitions observed for debugging; no action needed.
+        // isRecording reflects the SESSION's truth, not our optimism: flip it
+        // only when HealthKit confirms .running (review 2026-06-12).
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if toState == .running { self.isRecording = true }
+            if toState == .ended || toState == .stopped { self.isRecording = false }
+        }
     }
 
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession,

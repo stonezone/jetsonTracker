@@ -813,13 +813,6 @@ class ControlApiAdapter:
     def apply_gps_bool(self, attr: str, value: Any, dry_run: bool = False) -> str | None:
         return self._config.apply_gps_bool(attr, value, dry_run)
 
-    def apply_sensors_float(self, attr: str, value: Any, lo: float, hi: float,
-                            dry_run: bool = False) -> str | None:
-        return self._config.apply_sensors_float(attr, value, lo, hi, dry_run)
-
-    def apply_sensors_bool(self, attr: str, value: Any, dry_run: bool = False) -> str | None:
-        return self._config.apply_sensors_bool(attr, value, dry_run)
-
     # --- System delegation stubs (behavior lives in SystemManager) ---
 
     def request_service_restart(self, req: RestartRequest) -> JSONResponse:

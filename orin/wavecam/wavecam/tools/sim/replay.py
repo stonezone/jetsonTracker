@@ -25,7 +25,7 @@ import sys
 import types
 from typing import List, Optional, Tuple
 
-from wavecam.estimator import TargetEstimator, EstimatorOutput
+from wavecam.estimator import TargetEstimator, range_from_bbox_height, EstimatorOutput
 from wavecam.gps_geo import bearing_deg as _bearing_deg, haversine_m
 
 
@@ -119,17 +119,11 @@ def replay_scenario(fixes, detections, pose=None, cfg=None, fov_curve=None,
             est.update_vision(pan_enc=ev.pan_enc, pixel_cx=ev.pixel_cx,
                               frame_w=ev.frame_w, zoom_enc=ev.zoom_enc, now=t)
         elif kind == "range":
-            # Compute range_obs_m for logging before the update
-            import math as _math
-            from wavecam.estimator import _fov_at_zoom as _fov
-            hfov_deg = _fov(fov_curve, ev.zoom_enc)
-            hfov_rad = _math.radians(hfov_deg)
-            vfov_rad = 2.0 * _math.atan(_math.tan(hfov_rad / 2.0) * 9.0 / 16.0)
-            bbox_frac = ev.bbox_h_px / ev.frame_h
-            half_angle = vfov_rad * bbox_frac / 2.0
-            subj_h = float(getattr(cfg, "subject_height_m", 1.0))
-            range_obs_m = (subj_h / (2.0 * _math.tan(half_angle))
-                           if half_angle > 0 else None)
+            # Log the SAME observation the estimator fuses — shared function,
+            # so the harness can never diverge from production geometry.
+            range_obs_m = range_from_bbox_height(
+                fov_curve, ev.zoom_enc, ev.bbox_h_px, ev.frame_h,
+                float(getattr(cfg, "subject_height_m", 1.0)))
             r_frac = float(getattr(cfg, "r_range_frac", 0.3))
             range_r = r_frac * range_obs_m if range_obs_m is not None else None
 

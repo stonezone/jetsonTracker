@@ -85,7 +85,7 @@ final class PhoneSensorPublisher: NSObject {
         publishTimer = nil
         locationManager.stopUpdatingHeading()
         locationManager.stopUpdatingLocation()
-        motionManager.stopAccelerometerUpdates()
+        motionManager.stopDeviceMotionUpdates()
     }
 
     // MARK: - Heading
@@ -115,14 +115,15 @@ final class PhoneSensorPublisher: NSObject {
     // MARK: - Accelerometer
 
     private func startAccelerometer() {
-        guard motionManager.isAccelerometerAvailable else { return }
-        motionManager.accelerometerUpdateInterval = 1.0 / Self.accelHz
-        motionManager.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+        guard motionManager.isDeviceMotionAvailable else { return }
+        motionManager.deviceMotionUpdateInterval = 1.0 / Self.accelHz
+        // deviceMotion separates gravity properly — the |raw|-1g proxy missed
+        // horizontal bumps that rotate rather than add to the gravity vector
+        // (review 2026-06-12).
+        motionManager.startDeviceMotionUpdates(to: .main) { [weak self] data, _ in
             guard let self, let data else { return }
-            let acc = data.acceleration
-            let mag = sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z)
-            // Subtract 1g gravity (device at rest = ~1g total).
-            let userMag = abs(mag - 1.0)
+            let ua = data.userAcceleration
+            let userMag = sqrt(ua.x * ua.x + ua.y * ua.y + ua.z * ua.z)
             if userMag > Self.bumpThreshold {
                 if self.bumpStartTime == nil {
                     self.bumpStartTime = Date()

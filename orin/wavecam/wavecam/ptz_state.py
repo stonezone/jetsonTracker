@@ -62,6 +62,10 @@ MAX_SLEW_COUNTS_PER_SEC: float = 1500.0
 # doubling socket traffic.
 ZOOM_POLL_EVERY_N: int = 5
 
+# Consumers treat a cached zoom older than this as absent. At ~2 Hz polling a
+# healthy poller refreshes 4x inside the window; exceeding it means an outage.
+ZOOM_FRESH_SEC: float = 2.0
+
 
 class PtzState:
     """Background encoder-position cache. One instance per pipeline."""
