@@ -74,3 +74,41 @@ def test_load_migrates_legacy_pose_only_json(tmp_path):
                              "tilt_anchor_elev": 0.0, "tilt_enc_per_deg": 0.0}))
     s = CalibrationStore.load(str(p))
     assert s.pose.has_base and s.pose.calibrated
+
+
+def test_heading_capture_prefers_poller_cache(monkeypatch):
+    """Capture must read the PtzState cache (no socket contention with the
+    poller); the direct inquiry is only a fallback when the cache is empty."""
+    import types
+    from test_control_api import DummyPipeline, make_client
+
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.owner.request("testbed")
+    direct_calls = []
+    pipe.ptz.inquire_pan_tilt = lambda: direct_calls.append(1) or (777.0, 0.0)
+    pipe.ptz_state = types.SimpleNamespace(latest=lambda: ((1234, -5), 0.05))
+
+    r = client.post("/api/v1/calibration/heading",
+                    json={"requested_owner": "manual", "takeover": True,
+                          "heading_deg": 180.0, "source": "test"})
+    assert r.status_code == 200
+    assert direct_calls == []                       # cache used, no socket touch
+    assert pipe.pose.pan_anchor_enc == 1234.0
+
+
+def test_heading_capture_falls_back_to_inquiry_when_cache_empty():
+    import types
+    from test_control_api import make_client
+
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.owner.request("testbed")
+    pipe.ptz.inquire_pan_tilt = lambda: (888.0, 0.0)
+    pipe.ptz_state = types.SimpleNamespace(latest=lambda: (None, None))
+
+    r = client.post("/api/v1/calibration/heading",
+                    json={"requested_owner": "manual", "takeover": True,
+                          "heading_deg": 90.0, "source": "test"})
+    assert r.status_code == 200
+    assert pipe.pose.pan_anchor_enc == 888.0

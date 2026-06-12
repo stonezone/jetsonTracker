@@ -97,12 +97,23 @@ class CalibrationManager:
         return None
 
     def capture_calibration(self, step: str, values: dict) -> None:
-        # Perform blocking PTZ I/O BEFORE acquiring the adapter lock so the request
-        # thread never holds the lock across a recvfrom (same class of bug as the
-        # 2026-06-08 API hang when meshtastic was called under the lock).
+        # Encoder source: the PtzState poller cache (fresh to ~0.1s at 10Hz and
+        # plausibility-gated), NOT a direct inquiry — a request-thread inquiry
+        # races the poller on the shared UDP socket (reply theft), and the
+        # camera is stationary during a capture anyway. Falls back to a direct
+        # inquiry only when the poller has no data (ptz disabled / just booted).
+        # Cache read is non-blocking, so the old hold-the-lock-across-recvfrom
+        # hazard (2026-06-08 class) only applies on the fallback path, which we
+        # still run before acquiring the adapter lock.
         enc = None
         if step in ("heading", "tilt") and self.pipeline.ptz is not None:
-            enc = self.pipeline.ptz.inquire_pan_tilt()
+            ptz_state = getattr(self.pipeline, "ptz_state", None)
+            if ptz_state is not None:
+                cached, age = ptz_state.latest()
+                if cached is not None and age is not None and age < 1.0:
+                    enc = cached
+            if enc is None:
+                enc = self.pipeline.ptz.inquire_pan_tilt()
 
         cam_pos = None
         if step == "base_lock" and self.pipeline.gps is not None:
