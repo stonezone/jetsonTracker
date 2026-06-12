@@ -135,3 +135,63 @@ def test_stale_gps_does_not_update_state(tmp_path):
     import math
     delta = math.hypot(out_after.e - out_before.e, out_after.n - out_before.n)
     assert delta < 50.0   # velocity-drift in 1s only; stale obs was skipped
+
+
+def test_pan_encoder_to_bearing_real_pose_roundtrip():
+    """Regression: estimator.update_vision calls pose.pan_encoder_to_bearing,
+    which test fakes provided but the REAL CameraPose lacked — first locked
+    frame with live encoders killed the vision loop (2026-06-11). Pin the
+    inverse on the real class, round-tripped against its forward mapping."""
+    from wavecam.camera_pose import CameraPose, PRISUAL_PAN_ENC_PER_DEG
+    p = CameraPose()
+    assert p.pan_encoder_to_bearing(123) is None          # uncalibrated -> None
+    p.calibrate_pan_aim(enc=-246.0, bearing_deg=101.7,
+                        enc_per_deg=PRISUAL_PAN_ENC_PER_DEG)
+    for bearing in (0.0, 101.7, 245.5, 359.0):
+        enc = p.bearing_to_pan_encoder(bearing)
+        back = p.pan_encoder_to_bearing(enc)
+        assert abs((back - bearing + 180) % 360 - 180) < 1e-6, bearing
+
+
+def test_update_vision_against_real_camera_pose():
+    """The integration fakes must never again hide a missing CameraPose method:
+    drive update_vision with the genuine class."""
+    from wavecam.camera_pose import CameraPose, PRISUAL_PAN_ENC_PER_DEG
+    pose = CameraPose()
+    pose.lat, pose.lon = 21.6451, -158.0501
+    pose.calibrate_pan_aim(enc=0.0, bearing_deg=0.0,
+                           enc_per_deg=PRISUAL_PAN_ENC_PER_DEG)
+    import types
+    est = TargetEstimator(cfg=_cfg(),
+                          gps_cfg=types.SimpleNamespace(stale_threshold_sec=10.0),
+                          pose=pose, fov_curve=[(0, 63.7)])
+    fix = _fix(lat=21.6460, lon=-158.0501, age_sec=0.5)   # ~100m north
+    est.update_gps(fix, now=100.0)
+    est.update_vision(pan_enc=10, pixel_cx=320.0, frame_w=640, zoom_enc=0,
+                      now=100.1)                           # must not raise
+    out = est.predict_output(now=100.2)
+    assert out is not None
+
+
+def test_shadow_tick_failure_disables_shadow_not_loop():
+    """A raising estimator must disable shadow and leave the loop alive."""
+    import types
+    from wavecam.pipeline import Pipeline
+
+    class _Boom:
+        def update_gps(self, *a, **k):
+            raise RuntimeError("boom")
+
+    p = types.SimpleNamespace(
+        cfg=types.SimpleNamespace(estimator=types.SimpleNamespace(log_every_n=3)),
+        estimator=_Boom(),
+        _shadow_writer=object(),
+        _est_active_shadow=True,
+        _est_tick=0,
+        gps=types.SimpleNamespace(get_fix=lambda: object()),
+    )
+    fr = types.SimpleNamespace(locked=False, target_xy=None)
+    Pipeline._estimator_shadow_tick(p, fr, 640, 100.0)    # must NOT raise
+    assert p.estimator is None
+    assert p._shadow_writer is None
+    assert p._est_active_shadow is False

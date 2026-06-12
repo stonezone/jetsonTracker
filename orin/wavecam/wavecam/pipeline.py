@@ -185,6 +185,63 @@ class Pipeline(threading.Thread):
         now = time.time() if now is None else now
         return now < getattr(self, "_cinematic_zoom_suppressed_until", 0.0)
 
+    def _estimator_shadow_tick(self, fr, w, t0) -> None:
+        """One shadow-estimator tick. Shadow is observability, never control:
+        ANY exception here disables shadow and the vision loop lives (doctrine
+        set by the /data/shadow PermissionError zombie and re-proven when a
+        missing CameraPose inverse killed the loop on first locked frame,
+        both 2026-06-11)."""
+        try:
+            self._est_tick += 1
+            _est_cfg = getattr(self.cfg, "estimator", None)
+            _log_every_n = int(getattr(_est_cfg, "log_every_n", 3))
+            _gps_updated = False
+            _vision_updated = False
+
+            _gps_fix = self.gps.get_fix() if self.gps else None
+            if _gps_fix is not None:
+                self.estimator.update_gps(_gps_fix, now=t0)
+                _gps_updated = True
+
+            # Vision update: only when locked and encoder data is fresh
+            if fr.locked and fr.target_xy is not None:
+                _enc, _enc_age = self.ptz_state.latest()
+                if _enc is not None and (_enc_age is None or _enc_age < 0.5):
+                    # zoom_enc: read from ptz_state when zoom encoder is available
+                    _zoom_enc = 0
+                    self.estimator.update_vision(
+                        pan_enc=_enc[0],
+                        pixel_cx=fr.target_xy[0], frame_w=w,
+                        zoom_enc=_zoom_enc, now=t0,
+                    )
+                    _vision_updated = True
+
+            if self._est_tick % _log_every_n == 0:
+                _out = self.estimator.predict_output(now=t0)
+                if _out is not None:
+                    _record = {
+                        "t": t0,
+                        "e": round(_out.e, 2), "n": round(_out.n, 2),
+                        "ve": round(_out.ve, 3), "vn": round(_out.vn, 3),
+                        "cov_trace": round(sum(_out.cov[i][i] for i in range(4)), 4),
+                        "bearing_deg": round(_out.bearing_deg, 2),
+                        "dist_m": round(_out.dist_m, 1),
+                        "pan_enc_would": _out.pan_enc_would,
+                        "tilt_enc_would": _out.tilt_enc_would,
+                        "bearing_std_deg": round(_out.bearing_std_deg, 3),
+                        "owner_actual": self._arbiter_state,
+                        "cmd_actual": self.state.get_status().get("cmd", ""),
+                        "gps_updated": _gps_updated,
+                        "vision_updated": _vision_updated,
+                    }
+                    self.events.record("shadow", _record)
+                    self._shadow_write(_record)
+        except Exception as e:
+            self.estimator = None
+            self._shadow_writer = None
+            self._est_active_shadow = False
+            print(f"[pipeline] estimator shadow DISABLED (tick failed: {e})")
+
     def _maybe_init_estimator(self) -> None:
         """G2 gate check, callable repeatedly until the estimator exists.
 
@@ -517,50 +574,7 @@ class Pipeline(threading.Thread):
 
             # Estimator shadow tick — additive read-only side channel; never commands.
             if self.estimator is not None:
-                self._est_tick += 1
-                _est_cfg = getattr(self.cfg, "estimator", None)
-                _log_every_n = int(getattr(_est_cfg, "log_every_n", 3))
-                _gps_updated = False
-                _vision_updated = False
-
-                _gps_fix = self.gps.get_fix() if self.gps else None
-                if _gps_fix is not None:
-                    self.estimator.update_gps(_gps_fix, now=t0)
-                    _gps_updated = True
-
-                # Vision update: only when locked and encoder data is fresh
-                if fr.locked and fr.target_xy is not None:
-                    _enc, _enc_age = self.ptz_state.latest()
-                    if _enc is not None and (_enc_age is None or _enc_age < 0.5):
-                        # zoom_enc: read from ptz_state when zoom encoder is available
-                        _zoom_enc = 0
-                        self.estimator.update_vision(
-                            pan_enc=_enc[0],
-                            pixel_cx=fr.target_xy[0], frame_w=w,
-                            zoom_enc=_zoom_enc, now=t0,
-                        )
-                        _vision_updated = True
-
-                if self._est_tick % _log_every_n == 0:
-                    _out = self.estimator.predict_output(now=t0)
-                    if _out is not None:
-                        _record = {
-                            "t": t0,
-                            "e": round(_out.e, 2), "n": round(_out.n, 2),
-                            "ve": round(_out.ve, 3), "vn": round(_out.vn, 3),
-                            "cov_trace": round(sum(_out.cov[i][i] for i in range(4)), 4),
-                            "bearing_deg": round(_out.bearing_deg, 2),
-                            "dist_m": round(_out.dist_m, 1),
-                            "pan_enc_would": _out.pan_enc_would,
-                            "tilt_enc_would": _out.tilt_enc_would,
-                            "bearing_std_deg": round(_out.bearing_std_deg, 3),
-                            "owner_actual": self._arbiter_state,
-                            "cmd_actual": self.state.get_status().get("cmd", ""),
-                            "gps_updated": _gps_updated,
-                            "vision_updated": _vision_updated,
-                        }
-                        self.events.record("shadow", _record)
-                        self._shadow_write(_record)
+                self._estimator_shadow_tick(fr, w, t0)
 
             self._pointing_verifier.tick()
             enc, enc_age = self.ptz_state.latest()

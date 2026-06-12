@@ -306,6 +306,8 @@ class TargetEstimator:
 
         # Bearing from encoder + pixel offset
         bearing_enc = self._pose.pan_encoder_to_bearing(pan_enc)
+        if bearing_enc is None:
+            return   # pose not heading-calibrated yet — no bearing frame exists
         fov = _fov_at_zoom(self._fov_curve, zoom_enc)
         pixel_offset_deg = (pixel_cx - frame_w / 2.0) / frame_w * fov
         obs_bearing = (bearing_enc + pixel_offset_deg + 360.0) % 360.0
