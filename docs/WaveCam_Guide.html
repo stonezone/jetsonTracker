@@ -463,7 +463,7 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
 
       <div class="grid g2" style="align-items:start; margin-top:0.2rem">
         <div class="card"><h3>When to recalibrate</h3><p>Moved the tripod or changed orientation? Re-run Steps 3 (Heading) and 4 (Tilt) at minimum. Step 2 (Base Lock) must always be run first in any new session.</p></div>
-        <div class="callout teal"><h3>How GPS pointing works once calibrated</h3><p>GPS becomes a <b>spotter</b>: it aims the camera at your latest fix so YOLO + color can acquire, then hands off &mdash; vision refines the instant it locks. GPS pointing activates only when: fix is fresh (age &lt; <code>gps.stale_threshold_sec</code>, default 10 s), calibration is complete, and base is locked. KILL overrides everything.</p></div>
+        <div class="callout teal"><h3>How GPS pointing works once calibrated</h3><p>GPS becomes a <b>spotter</b>: it aims the camera at your latest fix so YOLO + color can acquire, then hands off &mdash; vision refines the instant it locks. GPS pointing activates only when: fix is fresh (age &lt; <code>gps.stale_threshold_sec</code> &mdash; code default 10 s, the rig runs <b>45 s</b> to cover the remote's 10 s stationary broadcast cadence), calibration is complete, and base is locked. KILL overrides everything.</p></div>
       </div>
     </section>
 
@@ -735,7 +735,7 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
 
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">GPS stale threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.stale_threshold_sec</span></div>
-            <div class="ctrl-what">Age (seconds) at which a remote GPS fix is considered too stale for pointing. Range: 1&ndash;120 s. Default: <b>10 s</b>. The remote broadcasts every 2 s when moving (smart broadcast), so a healthy mesh keeps age well under this value.</div>
+            <div class="ctrl-what">Age (seconds) at which a remote GPS fix is considered too stale for pointing. Range: 1&ndash;120 s. Code default 10 s; the rig runs <b>45 s</b> (field test 2026-06-11: the remote broadcasts every 2 s while moving but only every 10 s standing still &mdash; the exact reacquire pose &mdash; so 10 s starved GPS of usable windows).</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Tolerates slower updates (partial sky, weak LoRa day).</span></div>
               <div class="adj"><b>Lower</b><span>Demand fresh fixes; GPS cues cut out faster when the mesh lags.</span></div>
@@ -848,7 +848,7 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
             <tr><td><b>Matched score</b></td><td>0.5 + 0.5&times;YOLO_conf</td><td>Color+person agree within match_dist. At YOLO_conf=0.35 (default) &rarr; fused = 0.675. Well above lock=0.60.</td></tr>
             <tr><td><b>GPS cue boost</b> (<code>fusion.gps_boost</code>)</td><td>0.20 default, range 0&ndash;0.5</td><td>Added to a blob&rsquo;s confidence when GPS owns the camera and the blob is within the cue radius. At default: 0.45+0.20=0.65 crosses lock=0.60.</td></tr>
             <tr><td><b>GPS cue boost cap</b></td><td>0.95</td><td>Maximum confidence after boost.</td></tr>
-            <tr><td><b>GPS stale threshold</b> (<code>gps.stale_threshold_sec</code>)</td><td>10 s default</td><td>Fix age above this &rarr; GPS hands off to vision or idles. With remote broadcasting at 2 s (moving), a healthy mesh keeps age well under 10 s.</td></tr>
+            <tr><td><b>GPS stale threshold</b> (<code>gps.stale_threshold_sec</code>)</td><td>45 s on the rig (code default 10 s)</td><td>Fix age above this &rarr; GPS hands off to vision or idles. Remote broadcasts at 2 s moving / 10 s stationary; 45 s keeps the stationary reacquire case inside the window.</td></tr>
             <tr><td><b>Remote broadcast cadence</b></td><td>Smart: 2 s / 5 m moving; 10 s stationary fallback</td><td>In the water at surf speed you trigger the 5 m threshold constantly &mdash; effectively 2 s max age. Bobbing for a set may see 10 s gaps. Both within the 10 s threshold.</td></tr>
             <tr><td><b>Pan encoder scale</b></td><td>14.4 counts/degree (4896 / 340)</td><td>Measured 2026-06-11 by driving the Prisual to both mechanical hard stops: &plusmn;2448 counts over &plusmn;170&deg;. The old 4.47 value made every GPS slew land ~3&times; short.</td></tr>
             <tr><td><b>Encoder poll rate</b></td><td>10 Hz</td><td>Bench-validated (2026-06-11, 300 s stress test): 0.0% loss, p95 latency = 81.8 ms under concurrent velocity traffic.</td></tr>
@@ -889,7 +889,7 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
 
       <div class="callout" style="margin-bottom:0.9rem">
         <h3>Note: red and cyan in the iOS Tune picker</h3>
-        <p>The backend supports all 8 presets above. The iOS Tune tab color picker currently shows: orange_red, orange, blue, green, yellow, pink. The <code>red</code> and <code>cyan</code> presets are fully functional via the Orin web UI (<code>:8088</code>) or a direct hot-config POST to <code>/api/v1/config/hot</code> with <code>"color.preset": "red"</code>. The iOS picker will be updated in a future build.</p>
+        <p>All 8 presets are selectable from the iOS Tune tab picker (build 315+) and the Orin web UI (<code>:8088</code>).</p>
       </div>
 
       <h3 style="margin:0 0 0.6rem">Trackable YOLO classes</h3>
