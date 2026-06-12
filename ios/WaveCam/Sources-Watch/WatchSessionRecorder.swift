@@ -32,6 +32,7 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
     // MARK: Published state
 
     @Published private(set) var isRecording = false
+    @Published private(set) var startPending = false
     @Published private(set) var gpsSampleCount = 0
     @Published private(set) var motionSampleCount = 0
     @Published private(set) var statusMessage: String = ""
@@ -63,11 +64,21 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
     // MARK: - Public API
 
     func startRecording() {
-        guard !isRecording else { return }
+        // startPending closes the async re-entrancy window: isRecording only
+        // flips true AFTER the HealthKit authorization round-trip, and the
+        // first-run permission sheet holds that window open for seconds. A
+        // second Start during it would leak a live HKWorkoutSession, an open
+        // FileHandle, and a repeating Timer.
+        guard !isRecording && !startPending else { return }
+        startPending = true
         requestPermissionsAndStart()
     }
 
     func stopRecording() {
+        if startPending {
+            startPending = false   // cancels a pending start mid-authorization
+            return
+        }
         guard isRecording else { return }
         tearDown()
     }
@@ -79,6 +90,7 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
         // We only start a workout session for sensor background access;
         // we do not read or write health quantities.
         guard HKHealthStore.isHealthDataAvailable() else {
+            startPending = false
             statusMessage = "HealthKit unavailable"
             return
         }
@@ -86,10 +98,12 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
         let workoutType = HKObjectType.workoutType()
         healthStore.requestAuthorization(toShare: [workoutType], read: []) { [weak self] ok, err in
             DispatchQueue.main.async {
+                guard let self, self.startPending else { return }  // Stop tapped mid-auth
                 if ok {
-                    self?.startWorkoutAndSensors()
+                    self.startWorkoutAndSensors()
                 } else {
-                    self?.statusMessage = "HealthKit denied"
+                    self.startPending = false
+                    self.statusMessage = "HealthKit denied"
                 }
             }
         }
@@ -107,6 +121,7 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
             workoutSession = session
             session.startActivity(with: Date())
         } catch {
+            startPending = false
             statusMessage = "Workout session error: \(error.localizedDescription)"
             return
         }
@@ -115,6 +130,7 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
         startLocation()
         startMotion()
 
+        startPending = false
         isRecording = true
         gpsSampleCount = 0
         motionSampleCount = 0

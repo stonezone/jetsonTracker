@@ -69,7 +69,9 @@ class SensorHub:
         # Drift alert state.
         self._excursion_start: Optional[float] = None   # time when drift went over threshold
         self._excursion_fired: bool = False             # True if anchor_suspect already fired
+        self._last_valid_heading_at: Optional[float] = None
         self._ALERT_SUSTAIN_SEC: float = 10.0
+        self._EXCURSION_EXPIRE_SEC: float = 30.0   # valid-heading outage longer than this drops the excursion
         self._REARM_FRAC: float = 0.5               # re-arm when within 50% of threshold
 
         # Bump rate-limit: at most one anchor_suspect/bump per 10s.
@@ -106,6 +108,7 @@ class SensorHub:
             self._heading_baseline = None
             self._excursion_start = None
             self._excursion_fired = False
+            self._last_valid_heading_at = None
 
     # ------------------------------------------------------------------
     # Internal helpers (must be called under self._lock)
@@ -128,10 +131,18 @@ class SensorHub:
         h = sample.heading_deg
         acc = sample.heading_acc
         if baseline is None or h is None or acc is None or acc < 0:
-            # No valid heading — reset excursion tracking.
-            self._excursion_start = None
-            self._excursion_fired = False
+            # Invalid heading (compass recalibrating — common next to PTZ
+            # motors) is NEUTRAL: it must neither re-arm the fired flag (one
+            # invalid sample would re-alert the same excursion) nor reset the
+            # sustain window (frequent flaps would mean the alert NEVER
+            # fires). Only a long valid-heading outage expires the excursion.
+            if (self._last_valid_heading_at is not None
+                    and sample.received_at - self._last_valid_heading_at
+                    > self._EXCURSION_EXPIRE_SEC):
+                self._excursion_start = None
+                self._excursion_fired = False
             return
+        self._last_valid_heading_at = sample.received_at
 
         threshold = self._drift_alert_deg()
         deviation = abs(_normalize_180(h - baseline))

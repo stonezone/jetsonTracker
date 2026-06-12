@@ -327,26 +327,7 @@ class TargetEstimator:
         pred_bearing = _bearing_from_enu(e, n)
         innovation = (obs_bearing - pred_bearing + 180.0) % 360.0 - 180.0   # wrap
 
-        # S = h P ht + R (scalar)
-        # Compute h P ht inline
-        Pht = [sum(self._P[i][j] * h[j] for j in range(4)) for i in range(4)]
-        S = sum(h[j] * Pht[j] for j in range(4)) + float(self._cfg.r_vis_deg) ** 2
-        if abs(S) < 1e-9:
-            return
-
-        # K = P ht / S (4×1 vector)
-        K = [Pht[i] / S for i in range(4)]
-
-        # State update
-        for i in range(4):
-            self._x[i] += K[i] * innovation
-
-        # Covariance update: P = P - K h P (Joseph form not used here for brevity;
-        # standard form is adequate for the small innovation angles expected)
-        KhP = [[K[i] * h[j] for j in range(4)] for i in range(4)]
-        for i in range(4):
-            for j in range(4):
-                self._P[i][j] -= KhP[i][j] * self._P[j][j]  # approximate but stable
+        self._scalar_update(h, innovation, float(self._cfg.r_vis_deg) ** 2)
 
     # ── vision range update ──────────────────────────────────────────────────
 
@@ -410,26 +391,27 @@ class TargetEstimator:
         innovation = range_m - pred_range
 
         r_frac = float(getattr(self._cfg, "r_range_frac", 0.3))
-        R_var = (r_frac * range_m) ** 2
+        self._scalar_update(h, innovation, (r_frac * range_m) ** 2)
 
-        # S = h P h^T + R (scalar)
+    def _scalar_update(self, h: list, innovation: float, r_var: float) -> None:
+        """Fuse one scalar observation with Jacobian row ``h``.
+
+        Covariance form note: the update keeps only the diagonal term of
+        (K h) P — approximate but stable for the small innovations this
+        filter sees. If the form ever changes, it changes HERE for every
+        observation type (bearing, range) at once.
+        """
         Pht = [sum(self._P[i][j] * h[j] for j in range(4)) for i in range(4)]
-        S = sum(h[j] * Pht[j] for j in range(4)) + R_var
+        S = sum(h[j] * Pht[j] for j in range(4)) + r_var
         if abs(S) < 1e-9:
             return
-
-        # K = P h^T / S  (4-vector)
         K = [Pht[i] / S for i in range(4)]
-
-        # State update
         for i in range(4):
             self._x[i] += K[i] * innovation
-
-        # Covariance update (standard form)
         KhP = [[K[i] * h[j] for j in range(4)] for i in range(4)]
         for i in range(4):
             for j in range(4):
-                self._P[i][j] -= KhP[i][j] * self._P[j][j]
+                self._P[i][j] -= KhP[i][j] * self._P[j][j]  # approximate but stable
 
     # ── output ───────────────────────────────────────────────────────────────
 

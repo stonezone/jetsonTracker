@@ -113,3 +113,12 @@ def test_plausibility_gate_accepts_confirmed_large_move():
     ps._poll_once()                       # agrees with the held-back sample
     enc, _ = ps.latest()
     assert enc == (50010, 0)              # re-baselined: it was real
+
+
+def test_inquire_zoom_rejects_pan_tilt_frames():
+    """Review finding: an 11-byte pan/tilt reply also starts 90 50 and the old
+    >=7 length check parsed it as zoom — real cross-talk on the shared socket
+    (pan at 10Hz, zoom at 2Hz). Zoom replies are EXACTLY 7 bytes."""
+    zoom_frame = bytes([0x90, 0x50, 0x0, 0x2, 0x3, 0x4, 0xFF])          # 7B
+    v = _visca_with([_pos_frame(1234, -56), zoom_frame])                # 11B first
+    assert v.inquire_zoom() == 0x0234
