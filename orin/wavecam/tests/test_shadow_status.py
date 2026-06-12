@@ -26,6 +26,35 @@ def test_status_includes_shadow_mode_true_when_estimator_active():
     assert body["shadow_mode"] is True
 
 
+def test_maybe_init_estimator_picks_up_late_store(tmp_path):
+    """Regression: run() starts before ControlApiAdapter wires pipeline._store
+    (control_api.py:587), so a start-time-only G2 check never fires on the rig.
+    _maybe_init_estimator must no-op cleanly without the store, then succeed
+    when re-invoked after the store (or a mid-session calibration) appears."""
+    from wavecam.pipeline import Pipeline
+    calls = []
+    p = types.SimpleNamespace(
+        cfg=types.SimpleNamespace(
+            estimator=types.SimpleNamespace(enabled=True, shadow=True),
+            shadow_log_dir=str(tmp_path)),
+        estimator=None,
+        _shadow_writer=None,
+    )
+    p._init_estimator = lambda fov: (calls.append(fov), setattr(p, "estimator", object()))
+
+    Pipeline._maybe_init_estimator(p)            # store not wired yet -> no-op
+    assert p.estimator is None and calls == []
+
+    p._store = types.SimpleNamespace(fov_curve=[(0, 63.7)])
+    Pipeline._maybe_init_estimator(p)            # store arrived -> init fires
+    assert calls == [[(0, 63.7)]]
+    assert p.estimator is not None
+    assert p._shadow_writer is not None
+
+    Pipeline._maybe_init_estimator(p)            # idempotent once active
+    assert len(calls) == 1
+
+
 def test_events_includes_shadow_records():
     pipeline = DummyPipeline()
     pipeline.events = EventRing(maxlen=100)

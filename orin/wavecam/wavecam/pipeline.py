@@ -168,6 +168,28 @@ class Pipeline(threading.Thread):
         now = time.time() if now is None else now
         return now < getattr(self, "_cinematic_zoom_suppressed_until", 0.0)
 
+    def _maybe_init_estimator(self) -> None:
+        """G2 gate check, callable repeatedly until the estimator exists.
+
+        run() starts before ControlApiAdapter assigns pipeline._store, so a
+        start-time-only check can never see the FOV curve on the rig (nor can
+        it see a curve calibrated mid-session). The main loop re-invokes this
+        until it succeeds.
+        """
+        est_cfg = getattr(self.cfg, "estimator", None)
+        if not (est_cfg and getattr(est_cfg, "enabled", False)) or self.estimator is not None:
+            return
+        fov_curve = getattr(getattr(self, "_store", None), "fov_curve", [])
+        if not fov_curve:
+            return
+        self._init_estimator(fov_curve)
+        if self.estimator is not None:
+            log_dir = getattr(self.cfg, "shadow_log_dir", "/data/shadow")
+            session_id = time.strftime("%Y%m%dT%H%M%S")
+            from .shadow_writer import ShadowWriter
+            self._shadow_writer = ShadowWriter(log_dir=log_dir, session_id=session_id)
+            print(f"[pipeline] estimator shadow started, log_dir={log_dir}")
+
     def _init_estimator(self, fov_curve: list) -> None:
         """Create/replace the estimator once the FOV curve is populated (G2 gate).
 
@@ -294,18 +316,7 @@ class Pipeline(threading.Thread):
         if self.cfg.ptz.enabled and not self.start_paused:
             self.owner.request("testbed")
 
-        # Initialise estimator if FOV curve is ready (G2 gate); best-effort — failure is logged
-        est_cfg = getattr(self.cfg, "estimator", None)
-        if est_cfg and getattr(est_cfg, "enabled", False) and self.estimator is None:
-            fov_curve = getattr(getattr(self, "_store", None), "fov_curve", [])
-            if fov_curve:
-                self._init_estimator(fov_curve)
-                if self.estimator is not None:
-                    log_dir = getattr(self.cfg, "shadow_log_dir", "/data/shadow")
-                    session_id = time.strftime("%Y%m%dT%H%M%S")
-                    from .shadow_writer import ShadowWriter
-                    self._shadow_writer = ShadowWriter(log_dir=log_dir, session_id=session_id)
-                    print(f"[pipeline] estimator shadow started, log_dir={log_dir}")
+        self._maybe_init_estimator()
         period = 1.0 / max(1.0, self.cfg.loop.target_fps)
         t_fps = time.time()
         n_fps = 0
@@ -321,6 +332,8 @@ class Pipeline(threading.Thread):
                 continue
 
             h, w = frame.shape[:2]
+            if self.estimator is None and self._frame_i % 120 == 0:
+                self._maybe_init_estimator()
             self.health.beat("capture", {"fps": round(fps, 1), "connected": self.grab.connected})
             blobs, mask = ([], None)
             if self.color is not None:
