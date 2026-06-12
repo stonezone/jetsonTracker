@@ -41,6 +41,11 @@ jobs:
             "opencv-python" \
             "numpy<3"
 
+      - name: Type-check the pointing seams (hardening Phase 0)
+        run: |
+          pip install "mypy<2"
+          cd orin/wavecam && python -m mypy --config-file mypy.ini
+
       - name: Compile-check tools and package
         # tools/ are deploy-critical scripts the suite never imports; a syntax
         # error there only surfaced on the rig (FOV tool, 2026-06-11).
