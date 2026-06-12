@@ -182,13 +182,23 @@ class Pipeline(threading.Thread):
         fov_curve = getattr(getattr(self, "_store", None), "fov_curve", [])
         if not fov_curve:
             return
-        self._init_estimator(fov_curve)
-        if self.estimator is not None:
-            log_dir = getattr(self.cfg, "shadow_log_dir", "/data/shadow")
-            session_id = time.strftime("%Y%m%dT%H%M%S")
-            from .shadow_writer import ShadowWriter
-            self._shadow_writer = ShadowWriter(log_dir=log_dir, session_id=session_id)
-            print(f"[pipeline] estimator shadow started, log_dir={log_dir}")
+        try:
+            self._init_estimator(fov_curve)
+            if self.estimator is not None:
+                log_dir = getattr(self.cfg, "shadow_log_dir", "/data/shadow")
+                session_id = time.strftime("%Y%m%dT%H%M%S")
+                from .shadow_writer import ShadowWriter
+                self._shadow_writer = ShadowWriter(log_dir=log_dir, session_id=session_id)
+                print(f"[pipeline] estimator shadow started, log_dir={log_dir}")
+        except Exception as e:
+            # Shadow is observability, never control: a writer/init failure
+            # (e.g. unwritable log_dir) must not take the vision loop with it.
+            # 2026-06-11: PermissionError on /data/shadow killed the pipeline
+            # thread at boot while /status kept answering — a zombie rig.
+            self.estimator = None
+            self._shadow_writer = None
+            self._est_active_shadow = False
+            print(f"[pipeline] estimator shadow DISABLED (init failed: {e})")
 
     def _init_estimator(self, fov_curve: list) -> None:
         """Create/replace the estimator once the FOV curve is populated (G2 gate).

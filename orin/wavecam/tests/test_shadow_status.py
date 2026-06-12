@@ -55,6 +55,34 @@ def test_maybe_init_estimator_picks_up_late_store(tmp_path):
     assert len(calls) == 1
 
 
+def test_maybe_init_estimator_survives_writer_failure(tmp_path, monkeypatch):
+    """Regression: an unwritable shadow log_dir raised out of _maybe_init_estimator
+    and killed the pipeline thread at boot (2026-06-11) while the API kept
+    answering — a zombie rig. Init failure must disable shadow and nothing else."""
+    import wavecam.shadow_writer as sw
+    from wavecam.pipeline import Pipeline
+
+    def boom(*a, **k):
+        raise PermissionError("[Errno 13] Permission denied: '/data/shadow'")
+    monkeypatch.setattr(sw, "ShadowWriter", boom)
+
+    p = types.SimpleNamespace(
+        cfg=types.SimpleNamespace(
+            estimator=types.SimpleNamespace(enabled=True, shadow=True),
+            shadow_log_dir="/data/shadow"),
+        estimator=None,
+        _shadow_writer=None,
+        _est_active_shadow=False,
+        _store=types.SimpleNamespace(fov_curve=[(0, 63.7)]),
+    )
+    p._init_estimator = lambda fov: setattr(p, "estimator", object())
+
+    Pipeline._maybe_init_estimator(p)            # must NOT raise
+    assert p.estimator is None                   # shadow fully disabled...
+    assert p._shadow_writer is None
+    assert p._est_active_shadow is False         # ...and /status reflects reality
+
+
 def test_events_includes_shadow_records():
     pipeline = DummyPipeline()
     pipeline.events = EventRing(maxlen=100)
