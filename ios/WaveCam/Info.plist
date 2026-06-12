@@ -27,6 +27,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>WaveCam reads your location to cross-check the tripod GPS reference and monitor for anchor drift.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>WaveCam connects to the Orin on your local network to control the camera and view the feed.</string>
 	<key>UIFileSharingEnabled</key>
