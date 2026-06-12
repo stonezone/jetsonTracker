@@ -498,18 +498,22 @@ private struct GlassLockChip: View {
     private var locked: Bool { connected && status?.tracking.locked == true }
     private var isRecording: Bool { connected && status?.media?.recording == true }
     private var killed: Bool { connected && status?.safety.killed == true }
+    /// Locked on the color blob alone — no YOLO person confirmation (field test
+    /// 2026-06-11: false orange locks must be visible at a glance). Explicit
+    /// `== false` so older backends without has_person keep plain LOCKED.
+    private var colorOnlyLock: Bool { locked && status?.tracking.hasPerson == false }
 
     private var lockLabel: String {
         if !connected { return "OFFLINE" }
         if killed { return "STOPPED" }
-        if locked { return "LOCKED" }
+        if locked { return colorOnlyLock ? "CLR LOCK" : "LOCKED" }
         return lockHintText ?? "SEARCH"
     }
 
     private var lockColor: Color {
         if !connected { return WC.warn }
         if killed { return WC.kill }
-        if locked { return WC.ok }
+        if locked { return colorOnlyLock ? WC.warn : WC.ok }
         return WC.warn
     }
 
@@ -541,6 +545,7 @@ private struct GlassLockChip: View {
 /// hasn't locked yet (distance/bearing null), so the field operator sees *why* it's not
 /// pointing without SSHing the Orin.
 private struct GlassGPSChip: View {
+    @Environment(WaveCamClient.self) private var client
     let status: WCStatus?
     let connected: Bool
     @State private var showDetail = false
@@ -568,6 +573,11 @@ private struct GlassGPSChip: View {
             .popover(isPresented: $showDetail) {
                 GPSDetailCard(gps: g)
                     .presentationCompactAdaptation(.popover)
+            }
+            // A system popover floats above the ZStack and would hide the KILL
+            // latch overlay — drop it the instant a stop latches.
+            .onChange(of: client.effectiveKilled) { _, isKilled in
+                if isKilled { showDetail = false }
             }
         }
     }

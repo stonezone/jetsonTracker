@@ -112,6 +112,83 @@ struct WCStatus: Codable, Sendable {
     }
 }
 
+// H4: tolerant decoding — a renamed/missing backend field must degrade one HUD
+// value, not throw the whole /status decode and blank the app to OFFLINE.
+// (Extensions preserve the synthesized memberwise inits.)
+extension WCStatus {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        revision = try c.decodeIfPresent(Int.self, forKey: .revision) ?? 0
+        timeUnixMs = try c.decodeIfPresent(Int.self, forKey: .timeUnixMs)
+        session = try c.decodeIfPresent(Session.self, forKey: .session)
+            ?? Session(state: "UNKNOWN", mode: nil, startedAtUnixMs: nil)
+        safety = try c.decodeIfPresent(Safety.self, forKey: .safety)
+            ?? Safety(killed: false, killReason: nil, lastKillAtUnixMs: nil)
+        ptz = try c.decodeIfPresent(PTZ.self, forKey: .ptz)
+            ?? PTZ(owner: "idle", enabled: nil, panTiltCmd: nil, zoomState: nil)
+        tracking = try c.decodeIfPresent(Tracking.self, forKey: .tracking)
+            ?? Tracking(locked: false, state: "UNKNOWN", confidence: 0, fps: 0,
+                        hasColor: nil, hasPerson: nil, matched: nil)
+        gps = try c.decodeIfPresent(GPS.self, forKey: .gps)
+        media = try c.decodeIfPresent(Media.self, forKey: .media)
+        services = try c.decodeIfPresent([String: String].self, forKey: .services)
+        network = try c.decodeIfPresent(Network.self, forKey: .network)
+        shadowMode = try c.decodeIfPresent(Bool.self, forKey: .shadowMode)
+    }
+}
+
+extension WCStatus.Session {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        state = try c.decodeIfPresent(String.self, forKey: .state) ?? "UNKNOWN"
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
+        startedAtUnixMs = try c.decodeIfPresent(Int.self, forKey: .startedAtUnixMs)
+    }
+}
+
+extension WCStatus.Safety {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // false on absence matches the backend's at-rest default; the optimistic
+        // KILL latch covers operator-initiated stops while a field is missing.
+        killed = try c.decodeIfPresent(Bool.self, forKey: .killed) ?? false
+        killReason = try c.decodeIfPresent(String.self, forKey: .killReason)
+        lastKillAtUnixMs = try c.decodeIfPresent(Int.self, forKey: .lastKillAtUnixMs)
+    }
+}
+
+extension WCStatus.PTZ {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        owner = try c.decodeIfPresent(String.self, forKey: .owner) ?? "idle"
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
+        panTiltCmd = try c.decodeIfPresent(String.self, forKey: .panTiltCmd)
+        zoomState = try c.decodeIfPresent(String.self, forKey: .zoomState)
+    }
+}
+
+extension WCStatus.Tracking {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        locked = try c.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        state = try c.decodeIfPresent(String.self, forKey: .state) ?? "UNKNOWN"
+        confidence = try c.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
+        fps = try c.decodeIfPresent(Double.self, forKey: .fps) ?? 0
+        hasColor = try c.decodeIfPresent(Bool.self, forKey: .hasColor)
+        hasPerson = try c.decodeIfPresent(Bool.self, forKey: .hasPerson)
+        matched = try c.decodeIfPresent(Bool.self, forKey: .matched)
+    }
+}
+
+extension WCStatus.Media {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        recording = try c.decodeIfPresent(Bool.self, forKey: .recording) ?? false
+        segmentName = try c.decodeIfPresent(String.self, forKey: .segmentName)
+        freeGb = try c.decodeIfPresent(Double.self, forKey: .freeGb)
+    }
+}
+
 private struct WCControlResponse: Codable, Sendable {
     var ok: Bool?
     var code: String?
@@ -383,6 +460,17 @@ struct WCMediaFile: Codable, Sendable, Identifiable {
     var createdAt: Date { Date(timeIntervalSince1970: Double(ctimeUnixMs) / 1000) }
 }
 
+// H4: only `name` is essential — a record missing size/ctime (older backend)
+// must not throw away the whole media list.
+extension WCMediaFile {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        sizeBytes = try c.decodeIfPresent(Int.self, forKey: .sizeBytes) ?? 0
+        ctimeUnixMs = try c.decodeIfPresent(Int.self, forKey: .ctimeUnixMs) ?? 0
+    }
+}
+
 private struct WCMediaListResponse: Codable, Sendable {
     var ok: Bool?
     var files: [WCMediaFile]
@@ -485,6 +573,14 @@ private struct WCEventsResponse: Codable, Sendable {
     var events: [WCEvent]
 }
 
+// H4: a missing `events` key decodes to empty rather than blanking the event ring.
+extension WCEventsResponse {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        events = try c.decodeIfPresent([WCEvent].self, forKey: .events) ?? []
+    }
+}
+
 // MARK: - Log models
 
 /// One log line returned by GET /api/v1/logs.
@@ -502,8 +598,27 @@ struct WCLogLine: Codable, Sendable, Identifiable {
     var timestamp: Date { Date(timeIntervalSince1970: Double(tsUnixMs) / 1000) }
 }
 
+// H4: one malformed line must not throw away the whole log response.
+extension WCLogLine {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tsUnixMs = try c.decodeIfPresent(Int.self, forKey: .tsUnixMs) ?? 0
+        level = try c.decodeIfPresent(String.self, forKey: .level) ?? ""
+        source = try c.decodeIfPresent(String.self, forKey: .source) ?? ""
+        message = try c.decodeIfPresent(String.self, forKey: .message) ?? ""
+    }
+}
+
 private struct WCLogsResponse: Codable, Sendable {
     var lines: [WCLogLine]
+}
+
+// H4: a missing `lines` key decodes to empty rather than throwing.
+extension WCLogsResponse {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        lines = try c.decodeIfPresent([WCLogLine].self, forKey: .lines) ?? []
+    }
 }
 
 // MARK: - Client
@@ -676,6 +791,13 @@ final class WaveCamClient {
     private func stopPolling() {
         pollTask?.cancel()
         pollTask = nil
+    }
+
+    /// Scene-phase hook: the 1Hz poll has no business running while the app is
+    /// backgrounded on a beach battery. Live mode only — mock never polls.
+    func setPollingActive(_ active: Bool) {
+        guard mode == .live else { return }
+        if active { startPolling() } else { stopPolling() }
     }
 
     // MARK: safety (highest priority, always allowed)

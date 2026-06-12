@@ -36,10 +36,31 @@ class ConfigManager:
             refusal = self.apply_hot_key(key, value, dry_run=True)
             if refusal is not None:
                 return refusal
+        refusal = self._check_fusion_hysteresis(patch)
+        if refusal is not None:
+            return refusal
         for key, value in patch.items():
             refusal = self.apply_hot_key(key, value, dry_run=False)
             if refusal is not None:
                 return refusal
+        return None
+
+    def _check_fusion_hysteresis(self, patch: dict[str, Any]) -> JSONResponse | None:
+        """Refuse unlock >= lock: with inverted hysteresis the unlock branch is
+        unreachable, so any sustained color blob locks permanently (the
+        2026-06-11 field failure)."""
+        if "fusion.lock_threshold" not in patch and "fusion.unlock_threshold" not in patch:
+            return None
+        fusion = self.pipeline.cfg.fusion
+        lock = float(patch.get("fusion.lock_threshold", fusion.lock_threshold))
+        unlock = float(patch.get("fusion.unlock_threshold", fusion.unlock_threshold))
+        if unlock >= lock:
+            return self._api.refusal(
+                "invalid_request",
+                f"fusion.unlock_threshold ({unlock:g}) must be below "
+                f"fusion.lock_threshold ({lock:g}).",
+                422,
+            )
         return None
 
     def validate_hot_config_request(self, req) -> JSONResponse | None:

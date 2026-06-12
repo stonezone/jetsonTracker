@@ -190,10 +190,15 @@ class MeshtasticGps:
                     self._cam_ts = cam_ts
                     self._last_poll_ts = now
             except Exception as e:
-                # Serial error (device unplugged etc.) — close and reconnect
+                # Serial error (device unplugged etc.) — close and reconnect.
+                # Drop the cached fix too: a frozen position must not be served
+                # as fresh while the link is down (its age can stay inside the
+                # stale window after a fast port reset).
                 log.warning("MeshtasticGps reader loop error: %s — reconnecting", e)
                 self._close_iface()
                 self.enabled = False
+                with self._lock:
+                    self._latest = None
                 self._stop.wait(RECONNECT_SEC)
                 continue
 

@@ -130,3 +130,29 @@ def test_shadow_jsonl_written(tmp_path):
     obj = json.loads(lines[0])
     assert obj["e"] == 10.0
     assert obj["bearing_deg"] == 269.0
+
+
+class _FailingWriter:
+    def __init__(self):
+        self.closed = False
+
+    def write(self, record):
+        raise OSError(28, "No space left on device")
+
+    def close(self):
+        self.closed = True
+
+
+def test_shadow_write_failure_disables_writer_without_raising():
+    """Disk-full during a shadow write must not take down the vision loop."""
+    from wavecam.pipeline import Pipeline
+
+    p = Pipeline.__new__(Pipeline)
+    w = _FailingWriter()
+    p._shadow_writer = w
+
+    p._shadow_write({"t": 1.0})
+
+    assert p._shadow_writer is None
+    assert w.closed is True
+    p._shadow_write({"t": 2.0})  # no-op once disabled, must not raise
