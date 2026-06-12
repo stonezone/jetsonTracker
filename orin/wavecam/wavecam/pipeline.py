@@ -207,8 +207,9 @@ class Pipeline(threading.Thread):
             if fr.locked and fr.target_xy is not None:
                 _enc, _enc_age = self.ptz_state.latest()
                 if _enc is not None and (_enc_age is None or _enc_age < 0.5):
-                    # zoom_enc: read from ptz_state when zoom encoder is available
-                    _zoom_enc = 0
+                    _z, _z_age = self.ptz_state.latest_zoom()
+                    _zoom_enc = _z if (_z is not None and _z_age is not None
+                                       and _z_age < 2.0) else 0
                     self.estimator.update_vision(
                         pan_enc=_enc[0],
                         pixel_cx=fr.target_xy[0], frame_w=w,

@@ -75,7 +75,8 @@ def test_shadow_tick_runs_real_estimator_against_real_pose(tmp_path, monkeypatch
             lat=21.6460, lon=-158.0501, age_sec=0.5))
     pipe.ptz_state = types.SimpleNamespace(
         start=lambda: None, stop=lambda: None, is_alive=lambda: False,
-        latest=lambda: ((10, 0), 0.05))
+        latest=lambda: ((10, 0), 0.05),
+        latest_zoom=lambda: (0, 0.1))
 
     fr = types.SimpleNamespace(locked=True, target_xy=(320.0, 180.0))
     for _ in range(6):                       # past log_every_n at least once

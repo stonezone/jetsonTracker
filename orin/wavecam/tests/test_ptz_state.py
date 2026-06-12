@@ -64,3 +64,21 @@ def test_start_stop_thread():
     ps.stop()
     enc, age = ps.latest()
     assert enc is not None
+
+
+def test_zoom_polled_every_nth_cycle_and_cached():
+    from wavecam.ptz_state import ZOOM_POLL_EVERY_N
+    zooms = [4100, 4200]
+    ptz = types.SimpleNamespace(
+        inquire_pan_tilt=lambda: (100, 0),
+        inquire_zoom=lambda: zooms.pop(0) if zooms else None,
+    )
+    ps = PtzState(ptz, poll_hz=1000)
+    assert ps.latest_zoom() == (None, None)
+    for _ in range(ZOOM_POLL_EVERY_N):          # one full cycle worth
+        ps._poll_once()
+        ps._cycle += 1
+        if ps._cycle % ZOOM_POLL_EVERY_N == 0:
+            ps._poll_zoom_once()
+    z, age = ps.latest_zoom()
+    assert z == 4100 and age is not None and age < 1.0
