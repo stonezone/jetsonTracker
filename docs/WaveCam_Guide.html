@@ -8,7 +8,6 @@
   <style>
     :root {
       color-scheme: dark;
-      /* Surfaces */
       --bg:        #06101a;
       --bg2:       #08131f;
       --surface:   rgba(20, 34, 48, 0.55);
@@ -16,19 +15,16 @@
       --glass:     rgba(255, 255, 255, 0.045);
       --line:      rgba(150, 196, 222, 0.16);
       --line2:     rgba(150, 196, 222, 0.30);
-      /* Ink */
       --text:      #eaf5fb;
       --muted:     #9bb1c0;
       --faint:     #62788a;
-      /* Brand roles — mirror the iOS app theme exactly */
-      --accent:    #36d1c4;  /* teal  = interactive / links / active / HOT */
+      --accent:    #36d1c4;
       --accent-d:  #1fb3a7;
-      --brand:     #ff6a1f;  /* orange = WaveCam brand + subject-cue */
+      --brand:     #ff6a1f;
       --brand-2:   #ff8a4d;
-      --kill:      #ff443d;  /* red   = KILL / danger */
+      --kill:      #ff443d;
       --ok:        #3ee58f;
       --warn:      #f5c451;
-      /* Form */
       --radius:    18px;
       --radius-sm: 12px;
       --shadow:    0 24px 70px rgba(0, 0, 0, 0.45);
@@ -36,7 +32,6 @@
       --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
     }
-
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
     body {
@@ -63,8 +58,6 @@
       font-size: 0.88em;
       white-space: nowrap;
     }
-
-    /* ---------- Top nav ---------- */
     .nav {
       position: sticky; top: 0; z-index: 40;
       display: flex; align-items: center; gap: 0.6rem;
@@ -75,23 +68,13 @@
       backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
     }
     .brand { display: flex; align-items: center; gap: 0.55rem; font-weight: 800; letter-spacing: 0.04em; font-size: 0.98rem; }
-    .brand-dot {
-      width: 0.66rem; height: 0.66rem; border-radius: 50%;
-      background: radial-gradient(circle at 30% 30%, var(--brand-2), var(--brand));
-      box-shadow: 0 0 16px rgba(255, 106, 31, 0.8);
-    }
+    .brand-dot { width: 0.66rem; height: 0.66rem; border-radius: 50%; background: radial-gradient(circle at 30% 30%, var(--brand-2), var(--brand)); box-shadow: 0 0 16px rgba(255, 106, 31, 0.8); }
     .brand em { color: var(--brand); font-style: normal; }
     .nav-scroll { margin-left: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .nav-scroll::-webkit-scrollbar { display: none; }
     .nav-links { display: flex; align-items: center; gap: 0.2rem; font: 600 0.76rem/1 var(--sans); }
-    .nav-links a {
-      display: inline-flex; align-items: center; gap: 0.35rem;
-      color: var(--muted); padding: 0.5rem 0.7rem; border-radius: 999px; white-space: nowrap;
-    }
+    .nav-links a { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--muted); padding: 0.5rem 0.7rem; border-radius: 999px; white-space: nowrap; }
     .nav-links a:hover { background: var(--glass); color: var(--text); text-decoration: none; }
-    .nav-links a .ic { width: 0.95rem; height: 0.95rem; opacity: 0.8; }
-
-    /* ---------- Hero ---------- */
     .hero {
       max-width: 1180px; margin: 0 auto;
       padding: clamp(2.4rem, 7vw, 5.4rem) clamp(1rem, 5vw, 3rem) clamp(1.6rem, 4vw, 3rem);
@@ -103,45 +86,25 @@
     h1 em { font-style: normal; color: var(--brand); }
     .lede { color: var(--muted); font-size: clamp(1rem, 1.5vw, 1.16rem); max-width: 38rem; margin: 1.2rem 0 1.6rem; }
     .btn-row { display: flex; flex-wrap: wrap; gap: 0.6rem; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 0.45rem; min-height: 2.7rem; padding: 0 1.1rem;
-      border-radius: var(--radius-sm); border: 1px solid var(--line2); background: var(--glass);
-      color: var(--text); font-weight: 650; font-size: 0.9rem; cursor: pointer;
-    }
+    .btn { display: inline-flex; align-items: center; gap: 0.45rem; min-height: 2.7rem; padding: 0 1.1rem; border-radius: var(--radius-sm); border: 1px solid var(--line2); background: var(--glass); color: var(--text); font-weight: 650; font-size: 0.9rem; cursor: pointer; }
     .btn:hover { text-decoration: none; border-color: var(--accent); }
     .btn.primary { color: #04201d; background: linear-gradient(180deg, var(--accent), var(--accent-d)); border-color: transparent; font-weight: 750; }
-    .btn .ic { width: 1.05rem; height: 1.05rem; }
-
-    .summary {
-      border: 1px solid var(--line); border-radius: 24px; padding: 1rem;
-      background: linear-gradient(180deg, rgba(54,209,196,0.06), var(--surface2));
-      box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      display: grid; gap: 0.6rem;
-    }
+    .summary { border: 1px solid var(--line); border-radius: 24px; padding: 1rem; background: linear-gradient(180deg, rgba(54,209,196,0.06), var(--surface2)); box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); display: grid; gap: 0.6rem; }
     .summary-row { display: grid; grid-template-columns: 5.4rem 1fr; gap: 0.85rem; align-items: start; padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: rgba(6,16,26,0.5); }
     .summary-row b { color: var(--brand-2); font: 700 0.7rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; padding-top: 0.1rem; }
     .summary-row span { color: var(--muted); font-size: 0.86rem; }
-
-    /* ---------- Sections ---------- */
     main { max-width: 1180px; margin: 0 auto; padding: 0 clamp(1rem, 5vw, 3rem) 3rem; }
     section { padding: clamp(2.2rem, 5vw, 3.6rem) 0; border-top: 1px solid var(--line); scroll-margin-top: 4.2rem; }
     .sec-head { margin-bottom: 1.4rem; }
     .kicker { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--accent); font: 700 0.74rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 0.7rem; }
-    .kicker .ic { width: 1.05rem; height: 1.05rem; }
     h2 { margin: 0; font-size: clamp(1.7rem, 4.4vw, 2.9rem); line-height: 1.0; letter-spacing: -0.015em; font-weight: 800; }
     .sec-head .sub { color: var(--muted); max-width: 46rem; margin-top: 0.7rem; font-size: 1rem; }
     h3 { margin: 0 0 0.5rem; font-size: 1.02rem; color: var(--text); font-weight: 700; }
-
     .grid { display: grid; gap: 0.9rem; }
     .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-
-    .card, .callout {
-      border: 1px solid var(--line); border-radius: var(--radius);
-      background: var(--surface); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      padding: 1rem; transition: transform 0.18s ease, border-color 0.18s ease;
-    }
+    .card, .callout { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); padding: 1rem; transition: transform 0.18s ease, border-color 0.18s ease; }
     .card:hover { transform: translateY(-2px); border-color: var(--line2); }
     .card p, .callout p { color: var(--muted); font-size: 0.92rem; margin: 0.35rem 0 0; }
     .card ul, .card ol, .callout ul { color: var(--muted); font-size: 0.92rem; padding-left: 1.15rem; margin: 0.5rem 0 0; }
@@ -149,37 +112,27 @@
     .callout { border-color: rgba(255, 106, 31, 0.34); background: linear-gradient(180deg, rgba(255,106,31,0.10), var(--surface)); }
     .callout.teal { border-color: rgba(54,209,196,0.34); background: linear-gradient(180deg, rgba(54,209,196,0.10), var(--surface)); }
     .callout.kill { border-color: rgba(255,68,61,0.36); background: linear-gradient(180deg, rgba(255,68,61,0.11), var(--surface)); }
-
-    /* Badges / pills */
     .pill { display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--line2); border-radius: 999px; padding: 0.22rem 0.55rem; font: 700 0.64rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
     .pill.hot  { color: var(--accent); border-color: rgba(54,209,196,0.4); background: rgba(54,209,196,0.08); }
     .pill.restart { color: var(--warn); border-color: rgba(245,196,81,0.4); background: rgba(245,196,81,0.08); }
     .pill.ok { color: var(--ok); border-color: rgba(62,229,143,0.4); background: rgba(62,229,143,0.08); }
     .pill.stop { color: var(--kill); border-color: rgba(255,68,61,0.4); background: rgba(255,68,61,0.08); }
     .pill.subj { color: var(--brand-2); border-color: rgba(255,106,31,0.4); background: rgba(255,106,31,0.08); }
-
-    /* Figures (screenshots) */
-    figure { margin: 0; }
-    .shot {
-      border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
-      background: rgba(6,16,26,0.55); position: relative;
-    }
-    .shot img { display: block; width: 100%; height: auto; }
-    .shot.phone { max-width: 300px; }
-    .shot figcaption, figure > figcaption { color: var(--faint); font: 0.76rem/1.4 var(--mono); padding: 0.5rem 0.2rem 0; }
-    /* graceful pre-screenshot state */
-    .shot img { min-height: 120px; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0 12px, transparent 12px 24px); }
-
-    /* ---------- Control reference ---------- */
+    .tablewrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 34rem; }
+    th, td { text-align: left; vertical-align: top; padding: 0.75rem 0.85rem; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+    th { color: var(--text); font: 700 0.7rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; background: rgba(255,255,255,0.03); position: sticky; top: 0; }
+    td { color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+    .steps { counter-reset: s; display: grid; gap: 0.7rem; padding: 0; list-style: none; margin: 0; }
+    .steps li { counter-increment: s; position: relative; padding: 0.85rem 1rem 0.85rem 3rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface2); color: var(--muted); font-size: 0.92rem; }
+    .steps li::before { content: counter(s); position: absolute; left: 0.85rem; top: 0.85rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font: 700 0.8rem/1 var(--mono); color: #04201d; background: linear-gradient(180deg, var(--accent), var(--accent-d)); }
+    .steps li b { color: var(--text); }
     .ctrl-group { margin-top: 1.2rem; }
     .ctrl-group > h3 { display: flex; align-items: center; gap: 0.55rem; font-size: 1.1rem; margin-bottom: 0.8rem; }
     .ctrl-group > h3 .tag { font: 700 0.66rem/1 var(--mono); color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; border: 1px solid var(--line); border-radius: 999px; padding: 0.24rem 0.5rem; }
     .ctrls { display: grid; gap: 0.8rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .ctrl {
-      border: 1px solid var(--line); border-radius: var(--radius); padding: 0.95rem 1rem;
-      background: var(--surface2); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      display: grid; gap: 0.5rem; align-content: start;
-    }
+    .ctrl { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.95rem 1rem; background: var(--surface2); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); display: grid; gap: 0.5rem; align-content: start; }
     .ctrl:hover { border-color: var(--line2); }
     .ctrl-top { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .ctrl-name { font-weight: 750; font-size: 0.98rem; color: var(--text); }
@@ -190,38 +143,10 @@
     .ctrl-meta div b { color: var(--text); font: 700 0.66rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.05em; }
     .ctrl-meta .adj b { color: var(--accent); }
     .ctrl-meta .see b { color: var(--brand-2); }
-
-    /* Tables */
-    .tablewrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--line); }
-    table { width: 100%; border-collapse: collapse; background: var(--surface); min-width: 34rem; }
-    th, td { text-align: left; vertical-align: top; padding: 0.75rem 0.85rem; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
-    th { color: var(--text); font: 700 0.7rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; background: rgba(255,255,255,0.03); position: sticky; top: 0; }
-    td { color: var(--muted); }
-    tr:last-child td { border-bottom: 0; }
-
-    /* Steps */
-    .steps { counter-reset: s; display: grid; gap: 0.7rem; padding: 0; list-style: none; margin: 0; }
-    .steps li { counter-increment: s; position: relative; padding: 0.85rem 1rem 0.85rem 3rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface2); color: var(--muted); font-size: 0.92rem; }
-    .steps li::before { content: counter(s); position: absolute; left: 0.85rem; top: 0.85rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font: 700 0.8rem/1 var(--mono); color: #04201d; background: linear-gradient(180deg, var(--accent), var(--accent-d)); }
-    .steps li b { color: var(--text); }
-
     .footer { max-width: 1180px; margin: 0 auto; padding: 1.6rem clamp(1rem,5vw,3rem) calc(2.4rem + env(safe-area-inset-bottom)); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.8rem; color: var(--faint); font: 0.76rem/1.4 var(--mono); border-top: 1px solid var(--line); }
-
-    /* ---------- Responsive ---------- */
-    @media (max-width: 860px) {
-      .hero { grid-template-columns: 1fr; }
-      .g2, .g3, .g4, .ctrls { grid-template-columns: 1fr; }
-      .summary-row { grid-template-columns: 4.6rem 1fr; }
-    }
-    @media (min-width: 561px) and (max-width: 860px) {
-      .g3, .g4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
-      .ctrls { grid-template-columns: repeat(2, minmax(0,1fr)); }
-    }
-    @media (prefers-reduced-motion: no-preference) {
-      @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-      .hero > * { animation: rise 0.6s cubic-bezier(0.22,1,0.36,1) both; }
-      .summary { animation-delay: 0.1s; }
-    }
+    @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } .g2, .g3, .g4, .ctrls { grid-template-columns: 1fr; } .summary-row { grid-template-columns: 4.6rem 1fr; } }
+    @media (min-width: 561px) and (max-width: 860px) { .g3, .g4 { grid-template-columns: repeat(2, minmax(0,1fr)); } .ctrls { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    @media (prefers-reduced-motion: no-preference) { @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } } .hero > * { animation: rise 0.6s cubic-bezier(0.22,1,0.36,1) both; } .summary { animation-delay: 0.1s; } }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
 </head>
@@ -231,9 +156,12 @@
     <div class="nav-scroll">
       <div class="nav-links">
         <a href="#overview">Overview</a>
+        <a href="#philosophy">Philosophy</a>
         <a href="#live">Live</a>
         <a href="#calibrate">Calibrate</a>
         <a href="#tune">Tune</a>
+        <a href="#technology">Technology</a>
+        <a href="#color">Color &amp; Classes</a>
         <a href="#agent">Agent</a>
         <a href="#connect">Connect</a>
         <a href="#media">Media</a>
@@ -246,23 +174,25 @@
 
   <header class="hero">
     <div>
-      <div class="eyeline">Operator Guide · v1</div>
+      <div class="eyeline">Operator Guide &middot; v2 &middot; Estimator era</div>
       <h1>Film yourself,<br /><em>hands-free.</em></h1>
-      <p class="lede">WaveCam is a vision-guided PTZ camera that keeps you in frame while you foil-surf 50–300&nbsp;m offshore. A Jetson Orin watches for your <span style="color:var(--brand-2)">orange rashguard</span> plus a person detection, locks on, and drives the camera — you just ride. This guide walks every screen and every tuning control in the app.</p>
+      <p class="lede">WaveCam is a vision-guided PTZ camera that keeps you in frame while you foil-surf 50&ndash;300&nbsp;m offshore. A Jetson Orin watches for your <span style="color:var(--brand-2)">orange rashguard</span> plus a person detection, locks on, and drives the camera &mdash; you just ride. This guide walks every screen and every tuning control in the app.</p>
       <div class="btn-row">
         <a class="btn primary" href="#live">Start with Live</a>
         <a class="btn" href="#tune">Jump to tuning</a>
+        <a class="btn" href="#technology">Numbers &amp; weights</a>
       </div>
     </div>
     <div class="summary">
       <div class="summary-row"><b>iPhone</b><span>The WaveCam app is your console: Live feed, PTZ joystick, Calibrate, Tune, Connect, Media. It auto-picks USB&nbsp;tether or Wi-Fi and labels the active route.</span></div>
-      <div class="summary-row"><b>Orin</b><span>Jetson Orin Nano runs the backend (<code>:8088</code>): vision tracking (YOLOv8n + color), the camera link, safety, tuning, and the MJPEG preview.</span></div>
-      <div class="summary-row"><b>Camera</b><span>Prisual NDI PTZ does the pan / tilt / zoom. Only the Orin talks to it — the phone never commands the camera directly.</span></div>
-      <div class="summary-row"><b>You</b><span>Wear orange, hit <span style="color:var(--accent)">AUTO</span>, and keep <span style="color:var(--kill)">KILL</span> within reach. Vision keeps you framed; LoRa GPS now reads your range on the HUD and — once calibrated — coarse-points the camera at long range.</span></div>
+      <div class="summary-row"><b>Orin</b><span>Jetson Orin Nano runs the backend (<code>:8088</code>): vision tracking (YOLOv8n TensorRT + color), camera link, safety, tuning, and the MJPEG preview.</span></div>
+      <div class="summary-row"><b>Camera</b><span>Prisual NDI PTZ does the pan / tilt / zoom. Only the Orin talks to it &mdash; the phone never commands the camera directly.</span></div>
+      <div class="summary-row"><b>You</b><span>Wear orange, hit <span style="color:var(--accent)">AUTO</span>, keep <span style="color:var(--kill)">KILL</span> within reach. Vision keeps you framed; LoRa GPS coarse-points the camera at long range once calibrated.</span></div>
     </div>
   </header>
 
   <main>
+
     <!-- OVERVIEW -->
     <section id="overview">
       <div class="sec-head">
@@ -271,68 +201,177 @@
         <p class="sub">WaveCam finds you two ways at once and fuses them: a neural net (YOLOv8n) spots a <em>person</em>, and a color detector spots your <em>orange rashguard</em>. When both agree, it <b>locks</b> and the camera follows. Everything routes through the Orin so there is exactly one authority for movement and safety.</p>
       </div>
       <div class="grid g3">
-        <div class="card"><span class="pill subj">Cue</span><h3>Color + person fusion</h3><p>Your orange rashguard is the standout cue on a blue ocean. YOLO confirms it's a person, not a buoy. Agreement within a pixel distance = a confirmed target.</p></div>
-        <div class="card"><span class="pill ok">Lock</span><h3>Lock with hysteresis</h3><p>Confidence above the <b>lock</b> threshold acquires; it only releases below the lower <b>unlock</b> threshold, so spray and quick turns don't drop you.</p></div>
-        <div class="card"><span class="pill hot">Follow</span><h3>Smooth servo + zoom</h3><p>A deadband-and-feed-forward controller pans/tilts without twitching. Optional Cinematic Zoom holds your on-screen size. The camera caps its own speed.</p></div>
+        <div class="card"><span class="pill subj">Cue</span><h3>Color + person fusion</h3><p>Your orange rashguard is the standout cue on a blue ocean. YOLO confirms it&rsquo;s a person, not a buoy. Agreement within a pixel distance = a confirmed target. Score = 0.5 + 0.5&times;YOLO_conf.</p></div>
+        <div class="card"><span class="pill ok">Lock</span><h3>Lock with hysteresis</h3><p>Confidence &ge;&nbsp;0.60 acquires. It only releases below 0.35, so spray and quick turns don&rsquo;t drop you. Acquire-strict / hold-lenient &mdash; by design.</p></div>
+        <div class="card"><span class="pill hot">Follow</span><h3>Smooth servo + zoom</h3><p>A deadband-and-feed-forward controller pans/tilts without twitching. Optional Cinematic Zoom holds your on-screen size. A shadow Kalman estimator runs in observe-only mode, building its world model for a future pointing upgrade.</p></div>
       </div>
       <div class="callout teal" style="margin-top:0.9rem">
         <h3>Reading this guide from the app</h3>
-        <p>Tap the <b>Guide</b> button on any tab and it opens straight to that tab's section here. You can also browse the whole thing top to bottom — the nav bar up top jumps between sections.</p>
+        <p>Tap the <b>book icon</b> on any tab and it opens straight to that tab&rsquo;s section here. You can also browse the whole thing top to bottom &mdash; the nav bar up top jumps between sections.</p>
       </div>
     </section>
 
-    <!-- LIVE -->
+    <!-- PHILOSOPHY -->
+    <section id="philosophy">
+      <div class="sec-head">
+        <div class="kicker">Design intent</div>
+        <h2>It watches. It never drives.</h2>
+        <p class="sub">Every design choice in WaveCam starts from the same axiom: the camera moves only when you have explicitly armed it and only while a reachable KILL can stop it.</p>
+      </div>
+      <div class="grid g2" style="align-items:start">
+        <div class="card">
+          <h3>Supervise-only, always</h3>
+          <p>AUTO engages vision-owner or GPS-owner control. But the verify-and-resend loop &mdash; which nudges the camera when a GPS slew lands short &mdash; is <b>kill-gated and owner-gated</b>: the moment KILL latches, or the moment PTZ ownership changes, any pending resend is cancelled and the target is dropped. A kill landing mid-tick can never be followed by a verifier-issued move.</p>
+          <p style="margin-top:0.6rem">The Agent panel is advisory-only &mdash; it reads telemetry and surfaces logs, but it never moves the camera, runs a shell, or restarts a service.</p>
+        </div>
+        <div class="card">
+          <h3>Architecture direction</h3>
+          <p><b>Today:</b> vision-owner / GPS-owner arbitration. Vision wins when it has K=5 consecutive locked frames (confidence &ge;&nbsp;0.60). GPS coarse-points when vision is not locked and GPS is fresh + base-locked. GPS is <em>released</em> (not coasted) on data loss &mdash; the camera holds position; it does not continue driving on a stale bearing.</p>
+          <p style="margin-top:0.6rem"><b>Coming:</b> A shadow Kalman estimator (<code>estimator.shadow=true</code>, <code>enabled=false</code>) currently runs in observe-only mode. It fuses GPS position and vision bearings into a world-frame [east, north, velocity] state at every pipeline tick and logs what it <em>would</em> command &mdash; without touching the camera. When the shadow track is validated, flipping <code>estimator.enabled=true</code> will route its bearing output into pointing instead of the current GPS-owner path.</p>
+        </div>
+      </div>
+      <div class="callout" style="margin-top:0.9rem">
+        <h3>The orange-house incident &mdash; why acquire-strict / hold-lenient matters</h3>
+        <p>An early configuration had <code>unlock_threshold</code> at or above <code>lock_threshold</code>. With hysteresis inverted, the unlock branch was unreachable: any color blob that reached the lock level stayed locked permanently. An orange structure near the beach acquired a full lock and the camera parked on it. The hot-config path now <b>refuses</b> any patch where unlock &ge; lock. The YAML loader silently resets to defaults if the file contains an inverted pair rather than bricking the service at the beach.</p>
+      </div>
+    </section>
+
+    <!-- LIVE TAB -->
     <section id="live">
       <div class="sec-head">
         <div class="kicker">Live tab</div>
         <h2>Fly it, or let it fly itself</h2>
-        <p class="sub">The Live tab is the camera feed plus everything you touch in the water: the joystick, zoom, record, and the two controls that matter most — <span style="color:var(--accent)">AUTO</span> and <span style="color:var(--kill)">KILL</span>.</p>
+        <p class="sub">The Live tab is the camera feed plus everything you touch in the water: the joystick, zoom, record, and the two controls that matter most &mdash; <span style="color:var(--accent)">AUTO</span> and <span style="color:var(--kill)">KILL</span>.</p>
       </div>
-      <div class="grid g2" style="align-items:start">
-        <figure class="shot phone">
-          <img src="guide_assets/live.jpg" alt="WaveCam Live tab: camera feed with joystick, zoom slider, and control dock" />
-          <figcaption>Live tab — feed, glass control dock, lock HUD.</figcaption>
-        </figure>
-        <div class="grid" style="gap:0.8rem">
-          <div class="card"><h3>Joystick &amp; Home</h3><p>Drag the translucent joystick (bottom-left) to pan/tilt manually. <b>Tap</b> the center to recenter; <b>long-press</b> the center to send the camera <b>Home</b> (pan-forward, wide).</p></div>
-          <div class="card"><h3>Zoom &amp; Fullscreen</h3><p>The vertical slider zooms in/out. Tap the expand icon (top-right of the feed) for fullscreen; tap again to exit. Works in portrait and landscape — the phone tripod-mounts either way.</p></div>
-          <div class="card"><h3>Record</h3><p>The red record button starts/stops an MP4 on the Orin. Find clips later in <a href="#media">Media</a>.</p></div>
-          <div class="card"><h3>Lock HUD</h3><p>The reticle and lock readout show what the tracker sees: searching, locked, or holding. Turn on <code>Show mask</code> in <a href="#tune">Tune</a> to see the color detection overlaid.</p></div>
-          <div class="card"><span class="pill subj">GPS</span><h3>GPS HUD chip</h3><p>When LoRa GPS is live, a GPS chip appears showing your <b>range, bearing, and fix age</b> from the camera — <span style="color:var(--ok)">green</span> dot when fresh, <span style="color:var(--warn)">amber</span> when stale. Tap it to expand: source, range, bearing, target freshness, base fix status, and an <b>Ingest</b> row. If Ingest reads <b>DOWN — restart svc</b>, the Orin's serial reader died; fix is restarting <code>wavecam.service</code> on the Orin, not touching the Wios. The chip (along with the lock chip) persists in fullscreen. <span style="color:var(--kill)">KILL</span> chip is solid red at all times.</p></div>
+
+      <div class="ctrl-group">
+        <h3>Every icon and control on the Live screen <span class="tag">what it is &middot; what it does</span></h3>
+        <div class="ctrls">
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">KILL button</span><span class="pill stop">Header</span></div>
+            <div class="ctrl-what">Solid red button in the app&rsquo;s top-bar header &mdash; present on every tab, always reachable. Tapping it sets the global KILL latch: all camera motion stops immediately and further motion is blocked until you tap <b>Resume</b>. The live feed keeps streaming. This is the escape hatch you never have to hunt for.</div>
+            <div class="ctrl-meta"><div class="see"><b>Note</b><span>Distinct from Emergency Stop on the feed &mdash; same latch, two reach points.</span></div></div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Emergency Stop</span><span class="pill stop">On-feed rail</span></div>
+            <div class="ctrl-what">The red stop button in the control rail (right edge in landscape, bottom dock in portrait) and as a floating compact button in fullscreen mode. Sets the same KILL latch as the header button &mdash; identical effect, closer to the feed. In fullscreen, it floats bottom-right so it&rsquo;s always reachable even when the rail is hidden.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Stop PTZ</span><span class="pill restart">Hold</span></div>
+            <div class="ctrl-what">A manual hold &mdash; halts pan/tilt/zoom without setting the KILL latch. The backend stays fully reachable and you can command movement again immediately. Does not require Resume.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Book icon</span><span class="pill">Header</span></div>
+            <div class="ctrl-what">Opens this guide, anchored to the current tab&rsquo;s section. Tap it at any point to get context for exactly what you&rsquo;re looking at.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">WiFi / tether indicator</span><span class="pill">Header</span></div>
+            <div class="ctrl-what">Shows which network path is active &mdash; USB tether (<code>172.20.10.8</code>) or Wi-Fi (<code>192.168.1.155</code>). The app tries tether first; re-plugging restores it automatically. When the Orin is offline, the feed shows a wifi-slash icon over a dark gradient.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">AIM reticle</span><span class="pill subj">On-feed</span></div>
+            <div class="ctrl-what">A crosshair drawn at the current tracking aim point &mdash; the EMA-smoothed target center as reported by <code>FusionResult.target_xy</code>. Visible while TRACKING or COASTING. Disappears when the state is SEARCHING.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Green box (YOLO detection)</span><span class="pill subj">On-feed</span></div>
+            <div class="ctrl-what">Drawn around a detected object of the configured class. The label follows <code>detector.person_class</code> &mdash; &ldquo;person&rdquo; in the field, &ldquo;surfboard&rdquo;, &ldquo;cup&rdquo;, etc. during testing. Any COCO class 0&ndash;79 works.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Amber box (color blob)</span><span class="pill subj">On-feed</span></div>
+            <div class="ctrl-what">Drawn around the color-detection blob. When the green YOLO box and the amber blob overlap within <code>fusion.match_dist</code> pixels, they form a confirmed matched target (the highest-confidence signal).</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Lock chip</span><span class="pill">Top-left HUD</span></div>
+            <div class="ctrl-what">Shows the tracker state at a glance. States:
+              <ul style="margin:0.4rem 0 0; padding-left:1.1rem">
+                <li><b style="color:var(--ok)">LOCKED</b> &mdash; color + YOLO confirmed, confidence &ge; lock threshold.</li>
+                <li><b style="color:var(--warn)">CLR LOCK</b> &mdash; color blob locked, but <code>has_person=false</code> (YOLO sees no person). Amber color indicates a weaker, color-only lock. Watch for false positives.</li>
+                <li><b>CLR&middot;NO YOLO</b> &mdash; color detector sees something but YOLO does not; confidence is at sustain level (0.45), not enough to acquire.</li>
+                <li><b>YOLO&middot;NO CLR</b> &mdash; YOLO sees a person but color doesn&rsquo;t match; confidence = 0.2, never holds.</li>
+                <li><b>ACQUIRING</b> &mdash; both signals present but below lock threshold.</li>
+                <li><b style="color:var(--warn)">SEARCH</b> &mdash; nothing detected.</li>
+                <li><b style="color:var(--kill)">STOPPED</b> &mdash; KILL is latched.</li>
+                <li><b style="color:var(--warn)">OFFLINE</b> &mdash; Orin unreachable.</li>
+              </ul>
+              A <b style="color:var(--kill)">REC</b> chip appears next to it while recording.
+            </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS chip</span><span class="pill">Top-left HUD</span></div>
+            <div class="ctrl-what">Feature-detected: only appears once the backend reports a <code>gps.source</code>. Shows camera-to-target range and bearing, or &ldquo;GPS&middot;NO FIX&rdquo; while base position is not yet locked. <span style="color:var(--ok)">Green dot</span> = fix is fresh; <span style="color:var(--warn)">amber</span> = stale. Tap to expand: source, range, bearing, target age, base fix status, ingest health. If Ingest reads <b>DOWN &mdash; restart svc</b>, the Orin&rsquo;s serial reader died; fix is <code>systemctl restart wavecam.service</code>, not touching the Wios.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Joystick (deadman)</span><span class="pill">Bottom-left</span></div>
+            <div class="ctrl-what">Translucent pad at bottom-left of the feed. Drag to pan/tilt manually. <b>Releasing the joystick sends a stop command</b> &mdash; there is no coastdown. The camera stops the instant your thumb lifts. This is the deadman behavior: a dropped phone or interrupted gesture never leaves the camera drifting.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Zoom slider</span><span class="pill">Control rail</span></div>
+            <div class="ctrl-what">Spring-to-center velocity slider. Landscape: vertical (+ = tele, at top; &minus; = wide, at bottom). Portrait: horizontal (+ = right). Releasing snaps the knob to center and sends a zoom stop. The slider is velocity-based &mdash; displacement from center sets proportional speed; it does not set an absolute zoom position.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Auto-track toggle</span><span class="pill hot">Rail button</span></div>
+            <div class="ctrl-what">The <code>viewfinder.circle</code> icon (outline = off, filled = active). Tap to start autonomous tracking; the backend requests PTZ ownership and the vision/GPS servo takes over. Tap again to stop tracking (sends a hold). Refuses while KILL is latched &mdash; Resume first. Touching the joystick while AUTO is active hands PTZ back to manual.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Home</span><span class="pill">Rail button</span></div>
+            <div class="ctrl-what">The <code>house</code> icon. Sends the camera to its configured home position (pan-forward, wide). Greyed out if the backend does not support <code>/ptz/home</code>. Use this to reset orientation before re-calibrating heading.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Record</span><span class="pill stop">Rail button</span></div>
+            <div class="ctrl-what">Starts / stops an MP4 recording on the Orin. The REC chip appears in the lock-chip area while active. Find clips in the Media tab. Your saved recordings are full-quality; the MJPEG live preview is separate and quality-adjustable via <code>web.jpeg_quality</code>.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Fullscreen toggle</span><span class="pill">Top-right of feed</span></div>
+            <div class="ctrl-what">Arrows icon at top-right corner of the feed. Expands the feed to fill the screen; the control rail hides but the lock chip, GPS chip, and a floating Emergency Stop remain visible. Tap again (or the inward arrows) to exit. KILL chip in the header is always present regardless of fullscreen state.</div>
+          </div>
+
         </div>
       </div>
+
       <div class="grid g2" style="margin-top:0.9rem">
-        <div class="callout teal"><h3><span class="pill ok">AUTO</span> &nbsp;Hand it the wheel</h3><p>Tap <b>AUTO</b> to request autonomous tracking. The camera takes over and follows your lock. Touching the joystick hands control back to you; tap AUTO again to resume. AUTO refuses while killed — Resume first.</p></div>
-        <div class="callout kill"><h3><span class="pill stop">KILL</span> &nbsp;Always reachable</h3><p>KILL is a hard latch: it stops all motion immediately and blocks any further movement until you <b>Resume</b>. The live feed keeps streaming so you can still see. This button is on screen at all times by design.</p></div>
+        <div class="callout teal"><h3><span class="pill ok">AUTO</span> &nbsp;Hand it the wheel</h3><p>Tap <b>AUTO</b> to request autonomous tracking. The backend decides each frame whether vision or GPS owns the camera. Touching the joystick hands control back to you; tap AUTO again to resume. AUTO refuses while killed &mdash; Resume first.</p></div>
+        <div class="callout kill"><h3><span class="pill stop">KILL</span> &nbsp;Always reachable</h3><p>KILL is a hard latch: it stops all motion immediately and blocks any further movement &mdash; including pending verify-and-resend moves &mdash; until you tap <b>Resume</b>. The live feed keeps streaming so you can still see. This button is on screen at all times by design.</p></div>
       </div>
     </section>
 
     <!-- CALIBRATE -->
     <section id="calibrate">
       <div class="sec-head">
-        <div class="kicker">Calibrate tab · field procedure</div>
-        <h2>Teach it where it's pointing</h2>
-        <p class="sub">Calibration solves the camera-to-world geometry so GPS coarse-pointing and zoom framing land on target. The solve is stored on the Orin and survives restarts. Run it once per setup spot; re-run Heading + Tilt if you move the tripod. The app walks you through <b>6 steps</b> in order — you cannot skip ahead.</p>
+        <div class="kicker">Calibrate tab &middot; field procedure</div>
+        <h2>Teach it where it&rsquo;s pointing</h2>
+        <p class="sub">Calibration solves the camera-to-world geometry so GPS coarse-pointing lands on target. The solve is stored on the Orin and survives restarts. Run it once per setup spot; re-run Heading + Tilt if you move the tripod. The app walks you through <b>6 steps</b> in order.</p>
       </div>
 
-      <!-- ── BEFORE YOU LEAVE ─────────────────────────────────── -->
       <div class="callout teal" style="margin-bottom:1.1rem">
-        <h3>Before you leave — hardware checklist</h3>
+        <h3>Before you leave &mdash; hardware checklist</h3>
         <ul>
-          <li><b>Charge both Wios.</b> Remote (<code>!9f5802d5</code>) goes on you; base (<code>!38c3f1fd</code>) plugs into the Orin's USB-A port.</li>
+          <li><b>Charge both Wios.</b> Remote goes on you; base plugs into the Orin&rsquo;s USB-A port.</li>
           <li><b>Tripod:</b> camera, Orin, and phone all mounted and stable before you run calibration.</li>
-          <li><b>Open sky:</b> both Wios need an unobstructed view of the sky for their first fix. A cold-start (first fix after power-on) can take 2–5 minutes — plan for it.</li>
-          <li><b>Do not cold-boot the Orin with the base Wio plugged in</b> — U-Boot stalls. Unplug Wio → boot Orin → replug Wio → restart <code>wavecam.service</code>.</li>
+          <li><b>Open sky:</b> both Wios need an unobstructed view of the sky. A cold-start first fix can take 2&ndash;5 minutes &mdash; plan for it.</li>
+          <li><b>Orin cold-boot with base Wio plugged in</b> &mdash; verified safe under systemd-boot (the old U-Boot stall is gone since the NVMe migration). The Wio reader auto-reconnects. No unplug ritual needed.</li>
         </ul>
       </div>
 
-      <!-- ── WIO CONFIG EXCEPTION PATH ─────────────────────────── -->
       <details style="margin-bottom:1.1rem; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface2); padding:0.9rem 1rem;">
-        <summary style="cursor:pointer; font-weight:700; color:var(--text); font-size:0.97rem;">
-          When to run <code>verify_wios.sh</code> — exception path (expand)
-        </summary>
+        <summary style="cursor:pointer; font-weight:700; color:var(--text); font-size:0.97rem;">When to run <code>verify_wios.sh</code> &mdash; exception path (expand)</summary>
         <div style="margin-top:0.8rem; color:var(--muted); font-size:0.91rem; display:grid; gap:0.6rem;">
-          <p style="margin:0"><b>Only run this from the Mac</b> — not every session. Trigger it when: the Orin had a cold boot, either Wio was power-cycled, or the app's Preflight shows the mesh misbehaving (remote not heard, base fix never appears).</p>
+          <p style="margin:0"><b>Only run this from the Mac</b> &mdash; not every session. Trigger it when: either Wio was power-cycled without the Orin, or the app&rsquo;s Preflight shows the mesh misbehaving (remote not heard, base fix never appears).</p>
           <p style="margin:0"><b>Remote Wio:</b> Plug into your Mac USB-C, then:</p>
           <code style="display:block; white-space:pre-wrap; padding:0.5rem 0.75rem; border-radius:8px; font-size:0.83rem;">cd docs/hardware/wio-config
 ./verify_wios.sh /dev/cu.usbmodem1101</code>
@@ -340,461 +379,553 @@
           <code style="display:block; white-space:pre-wrap; padding:0.5rem 0.75rem; border-radius:8px; font-size:0.83rem;">ssh orin
 sudo systemctl stop wavecam.service
 python3 -m meshtastic --get position --get lora.modem_preset
-# re-apply if needed:  python3 -m meshtastic --configure docs/hardware/wio-config/base.yaml
+# re-apply:  python3 -m meshtastic --configure docs/hardware/wio-config/base.yaml
 sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
-          <p style="margin:0"><b>What good looks like:</b> <code>gps_mode ENABLED</code>, <code>modem_preset SHORT_FAST</code> on both units, <code>position_broadcast_secs 30</code> on base, smart broadcast on with 2 s / 5 m. If anything reverted, re-apply from the canonical YAMLs in <code>docs/hardware/wio-config/</code> using a single <code>--configure</code> write per device.</p>
+          <p style="margin:0"><b>What good looks like:</b> <code>gps_mode ENABLED</code>, <code>modem_preset SHORT_FAST</code> on both units, <code>position_broadcast_secs 30</code> on base, smart broadcast on with 2 s / 5 m on remote.</p>
         </div>
       </details>
 
-      <!-- ── THE SIX STEPS ──────────────────────────────────────── -->
-      <p style="color:var(--muted); font-size:0.9rem; margin:0 0 0.8rem">The app shows <b>STEP N OF 6</b> in the header as you progress. Each step has a Confirm or Capture button — tap it only when the expected result is met. Steps below match the app's order exactly.</p>
+      <p style="color:var(--muted); font-size:0.9rem; margin:0 0 0.8rem">The app shows <b>STEP N OF 6</b> in the header as you progress. Each step has a Confirm or Capture button &mdash; tap it only when the expected result is met.</p>
 
-      <!-- Step 1 -->
       <div class="card" style="margin-bottom:0.7rem">
         <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 1 of 6</span><h3 style="margin:0">Preflight</h3></div>
-        <p style="margin:0 0 0.55rem">The app shows a live checklist — every row must be green before you can proceed. Here is what each row means:</p>
+        <p style="margin:0 0 0.55rem; color:var(--muted); font-size:0.92rem">The app shows a live checklist &mdash; every row must be green before you can proceed.</p>
         <div class="tablewrap" style="border-radius:var(--radius-sm)">
           <table style="min-width:0">
             <thead><tr><th>Row</th><th>Green means</th><th>If not green</th></tr></thead>
             <tbody>
-              <tr><td><b>GPS ingest</b></td><td>The Orin's serial reader is getting data from the base Wio.</td><td>Check that <code>wavecam.service</code> is running (<code>ssh orin; sudo systemctl status wavecam</code>). If Ingest shows DOWN, restart the service — do not touch the Wios.</td></tr>
-              <tr><td><b>Remote heard</b></td><td>A LoRa packet from your remote Wio (<code>!9f5802d5</code>) arrived within the last stale threshold.</td><td>Power-cycle the remote Wio; confirm both are on <code>SHORT_FAST</code> preset. Give it 60 s after power-on for mesh to link.</td></tr>
-              <tr><td><b>Base fix</b></td><td>The base Wio has a valid GPS fix (latitude + longitude present, not zero).</td><td>Move the tripod to open sky. Cold-start takes 2–5 min. If it never comes, run <code>verify_wios.sh</code> on the base (see exception path above).</td></tr>
-              <tr><td><b>Camera link</b></td><td>The Orin can send VISCA commands to the PTZ camera at <code>192.168.100.88:1259</code>.</td><td>Check camera power and the LAN cable between camera and Orin. Restart <code>wavecam.service</code> if the camera was powered on after the service started.</td></tr>
+              <tr><td><b>Camera feed</b></td><td>Feed is live and delivering &gt;10 FPS to the app.</td><td>Check camera power and the LAN cable. Restart <code>wavecam.service</code> if the camera was powered on after the service started.</td></tr>
+              <tr><td><b>GPS ingest</b></td><td>The Orin&rsquo;s serial reader is getting data from the base Wio.</td><td>Check <code>wavecam.service</code> is running. If Ingest shows DOWN, restart the service &mdash; do not touch the Wios.</td></tr>
+              <tr><td><b>Remote tracker</b></td><td>A LoRa packet from your remote Wio arrived within the last 120 s.</td><td>Power-cycle the remote Wio; confirm both are on <code>SHORT_FAST</code> preset. Give it 60 s after power-on for the mesh to link.</td></tr>
+              <tr><td><b>Base GPS fix</b></td><td>The base Wio has a valid GPS fix.</td><td>Move the tripod to open sky. Cold-start takes 2&ndash;5 min. If it never comes, run <code>verify_wios.sh</code> on the base.</td></tr>
             </tbody>
           </table>
         </div>
-        <p style="margin:0.55rem 0 0; color:var(--ok); font-size:0.88rem">All four rows green → tap <b>Confirm</b>.</p>
+        <p style="margin:0.55rem 0 0; color:var(--ok); font-size:0.88rem">All rows green &rarr; tap <b>Confirm preflight</b>.</p>
       </div>
 
-      <!-- Step 2 -->
       <div class="card" style="margin-bottom:0.7rem">
-        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 2 of 6</span><h3 style="margin:0">Base Lock</h3></div>
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 2 of 6</span><h3 style="margin:0">Base Lock (GPS)</h3></div>
+        <p style="margin:0 0 0.5rem; color:var(--muted); font-size:0.92rem"><b>What it does:</b> Latches the base Wio&rsquo;s current GPS position as the camera&rsquo;s fixed ground reference for this session. One capture per session &mdash; no need to redo it if the base Wio temporarily loses its fix later.</p>
         <ol class="steps" style="margin:0">
-          <li>Watch the <b>Base fix</b> line in the app — it shows the base Wio's latitude, longitude, and age.</li>
-          <li>Wait until the fix age is stable (a few seconds old, not "null" or "—"). First fix of the day takes the longest; subsequent fixes are near-instant.</li>
-          <li>Tap <b>Capture</b>. The Orin latches the base Wio's current position as the camera's fixed ground reference for this session.</li>
+          <li>Watch the Base fix line on the GPS chip &mdash; wait until age is stable (a few seconds old, not &ldquo;&mdash;&rdquo;).</li>
+          <li>Tap <b>Capture base lock</b>. The Orin latches the position.</li>
         </ol>
-        <p style="margin:0.55rem 0 0; color:var(--muted); font-size:0.88rem"><b>You should see:</b> the step advances and the position is confirmed on-screen.</p>
-        <p style="margin:0.3rem 0 0; color:var(--warn); font-size:0.88rem"><b>If the button is greyed out or shows "No base fix yet":</b> the base Wio does not have a valid fix. Give it more sky and wait. If it never fixes → exception path above.</p>
-        <p style="margin:0.3rem 0 0; color:var(--muted); font-size:0.88rem">One capture per session is enough. If the base Wio loses its fix later during a session, GPS tracking continues using the latched position — no need to redo this step.</p>
+        <p style="margin:0.55rem 0 0; color:var(--warn); font-size:0.88rem"><b>If Capture is disabled:</b> base Wio has no fix yet. Move to open sky and wait.</p>
       </div>
 
-      <!-- Step 3 -->
       <div class="card" style="margin-bottom:0.7rem">
-        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 3 of 6</span><h3 style="margin:0">Heading — aim-at-remote</h3></div>
-        <div class="callout" style="margin-bottom:0.6rem; padding:0.7rem 0.85rem"><h3 style="font-size:0.88rem; margin:0 0 0.25rem">This is the accuracy-critical step</h3><p style="margin:0; font-size:0.85rem">A sloppy aim here skews every GPS point by the same angular offset. Take your time — every degree of error shifts the camera's aim at 100 m by ~1.7 m.</p></div>
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 3 of 6</span><h3 style="margin:0">Heading &mdash; aim at remote</h3></div>
+        <p style="margin:0 0 0.5rem; color:var(--muted); font-size:0.92rem"><b>What it anchors:</b> The pan-motor encoder position paired with the GPS base&rarr;remote bearing gives WaveCam its pan-home = &ldquo;forward&rdquo; mapping. No magnetometer is used; heading comes entirely from this geometric solve. Every degree of error here shifts the camera&rsquo;s aim at 100&nbsp;m by ~1.7&nbsp;m. Take your time.</p>
+        <div class="callout" style="margin-bottom:0.6rem; padding:0.7rem 0.85rem"><h3 style="font-size:0.88rem; margin:0 0 0.25rem">This is the accuracy-critical step</h3><p style="margin:0; font-size:0.85rem">Re-run this step any time you move the tripod or the setup faces a different direction.</p></div>
         <ol class="steps" style="margin:0">
-          <li>Put the remote tracker (<code>!9f5802d5</code>) on your person and walk to a spot <b>at least 20 m from the tripod</b> and ideally in the direction of the water. Farther is more accurate — 50 m is better than 20 m.</li>
-          <li>The app shows a live bearing from the base fix to the remote fix. Wait until both fixes are fresh (the bearing value is stable, not bouncing).</li>
-          <li>Use the joystick in the app to pan/tilt the camera until <b>you</b> (or the remote tracker) are centered in the live feed.</li>
-          <li>Tap <b>Capture</b>.</li>
+          <li>Put the remote tracker on your person and walk at least <b>20 m from the tripod</b>, ideally toward the water. Farther is more accurate &mdash; 50 m is better than 20 m.</li>
+          <li>The app shows a live bearing from the base fix to the remote fix. Wait until the bearing value is stable.</li>
+          <li>Use the joystick to pan/tilt the camera until you are centered in the live feed.</li>
+          <li>Tap <b>Capture heading</b>. The app gates this on GPS bearing being present &mdash; if the button is disabled, wait for both base and remote fixes to be fresh (GPS chip shows distance + bearing).</li>
         </ol>
-        <p style="margin:0.55rem 0 0; color:var(--muted); font-size:0.88rem"><b>You should see:</b> the app confirms the heading offset and advances to Step 4.</p>
-        <p style="margin:0.3rem 0 0; color:var(--warn); font-size:0.88rem"><b>If the Capture button is disabled:</b> the app requires both a base fix and a remote fix with a live bearing. Move to open sky, wait 60 s, and check that the remote Wio is powered on and linked (Preflight > Remote heard was green).</p>
-        <p style="margin:0.3rem 0 0; color:var(--muted); font-size:0.88rem"><b>Re-run this step</b> (at minimum, along with Tilt) any time you move the tripod or the setup faces a different direction.</p>
       </div>
 
-      <!-- Step 4 -->
       <div class="card" style="margin-bottom:0.7rem">
-        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 4 of 6</span><h3 style="margin:0">Tilt — horizon reference</h3></div>
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 4 of 6</span><h3 style="margin:0">Tilt &mdash; horizon reference</h3></div>
+        <p style="margin:0 0 0.5rem; color:var(--muted); font-size:0.92rem"><b>What it anchors:</b> Sets the tilt-zero reference (the encoder position that maps to a level horizon, 0&deg; elevation). The tracker uses this to convert GPS-computed elevation angles into tilt commands. Re-run if the camera is clearly tilted high or low, or when you move the tripod.</p>
         <ol class="steps" style="margin:0">
-          <li>Use the joystick to tilt the camera until the horizon (water surface) is level and centered vertically in the live feed. You are setting the tilt-zero reference.</li>
-          <li>Tap <b>Capture</b>.</li>
+          <li>Use the joystick to tilt the camera until the horizon (water surface) is level and centered vertically in the live feed.</li>
+          <li>Tap <b>Capture tilt</b>. The reference elevation is 0.0&deg; (level horizon).</li>
         </ol>
-        <p style="margin:0.55rem 0 0; color:var(--muted); font-size:0.88rem"><b>You should see:</b> the step advances. If the camera is clearly tilted high or low in the water session, re-run this step and re-aim at the level horizon.</p>
       </div>
 
-      <!-- Step 5 -->
       <div class="card" style="margin-bottom:0.7rem">
-        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 5 of 6</span><h3 style="margin:0">Zoom — wide reference</h3></div>
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 5 of 6</span><h3 style="margin:0">Zoom / FOV curve</h3></div>
+        <p style="margin:0 0 0.5rem; color:var(--muted); font-size:0.92rem"><b>What it captures:</b> The current zoom encoder position paired with the known wide-angle FOV (31.5&deg;). This anchors the FOV interpolation curve that the estimator and the GPS-cue boost radius calculation use. The estimator requires a non-empty FOV curve as a gate before shadow mode activates.</p>
         <ol class="steps" style="margin:0">
-          <li>The camera should already be at or near its widest zoom. Leave it there.</li>
-          <li>Tap <b>Capture</b>.</li>
+          <li>Leave the camera at its widest zoom.</li>
+          <li>Tap <b>Capture zoom</b>. The app records zoom encoder + 31.5&deg; wide reference.</li>
         </ol>
-        <p style="margin:0.55rem 0 0; color:var(--muted); font-size:0.88rem"><b>You should see:</b> the step advances. This capture sets the wide reference for the GPS zoom curve. The zoom curve is field-tuned later via Tune → GPS Cueing; <code>gps.drive_zoom</code> ships <b>off</b> so it will not drive zoom until you enable it.</p>
+        <div class="callout teal" style="margin-top:0.7rem; padding:0.7rem 0.85rem">
+          <h3 style="font-size:0.88rem; margin:0 0 0.25rem">FOV sweep tool &mdash; for the full curve</h3>
+          <p style="margin:0; font-size:0.85rem">The Calibrate tab captures a single wide-anchor point. For a full zoom-vs-FOV curve (needed for accurate estimator bearing uncertainty at all zoom levels), run <code>tools/calibrate_fov.py</code> on the Orin. Place a color-matched object <b>15&ndash;20 m out</b>. The tool pans from edge to edge, measures the encoder span, and prints a JSON line to POST to <code>/api/v1/calibration/fov</code>. Run once at wide and once at your typical tele position.</p>
+        </div>
       </div>
 
-      <!-- Step 6 -->
       <div class="card" style="margin-bottom:1rem">
-        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 6 of 6</span><h3 style="margin:0">Dry-run — verify before water</h3></div>
-        <p style="margin:0 0 0.55rem; color:var(--muted); font-size:0.92rem"><b>Do not skip this.</b> This is your chance to catch a bad heading solve on dry land, not mid-session offshore.</p>
+        <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 6 of 6</span><h3 style="margin:0">Dry-run &mdash; verify before water</h3></div>
+        <p style="margin:0 0 0.55rem; color:var(--muted); font-size:0.92rem"><b>Do not skip this.</b> Catch a bad heading solve on dry land, not mid-session offshore.</p>
         <ol class="steps" style="margin:0">
-          <li>Put the remote tracker on and <b>walk along the beach</b> — parallel to the water, varying your distance.</li>
-          <li><b>You should see:</b> the camera GPS-points and pans to follow you coarsely. It may be slightly off-angle; that is normal if heading was approximate.</li>
-          <li>Step into clear view of the camera with open sky above you. <b>You should see:</b> the lock chip on the Live HUD switch to <b>LOCKED</b> as vision acquires your orange rashguard.</li>
-          <li>Now test the kill: tap <b>KILL</b> in the app. <b>You should see:</b> all camera motion stops immediately and the KILL chip turns solid red. Hold to Resume.</li>
-          <li>Tap <b>Resume</b>, then <b>AUTO</b> to re-arm. Confirm the camera resumes following.</li>
-          <li>If everything checks out, tap <b>Done</b> to close the Calibrate wizard and proceed to Live.</li>
+          <li>Put the remote tracker on and walk along the beach. <b>You should see:</b> the camera GPS-points and pans to follow you coarsely.</li>
+          <li>Step into clear view with open sky above. <b>You should see:</b> the lock chip switch to <b style="color:var(--ok)">LOCKED</b> as vision acquires your orange rashguard.</li>
+          <li>Test the kill: tap <b>KILL</b>. <b>You should see:</b> all motion stops instantly. Tap <b>Resume</b>, then <b>AUTO</b> to confirm recovery.</li>
+          <li>If everything checks out, tap <b>Mark ready</b> and proceed to Live.</li>
         </ol>
-        <p style="margin:0.55rem 0 0; color:var(--warn); font-size:0.88rem"><b>If the camera GPS-points way off bearing:</b> re-run Step 3 (Heading) — stand farther away and aim more carefully.</p>
-        <p style="margin:0.3rem 0 0; color:var(--warn); font-size:0.88rem"><b>If the camera won't lock even up close:</b> confirm <code>Color preset = orange</code> in Tune, enable <code>Show mask</code> to verify the rashguard is in the mask, and lower <code>Lock threshold</code> if needed.</p>
+        <p style="margin:0.55rem 0 0; color:var(--warn); font-size:0.88rem"><b>Camera GPS-points way off bearing:</b> re-run Step 3 &mdash; stand farther away and aim more carefully.</p>
+        <p style="margin:0.3rem 0 0; color:var(--warn); font-size:0.88rem"><b>Camera won&rsquo;t lock up close:</b> confirm <code>Color preset = orange_red</code> in Tune, enable Show mask to verify the rashguard is in the mask.</p>
       </div>
 
-      <!-- ── TELEMETRY / FIRST AID ──────────────────────────────── -->
       <div class="grid g2" style="align-items:start; margin-top:0.2rem">
-        <div class="card">
-          <h3>Good telemetry during a session</h3>
-          <p>On the Live HUD GPS chip, healthy numbers look like:</p>
-          <ul>
-            <li><b>GPS chip dot:</b> <span style="color:var(--ok)">green</span> — fix is fresh (within the stale threshold).</li>
-            <li><b>Ingest row:</b> <span style="color:var(--ok)">OK</span> — serial reader alive.</li>
-            <li><b>Base status:</b> <span style="color:var(--ok)">LOCKED</span> — base position was captured this session.</li>
-            <li><b>target_age_sec</b> staying under ~5 s at the 2-second remote broadcast rate.</li>
-          </ul>
-        </div>
-        <div class="card">
-          <h3>Three field first-aid moves</h3>
-          <ul>
-            <li><b>Ingest DOWN:</b> the Orin's serial reader died. Fix → <code>ssh orin; sudo systemctl restart wavecam.service</code>. Do not touch the Wios.</li>
-            <li><b>GPS age climbing / remote not heard:</b> LoRa preset mismatch or remote Wio off. Check both Wios are on <code>SHORT_FAST</code> with <code>meshtastic --get lora</code>.</li>
-            <li><b>Won't lock at long range even with GPS pointing:</b> raise <code>fusion.gps_boost</code> in Tune → GPS Cueing. Start at 0.15 and increase in 0.05 increments.</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="grid g2" style="margin-top:0.9rem; align-items:start">
-        <div class="callout"><h3>When to recalibrate</h3><p>Moved the tripod, changed beach or orientation, or framing feels biased at distance? Re-run Steps 3 (Heading) and 4 (Tilt) at minimum. Step 2 (Base Lock) must always be run first in any new session.</p></div>
-        <div class="callout teal"><h3>How GPS pointing works once calibrated</h3><p>At long range a small orange dot is hard for vision to find in a wide frame. With calibration done and the base locked, GPS becomes a <b>spotter</b>: it aims the camera at your latest fix so YOLO + color can acquire, then hands off — vision refines the instant it locks. GPS cueing only activates when all three conditions hold: a fresh fix, a completed calibration, and a locked base. <span style="color:var(--kill)">KILL</span> overrides everything.</p></div>
+        <div class="card"><h3>When to recalibrate</h3><p>Moved the tripod or changed orientation? Re-run Steps 3 (Heading) and 4 (Tilt) at minimum. Step 2 (Base Lock) must always be run first in any new session.</p></div>
+        <div class="callout teal"><h3>How GPS pointing works once calibrated</h3><p>GPS becomes a <b>spotter</b>: it aims the camera at your latest fix so YOLO + color can acquire, then hands off &mdash; vision refines the instant it locks. GPS pointing activates only when: fix is fresh (age &lt; <code>gps.stale_threshold_sec</code>, default 10 s), calibration is complete, and base is locked. KILL overrides everything.</p></div>
       </div>
     </section>
 
-    <!-- TUNE (the core) -->
+    <!-- TUNE -->
     <section id="tune">
       <div class="sec-head">
-        <div class="kicker">Tune tab · the control reference</div>
+        <div class="kicker">Tune tab &middot; the control reference</div>
         <h2>Every knob, what it does, when to touch it</h2>
-        <p class="sub">Tune is under <b>Tools → Tune</b>. Most controls are <span class="pill hot">Hot</span> — they apply live with no restart. A few are <span class="pill restart">Restart</span> and prompt you to restart the service. Save a set as a <b>Preset</b> for tow-foil, wing-foil, land-chase, sunny, or cloudy days. The screenshot below is a <em>testbed</em> config (tracking a blue cup); in the field you'll run orange + person.</p>
+        <p class="sub">Tune is under <b>Tools &rarr; Tune</b>. All controls below are <span class="pill hot">Hot</span> &mdash; they apply live via <code>POST /config/hot</code> with no restart. Save a set as a <b>Preset</b> for tow-foil, wing-foil, land-chase, sunny, or cloudy conditions.</p>
       </div>
 
-      <div class="grid g2" style="margin-bottom:0.4rem; align-items:start">
-        <figure class="shot phone">
-          <img src="guide_assets/tune.png" alt="WaveCam in-app Tune tab showing presets and target controls" />
-          <figcaption>The Tune tab in the app — presets, then the controls below.</figcaption>
-        </figure>
-        <figure class="shot">
-          <img src="guide_assets/webtune.jpg" alt="WaveCam live tuning page showing Tracking Trigger and PTZ Tuning controls" />
-          <figcaption>The same controls on the Orin's live tuning page.</figcaption>
-        </figure>
-      </div>
-
-      <!-- Tracking Trigger -->
       <div class="ctrl-group">
         <h3><span class="pill subj">A</span> Tracking Trigger <span class="tag">what gets detected &amp; locked</span></h3>
         <div class="ctrls">
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Color preset</span><span class="pill hot">Hot</span><span class="ctrl-key">color.preset</span></div>
-            <div class="ctrl-what">The hue band WaveCam hunts for — your orange rashguard (testbed shows <code>blue</code>).</div>
+            <div class="ctrl-what">The hue band WaveCam hunts for. Default: <code>orange_red</code> (orange rashguard). All presets: orange_red &middot; orange &middot; red &middot; cyan &middot; blue &middot; green &middot; yellow &middot; pink. See the Color Presets section for guidance on each.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Adjust</b><span>When you change rashguard color or strong light shifts the apparent hue.</span></div>
-              <div class="see"><b>You'll see</b><span>Turn on Show mask: the mask lights up only on the target color. Wrong preset → empty or speckled mask.</span></div>
+              <div class="see"><b>You&rsquo;ll see</b><span>Enable Show mask: the mask lights up only on the target color. Wrong preset &rarr; empty or speckled mask.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">YOLO class</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.person_class</span></div>
-            <div class="ctrl-what">Which object the neural net looks for — <code>person</code> in the field (testbed: <code>41 cup</code>).</div>
+            <div class="ctrl-top"><span class="ctrl-name">YOLO target class</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.person_class</span></div>
+            <div class="ctrl-what">Which COCO class the neural net looks for. Default: 0 (person). Any COCO id 0&ndash;79 works. The on-frame box label follows the class. See the Trackable Objects table.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Adjust</b><span>Only when testing with a prop instead of a person.</span></div>
-              <div class="see"><b>You'll see</b><span>Detection boxes drawn around that class of object.</span></div>
+              <div class="adj"><b>Adjust</b><span>Only when testing with a prop instead of a person (e.g. surfboard=37, cup=41).</span></div>
             </div>
           </div>
+
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">YOLO conf</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.conf</span></div>
-            <div class="ctrl-what">How sure the net must be before it accepts a detection (≈0.25–0.45).</div>
+            <div class="ctrl-top"><span class="ctrl-name">YOLO confidence</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.conf</span></div>
+            <div class="ctrl-what">How certain the net must be before it accepts a detection. Range: 0.05&ndash;0.95. Default: 0.35.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Lower</b><span>Catches you at distance — but more false boxes.</span></div>
-              <div class="adj"><b>Raise</b><span>Rejects onlookers/boats — but may miss you in chop.</span></div>
-              <div class="see"><b>You'll see</b><span>More or fewer person boxes appear.</span></div>
+              <div class="adj"><b>Lower</b><span>Catches you at distance (more false boxes).</span></div>
+              <div class="adj"><b>Raise</b><span>Rejects onlookers and boats (may miss you in heavy chop).</span></div>
             </div>
           </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">YOLO every N frames</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.every_n</span></div>
-            <div class="ctrl-what">Run the heavy net every Nth frame; color + tracking fill the gaps to hold 30+ FPS.</div>
+            <div class="ctrl-what">Run the heavy neural net every Nth frame; color + EMA tracking fill the gaps to hold 30+ FPS. Range: 1&ndash;30. Default: 3.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>If FPS drops (e.g. 4). Acquisition feels a touch laggier.</span></div>
-              <div class="adj"><b>Lower</b><span>1–2 for snappier lock when the Orin has headroom.</span></div>
-              <div class="see"><b>You'll see</b><span>FPS readout rise as N rises.</span></div>
+              <div class="adj"><b>Raise</b><span>If FPS drops noticeably. Acquisition feels slightly laggier.</span></div>
+              <div class="adj"><b>Lower to 1&ndash;2</b><span>Snappier lock when the Orin has thermal headroom.</span></div>
             </div>
           </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Detection box TTL</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.box_ttl_sec</span></div>
+            <div class="ctrl-what">How long a YOLO detection box is kept alive between net runs. Range: 0.1&ndash;5.0 s. Default: 0.6 s. At every_n=3 and 35 FPS this covers ~3 skipped frames with margin.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>If boxes flicker in and out between net runs.</span></div>
+              <div class="adj"><b>Lower</b><span>Drop stale boxes faster after the subject leaves frame.</span></div>
+            </div>
+          </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Require YOLO person</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.require_person</span></div>
-            <div class="ctrl-what">If <b>on</b>, color only counts when it sits on a detected person — rejects stray orange.</div>
+            <div class="ctrl-what">If on, color blobs only count when a YOLO person box overlaps within <code>match_dist</code> pixels. Rejects stray orange objects. Default: off.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>On</b><span>Busy, cluttered scenes (buoys, flags, beachgoers in orange).</span></div>
-              <div class="adj"><b>Off</b><span>Extreme distance where YOLO can't resolve you but your rashguard still shows.</span></div>
-              <div class="see"><b>You'll see</b><span>Lock refuses non-person orange when on.</span></div>
+              <div class="adj"><b>On</b><span>Cluttered scenes with other orange objects nearby.</span></div>
+              <div class="adj"><b>Off</b><span>Extreme distance where YOLO can&rsquo;t resolve you but your rashguard still shows.</span></div>
             </div>
           </div>
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Person aim Y</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.person_aim_y</span></div>
-            <div class="ctrl-what">Where on your body it aims: 0 = head, 0.5 = center, 1 = feet (≈0.45 favors chest).</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Lower</b><span>Keep your head/upper body framed on a wave.</span></div>
-              <div class="adj"><b>Raise</b><span>Frame more board / full body.</span></div>
-              <div class="see"><b>You'll see</b><span>The reticle ride higher or lower on you.</span></div>
-            </div>
-          </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Lock threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.lock_threshold</span></div>
-            <div class="ctrl-what">Fused confidence needed to <b>acquire</b> a lock — the color+person score, not raw YOLO (see the note below).</div>
+            <div class="ctrl-what">Fused confidence needed to <b>acquire</b> a lock. Range: 0.05&ndash;0.95. Default: <b>0.60</b>. A confirmed color+person target scores 0.5 + 0.5&times;YOLO_conf. Must stay above unlock threshold.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Waits for a sure target — fewer false locks.</span></div>
-              <div class="adj"><b>Lower</b><span>Grabs eagerly — good in marginal visibility.</span></div>
-              <div class="see"><b>You'll see</b><span>The LOCK indicator turn on sooner or later.</span></div>
+              <div class="adj"><b>Raise</b><span>Fewer false locks &mdash; waits for a sure, close target.</span></div>
+              <div class="adj"><b>Lower</b><span>Grabs eagerly &mdash; good in marginal visibility at distance.</span></div>
+              <div class="see"><b>Example</b><span>GPS active, lock still not engaging at 200 m &rarr; lower to 0.50 or raise gps_boost.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Unlock threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.unlock_threshold</span></div>
-            <div class="ctrl-what">Fused confidence below which it <b>releases</b> the lock. Keep it <b>under</b> Lock for hysteresis (no flapping).</div>
+            <div class="ctrl-what">Confidence below which the lock <b>releases</b>. Range: 0.05&ndash;0.95. Default: <b>0.35</b>. Must stay strictly below lock threshold. Color-only sustain = 0.45, so 0.35 means color alone can hold a lock through spray &mdash; but 0.45 cannot start a new lock.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Lower</b><span>Hold a lock through spray, occlusion, sharp turns.</span></div>
               <div class="adj"><b>Raise</b><span>Drop a bad lock fast and re-acquire.</span></div>
-              <div class="see"><b>You'll see</b><span>Lock persist longer or shorter when you're partly hidden.</span></div>
+              <div class="see"><b>Example</b><span>Losing lock every wave &rarr; lower to 0.25. Stuck on wrong target &rarr; raise to 0.40 (keep below lock).</span></div>
             </div>
           </div>
+
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Color / YOLO match px</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.match_dist</span></div>
-            <div class="ctrl-what">How close (pixels) your color blob's center must be to the person's center to count as the same target.</div>
+            <div class="ctrl-top"><span class="ctrl-name">Color / YOLO match distance</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.match_dist</span></div>
+            <div class="ctrl-what">How close (pixels) your color blob&rsquo;s center must be to the person&rsquo;s center to count as the same target. Range: 20&ndash;500 px. Default: 120 px.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>If your rashguard "detaches" from your body box at distance.</span></div>
+              <div class="adj"><b>Raise</b><span>If your rashguard &ldquo;detaches&rdquo; from your body box at distance or tele zoom.</span></div>
               <div class="adj"><b>Lower</b><span>If nearby orange wrongly merges onto you.</span></div>
-              <div class="see"><b>You'll see</b><span>Lock hold or lose as color and person drift apart.</span></div>
             </div>
           </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Person aim Y</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.person_aim_y</span></div>
+            <div class="ctrl-what">Where on your body the reticle targets: 0 = head, 0.5 = center, 1 = feet. Range: 0.0&ndash;1.0. Default: 0.5.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower (0.3&ndash;0.4)</b><span>Keep your head/upper body framed on a wave.</span></div>
+              <div class="adj"><b>Raise (0.6+)</b><span>Frame more board / full body.</span></div>
+            </div>
+          </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Min color area</span><span class="pill hot">Hot</span><span class="ctrl-key">color.min_area</span></div>
-            <div class="ctrl-what">Smallest color blob accepted — rejects sparkle and sensor noise.</div>
+            <div class="ctrl-what">Smallest color blob accepted (pixels&sup2;). Range: 1&ndash;500000. Default: 60.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Lower</b><span>Catch you at long range (small blob).</span></div>
-              <div class="adj"><b>Raise</b><span>Ignore glints and speckle.</span></div>
-              <div class="see"><b>You'll see</b><span>Tiny mask specks disappear as you raise it.</span></div>
+              <div class="adj"><b>Raise</b><span>Ignore glints, sparkle, and sensor noise.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Max color area</span><span class="pill hot">Hot</span><span class="ctrl-key">color.max_area</span></div>
-            <div class="ctrl-what">Largest blob accepted — rejects big static orange (a tent, a sunrise band).</div>
+            <div class="ctrl-what">Largest blob accepted. Range: 100&ndash;1000000. Default: 200000.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Lower</b><span>If a large orange background hijacks tracking.</span></div>
-              <div class="see"><b>You'll see</b><span>Huge mask regions get ignored.</span></div>
+              <div class="adj"><b>Lower</b><span>If a large orange background (tent, sunrise band, orange structure) hijacks tracking.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Mask cleanup</span><span class="pill hot">Hot</span><span class="ctrl-key">color.morph_kernel</span></div>
-            <div class="ctrl-what">Smooths the color mask — fills pinholes, removes specks.</div>
+            <div class="ctrl-what">Morphological kernel size &mdash; smooths the color mask, fills pinholes, removes specks. Range: 1&ndash;31 (odd values recommended). Default: 5.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Choppy, sparkly water (cleaner blob, slightly slower).</span></div>
               <div class="adj"><b>Lower</b><span>Crisp edges, fastest.</span></div>
-              <div class="see"><b>You'll see</b><span>The mask overlay get smoother / rounder.</span></div>
             </div>
           </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Show detection mask</span><span class="pill hot">Hot</span><span class="ctrl-key">web.show_mask</span></div>
+            <div class="ctrl-what">Overlay the color-detection mask on the feed &mdash; your tuning X-ray. Turn on while adjusting color settings; off for clean recording.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Show debug HUD</span><span class="pill hot">Hot</span><span class="ctrl-key">web.show_hud</span></div>
+            <div class="ctrl-what">The on-video readout (confidence score, lock state, FPS) in the Orin&rsquo;s MJPEG stream. Off = a clean picture for filming; on = diagnostics while tuning.</div>
+          </div>
+
         </div>
       </div>
 
       <div class="callout teal" style="margin-top:0.9rem">
-        <h3>What "confidence" means here</h3>
-        <p>Lock and unlock compare a <b>fused</b> score, not raw YOLO: a confirmed <em>color&nbsp;+&nbsp;person</em> target scores ~0.5–1.0, a color-only blob (or a lock sustaining near your last position) scores ~0.45, and a person with no color match scores ~0.2. So a lock of 0.60 means "only commit to a confirmed orange-on-person target," and unlock must stay below lock so a brief dropout doesn't drop you.</p>
+        <h3>What &ldquo;confidence&rdquo; means &mdash; the ladder</h3>
+        <p>Lock/unlock compare a <b>fused</b> score, not raw YOLO output. The ladder from code:</p>
+        <ul>
+          <li><b>Color + person matched</b> (blob center within match_dist of person center): <code>0.5 + 0.5 &times; YOLO_conf</code> &rarr; range &asymp; 0.5&ndash;1.0. Always acquires above lock=0.60 when YOLO_conf &ge; 0.2.</li>
+          <li><b>Color-only sustain</b> (<code>CONF_SUSTAIN = 0.45</code>): a color blob (or a person near the last tracked position) while locked. Holds. Does not acquire.</li>
+          <li><b>Person-only, no color</b> (<code>CONF_PERSON_ONLY = 0.2</code>): a YOLO person with no matching color blob. Never holds, never acquires. Background people are completely ignored.</li>
+          <li><b>GPS cue boost</b>: when GPS owns the camera and a blob is within the cue radius, it gets +<code>gps_boost</code> (default 0.20), capped at 0.95. A color-only blob at sustain (0.45) + 0.20 boost = 0.65 &mdash; enough to cross lock=0.60. This is how GPS shepherds vision onto a far, small target.</li>
+        </ul>
       </div>
 
-      <!-- PTZ Tuning -->
       <div class="ctrl-group">
         <h3><span class="pill hot">B</span> PTZ Tuning <span class="tag">how fast &amp; smooth it moves</span></h3>
         <div class="ctrls">
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Deadband</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.deadzone</span></div>
-            <div class="ctrl-what">How far off-center you can drift before the camera moves — measured as a fraction of the half-frame (not pixels).</div>
+            <div class="ctrl-what">How far off-center (as a fraction of the half-frame) before the camera moves. Range: 0.02&ndash;0.30. Default: 0.08.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Calmer — stops micro-jitter around you.</span></div>
-              <div class="adj"><b>Lower</b><span>Tighter — follows every small move.</span></div>
-              <div class="see"><b>You'll see</b><span>A still camera until you leave the center zone.</span></div>
+              <div class="adj"><b>Raise</b><span>Calmer &mdash; stops micro-jitter when zoomed in.</span></div>
+              <div class="adj"><b>Lower</b><span>Tighter &mdash; follows every small move.</span></div>
+              <div class="see"><b>Example</b><span>Camera hunts left/right when zoomed in &rarr; raise 0.08 &rarr; 0.12.</span></div>
             </div>
           </div>
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Feed-forward gain</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_gain</span></div>
-            <div class="ctrl-what">Lead — predicts your motion and moves ahead instead of chasing. 0 = pure reactive.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>0.05–0.3 to keep up with fast cut-backs. Too high overshoots.</span></div>
-              <div class="see"><b>You'll see</b><span>The camera anticipate your line vs. trailing behind it.</span></div>
-            </div>
-          </div>
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">FF deadband mult</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_deadzone_mult</span></div>
-            <div class="ctrl-what">Widens the deadband for the lead term so noise doesn't trigger predictive motion.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>If feed-forward makes it twitchy.</span></div>
-              <div class="adj"><b>Lower</b><span>For more responsive lead.</span></div>
-              <div class="see"><b>You'll see</b><span>Lead motion only kick in on real movement.</span></div>
-            </div>
-          </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Max pan speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.max_pan_speed</span></div>
-            <div class="ctrl-what">Top left/right slew rate (1–24 on the Prisual scale).</div>
+            <div class="ctrl-what">Top left/right slew rate on the Prisual VISCA scale. Range: 1&ndash;24. Default: 10.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Track fast rides and close passes.</span></div>
               <div class="adj"><b>Lower</b><span>Smoother, cinematic pans.</span></div>
-              <div class="see"><b>You'll see</b><span>The cap on how fast it whips sideways.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Max tilt speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.max_tilt_speed</span></div>
-            <div class="ctrl-what">Top up/down rate (1–20). Usually a little below pan.</div>
+            <div class="ctrl-what">Top up/down slew rate. Range: 1&ndash;20. Default: 8.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Big swell, fast vertical changes.</span></div>
               <div class="adj"><b>Lower</b><span>Gentle, steady tilt.</span></div>
-              <div class="see"><b>You'll see</b><span>The vertical tracking speed cap.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Min speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.min_speed</span></div>
-            <div class="ctrl-what">Slowest move it will command — below this the PTZ stalls, so it floors here.</div>
+            <div class="ctrl-what">Slowest move the controller will command &mdash; below this the PTZ stalls, so it floors here. Range: 1&ndash;8. Default: 1.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>If slow corrections stutter or stall.</span></div>
               <div class="adj"><b>Lower</b><span>Finer creep on tiny corrections.</span></div>
-              <div class="see"><b>You'll see</b><span>Smoother small adjustments.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Command interval</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.command_min_interval</span></div>
-            <div class="ctrl-what">Minimum time between PTZ commands — rate-limits so the camera isn't flooded (seconds).</div>
+            <div class="ctrl-what">Minimum time (seconds) between PTZ velocity commands. Range: 0.01&ndash;0.50 s. Default: 0.05 s.</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Lower</b><span>Snappier response, if the camera keeps up.</span></div>
               <div class="adj"><b>Raise</b><span>If the camera lags or queues commands.</span></div>
-              <div class="see"><b>You'll see</b><span>The responsiveness-vs-smoothness trade.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Invert tilt</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.invert_tilt</span></div>
-            <div class="ctrl-what">Flip up/down if the camera tilts the wrong way for your mount.</div>
+            <div class="ctrl-top"><span class="ctrl-name">Feed-forward gain</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_gain</span></div>
+            <div class="ctrl-what">Predictive lead &mdash; moves ahead of your motion instead of only chasing it. 0 = pure reactive. Range: 0.0&ndash;1.0. Default: 0.0.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Adjust</b><span>Once at setup, then leave it.</span></div>
-              <div class="see"><b>You'll see</b><span>Tilt direction reverse.</span></div>
+              <div class="adj"><b>Raise 0.05&ndash;0.3</b><span>To keep up with fast cut-backs. Too high overshoots.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Invert pan</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.invert_pan</span></div>
-            <div class="ctrl-what">Flip left/right if the camera pans the wrong way for your mount.</div>
+            <div class="ctrl-top"><span class="ctrl-name">FF deadband mult</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_deadzone_mult</span></div>
+            <div class="ctrl-what">Widens the deadband for the feed-forward term so noise doesn&rsquo;t trigger predictive motion. Range: 1.0&ndash;4.0. Default: 1.5.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Adjust</b><span>Once at setup, then leave it.</span></div>
-              <div class="see"><b>You'll see</b><span>Pan direction reverse.</span></div>
+              <div class="adj"><b>Raise</b><span>If feed-forward makes it twitchy.</span></div>
             </div>
           </div>
+
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Show mask</span><span class="pill hot">Hot</span><span class="ctrl-key">web.show_mask</span></div>
-            <div class="ctrl-what">Overlay the color-detection mask on the feed — your tuning X-ray.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>On</b><span>While tuning color (preset, areas, cleanup).</span></div>
-              <div class="adj"><b>Off</b><span>For a clean picture / recording.</span></div>
-              <div class="see"><b>You'll see</b><span>The colored mask painted over the video.</span></div>
-            </div>
+            <div class="ctrl-top"><span class="ctrl-name">Invert pan / tilt</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.invert_pan / ptz.invert_tilt</span></div>
+            <div class="ctrl-what">Flip left/right or up/down if the camera moves the wrong direction for your mount. Set once at setup.</div>
           </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">JPEG quality</span><span class="pill hot">Hot</span><span class="ctrl-key">web.jpeg_quality</span></div>
-            <div class="ctrl-what">Quality of the live MJPEG preview (30–95). Your saved recordings are a separate, full-quality stream.</div>
+            <div class="ctrl-what">Quality of the live MJPEG preview (30&ndash;95). Default: 70. Saved recordings are full-quality and unaffected.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Lower</b><span>Weak / choppy link — smaller frames, smoother live preview.</span></div>
+              <div class="adj"><b>Lower</b><span>Weak or choppy link &mdash; smaller frames, smoother live preview.</span></div>
               <div class="adj"><b>Raise</b><span>Sharper preview when you have the bandwidth.</span></div>
-              <div class="see"><b>You'll see</b><span>The preview get crisper or blockier (not your clips).</span></div>
             </div>
           </div>
+
         </div>
       </div>
 
-      <!-- Cinematic Zoom -->
       <div class="ctrl-group">
-        <h3><span class="pill">C</span> Cinematic Zoom <span class="tag">default off · all keys hot</span></h3>
-        <p class="card" style="margin-bottom:0.8rem">Cinematic Zoom is a bounded zoom policy, not a second tracker. It only runs when PTZ is enabled, <b>AUTO</b> (autonomous) owns the camera, and there's a <b>lock</b> on a person box — then it zooms to hold your on-screen size and holds inside a deadband. With no lock it sends a zoom <em>stop</em> (it doesn't keep an old zoom move). A manual zoom nudge briefly suppresses it while pan/tilt keeps tracking. Enable it only after pan/tilt tracking looks good.</p>
+        <h3><span class="pill">C</span> Cinematic Zoom <span class="tag">default off &middot; all keys hot</span></h3>
+        <p class="card" style="margin-bottom:0.8rem">Cinematic Zoom is a bounded zoom policy. It only runs when PTZ is enabled, AUTO owns the camera, and there is a lock on a person box &mdash; then it zooms to hold your on-screen size within a deadband. Enable it only after pan/tilt tracking looks good.</p>
         <div class="ctrls">
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Enable</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.cinematic_zoom_enabled</span></div>
             <div class="ctrl-what">Turns auto-zoom on. Off by default for safety.</div>
-            <div class="ctrl-meta"><div class="see"><b>You'll see</b><span>Zoom starts moving from a locked person box.</span></div></div>
           </div>
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Subject size</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.zoom_target_frac</span></div>
-            <div class="ctrl-what">How much of the frame height you should fill (≈0.50 = half).</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Tighter framing (0.7).</span></div>
-              <div class="adj"><b>Lower</b><span>Wider, more context (0.3).</span></div>
-              <div class="see"><b>You'll see</b><span>The lens settle so you fill that fraction.</span></div>
-            </div>
+            <div class="ctrl-what">How much of the frame height you should fill. Range: 0.2&ndash;0.8. Default: 0.5.</div>
+            <div class="ctrl-meta"><div class="adj"><b>Raise</b><span>Tighter framing (0.7). Lower: wider, more context (0.3).</span></div></div>
           </div>
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Zoom deadband</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.zoom_deadband</span></div>
-            <div class="ctrl-what">Size tolerance before zoom corrects — prevents zoom hunting.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Calmer zoom (ignores small size changes).</span></div>
-              <div class="see"><b>You'll see</b><span>Zoom hold still until you clearly change size.</span></div>
-            </div>
+            <div class="ctrl-what">Size tolerance before zoom corrects. Range: 0.01&ndash;0.30. Default: 0.06.</div>
+            <div class="ctrl-meta"><div class="adj"><b>Raise</b><span>Calmer zoom (ignores small size changes).</span></div></div>
           </div>
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Zoom max speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.zoom_max_speed</span></div>
-            <div class="ctrl-what">Top zoom velocity (1–7).</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Lower</b><span>Gentle, filmic zoom.</span></div>
-              <div class="adj"><b>Raise</b><span>Snappier reframing.</span></div>
-              <div class="see"><b>You'll see</b><span>How fast the lens zooms.</span></div>
-            </div>
+            <div class="ctrl-what">Top zoom velocity. Range: 1&ndash;7. Default: 5.</div>
+            <div class="ctrl-meta"><div class="adj"><b>Lower</b><span>Gentle, filmic zoom. Raise: snappier reframing.</span></div></div>
           </div>
         </div>
       </div>
 
-      <!-- GPS Tuning -->
       <div class="ctrl-group">
-        <h3><span class="pill subj">D</span> GPS Cueing <span class="tag">visible once new backend is deployed · all keys hot</span></h3>
-        <p class="card" style="margin-bottom:0.8rem">GPS cueing controls appear in the Tune tab once the backend with P1/P2 support is running. They let you dial in how aggressively GPS takes over at long range and hands off to vision.</p>
+        <h3><span class="pill subj">D</span> GPS Cueing <span class="tag">all keys hot &middot; appears when GPS is live</span></h3>
         <div class="ctrls">
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">GPS stale threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.stale_threshold_sec</span></div>
-            <div class="ctrl-what">Age (seconds) at which a GPS fix is considered too stale to use for pointing.</div>
+            <div class="ctrl-what">Age (seconds) at which a remote GPS fix is considered too stale for pointing. Range: 1&ndash;120 s. Default: <b>10 s</b>. The remote broadcasts every 2 s when moving (smart broadcast), so a healthy mesh keeps age well under this value.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Tolerates slower updates (weak LoRa day, partial sky).</span></div>
-              <div class="adj"><b>Lower</b><span>Demand fresh fixes; GPS cues cut out sooner when the mesh lags.</span></div>
+              <div class="adj"><b>Raise</b><span>Tolerates slower updates (partial sky, weak LoRa day).</span></div>
+              <div class="adj"><b>Lower</b><span>Demand fresh fixes; GPS cues cut out faster when the mesh lags.</span></div>
             </div>
           </div>
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">GPS drive zoom</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.drive_zoom</span></div>
-            <div class="ctrl-what">When on, GPS also drives zoom-by-distance while it's pointing. Off = GPS pans/tilts only; Cinematic Zoom handles framing independently.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>On</b><span>Let GPS pull back to wide when you're far out.</span></div>
-              <div class="adj"><b>Off</b><span>If GPS zoom is overshooting; let Cinematic Zoom handle it instead.</span></div>
-            </div>
-          </div>
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">GPS boost</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.gps_boost</span></div>
-            <div class="ctrl-what">When GPS is pointing the camera, an orange blob near frame center gets this confidence boost — helping vision lock at distances where it otherwise can't.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Easier lock at 200–300 m (small blob). Watch for false locks on other orange.</span></div>
-              <div class="adj"><b>Lower</b><span>Strict — requires a strong blob even with GPS assist.</span></div>
-              <div class="see"><b>You'll see</b><span>Lock engaging at greater range when GPS is active.</span></div>
-            </div>
-          </div>
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">GPS grace period</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.grace_sec</span></div>
-            <div class="ctrl-what">How long GPS keeps pointing after a fix goes stale, before handing fully back to vision.</div>
+            <div class="ctrl-what">How long (seconds) vision continues to own the camera after losing a vision lock &mdash; before falling back to GPS. Range: 0.1&ndash;10 s. Default: 1.0 s.</div>
             <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Ride out brief LoRa gaps without losing aim.</span></div>
-              <div class="adj"><b>Lower</b><span>Hand off to vision faster when GPS signal drops.</span></div>
+              <div class="adj"><b>Raise</b><span>Ride out brief vision dropouts without GPS taking over.</span></div>
+              <div class="adj"><b>Lower</b><span>Faster GPS takeover when vision loses you.</span></div>
             </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS lock frames</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.lock_frames</span></div>
+            <div class="ctrl-what">How many consecutive vision-locked frames are needed before the arbiter hands ownership from GPS to vision. Range: 1&ndash;30. Default: 5.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Prevents vision from snatching ownership on a single noisy detection.</span></div>
+              <div class="adj"><b>Lower</b><span>Faster handoff to vision when it acquires lock.</span></div>
+            </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS boost</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.gps_boost</span></div>
+            <div class="ctrl-what">When GPS owns the camera and a blob is within the GPS cue radius, it gets this confidence boost. Range: 0.0&ndash;0.5. Default: <b>0.20</b>. At default: 0.45 + 0.20 = 0.65 &mdash; above lock=0.60. Only active when GPS is pointing.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Easier lock at 200&ndash;300 m (small blob). Watch for false locks on other orange near the cue center.</span></div>
+              <div class="adj"><b>Lower</b><span>Strict &mdash; requires a stronger blob even with GPS pointing.</span></div>
+              <div class="see"><b>Example</b><span>GPS active, lock still not engaging at 200 m &rarr; raise from 0.20 to 0.30.</span></div>
+            </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS boost radius</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.gps_boost_radius_frac</span></div>
+            <div class="ctrl-what">How large the GPS cue zone is, as a fraction of the frame. Range: 0.05&ndash;0.75. Default: 0.25. A blob within this radius of the GPS-predicted center gets the boost.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Larger target zone &mdash; more forgiving GPS aim.</span></div>
+              <div class="adj"><b>Lower</b><span>Tighter zone &mdash; requires GPS aim to be more accurate.</span></div>
+            </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS max pan / tilt speed</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.max_pan_speed / gps.max_tilt_speed</span></div>
+            <div class="ctrl-what">Top pan speed (default 4, range 1&ndash;24) and tilt speed (default 3, range 1&ndash;20) for GPS absolute pointing slews. Lower than vision defaults because GPS moves have latency and bearing uncertainty.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS drive zoom</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.drive_zoom</span></div>
+            <div class="ctrl-what">When on, GPS also adjusts zoom by distance while pointing. Off by default &mdash; untuned. Let Cinematic Zoom handle framing independently until GPS zoom is characterized.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h3><span class="pill">E</span> Estimator (shadow mode) <span class="tag">observe-only &middot; do not enable in field yet</span></h3>
+        <p class="card" style="margin-bottom:0.8rem">The shadow Kalman estimator fuses GPS position and vision bearing into a world-frame [east, north, ve, vn] state. In shadow mode (<code>estimator.shadow=true</code>, <code>estimator.enabled=false</code>) it logs what it <em>would</em> command but never moves the camera. Enabling requires a populated FOV curve (Calibrate Step 5 + the FOV sweep tool) &mdash; the estimator will refuse to start without it.</p>
+        <div class="ctrls">
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Shadow mode</span><span class="pill hot">Hot</span><span class="ctrl-key">estimator.shadow</span></div>
+            <div class="ctrl-what">When true, the estimator runs and logs but never moves the camera. Default: true. Leave on until shadow track is validated.</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Enabled</span><span class="pill hot">Hot</span><span class="ctrl-key">estimator.enabled</span></div>
+            <div class="ctrl-what">Master switch. Default: false. Requires FOV curve to be populated.</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Process noise (q_accel)</span><span class="pill hot">Hot</span><span class="ctrl-key">estimator.q_accel</span></div>
+            <div class="ctrl-what">Acceleration noise in the process model (m/s&sup2;). Range: 0.1&ndash;20.0. Default: 2.0. Higher = trusts maneuvers more, lower = smoother track.</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS measurement noise (fresh)</span><span class="pill hot">Hot</span><span class="ctrl-key">estimator.r_gps_fresh</span></div>
+            <div class="ctrl-what">Measurement noise covariance for a fresh GPS fix (m&sup2;). Range: 0.01&ndash;1000. Default: 4.0. Roughly the expected GPS position error squared (2 m RMS &rarr; r=4).</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS age scale</span><span class="pill hot">Hot</span><span class="ctrl-key">estimator.r_gps_age_scale</span></div>
+            <div class="ctrl-what">How much measurement noise grows per second of fix age: <code>r = r_gps_fresh + r_gps_age_scale &times; age_sec</code>. Range: 0.0&ndash;100.0. Default: 0.5.</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Vision bearing noise</span><span class="pill hot">Hot</span><span class="ctrl-key">estimator.r_vis_deg</span></div>
+            <div class="ctrl-what">Standard deviation of the vision bearing observation (degrees). Range: 0.1&ndash;45.0. Default: 1.0.</div>
           </div>
         </div>
       </div>
 
       <div class="callout" style="margin-top:1rem">
         <h3>Presets &amp; restart-required keys</h3>
-        <p>Save the current set as a named <b>Preset</b> (e.g. <em>Tow Foil, Wing Foil, Land Chase, Sunny, Cloudy</em>) and re-apply it in one tap. Most keys are Hot and apply instantly; a handful (camera source/codec, PTZ address, detector model) are <span class="pill restart">Restart</span> and the app will prompt you to restart the service for them to take effect.</p>
+        <p>Save the current set as a named <b>Preset</b> (e.g. <em>Tow Foil, Wing Foil, Land Chase, Sunny, Cloudy</em>) and re-apply it in one tap. All keys in the Tune tab are Hot. A handful (camera source/codec, PTZ address, detector model) are <span class="pill restart">Restart</span> &mdash; the app prompts you to restart the service for those.</p>
+      </div>
+    </section>
+
+    <!-- TECHNOLOGY -->
+    <section id="technology">
+      <div class="sec-head">
+        <div class="kicker">Under the hood</div>
+        <h2>The numbers and what they mean in the water</h2>
+        <p class="sub">Every number in this section comes directly from the source code &mdash; not documentation or memory. If you see a discrepancy between this table and the Tune controls, the code wins.</p>
+      </div>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Value</th><th>What it means at the beach</th></tr></thead>
+          <tbody>
+            <tr><td><b>Lock threshold</b> (<code>fusion.lock_threshold</code>)</td><td>0.60 default</td><td>Acquisition gate. A color+person match at YOLO_conf=0.2 scores exactly 0.60 &mdash; just enough. Any confirmed detection above this starts tracking.</td></tr>
+            <tr><td><b>Unlock threshold</b> (<code>fusion.unlock_threshold</code>)</td><td>0.35 default</td><td>Lock release gate. Color-only sustain is 0.45, so a color blob alone is enough to hold a lock (0.45 &gt; 0.35) through spray and brief occlusions &mdash; but 0.45 is below 0.60, so color alone can never start a new lock. The gap (0.35 &rarr; 0.60) is the hysteresis band.</td></tr>
+            <tr><td><b>Color-only sustain</b> (<code>CONF_SUSTAIN</code>)</td><td>0.45</td><td>The confidence given to a color blob (or a person near the last tracked position) while locked. Holds. Does not acquire.</td></tr>
+            <tr><td><b>Person-only confidence</b> (<code>CONF_PERSON_ONLY</code>)</td><td>0.20</td><td>A YOLO person with no matching color. Never holds, never acquires. Background people are invisible to the locker.</td></tr>
+            <tr><td><b>Matched score</b></td><td>0.5 + 0.5&times;YOLO_conf</td><td>Color+person agree within match_dist. At YOLO_conf=0.35 (default) &rarr; fused = 0.675. Well above lock=0.60.</td></tr>
+            <tr><td><b>GPS cue boost</b> (<code>fusion.gps_boost</code>)</td><td>0.20 default, range 0&ndash;0.5</td><td>Added to a blob&rsquo;s confidence when GPS owns the camera and the blob is within the cue radius. At default: 0.45+0.20=0.65 crosses lock=0.60.</td></tr>
+            <tr><td><b>GPS cue boost cap</b></td><td>0.95</td><td>Maximum confidence after boost.</td></tr>
+            <tr><td><b>GPS stale threshold</b> (<code>gps.stale_threshold_sec</code>)</td><td>10 s default</td><td>Fix age above this &rarr; GPS hands off to vision or idles. With remote broadcasting at 2 s (moving), a healthy mesh keeps age well under 10 s.</td></tr>
+            <tr><td><b>Remote broadcast cadence</b></td><td>Smart: 2 s / 5 m moving; 10 s stationary fallback</td><td>In the water at surf speed you trigger the 5 m threshold constantly &mdash; effectively 2 s max age. Bobbing for a set may see 10 s gaps. Both within the 10 s threshold.</td></tr>
+            <tr><td><b>Pan encoder scale</b></td><td>14.4 counts/degree (4896 / 340)</td><td>Measured 2026-06-11 by driving the Prisual to both mechanical hard stops: &plusmn;2448 counts over &plusmn;170&deg;. The old 4.47 value made every GPS slew land ~3&times; short.</td></tr>
+            <tr><td><b>Encoder poll rate</b></td><td>10 Hz</td><td>Bench-validated (2026-06-11, 300 s stress test): 0.0% loss, p95 latency = 81.8 ms under concurrent velocity traffic.</td></tr>
+            <tr><td><b>Pointing tolerance</b></td><td>&plusmn;30 encoder counts</td><td>After a GPS absolute slew, the verifier reads back the encoder 0.5 s later. If error &gt; 30 counts (~2&deg;) on either axis, it retries once. A second failure is logged as a <code>pointing_miss</code> event and the move is dropped.</td></tr>
+            <tr><td><b>Verify delay</b></td><td>0.5 s</td><td>Time the verifier waits after issuing an absolute command before reading back the encoder.</td></tr>
+            <tr><td><b>Vision lock frames (arbiter)</b></td><td>5 consecutive frames default</td><td>K consecutive vision-locked frames &rarr; vision takes ownership from GPS.</td></tr>
+            <tr><td><b>Grace window (arbiter)</b></td><td>1.0 s default</td><td>After vision loses a lock, it retains ownership for this long before GPS can reclaim.</td></tr>
+            <tr><td><b>EMA alpha</b> (<code>fusion.ema_alpha</code>)</td><td>0.5</td><td>Exponential moving average weight on the raw target position.</td></tr>
+            <tr><td><b>Lost grace</b> (<code>fusion.lost_grace_sec</code>)</td><td>0.8 s</td><td>If the target disappears, the tracker holds the EMA position (COASTING state) for up to 0.8 s before the lock drops and the EMA resets.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- COLOR PRESETS + TRACKABLE OBJECTS -->
+    <section id="color">
+      <div class="sec-head">
+        <div class="kicker">Color presets &amp; trackable objects</div>
+        <h2>Pick the cue that stands out, avoid the lookalikes</h2>
+        <p class="sub">The color detector works in HSV space. Your rashguard&rsquo;s actual hue against the ocean and sky determines which preset to run &mdash; and which ones to avoid on a given day.</p>
+      </div>
+
+      <div class="tablewrap" style="margin-bottom:0.9rem">
+        <table>
+          <thead><tr><th>Preset key</th><th>What it detects</th><th>When to use</th><th>When to avoid / watch for</th></tr></thead>
+          <tbody>
+            <tr><td><code>orange_red</code></td><td>Orange + warm red &mdash; two hue bands, sat &ge; 140 (both). Wraps the hue wheel.</td><td>Default &mdash; your orange rashguard on a blue ocean. Also picks up most warm-red gear.</td><td>Avoid when there are orange structures, rescue equipment, or orange buoys in the scene.</td></tr>
+            <tr><td><code>orange</code></td><td>Orange only (hue 8&ndash;28). Tighter than orange_red.</td><td>When red false detections are a problem (red signs, lifeguard stands).</td><td>May miss orange gear with a slight red shift in direct sun.</td></tr>
+            <tr><td><code>red</code></td><td>Red only &mdash; both hue wraps, sat floor 120 (lower than orange_red&rsquo;s 140, catches sun-washed red).</td><td>Red rashguard or red wetsuit top.</td><td>Sunset light shifts everything toward red &mdash; expect more false positives at golden hour.</td></tr>
+            <tr><td><code>cyan</code></td><td>Cyan/turquoise (hue 85&ndash;100).</td><td>Cyan wetsuit or vest in a scene with minimal blue-sky reflection on flat water.</td><td>On choppy days, sky-reflection in the water can match cyan. Test with Show mask before going offshore.</td></tr>
+            <tr><td><code>blue</code></td><td>Blue (hue 95&ndash;130).</td><td>Blue gear when the ocean surface is distinctly different (dark, kelpy, or glassy).</td><td>Ocean and sky wash &mdash; very high false positive risk in most ocean conditions.</td></tr>
+            <tr><td><code>green</code></td><td>Green (hue 38&ndash;85).</td><td>Bright lime or safety-green wetsuit on dark water.</td><td>Vegetation, seaweed patches, and green channel markers.</td></tr>
+            <tr><td><code>yellow</code></td><td>Yellow (hue 24&ndash;38).</td><td>Yellow wetsuit top on a dark ocean.</td><td>Croton-type beach foliage and yellow buoys.</td></tr>
+            <tr><td><code>pink</code></td><td>Pink/magenta (hue 140&ndash;170).</td><td>Pink rashguard &mdash; stands out well against blue water.</td><td>Pink surfboards and SUPs in the same scene.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout" style="margin-bottom:0.9rem">
+        <h3>Note: red and cyan in the iOS Tune picker</h3>
+        <p>The backend supports all 8 presets above. The iOS Tune tab color picker currently shows: orange_red, orange, blue, green, yellow, pink. The <code>red</code> and <code>cyan</code> presets are fully functional via the Orin web UI (<code>:8088</code>) or a direct hot-config POST to <code>/api/v1/config/hot</code> with <code>"color.preset": "red"</code>. The iOS picker will be updated in a future build.</p>
+      </div>
+
+      <h3 style="margin:0 0 0.6rem">Trackable YOLO classes</h3>
+      <p style="color:var(--muted); font-size:0.9rem; margin:0 0 0.7rem">Set via <code>detector.person_class</code>. Any COCO class 0&ndash;79 works &mdash; if the id is not in the table below, the on-frame label reads <code>cls&lt;N&gt;</code>. For water sessions, leave this at 0 (person).</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>COCO id</th><th>Label</th><th>When useful</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td>person</td><td>Default. The field tracker &mdash; you in the water.</td></tr>
+            <tr><td>1</td><td>bicycle</td><td>Testing / land tracking on a bike.</td></tr>
+            <tr><td>2</td><td>car</td><td>Land testing with a vehicle.</td></tr>
+            <tr><td>3</td><td>moto</td><td>Motorcycle / scooter.</td></tr>
+            <tr><td>8</td><td>boat</td><td>Track a rescue boat or tender instead of a person.</td></tr>
+            <tr><td>14</td><td>bird</td><td>Fun / stress test.</td></tr>
+            <tr><td>15</td><td>cat</td><td></td></tr>
+            <tr><td>16</td><td>dog</td><td></td></tr>
+            <tr><td>32</td><td>ball</td><td>Calibration prop on a stand.</td></tr>
+            <tr><td>33</td><td>kite</td><td>Track a kite or streamer in the air.</td></tr>
+            <tr><td>37</td><td>surfboard</td><td>Track the board rather than the rider.</td></tr>
+            <tr><td>41</td><td>cup</td><td>Classic testbed prop &mdash; easy to mark with color tape.</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
     <!-- AGENT -->
     <section id="agent">
       <div class="sec-head">
-        <div class="kicker">Tools → Agent</div>
+        <div class="kicker">Tools &rarr; Agent</div>
         <h2>It watches. It never drives.</h2>
-        <p class="sub">The Agent panel surfaces service health and logs, and can accept a diagnostics request. It is <b>supervise-only</b> by design — it will never move the camera, run a shell, or restart a service on its own.</p>
+        <p class="sub">The Agent panel surfaces service health and logs. It is <b>supervise-only</b> by design &mdash; it will never move the camera, run a shell, or restart a service on its own.</p>
       </div>
       <div class="grid g3">
-        <div class="card"><h3>Service health</h3><p>Green/red rows for the vision, PTZ, and API services so you can spot a stalled component at a glance.</p></div>
-        <div class="card"><h3>Logs</h3><p>A minimal, redacted log view — recent backend lines for field debugging, with secrets stripped.</p></div>
-        <div class="card"><span class="pill ok">Safe</span><h3>Supervise-only</h3><p>A summon request returns "accepted — no automatic shell, service, or camera-movement command was run." Advisory only.</p></div>
+        <div class="card"><h3>Service health</h3><p>Green/red rows for the vision, PTZ, and API services so you can spot a stalled component at a glance without SSHing the Orin.</p></div>
+        <div class="card"><h3>Logs (shadow events)</h3><p>Recent backend lines for field debugging. When the estimator is in shadow mode, <code>pointing_miss</code> events and estimator predictions appear here &mdash; showing what the shadow track would have commanded vs. what the arbiter actually sent.</p></div>
+        <div class="card"><span class="pill ok">Safe</span><h3>Supervise-only</h3><p>Advisory only. The agent reads telemetry; it never takes action. All camera motion comes from the vision/GPS servo &mdash; not from the agent.</p></div>
       </div>
     </section>
 
@@ -803,18 +934,12 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
       <div class="sec-head">
         <div class="kicker">Connect tab</div>
         <h2>Two ways in, picked automatically</h2>
-        <p class="sub">The app reaches the Orin over a USB tether (fastest) or Wi-Fi/hotspot, and labels which one is live. You rarely touch this once it's set.</p>
+        <p class="sub">The app reaches the Orin over a USB tether (fastest) or Wi-Fi/hotspot, and labels which one is live. You rarely touch this once it&rsquo;s set.</p>
       </div>
-      <div class="grid g2" style="align-items:start">
-        <div class="grid" style="gap:0.8rem; align-content:start">
-          <div class="card"><h3>USB tether</h3><p>Default <code>http://172.20.10.8:8088</code>. Used when the phone is plugged into the Orin's USB-A host port. Tried first.</p></div>
-          <div class="card"><h3>Wi-Fi / hotspot</h3><p>Default <code>http://192.168.1.155:8088</code>. Used when the Orin is on Wi-Fi. The app keeps probing tether so re-plugging restores USB automatically.</p></div>
-          <div class="card"><h3>Token &amp; Mock</h3><p>Optional auth token, and a Mock mode that renders the UI without a backend — handy for demos and for reading this guide offline.</p></div>
-        </div>
-        <figure class="shot phone">
-          <img src="guide_assets/connect.png" alt="WaveCam Connect tab with tether and Wi-Fi URLs" />
-          <figcaption>Connect — routes, token, mock, active-route label.</figcaption>
-        </figure>
+      <div class="grid g3">
+        <div class="card"><h3>USB tether</h3><p>Default <code>http://172.20.10.8:8088</code>. Used when the phone is plugged into the Orin&rsquo;s USB-A host port. Tried first on every request via <code>getWithFallback</code>.</p></div>
+        <div class="card"><h3>Wi-Fi / hotspot</h3><p>Default <code>http://192.168.1.155:8088</code>. Used when the Orin is on Wi-Fi. The app keeps probing tether so re-plugging restores USB automatically.</p></div>
+        <div class="card"><h3>Token &amp; Mock</h3><p>Optional auth token, and a Mock mode that renders the UI without a backend &mdash; handy for demos and for reading this guide offline.</p></div>
       </div>
     </section>
 
@@ -825,35 +950,10 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
         <h2>Your clips, off the Orin</h2>
         <p class="sub">Recordings you start from Live land on the Orin. The Media tab lists them so you can play, download to your phone, and share.</p>
       </div>
-      <div class="grid g2" style="align-items:start">
-        <figure class="shot phone">
-          <img src="guide_assets/media.png" alt="WaveCam Media tab listing recordings" />
-          <figcaption>Media — browse, download, share recordings.</figcaption>
-        </figure>
-        <div class="grid" style="gap:0.8rem; align-content:start">
-          <div class="card"><h3>Browse &amp; play</h3><p>Each recording shows its name and size. Tap to preview.</p></div>
-          <div class="card"><h3>Download &amp; share</h3><p>Pull a clip to the phone, then share it through the standard iOS share sheet.</p></div>
-          <div class="callout teal"><h3>Storage</h3><p>Clips live on the Orin until you remove them. Pull the keepers before you wipe a card.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- HARDWARE -->
-    <section id="hardware">
-      <div class="sec-head">
-        <div class="kicker">Under the hood</div>
-        <h2>The hardware stack</h2>
-      </div>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>Part</th><th>What it is</th><th>How it connects</th></tr></thead>
-          <tbody>
-            <tr><td><b>Compute</b></td><td>Jetson Orin Nano — runs vision (YOLOv8n TensorRT + color), fusion, servo, the API.</td><td>Orin's camera-LAN interface <code>192.168.100.10</code>; serves the app on <code>:8088</code>.</td></tr>
-            <tr><td><b>Camera</b></td><td>Prisual NDI PTZ — the pan/tilt/zoom actuator and video source.</td><td>Orin-only control via VISCA over UDP <code>192.168.100.88:1259</code>; video over RTSP.</td></tr>
-            <tr><td><b>GPS</b> <span class="pill ok">Live · data</span></td><td>SeeedStudio Wio Tracker L1 Lite (LoRa / Meshtastic) — a remote unit on you, a base unit on the Orin. Coarse point &amp; zoom at long range; vision refines in-frame.</td><td>Range / bearing / freshness are live on the HUD now. Coarse auto-pointing is wired and switches on once Calibrate is done and the base is locked. Heading comes from calibration, no magnetometer.</td></tr>
-            <tr><td><b>Console</b></td><td>The iOS WaveCam app — your operator screen.</td><td>USB tether <code>172.20.10.8</code> or Wi-Fi <code>192.168.1.155</code>, port <code>:8088</code>.</td></tr>
-          </tbody>
-        </table>
+      <div class="grid g3">
+        <div class="card"><h3>Browse &amp; play</h3><p>Each recording shows its name and size. Tap to preview.</p></div>
+        <div class="card"><h3>Download &amp; share</h3><p>Pull a clip to the phone, then share through the standard iOS share sheet.</p></div>
+        <div class="callout teal"><h3>Storage</h3><p>Clips live on the Orin until you remove them. Pull the keepers before wiping or reformatting storage.</p></div>
       </div>
     </section>
 
@@ -862,17 +962,17 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
       <div class="sec-head">
         <div class="kicker">Wio tracker configuration</div>
         <h2>Keep both Wios in sync</h2>
-        <p class="sub">Settings revert on power events. Verify before every session and re-apply if anything is off. Canonical configs live in <code>docs/hardware/wio-config/</code> — use <code>verify_wios.sh</code> as your pre-session checklist.</p>
+        <p class="sub">Settings can revert on power events. Verify before every session if anything was power-cycled, and re-apply if anything is off. Canonical configs live in <code>docs/hardware/wio-config/</code>.</p>
       </div>
 
       <div class="grid g2" style="align-items:start; margin-bottom:0.9rem">
         <div class="callout teal">
-          <h3>Golden rule — one batched write</h3>
-          <p>Each individual <code>--set</code> call commits a reboot. Apply all settings in a <b>single</b> <code>--configure</code> (or one batched command with all flags) so the device reboots once. Piecemeal writes in the field are how settings drift out of sync.</p>
+          <h3>Golden rule &mdash; one batched write</h3>
+          <p>Each individual <code>--set</code> call commits a reboot. Apply all settings in a <b>single</b> <code>--configure</code> so the device reboots once. Piecemeal writes are how settings drift out of sync.</p>
         </div>
         <div class="callout">
-          <h3>After any Orin cold boot</h3>
-          <p>The base Wio power-cycles with the Orin and loses all settings. Run <code>verify_wios.sh</code> on both devices after every cold boot before starting a session. Also: <b>unplug the base Wio before a cold boot</b> — U-Boot stalls trying to boot from it.</p>
+          <h3>After a Wio power event</h3>
+          <p>If either Wio was power-cycled independently (not with the Orin), run <code>verify_wios.sh</code> on that device before starting a session. The base Wio power-cycles with the Orin on a cold boot &mdash; verify it when the Orin was cold-booted without power to the base Wio&rsquo;s battery.</p>
         </div>
       </div>
 
@@ -881,20 +981,25 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
           <thead><tr><th>Setting</th><th>Remote (on you)</th><th>Base (on Orin)</th><th>Why it matters</th></tr></thead>
           <tbody>
             <tr><td><code>gps_update_interval</code></td><td>2 s</td><td>5 s</td><td>How often the GPS chip polls. Remote at 2 s for fast tracking; base is USB-powered so 5 s is fine.</td></tr>
-            <tr><td><code>position_broadcast_smart_enabled</code></td><td>true</td><td>true</td><td>Without this, positions send only once per hour (the firmware default). Must be on.</td></tr>
-            <tr><td><code>broadcast_smart_minimum_interval_secs</code></td><td>2 s</td><td>2 s</td><td>Floor between sends when moving. 2 s at 10 m/s = 20 m max position error.</td></tr>
+            <tr><td><code>position_broadcast_smart_enabled</code></td><td>true</td><td>true</td><td>Without this, positions send only once per hour (firmware default). Must be on.</td></tr>
+            <tr><td><code>broadcast_smart_minimum_interval_secs</code></td><td>2 s</td><td>2 s</td><td>Floor between sends when moving. 2 s at 10 m/s = 20 m max position error per packet.</td></tr>
             <tr><td><code>broadcast_smart_minimum_distance</code></td><td>5 m</td><td>5 m</td><td>Triggers a send on any 5 m movement.</td></tr>
-            <tr><td><code>position_broadcast_secs</code></td><td>3600 s (smart handles it)</td><td><b>30 s</b></td><td>The base is stationary on a tripod — smart broadcast never triggers. The 30 s timed floor ensures the base always broadcasts its position.</td></tr>
-            <tr><td><code>lora.modem_preset</code></td><td colspan="2" style="text-align:center"><b>SHORT_FAST on both</b></td><td>Mismatch = silent mesh failure — GPS age climbs with no errors. Verify on both after any power event.</td></tr>
-            <tr><td><code>position.gps_mode</code></td><td>ENABLED</td><td>ENABLED</td><td>If this reads anything else, the GPS chip is off — no fix is possible regardless of other settings.</td></tr>
-            <tr><td><code>power.ls_secs</code></td><td>disabled (4294967295)</td><td>N/A (nRF ignores it)</td><td>Light sleep after 5 min would kill GPS polling on the remote. Disabled. The "300 readback" on the base is cosmetic — the nRF52840 ignores this setting entirely.</td></tr>
+            <tr><td><code>position_broadcast_secs</code></td><td>3600 s (smart handles it)</td><td><b>30 s</b></td><td>The base is stationary on a tripod &mdash; smart broadcast never triggers on movement. The 30 s timed floor ensures the base always broadcasts its position even while still.</td></tr>
+            <tr><td><code>lora.modem_preset</code></td><td colspan="2" style="text-align:center"><b>SHORT_FAST on both</b></td><td>Mismatch = silent mesh failure. GPS age climbs with no errors. Verify both after any power event.</td></tr>
+            <tr><td><code>position.gps_mode</code></td><td>ENABLED</td><td>ENABLED</td><td>If this reads anything else, the GPS chip is off &mdash; no fix is possible regardless of other settings.</td></tr>
+            <tr><td><code>power.ls_secs</code></td><td>disabled (4294967295)</td><td>N/A (nRF ignores it)</td><td>Light sleep after 5 min would kill GPS polling on the remote. Disabled. The &ldquo;300 readback&rdquo; on the base is cosmetic &mdash; the nRF52840 ignores this setting entirely.</td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="callout teal" style="margin-top:0.9rem">
-        <h3>The app's 15-second minimum is a UI limit, not firmware</h3>
-        <p>The Meshtastic app dropdown bottoms out at 15 seconds, but the nRF52840 firmware accepts any positive integer. Always use the CLI (<code>meshtastic --set</code> or <code>--configure</code>) — not the app — to apply these settings. On Mac: <code>meshtastic</code> via pipx.</p>
+        <h3>The app&rsquo;s 15-second minimum is a UI limit, not firmware</h3>
+        <p>The Meshtastic app dropdown bottoms out at 15 seconds, but the nRF52840 firmware accepts any positive integer. Always use the CLI (<code>meshtastic --set</code> or <code>--configure</code>) &mdash; not the app &mdash; to apply these settings. On Mac: <code>meshtastic</code> via pipx.</p>
+      </div>
+
+      <div class="callout" style="margin-top:0.9rem">
+        <h3>LoRa preset mismatch is the silent killer</h3>
+        <p>If one Wio drifts to a different preset (e.g. after a settings revert), the mesh link breaks with no errors. You will see <code>target_age_sec</code> climbing while the GPS chip shows the remote is &ldquo;not heard.&rdquo; Always verify both with <code>meshtastic --get lora</code> before assuming a hardware failure.</p>
       </div>
     </section>
 
@@ -906,12 +1011,15 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
         <p class="sub">Movement controls are deliberately separate from safety controls. Read the state before repeating a command.</p>
       </div>
       <div class="grid g4">
-        <div class="callout kill"><span class="pill stop">Emergency</span><h3>KILL</h3><p>Global latch. Stops all motion now and blocks future motion until Resume. Feed stays live. Always on screen.</p></div>
-        <div class="card"><span class="pill restart">Hold</span><h3>Stop PTZ</h3><p>Manual hold — halts pan/tilt/zoom but does <em>not</em> latch. Backend stays reachable; you can move again or re-arm AUTO.</p></div>
-        <div class="card"><span class="pill ok">Resume / AUTO</span><h3>Start Auto</h3><p>Requests autonomous ownership. Refuses while killed — Resume first. No auto-steal: take manual, then AUTO.</p></div>
-        <div class="card"><span class="pill restart">Restart</span><h3>Service</h3><p>Stops PTZ, then restarts the WaveCam service — used after a Restart-required config change.</p></div>
+        <div class="callout kill"><span class="pill stop">Emergency</span><h3>KILL</h3><p>Global latch. Stops all motion now &mdash; including any pending verify-and-resend &mdash; and blocks future motion until Resume. Feed stays live. Always on screen.</p></div>
+        <div class="card"><span class="pill restart">Hold</span><h3>Stop PTZ</h3><p>Manual hold &mdash; halts pan/tilt/zoom but does <em>not</em> latch. Backend stays reachable; you can move again or re-arm AUTO immediately.</p></div>
+        <div class="card"><span class="pill ok">AUTO</span><h3>Start Auto</h3><p>Requests autonomous ownership. The arbiter then decides each frame whether vision or GPS drives. Refuses while killed &mdash; Resume first. Joystick touch hands back manual control.</p></div>
+        <div class="card"><span class="pill restart">Restart</span><h3>Service</h3><p>Stops PTZ, then restarts the WaveCam service &mdash; used after GPS Ingest goes DOWN or after a Restart-required config change.</p></div>
       </div>
-      <div class="callout teal" style="margin-top:0.9rem"><h3>The one rule</h3><p>The automation supervises; it never moves the camera on its own. You — and the KILL button — are always the final authority.</p></div>
+      <div class="callout teal" style="margin-top:0.9rem">
+        <h3>The one rule</h3>
+        <p>The automation supervises; it never moves the camera on its own initiative. You &mdash; and the KILL button &mdash; are always the final authority. Verify-and-resend, GPS absolute slews, and the shadow estimator are all kill-gated: a KILL latch mid-tick immediately clears any pending camera command.</p>
+      </div>
     </section>
 
     <!-- TROUBLESHOOTING -->
@@ -924,26 +1032,31 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
         <table>
           <thead><tr><th>Symptom</th><th>Likely cause</th><th>Try this</th></tr></thead>
           <tbody>
-            <tr><td>Won't lock onto you</td><td>Conf too high, wrong color preset, or Require-person on at distance</td><td>Turn on Show mask; lower <code>YOLO conf</code>; verify <code>Color preset</code>; turn Require-person off far out; lower <code>Lock threshold</code>.</td></tr>
-            <tr><td>Camera jitters / twitches</td><td>Deadband too small or feed-forward too hot</td><td>Raise <code>Deadband</code>; lower <code>Feed-forward gain</code>; raise <code>Min speed</code> if slow moves stutter.</td></tr>
-            <tr><td>Loses you in spray / turns</td><td>Unlock too high, match distance too tight</td><td>Lower <code>Unlock threshold</code>; raise <code>Color/YOLO match px</code>.</td></tr>
-            <tr><td>Grabs the wrong orange thing</td><td>Color-only false cue</td><td>Turn Require-person on; raise <code>Min color area</code>; lower <code>Max color area</code>.</td></tr>
-            <tr><td>Zoom stuck / too tight</td><td>Cinematic Zoom state, or the camera held a zoom</td><td>Long-press joystick center for Home (wide); check <code>Subject size</code>; disable Cinematic Zoom and retest pan/tilt.</td></tr>
-            <tr><td>Can't connect</td><td>Wrong route or Orin not up</td><td>Check the route label in Connect; re-plug USB; confirm the Wi-Fi static IP; the app falls back automatically.</td></tr>
-            <tr><td>Camera won't move</td><td>Killed latch is set</td><td>Tap Resume, then AUTO. KILL stays latched on purpose until you clear it.</td></tr>
-            <tr><td>GPS age climbing / stale</td><td>LoRa preset mismatch between the two Wios</td><td>Run <code>meshtastic --get lora</code> on both. Both must show <code>SHORT_FAST</code>. Re-apply if one reverted (common after a power event).</td></tr>
-            <tr><td><code>base_age</code> is null / Base fix missing</td><td>Base Wio has no GPS fix — no sky view, or settings reverted</td><td>Give the base Wio clear sky. Run <code>verify_wios.sh</code>; check <code>gps_mode</code> = ENABLED and <code>position_broadcast_secs</code> = 30. If settings reverted, re-apply from <code>docs/hardware/wio-config/</code>.</td></tr>
-            <tr><td>GPS Ingest shows DOWN</td><td>Orin's serial reader died (wavecam.service lost the port)</td><td><code>sudo systemctl restart wavecam.service</code> on the Orin. Do <em>not</em> touch or replug the Wios — it's an Orin-side issue.</td></tr>
-            <tr><td>Won't lock at long range (GPS is active)</td><td>Person detector can't resolve you at that size; gps_boost too low</td><td>Confirm YOLO engine is running (<code>GET /api/v1/config</code> → detector.model). Lower <code>fusion.lock_threshold</code> or raise <code>fusion.gps_boost</code> in Tune → GPS Cueing.</td></tr>
+            <tr><td>Won&rsquo;t lock onto you</td><td>Lock threshold too high, wrong color preset, or Require-person on at distance</td><td>Turn on Show mask; lower <code>YOLO conf</code>; verify <code>Color preset</code>; turn Require-person off far out; lower <code>fusion.lock_threshold</code> from 0.60 toward 0.50.</td></tr>
+            <tr><td>Camera hunts left/right (especially when zoomed)</td><td>Deadband too small or min-speed too high relative to zoom level</td><td>Raise <code>ptz.deadzone</code> (e.g. 0.08 &rarr; 0.12); lower <code>ptz.min_speed</code> (e.g. 2 &rarr; 1).</td></tr>
+            <tr><td>Loses you in spray / sharp turns</td><td>Unlock threshold too high, or match distance too tight</td><td>Lower <code>fusion.unlock_threshold</code> (e.g. 0.35 &rarr; 0.25); raise <code>fusion.match_dist</code> (e.g. 120 &rarr; 180).</td></tr>
+            <tr><td>Grabs the wrong orange thing</td><td>Color-only false lock &mdash; no YOLO person gating</td><td>Turn <code>Require person</code> on; raise <code>color.min_area</code>; lower <code>color.max_area</code>; re-check that <code>fusion.unlock_threshold</code> &lt; <code>lock_threshold</code>.</td></tr>
+            <tr><td>Lock chip shows CLR LOCK (amber) instead of LOCKED (green)</td><td>Color blob locked but YOLO not confirming a person</td><td>Lower <code>detector.conf</code>; check <code>detector.person_class</code> = 0; turn off Require-person if far offshore.</td></tr>
+            <tr><td>GPS not pointing (age not climbing, but camera doesn&rsquo;t slew)</td><td>Base not locked, calibration incomplete, or GPS owner not active</td><td>Confirm Calibrate Steps 2&ndash;3 are done this session. Check GPS chip: distance + bearing must both show. AUTO must be armed.</td></tr>
+            <tr><td>GPS points way off bearing</td><td>Heading capture was sloppy or remote was too close</td><td>Re-run Calibrate Step 3 &mdash; stand at least 50 m away and wait for a stable bearing before capturing.</td></tr>
+            <tr><td>GPS age climbing / stale</td><td>LoRa preset mismatch between the two Wios</td><td>Run <code>meshtastic --get lora</code> on both. Both must show <code>SHORT_FAST</code>. Re-apply if one reverted.</td></tr>
+            <tr><td>Won&rsquo;t lock at long range even with GPS pointing</td><td>gps_boost too low, or lock_threshold too high for the small far blob</td><td>Raise <code>fusion.gps_boost</code> in GPS Cueing (0.20 &rarr; 0.30); lower <code>fusion.lock_threshold</code> (0.60 &rarr; 0.50).</td></tr>
+            <tr><td>pointing_miss events in the log</td><td>GPS absolute slew overshot &mdash; normal for large slews</td><td>One retry is automatic. If it recurs, lower <code>gps.max_pan_speed</code> to reduce overshoot.</td></tr>
+            <tr><td>Base fix missing / base age null</td><td>Base Wio has no GPS fix, or settings reverted</td><td>Give the base Wio clear sky. Run <code>verify_wios.sh</code>; check <code>gps_mode = ENABLED</code> and <code>position_broadcast_secs = 30</code>.</td></tr>
+            <tr><td>GPS Ingest shows DOWN</td><td>Orin&rsquo;s serial reader died (wavecam.service lost the port)</td><td><code>sudo systemctl restart wavecam.service</code> on the Orin. Do <em>not</em> touch or replug the Wios &mdash; it&rsquo;s an Orin-side issue.</td></tr>
+            <tr><td>Zoom stuck / too tight</td><td>Cinematic Zoom holding from a prior lock</td><td>Send Home (house icon) to reset to wide. Disable Cinematic Zoom and retest pan/tilt.</td></tr>
+            <tr><td>Can&rsquo;t connect</td><td>Wrong route or Orin not up</td><td>Check the route label in Connect. Re-plug USB. Confirm Wi-Fi static IP (192.168.1.155). If neither route works, ping the gateway first.</td></tr>
+            <tr><td>Camera won&rsquo;t move</td><td>KILL latch is set</td><td>Tap Resume, then AUTO. KILL stays latched until you clear it &mdash; it cannot auto-clear.</td></tr>
           </tbody>
         </table>
       </div>
     </section>
+
   </main>
 
   <footer class="footer">
-    <span>WaveCam — Operator Guide</span>
-    <span>Tracking: YOLOv8n + orange-color fusion · LoRa GPS coarse-point · Orin :8088 · KILL always reachable</span>
+    <span>WaveCam &mdash; Operator Guide v2</span>
+    <span>Tracking: YOLOv8n TensorRT + color fusion &middot; LoRa GPS coarse-point &middot; shadow Kalman estimator &middot; Orin :8088 &middot; KILL always reachable</span>
   </footer>
 </body>
 </html>
