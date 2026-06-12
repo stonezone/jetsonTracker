@@ -1,26 +1,34 @@
 """LLM advisor — the brain behind /api/v1/agent/summon.
 
 SUPERVISE-ONLY by construction: the advisor receives a read-only context
-snapshot (status, recent events, health) and returns prose diagnostics.
-It is given no tools, no endpoints, and no way to move the camera — the
-hard rule lives in the architecture, not in the prompt alone.
+snapshot (status, recent events) and returns prose diagnostics. It is
+given no tools, no endpoints, and no way to move the camera — the hard
+rule lives in the architecture, not in the prompt alone.
 
-Three providers, selected per-summon from the iOS app:
+Three providers, selected per-summon from the iOS app. Auth policy
+(operator directive 2026-06-12): OpenAI and Anthropic go through OAuth
+ONLY — never API keys; DeepSeek is API-key (it has no OAuth).
+
   claude    Anthropic Messages API, OAuth bearer (Claude Code token —
             shares the operator's subscription quota).
-  codex     OpenAI Responses API (API key; ChatGPT-plan OAuth tokens only
-            work inside the Codex CLI, so this is the supportable path).
+  codex     ChatGPT-plan OAuth against the Codex backend
+            (chatgpt.com/backend-api/codex/responses, SSE). Access
+            tokens expire; on 401/403 the provider refreshes via
+            auth.openai.com using the stored refresh_token and persists
+            the rotated tokens back to the keys file, exactly as the
+            Codex CLI does. Plan accounts serve `gpt-5.5` (the
+            `-codex` model variants are CLI-only — verified live).
   deepseek  DeepSeek chat completions (OpenAI-compatible), API key.
 
 All transport is stdlib urllib: the rig's Python environment is a frozen,
 pinned set (documented 2026-06-11) and a diagnostics feature does not
-justify new network-stack dependencies. Request/response shapes follow the
-documented raw-HTTP forms for each API (Anthropic: version + oauth beta
-headers; model IDs verified live 2026-06-12).
+justify new network-stack dependencies. Request/response shapes and model
+IDs (claude-opus-4-8, gpt-5.5, deepseek-v4-flash — deepseek-chat retires
+2026-07-24) were all verified with live calls on 2026-06-12.
 
-Credentials live in a rig-owned file outside the repo and outside rsync
-(same pattern as auth.json / camera_pose.json). Never logged, never echoed
-back through the API.
+Credentials live in a rig-owned 0600 file outside the repo and outside
+rsync (same pattern as auth.json / camera_pose.json). Never logged,
+never echoed back through the API.
 
 Threading contract (the 2026-06-08 lesson): summon() spawns a daemon
 thread and returns immediately; report() is a lock-guarded snapshot read.
@@ -29,17 +37,22 @@ Nothing here may ever block the HTTP request thread or the vision loop.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import urllib.error
 import urllib.request
-from typing import Callable, Optional
+from typing import Callable
 
 KEYS_PATH = "/data/projects/gimbal/agent_keys.json"
 
 REQUEST_TIMEOUT_SEC = 60.0
 MAX_REPLY_TOKENS = 1500
 EVENTS_TAIL = 30
+
+CODEX_BACKEND_URL = "https://chatgpt.com/backend-api/codex/responses"
+CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
+CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"  # the Codex CLI public client
 
 SYSTEM_PROMPT = (
     "You are the WaveCam supervisor: a diagnostics advisor for an "
@@ -56,23 +69,45 @@ SYSTEM_PROMPT = (
 )
 
 
-def _load_key(keys_path: str, name: str) -> str:
+class ProviderHTTPError(RuntimeError):
+    """HTTP failure from a provider, carrying the status code so callers
+    can distinguish auth expiry (refreshable) from everything else."""
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(f"HTTP {code} from provider: {message}")
+        self.code = code
+
+
+def _load_keys(keys_path: str) -> dict:
     try:
         with open(keys_path) as f:
-            keys = json.load(f)
+            return json.load(f)
     except FileNotFoundError:
         raise RuntimeError(
             f"agent keys file missing on this host ({keys_path}); "
             "deploy it before summoning"
         )
+
+
+def _require(keys: dict, name: str, keys_path: str) -> str:
     value = keys.get(name)
     if not value:
         raise RuntimeError(f"no '{name}' key in {keys_path}")
     return value
 
 
+def _save_keys(keys_path: str, keys: dict) -> None:
+    """Atomic 0600 rewrite — rotated codex tokens must survive a crash."""
+    tmp = keys_path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(keys, f)
+    os.replace(tmp, keys_path)
+
+
 def _default_post(url: str, headers: dict, body: dict,
-                  timeout: float = REQUEST_TIMEOUT_SEC) -> dict:
+                  timeout: float = REQUEST_TIMEOUT_SEC) -> str:
+    """POST json, return the raw response body text (json or SSE)."""
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"content-type": "application/json", **headers},
@@ -80,27 +115,27 @@ def _default_post(url: str, headers: dict, body: dict,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
+            return resp.read().decode()
     except urllib.error.HTTPError as e:
-        # Surface the API's own error message, not just the status code.
         try:
             detail = json.loads(e.read().decode())
-            msg = (detail.get("error") or {}).get("message") or str(detail)[:200]
+            msg = ((detail.get("error") or {}).get("message")
+                   or detail.get("detail") or str(detail)[:200])
         except Exception:
             msg = ""
-        raise RuntimeError(f"HTTP {e.code} from provider: {msg}") from e
+        raise ProviderHTTPError(e.code, msg) from e
 
 
-# ── provider request/response shaping (pure functions) ──────────────────────
+# ── providers: each is consult(keys_path, prompt, post) -> reply text ───────
 
-def _claude_request(keys_path: str, prompt: str) -> tuple[str, dict, dict]:
-    token = _load_key(keys_path, "claude_oauth_token")
-    return (
+def _consult_claude(keys_path: str, prompt: str, post: Callable) -> str:
+    token = _require(_load_keys(keys_path), "claude_oauth_token", keys_path)
+    raw = post(
         "https://api.anthropic.com/v1/messages",
         {
             "Authorization": f"Bearer {token}",
             "anthropic-version": "2023-06-01",
-            # OAuth bearer tokens require this beta header on /v1/messages.
+            # OAuth bearer tokens are rejected on /v1/messages without this.
             "anthropic-beta": "oauth-2025-04-20",
         },
         {
@@ -110,50 +145,19 @@ def _claude_request(keys_path: str, prompt: str) -> tuple[str, dict, dict]:
             "messages": [{"role": "user", "content": prompt}],
         },
     )
-
-
-def _claude_parse(resp: dict) -> str:
+    resp = json.loads(raw)
     return "".join(
         b.get("text", "") for b in resp.get("content", [])
         if b.get("type") == "text"
     )
 
 
-def _openai_compat_parse(resp: dict) -> str:
-    # Chat-completions shape (DeepSeek).
-    choices = resp.get("choices")
-    if choices:
-        return choices[0].get("message", {}).get("content", "")
-    # Responses-API shape (OpenAI): output[] -> message -> content[] -> text.
-    parts = []
-    for item in resp.get("output", []):
-        for c in item.get("content", []):
-            if c.get("type") == "output_text":
-                parts.append(c.get("text", ""))
-    return "".join(parts)
-
-
-def _codex_request(keys_path: str, prompt: str) -> tuple[str, dict, dict]:
-    key = _load_key(keys_path, "openai_api_key")
-    return (
-        "https://api.openai.com/v1/responses",
-        {"Authorization": f"Bearer {key}"},
-        {
-            "model": "gpt-5.5",
-            "max_output_tokens": MAX_REPLY_TOKENS,
-            "instructions": SYSTEM_PROMPT,
-            "input": prompt,
-        },
-    )
-
-
-def _deepseek_request(keys_path: str, prompt: str) -> tuple[str, dict, dict]:
-    key = _load_key(keys_path, "deepseek_api_key")
-    return (
+def _consult_deepseek(keys_path: str, prompt: str, post: Callable) -> str:
+    key = _require(_load_keys(keys_path), "deepseek_api_key", keys_path)
+    raw = post(
         "https://api.deepseek.com/chat/completions",
         {"Authorization": f"Bearer {key}"},
         {
-            # deepseek-chat is deprecated 2026-07-24; v4-flash is its successor.
             "model": "deepseek-v4-flash",
             "max_tokens": MAX_REPLY_TOKENS,
             "messages": [
@@ -162,12 +166,81 @@ def _deepseek_request(keys_path: str, prompt: str) -> tuple[str, dict, dict]:
             ],
         },
     )
+    choices = json.loads(raw).get("choices") or [{}]
+    return choices[0].get("message", {}).get("content", "")
 
 
-PROVIDERS: dict[str, tuple[Callable, Callable]] = {
-    "claude": (_claude_request, _claude_parse),
-    "codex": (_codex_request, _openai_compat_parse),
-    "deepseek": (_deepseek_request, _openai_compat_parse),
+def _codex_refresh(keys_path: str, keys: dict, post: Callable) -> dict:
+    """Exchange the refresh token; persist rotated tokens (CLI behavior)."""
+    raw = post(
+        CODEX_TOKEN_URL, {},
+        {
+            "client_id": CODEX_CLIENT_ID,
+            "grant_type": "refresh_token",
+            "refresh_token": _require(keys, "codex_refresh_token", keys_path),
+            "scope": "openid profile email",
+        },
+    )
+    fresh = json.loads(raw)
+    keys["codex_access_token"] = fresh["access_token"]
+    if fresh.get("refresh_token"):
+        keys["codex_refresh_token"] = fresh["refresh_token"]
+    _save_keys(keys_path, keys)
+    return keys
+
+
+def _codex_call(keys: dict, prompt: str, post: Callable) -> str:
+    raw = post(
+        CODEX_BACKEND_URL,
+        {
+            "Authorization": f"Bearer {keys['codex_access_token']}",
+            "chatgpt-account-id": keys["codex_account_id"],
+            "OpenAI-Beta": "responses=experimental",
+            "originator": "codex_cli_rs",
+            "accept": "text/event-stream",
+        },
+        {
+            # ChatGPT-plan accounts serve gpt-5.5 here; -codex variants 400.
+            "model": "gpt-5.5",
+            "instructions": SYSTEM_PROMPT,
+            "input": [{
+                "type": "message", "role": "user",
+                "content": [{"type": "input_text", "text": prompt}],
+            }],
+            "stream": True,   # the backend only streams
+            "store": False,
+        },
+    )
+    parts = []
+    for line in raw.splitlines():
+        if line.startswith("data: ") and line != "data: [DONE]":
+            try:
+                event = json.loads(line[6:])
+            except ValueError:
+                continue
+            if event.get("type") == "response.output_text.delta":
+                parts.append(event.get("delta", ""))
+    return "".join(parts)
+
+
+def _consult_codex(keys_path: str, prompt: str, post: Callable) -> str:
+    """ChatGPT-plan OAuth: try the stored access token, refresh on expiry."""
+    keys = _load_keys(keys_path)
+    _require(keys, "codex_access_token", keys_path)
+    _require(keys, "codex_account_id", keys_path)
+    try:
+        return _codex_call(keys, prompt, post)
+    except ProviderHTTPError as e:
+        if e.code not in (401, 403):
+            raise
+        keys = _codex_refresh(keys_path, keys, post)
+        return _codex_call(keys, prompt, post)
+
+
+PROVIDERS: dict[str, Callable[[str, str, Callable], str]] = {
+    "claude": _consult_claude,
+    "codex": _consult_codex,
+    "deepseek": _consult_deepseek,
 }
 
 
@@ -211,9 +284,7 @@ class AdvisorService:
         started = time.time()
         try:
             prompt = self._build_prompt()
-            build, parse = PROVIDERS[provider]
-            url, headers, body = build(self._keys_path, prompt)
-            text = parse(self._post(url, headers, body)).strip()
+            text = PROVIDERS[provider](self._keys_path, prompt, self._post).strip()
             if not text:
                 raise RuntimeError("provider returned an empty reply")
             result = {"status": "done", "text": text}
