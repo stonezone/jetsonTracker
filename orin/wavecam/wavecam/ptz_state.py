@@ -57,6 +57,11 @@ VERIFY_DELAY_SEC: float = 0.5
 # samples is a corrupt/stale frame, not motion.
 MAX_SLEW_COUNTS_PER_SEC: float = 1500.0
 
+# Zoom changes slowly relative to pan; poll it every Nth pan cycle (~2 Hz at
+# POLL_HZ=10) so the estimator's FOV interpolation tracks reality without
+# doubling socket traffic.
+ZOOM_POLL_EVERY_N: int = 5
+
 
 class PtzState:
     """Background encoder-position cache. One instance per pipeline."""
@@ -67,6 +72,9 @@ class PtzState:
         self._lock = threading.Lock()
         self._enc: Optional[Tuple[int, int]] = None   # (pan, tilt) counts
         self._ts: Optional[float] = None              # time of last valid reply
+        self._zoom: Optional[int] = None              # zoom encoder counts
+        self._zoom_ts: Optional[float] = None
+        self._cycle: int = 0
         self._thread: Optional[threading.Thread] = None
         self._stop_ev = threading.Event()
 
@@ -79,6 +87,13 @@ class PtzState:
             if self._enc is None or self._ts is None:
                 return None, None
             return self._enc, time.time() - self._ts
+
+    def latest_zoom(self) -> Tuple[Optional[int], Optional[float]]:
+        """Return (zoom_enc, age_sec), or (None, None) before the first reply."""
+        with self._lock:
+            if self._zoom is None or self._zoom_ts is None:
+                return None, None
+            return self._zoom, time.time() - self._zoom_ts
 
     def start(self) -> None:
         """Start the background poll thread. Idempotent."""
@@ -129,12 +144,23 @@ class PtzState:
             self._enc = result
             self._ts = now
 
+    def _poll_zoom_once(self) -> None:
+        result = self._ptz.inquire_zoom()
+        if result is None:
+            return
+        with self._lock:
+            self._zoom = int(result)
+            self._zoom_ts = time.time()
+
     def _poll_loop(self) -> None:
         period = 1.0 / max(0.1, self._poll_hz)
         while not self._stop_ev.is_set():
             t0 = time.time()
             try:
                 self._poll_once()
+                self._cycle += 1
+                if self._cycle % ZOOM_POLL_EVERY_N == 0:
+                    self._poll_zoom_once()
             except Exception as e:
                 # Log but do not crash — a transient UDP failure must not kill
                 # the poller; it will retry next cycle.

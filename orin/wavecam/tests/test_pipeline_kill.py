@@ -40,6 +40,7 @@ def make_pipeline(ptz_enabled=True):
     pipe.events = EventRing()
     pipe.ptz_state = types.SimpleNamespace(
         start=lambda: None, latest=lambda: (None, None),
+        latest_zoom=lambda: (None, None),
         is_alive=lambda: False, stop=lambda: None)
     from wavecam.pointing_verifier import PointingVerifier
     pipe._pointing_verifier = PointingVerifier(
