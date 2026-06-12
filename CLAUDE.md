@@ -181,7 +181,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 │                              #   ptz,calibration,system}.py + an 811-line coordinator.
 │                              #   estimator.py (Plan-3 shadow filter) + wavecam/tools/sim/
 │                              #   (synthetic-scenario harness) exist as of PR #27.
-│                              #   Tests: 216+ (tests/), CI runs them on every push
+│                              #   Tests: 340+ incl. mypy type gate (tests/), CI runs them on every push
 │                              #   (.github/workflows/backend-tests.yml).
 ├── ios/WaveCam/               # native iOS operator app, SwiftUI (xcodegen) (Claude's lane)
 │                              #   + WaveCamWatch Tier-1 companion (Sources-Watch/)
@@ -221,7 +221,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 - **Orin ↔ Camera**: RAW VISCA UDP `192.168.100.88:1259`; video over RTSP.
 - **Orin control API**: `http://<orin>:8088/api/v1` (status / safety / ptz / media / config / telemetry / agent / system).
-- **Live detector model**: `yolov8n.engine` (TensorRT) — rebuilt directly on the Orin 2026-06-10 (cross-device export problem is resolved). To confirm what's running: `GET /api/v1/config` or trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`.
+- **Live detector model**: YOLO (`yolo26n` family, TensorRT engine) — rebuilt directly on the Orin 2026-06-10 (cross-device export problem is resolved). To confirm what's running: `GET /api/v1/config` or trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`.
 - **Legacy Orin ↔ STM32**: UART `/dev/ttyACM0` @115200 (F401RE gimbal), archived and not part of the active WaveCam runtime.
 - **Two-agent collab**: `.agent-collab/bin/collab.py` (emit / claim-open / claim-close). Claim before editing shared files.
 
@@ -305,7 +305,16 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - Don't let the agent/automation move the camera without the supervise-only gate + a reachable Emergency Stop
 - Don't touch the Orin runtime/deploy (Codex/Zack's lane); don't `git push` to remote
 
-## Gotchas (hard-won — 2026-06-05)
+## Gotchas (hard-won — 2026-06-05, expanded 2026-06-12)
+
+- **The 4.47 rule:** pan/tilt scale = **14.4 counts/deg** (MEASURED at the hard stops, both axes; tilt zero = horizontal). The old 4.47 was unmeasured folklore that made every GPS slew land 1/3 short. Never trust an unmeasured constant; land measurements with provenance + a pinning test.
+- **Bench with wavecam.service STOPPED.** Ownership contention masquerades as camera dynamics — "overshoot and hunt" was the tracker fighting the bench script; uncontended absolute moves land with zero error (~115 counts/s, ~2.4 s overhead).
+- **Tooling frame source = the camera's `/snapshot.jpg`** (fresh per GET). cv2 RTSP/MJPEG captures freeze on reuse; the service's preview.mjpeg serves stale frames to readers.
+- **Check `resp.ok` on every control-API call** — refusals (owner_busy etc.) are silent 200s with ok:false. PTZ velocity needs `takeover:true` to displace autonomous owners; RESUME hands the owner to "testbed".
+- **iOS/watch plists: verify keys in the BUILT product** (`PlistBuddy` on the .app). Nonexistent `INFOPLIST_KEY_*` settings are dropped silently — this shipped a watch app whose background recording mode didn't exist.
+- **Hot-config persists to `config.local.yaml`** (rsync-excluded) — deploys no longer clobber tuning. The estimator/sensors config sections must exist in YAML *and* the loader's known-sections list or they silently vanish (/config renders defaults and masks it).
+- **Post-deploy verification must check fps>0 while LOCKED** — two "zombie rigs" (API answering, vision loop dead) passed idle checks.
+- **devicectl installs the watch app directly** (the iPhone Watch app won't install dev builds — greyed icon is normal); the watch must be awake/near the phone; retry loops work.
 
 - **The build is the source of truth, not SourceKit.** Inline "Cannot find X in scope" / "Extra argument 'conformingTo'" diagnostics are almost always stale single-file indexing noise — trust only `xcodebuild … ** BUILD SUCCEEDED **`.
 - **`main` is push-protected.** A hook + org policy block direct pushes to `main` (even when authorized). Merge via a PR or hand the fast-forward to Codex. A command containing both "push" and "main" trips the guard even when the push target is a feature branch — split such commands.
