@@ -80,5 +80,9 @@ gps:
   enabled: true
   dev_path: /dev/ttyACM0
   remote_id: "!9f5802d5"
-  stale_threshold_sec: 10
+  stale_threshold_sec: 45
   drive_zoom: false
+
+estimator:
+  enabled: true
+  shadow: true
