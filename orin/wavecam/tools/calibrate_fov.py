@@ -38,7 +38,7 @@ SNAPSHOT = "http://192.168.100.88/snapshot.jpg"   # camera HTTP still: fresh fra
 EDGE_LO, EDGE_HI = 0.12, 0.88
 MIN_BLOB_PX = 300                  # snapshot frames are 1080p — 300px there ≈ 35px at 360p
 PHASE_TIMEOUT_S = 90.0
-LEASH_COUNTS = 600                 # ~135 deg at 4.47 counts/deg
+LEASH_COUNTS = 600                 # ~42 deg at the true 14.4 counts/deg — ample for any sweep
 
 
 def api(path: str, payload: dict | None = None) -> dict:
@@ -222,7 +222,8 @@ def main() -> None:
     args = ap.parse_args()
 
     cal = api("/calibration")["calibration"]
-    enc_per_deg = float(cal["gps_pose"]["pan_enc_per_deg"]) if "gps_pose" in cal else 4.47
+    from wavecam.camera_pose import PRISUAL_PAN_ENC_PER_DEG
+    enc_per_deg = float(cal.get("gps_pose", {}).get("pan_enc_per_deg") or PRISUAL_PAN_ENC_PER_DEG)
     eye = Eye()
     visca = ViscaIP("192.168.100.88")
 

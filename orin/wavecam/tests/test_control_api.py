@@ -587,6 +587,29 @@ def test_api_v1_calibration_captures_heading_tilt_zoom_state():
     assert config_state["current"]["calibration"]["reference_heading"] == 247.1
 
 
+def test_heading_capture_stamps_measured_pan_scale():
+    """The aim capture must stamp the hard-stop-measured scale (14.4 counts/deg),
+    not the retired 4.47 folklore value that left every GPS slew ~3.2x short."""
+    from wavecam.camera_pose import PRISUAL_PAN_ENC_PER_DEG
+    assert abs(PRISUAL_PAN_ENC_PER_DEG - 14.4) < 0.01
+
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.owner.request("testbed")
+    pipe.ptz.inquire_pan_tilt = lambda: (1000.0, 0.0)   # encoder readback available
+
+    r = client.post(
+        "/api/v1/calibration/heading",
+        json={"requested_owner": "manual", "takeover": True,
+              "heading_deg": 90.0, "source": "test"},
+    )
+    assert r.status_code == 200
+    assert abs(pipe.pose.pan_enc_per_deg - PRISUAL_PAN_ENC_PER_DEG) < 1e-9
+    # +10 deg of bearing must move ~144 encoder counts, not ~45
+    delta = pipe.pose.bearing_to_pan_encoder(100.0) - 1000.0
+    assert abs(delta - 10.0 * PRISUAL_PAN_ENC_PER_DEG) < 0.5
+
+
 def test_api_v1_calibration_is_owner_gated_kill_safe_and_validated():
     client = make_client()
     pipe = client.app.state.pipeline
