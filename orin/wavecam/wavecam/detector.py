@@ -11,9 +11,11 @@ from typing import List, Tuple
 # Curated COCO class labels for the on-frame box label and UI pickers.
 # Anything else renders as "cls<N>" — the detector accepts any COCO id 0..79.
 CLASS_LABELS = {
-    0: "person", 1: "bicycle", 2: "car", 3: "moto", 8: "boat",
-    14: "bird", 15: "cat", 16: "dog", 32: "ball", 33: "kite",
-    37: "surfboard", 41: "cup",
+    0: "person", 1: "bicycle", 2: "car", 3: "moto", 7: "truck",
+    8: "boat", 14: "bird", 15: "cat", 16: "dog", 17: "horse",
+    24: "backpack", 25: "umbrella", 29: "frisbee", 32: "ball",
+    33: "kite", 36: "skateboard", 37: "surfboard", 41: "cup",
+    56: "chair",
 }
 
 

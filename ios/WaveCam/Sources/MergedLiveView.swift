@@ -496,8 +496,15 @@ private struct GlassZoomSlider: View {
 /// edge (lost to aspect-fill cropping in landscape and fullscreen) rendered natively
 /// from /status, so every orientation shows it.
 private struct GlassStatsStrip: View {
+    @Environment(WaveCamClient.self) private var client
     let status: WCStatus?
     let connected: Bool
+    @State private var showDetail = false
+
+    private var gps: WCStatus.GPS? {
+        guard connected, let g = status?.gps, g.source != nil else { return nil }
+        return g
+    }
 
     private var text: String {
         guard connected, let s = status else { return "OFFLINE" }
@@ -523,14 +530,33 @@ private struct GlassStatsStrip: View {
     }
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.92))
-            .lineLimit(1)
-            .minimumScaleFactor(0.65)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(.black.opacity(0.45), in: Capsule())
+        // The strip is the guaranteed-visible HUD element in every orientation,
+        // so it doubles as the GPS-detail tap target (the chip row proved
+        // unreachable in landscape on-device, 2026-06-12).
+        Button {
+            if gps != nil { showDetail = true }
+        } label: {
+            Text(text)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.black.opacity(0.45), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Telemetry strip")
+        .accessibilityHint(gps != nil ? "Shows GPS detail" : "")
+        .popover(isPresented: $showDetail) {
+            if let g = gps {
+                GPSDetailCard(gps: g)
+                    .presentationCompactAdaptation(.popover)
+            }
+        }
+        .onChange(of: client.effectiveKilled) { _, isKilled in
+            if isKilled { showDetail = false }
+        }
     }
 }
 

@@ -42,6 +42,23 @@ COLOR_PRESETS = {
         "pink_low": [140, 80, 90],
         "pink_high": [170, 255, 255],
     },
+    "purple": {
+        "purple_low": [125, 80, 70],
+        "purple_high": [145, 255, 255],
+    },
+    # White = low saturation + high value, hue irrelevant. Strong in a yard;
+    # near water expect foam/cloud false positives — prefer a chromatic preset
+    # for surf sessions.
+    "white": {
+        "white_low": [0, 0, 185],
+        "white_high": [180, 55, 255],
+    },
+    # Black = low value, hue/sat irrelevant. Wetsuits! Shadows are the
+    # adversary — raise min_area if the scene is contrasty.
+    "black": {
+        "black_low": [0, 0, 0],
+        "black_high": [180, 255, 65],
+    },
 }
 
 
