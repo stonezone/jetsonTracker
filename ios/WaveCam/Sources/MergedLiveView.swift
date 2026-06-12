@@ -102,16 +102,17 @@ struct MergedLiveView: View {
             // Telemetry HUD — fullscreen is the tripod-monitoring mode, so lock/GPS
             // state must stay visible (it was dropped here pre-2026-06-10, leaving
             // the operator blind to LOCKED/GPS while in fullscreen).
-            VStack {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
                 HStack(alignment: .top) {
                     GlassLockChip(status: client.status, connected: client.connected)
                     GlassGPSChip(status: client.status, connected: client.connected)
                     Spacer()
                     fullscreenToggleButton
                 }
-                .padding(WCSpace.md)
-                Spacer()
+                GlassStatsStrip(status: client.status, connected: client.connected)
             }
+            .padding(WCSpace.md)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             // Floating STOP — always reachable in fullscreen (safety invariant)
             VStack {
@@ -138,16 +139,17 @@ struct MergedLiveView: View {
                 .padding(.bottom, WCSpace.md)
 
             // Top HUD row — lock chip (left) + fullscreen toggle (right)
-            VStack {
+            VStack(alignment: .leading, spacing: WCSpace.xs) {
                 HStack(alignment: .top) {
                     GlassLockChip(status: client.status, connected: client.connected)
                     GlassGPSChip(status: client.status, connected: client.connected)
                     Spacer()
                     fullscreenToggleButton
                 }
-                .padding(WCSpace.md)
-                Spacer()
+                GlassStatsStrip(status: client.status, connected: client.connected)
             }
+            .padding(WCSpace.md)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             // Error/refusal toast — bottom, above joystick row
             GlassToast(message: $toastMessage)
@@ -489,6 +491,49 @@ private struct GlassZoomSlider: View {
 }
 
 // MARK: - GlassLockChip
+
+/// Always-visible telemetry strip: the data the server bakes into the video's top
+/// edge (lost to aspect-fill cropping in landscape and fullscreen) rendered natively
+/// from /status, so every orientation shows it.
+private struct GlassStatsStrip: View {
+    let status: WCStatus?
+    let connected: Bool
+
+    private var text: String {
+        guard connected, let s = status else { return "OFFLINE" }
+        let t = s.tracking
+        func flag(_ b: Bool?) -> String { b == true ? "Y" : "-" }
+        var parts: [String] = [
+            String(format: "conf %.2f", t.confidence),
+            String(format: "%.0f fps", t.fps),
+            "C\(flag(t.hasColor)) P\(flag(t.hasPerson)) M\(flag(t.matched))",
+            s.ptz.owner,
+        ]
+        if let g = s.gps, g.source != nil {
+            if let d = g.distanceM {
+                var gp = "gps \(Int(d.rounded()))m"
+                if let b = g.bearingDeg { gp += "·\(Int(b.rounded()))°" }
+                if g.stale == true { gp += "·STALE" }
+                parts.append(gp)
+            } else {
+                parts.append("gps NO FIX")
+            }
+        }
+        return parts.joined(separator: "  |  ")
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.92))
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.black.opacity(0.45), in: Capsule())
+    }
+}
+
 
 /// Minimal HUD chip showing lock state + plain-English reason (wraps FeedLockReason logic).
 private struct GlassLockChip: View {
