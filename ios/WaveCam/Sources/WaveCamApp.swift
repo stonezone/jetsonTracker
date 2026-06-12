@@ -23,6 +23,8 @@ struct WaveCamApp: App {
                     // re-fire client.configure redundantly (iOS review #8).
                     KeychainStore.migrateLegacyToken(legacyDefaultsKey: WaveCamDefaults.tokenKey)
                     applyStoredSettings()
+                    // Activate WatchConnectivity receiver for incoming session JSONL files.
+                    WatchSessionReceiver.shared.activate()
                     await client.refresh()
                 }
                 .onChange(of: scenePhase) { _, phase in

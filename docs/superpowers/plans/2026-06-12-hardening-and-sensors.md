@@ -189,10 +189,27 @@ where connectivity doesn't matter.
 - **T4.1 WaveCamWatch recorder:** HealthKit workout session capturing GPS track +
   CoreMotion (accel/gyro/heading) at max sustainable rates to a local file;
   share-sheet export post-session.
+  **DONE 2026-06-12:** `Sources-Watch/WatchSessionRecorder.swift` (HKWorkoutSession
+  surfingSports/outdoor, CLLocation 1 Hz throttled, CMDeviceMotion 4 Hz, JSONL file,
+  WCSession transferFile on stop). `Sources-Watch/RecordSessionView.swift` (tab UI).
+  WaveCamWatchApp.swift extended with TabView + WatchSessionDelegate for WCSession
+  activation. iOS side: `Sources/WatchSessionReceiver.swift` saves incoming files to
+  Documents; `Info.plist` gains UIFileSharingEnabled + LSSupportsOpeningDocumentsInPlace.
+  `project.yml` adds HealthKit entitlement + INFOPLIST_KEY_* privacy strings +
+  WKBackgroundModes workout-processing. Simulator builds: both WaveCam (iOS) and
+  WaveCamWatch (watchOS) **BUILD SUCCEEDED**.
 - **T4.2 Replay scorer:** offline tool aligning the watch track (GPS-time-synced)
   against the rig's shadow JSONL — per-second position error of the estimator vs an
   independent track. This becomes **the estimator's report card** and feeds the flip
   review with evidence no amount of rig-side logging can fake.
+  **DONE 2026-06-12:** `orin/wavecam/tools/score_shadow.py` (CLI: shadow.jsonl +
+  watch.jsonl + optional --base-lat/--base-lon; reuses gps_geo helpers; outputs
+  p50/p90/max error, fraction estimator available, divergence events; writes
+  .scored.csv beside input). `tests/test_score_shadow.py` — 9 tests: coordinate
+  round-trip, zero-offset, known 10 m E offset (p50 within 1 m), 2D 25 m offset,
+  divergence planted/not-planted, no-overlap edge case, empty-shadow edge case, CSV
+  written. All 9 pass. Full suite: **299 passed, 0 failed** (baseline was 290).
+  mypy gate: **no issues** in 6 source files.
 - **T4.3 (later, optional):** opportunistic LTE position POST when the watch has
   signal — a third position source with seconds of latency, redundancy only, never
   primary.

@@ -1,0 +1,259 @@
+import Foundation
+import CoreLocation
+import CoreMotion
+import HealthKit
+import WatchConnectivity
+
+// MARK: - Watch Session Record types
+
+struct WatchGPSSample: Encodable {
+    let timestamp: Double          // unix seconds
+    let lat: Double
+    let lon: Double
+    let h_acc: Double              // horizontal accuracy metres (negative = invalid)
+    let speed: Double              // m/s, negative = invalid
+    let course: Double             // degrees true, negative = invalid
+}
+
+struct WatchMotionSample: Encodable {
+    let timestamp: Double          // unix seconds
+    let heading: Double?           // degrees true, nil if invalid (<0 from CMDeviceMotion)
+    let accel_mag: Double          // |userAcceleration| in g
+    let yaw: Double                // attitude yaw radians
+}
+
+// MARK: - Recorder
+
+/// Records GPS + motion to a JSONL file for offline scoring against the shadow estimator.
+/// One record type per line, tagged by "kind": "gps" or "motion".
+@MainActor
+final class WatchSessionRecorder: NSObject, ObservableObject {
+
+    // MARK: Published state
+
+    @Published private(set) var isRecording = false
+    @Published private(set) var gpsSampleCount = 0
+    @Published private(set) var motionSampleCount = 0
+    @Published private(set) var statusMessage: String = ""
+
+    // MARK: Private
+
+    private let healthStore = HKHealthStore()
+    private let locationManager = CLLocationManager()
+    private let motionManager = CMMotionManager()
+    private var workoutSession: HKWorkoutSession?
+    private var fileHandle: FileHandle?
+    private var outputURL: URL?
+    private var motionTimer: Timer?
+
+    // GPS target: 1 Hz; motion target: 4 Hz
+    private let gpsInterval: TimeInterval = 1.0
+    private var lastGPSWrite: Date = .distantPast
+    private let motionInterval: TimeInterval = 0.25
+
+    // MARK: - Lifecycle
+
+    override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager.distanceFilter = kCLDistanceFilterNone
+    }
+
+    // MARK: - Public API
+
+    func startRecording() {
+        guard !isRecording else { return }
+        requestPermissionsAndStart()
+    }
+
+    func stopRecording() {
+        guard isRecording else { return }
+        tearDown()
+    }
+
+    // MARK: - Permission + startup
+
+    private func requestPermissionsAndStart() {
+        // HKWorkoutSession requires NSHealthUpdateUsageDescription.
+        // We only start a workout session for sensor background access;
+        // we do not read or write health quantities.
+        guard HKHealthStore.isHealthDataAvailable() else {
+            statusMessage = "HealthKit unavailable"
+            return
+        }
+        // Workout type needed for HKWorkoutSession
+        let workoutType = HKObjectType.workoutType()
+        healthStore.requestAuthorization(toShare: [workoutType], read: []) { [weak self] ok, err in
+            DispatchQueue.main.async {
+                if ok {
+                    self?.startWorkoutAndSensors()
+                } else {
+                    self?.statusMessage = "HealthKit denied"
+                }
+            }
+        }
+    }
+
+    private func startWorkoutAndSensors() {
+        // Workout session keeps wrist sensors running while the watch face is down.
+        let config = HKWorkoutConfiguration()
+        config.activityType = .surfingSports
+        config.locationType = .outdoor
+
+        do {
+            let session = try HKWorkoutSession(healthStore: healthStore, configuration: config)
+            session.delegate = self
+            workoutSession = session
+            session.startActivity(with: Date())
+        } catch {
+            statusMessage = "Workout session error: \(error.localizedDescription)"
+            return
+        }
+
+        openOutputFile()
+        startLocation()
+        startMotion()
+
+        isRecording = true
+        gpsSampleCount = 0
+        motionSampleCount = 0
+        statusMessage = "Recording"
+    }
+
+    // MARK: - Output file
+
+    private func openOutputFile() {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let ts = Int(Date().timeIntervalSince1970)
+        let url = dir.appendingPathComponent("watch_session_\(ts).jsonl")
+        outputURL = url
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        fileHandle = try? FileHandle(forWritingTo: url)
+    }
+
+    private func appendLine(_ dict: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let newline = "\n".data(using: .utf8),
+              let fh = fileHandle else { return }
+        fh.write(data)
+        fh.write(newline)
+    }
+
+    // MARK: - Location
+
+    private func startLocation() {
+        locationManager.requestWhenInUseAuthorization()
+        locationManager.startUpdatingLocation()
+    }
+
+    // MARK: - Motion (4 Hz)
+
+    private func startMotion() {
+        guard motionManager.isDeviceMotionAvailable else { return }
+        motionManager.deviceMotionUpdateInterval = motionInterval
+        motionManager.startDeviceMotionUpdates(using: .xMagneticNorthZVertical)
+
+        motionTimer = Timer.scheduledTimer(withTimeInterval: motionInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.writeMotionSample()
+            }
+        }
+    }
+
+    private func writeMotionSample() {
+        guard let dm = motionManager.deviceMotion else { return }
+        let now = Date().timeIntervalSince1970
+        let heading: Double? = dm.heading >= 0 ? dm.heading : nil
+        let ua = dm.userAcceleration
+        let accelMag = sqrt(ua.x * ua.x + ua.y * ua.y + ua.z * ua.z)
+        var dict: [String: Any] = [
+            "kind": "motion",
+            "timestamp": now,
+            "accel_mag": accelMag,
+            "yaw": dm.attitude.yaw
+        ]
+        if let h = heading { dict["heading"] = h }
+        appendLine(dict)
+        motionSampleCount += 1
+    }
+
+    // MARK: - Teardown
+
+    private func tearDown() {
+        motionTimer?.invalidate()
+        motionTimer = nil
+        motionManager.stopDeviceMotionUpdates()
+        locationManager.stopUpdatingLocation()
+        workoutSession?.end()
+        workoutSession = nil
+        fileHandle?.closeFile()
+        fileHandle = nil
+        isRecording = false
+        statusMessage = "Stopped"
+
+        if let url = outputURL {
+            transferFileToPhone(url)
+        }
+    }
+
+    // MARK: - WCSession transfer
+
+    private func transferFileToPhone(_ url: URL) {
+        guard WCSession.isSupported() else { return }
+        let session = WCSession.default
+        // Activate if not already active (done by WaveCamWatchApp at startup).
+        // transferFile is queued and survives backgrounding.
+        session.transferFile(url, metadata: ["kind": "watch_session"])
+        statusMessage = "Sent to iPhone"
+    }
+}
+
+// MARK: - CLLocationManagerDelegate
+
+extension WatchSessionRecorder: CLLocationManagerDelegate {
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
+        let now = Date()
+        // Throttle to ~1 Hz
+        Task { @MainActor [weak self] in
+            guard let self, self.isRecording else { return }
+            guard now.timeIntervalSince(self.lastGPSWrite) >= self.gpsInterval else { return }
+            self.lastGPSWrite = now
+            let dict: [String: Any] = [
+                "kind": "gps",
+                "timestamp": loc.timestamp.timeIntervalSince1970,
+                "lat": loc.coordinate.latitude,
+                "lon": loc.coordinate.longitude,
+                "h_acc": loc.horizontalAccuracy,
+                "speed": loc.speed,
+                "course": loc.course
+            ]
+            self.appendLine(dict)
+            self.gpsSampleCount += 1
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        Task { @MainActor [weak self] in
+            self?.statusMessage = "GPS error"
+        }
+    }
+}
+
+// MARK: - HKWorkoutSessionDelegate
+
+extension WatchSessionRecorder: HKWorkoutSessionDelegate {
+    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession,
+                                    didChangeTo toState: HKWorkoutSessionState,
+                                    from fromState: HKWorkoutSessionState, date: Date) {
+        // State transitions observed for debugging; no action needed.
+    }
+
+    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession,
+                                    didFailWithError error: Error) {
+        Task { @MainActor [weak self] in
+            self?.statusMessage = "Workout error: \(error.localizedDescription)"
+        }
+    }
+}
