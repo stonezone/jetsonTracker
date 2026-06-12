@@ -163,6 +163,13 @@ class EstimatorCfg:
     zoom_cov_wide_deg: float = 4.0
     zoom_cov_narrow_deg: float = 1.5
     log_every_n: int = 3
+    # Phase-2 vision range observation (T2.1). Default OFF; enable via
+    # config.local.yaml overlay after shadow validation. Enabling is gated on
+    # the zoom curve being multi-point (the 1-point curve is exact at wide but
+    # a multi-point curve is required before trusting zoom-variant range math).
+    use_vision_range: bool = False
+    subject_height_m: float = 1.0  # standing surfer torso-on-board height
+    r_range_frac: float = 0.3      # range std = r_range_frac * range_m (30 %)
 
 
 @dataclass

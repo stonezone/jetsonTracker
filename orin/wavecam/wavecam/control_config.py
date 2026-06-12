@@ -137,6 +137,10 @@ class ConfigManager:
             "estimator.zoom_cov_wide_deg": lambda: self.apply_estimator_float("zoom_cov_wide_deg", value, 0.1, 90.0, dry_run=dry_run),
             "estimator.zoom_cov_narrow_deg": lambda: self.apply_estimator_float("zoom_cov_narrow_deg", value, 0.1, 45.0, dry_run=dry_run),
             "estimator.log_every_n": lambda: self.apply_estimator_int("log_every_n", value, 1, 100, dry_run=dry_run),
+            # Phase-2 vision range observation knobs
+            "estimator.use_vision_range": lambda: self.apply_estimator_bool("use_vision_range", value, dry_run=dry_run),
+            "estimator.subject_height_m": lambda: self.apply_estimator_float("subject_height_m", value, 0.5, 2.5, dry_run=dry_run),
+            "estimator.r_range_frac": lambda: self.apply_estimator_float("r_range_frac", value, 0.05, 1.0, dry_run=dry_run),
         }
         setter = setters.get(key)
         if setter is None:
