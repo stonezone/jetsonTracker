@@ -101,16 +101,39 @@ The MagSafe-mounted iPhone is a GPS + compass + IMU package rigidly attached to 
 camera. This attacks the heading-anchor fragility (the one stored value the math
 can't self-check) — *if* the magnetics cooperate.
 
-- **T3.0 EXPERIMENT FIRST (10 min, blocks the rest):** does the phone rotate with
-  pan? Log iOS `CLHeading` at 4 Hz during a scripted ±90° pan sweep; correlate with
-  encoders.
-  - **Outcome A (rotates with the head):** phone heading = per-frame camera-pointing
-    reference. The MagSafe ring + motors impose a hard-iron bias — measure it in the
-    same sweep (constant offset vs encoder-derived heading) and check noise. Usable
-    if σ < ~5° after bias removal.
-  - **Outcome B (static on the base):** phone heading = tripod-orientation anchor
-    reference only — still valuable: continuous anchor-drift *detection*.
-  - Either way, document raw numbers in this plan before T3.2 merges (**Gate G-PH**).
+- **T3.0 RESOLVED 2026-06-12 (by inspection + research): Outcome B.** The phone
+  mounts on the static plate (photos confirm; it is also the operator console).
+  Research verdicts (primary sources, workflow 2026-06-12):
+  - iOS heading calibration filters "only those magnetic fields that move with the
+    device" (Apple, CLLocationManagerDelegate docs) → the MagSafe ring (phone-fixed)
+    is calibratable hard iron; the PTZ motors (moving relative to the phone) are
+    not — pan-angle-correlated error is expected. Fine for **detection**, never
+    correction. `headingAccuracy < 0` = invalid; the
+    `shouldDisplayHeadingCalibration` callback doubles as a free interference alarm.
+  - **Permanent head-mounting the phone is REJECTED**: no conference-class PTZ
+    vendor supports ANY head payload (manuals: "Do not turn the camera head by
+    hand… may result in mechanical damage"); ~220 g at 5–8 cm roughly DOUBLES
+    pan-axis inertia (estimate; no vendor torque specs exist); and the class uses
+    **open-loop steppers** — a stalled/missed step is a SILENT position error.
+  - **⚠ Open-loop implication for the whole stack:** our `pan_enc` may be
+    commanded-step dead reckoning, not measured truth. A missed step (gust, snag,
+    bump) silently shifts the anchor until re-home. This RAISES the value of
+    drift detection here and motivates a periodic home-reindex strategy (track as
+    a Phase-5 servo consideration + verify on the bench: stall the head gently
+    by hand at low speed and see whether inquiry counts diverge from reality).
+- **T3.4 Anchor Ritual (NEW — replaces manual heading capture):** a transient
+  head-mount for a 60–90 s guided setup sweep. **Prefer the WATCH** (30–45 g near
+  the axis ≈ 1–3 % inertia — low-risk gray zone vs the phone's ~2×; Ultra has a
+  compass; WaveCamWatch exists): small printed clip/ring on the head side; app
+  drives the pan through 8–12 stops at low speed; sample `CLHeading` only while
+  stationary at each stop (coil fields de-energized); least-squares fit
+  heading = anchor + bias; **self-validating** — residual structure > ~3° ⇒
+  reject and fall back to manual capture. Requires an active workout session for
+  background sensor flow (Apple-documented) or simply foreground the watch app
+  during the ritual. Phone-on-side-ring is the fallback dock if watch sampling
+  disappoints (same ritual, slower speeds, accepted transient load).
+  - Gate **G-PH** now means: first ritual's fit residuals documented here before
+    any heading observation feeds the estimator (T3.3).
 - **T3.1 iOS publisher:** while the app is foregrounded on Live, POST
   `/api/v1/sensors/phone` at 1–2 Hz: `{heading_deg, heading_acc, lat, lon, h_acc,
   bump}` — `bump` = accelerometer spike above threshold (tripod knock). Piggybacks
