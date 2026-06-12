@@ -92,6 +92,10 @@ class Pipeline(threading.Thread):
         # Event ring — records lock/owner/gps/kill transitions for /events
         from .events import EventRing
         self.events = EventRing(maxlen=500)
+        # PtzState — background encoder poller. Started in run() only when
+        # ptz.enabled is True. Additive telemetry; does not affect the servo.
+        from .ptz_state import PtzState
+        self.ptz_state = PtzState(self.ptz)
         self._prev_locked: Optional[bool] = None
         self._prev_gps_viable: Optional[bool] = None
         self._last_abs_cmd_key = None
@@ -323,6 +327,8 @@ class Pipeline(threading.Thread):
 
     def _run(self):
         self.grab.start()
+        if self.cfg.ptz.enabled and hasattr(self, "ptz_state"):
+            self.ptz_state.start()
         if self.cfg.ptz.enabled and not self.start_paused:
             self.owner.request("testbed")
 
@@ -585,6 +591,9 @@ class Pipeline(threading.Thread):
             except OSError:
                 pass
             self._shadow_writer = None
+        _ps = getattr(self, "ptz_state", None)
+        if _ps is not None:
+            _ps.stop()
         try:
             if self.cfg.ptz.enabled:
                 self.ptz.stop()
