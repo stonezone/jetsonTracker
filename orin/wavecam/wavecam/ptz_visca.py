@@ -136,11 +136,8 @@ class ViscaIP:
         self._drain()
         with self._lock:
             self._sock.sendto(bytes([self.addr, 0x09, 0x06, 0x12, 0xFF]), (self.ip, self.port))
-        for _ in range(4):
-            try:
-                data, _ = self._sock.recvfrom(64)
-            except socket.timeout:
-                break
+
+        def parse(data):
             if len(data) >= 11 and data[0] == 0x90 and data[1] == 0x50:
                 pan = (data[2] << 12) | (data[3] << 8) | (data[4] << 4) | data[5]
                 tilt = (data[6] << 12) | (data[7] << 8) | (data[8] << 4) | data[9]
@@ -149,7 +146,36 @@ class ViscaIP:
                 if tilt & 0x8000:
                     tilt -= 0x10000
                 return pan, tilt
-        return None
+            return None
+
+        result = None
+        for _ in range(4):
+            try:
+                data, _ = self._sock.recvfrom(64)
+            except socket.timeout:
+                break
+            result = parse(data)
+            if result is not None:
+                break
+        if result is None:
+            return None
+        # Stale-late-reply defense: a delayed reply to the PREVIOUS inquiry can
+        # arrive ahead of this one's (drain-then-send leaves that window open,
+        # and 2026-06-11 trajectory captures showed time-jumbled positions
+        # during motion). Any fresher position frame already queued supersedes
+        # the one we just parsed — sweep non-blocking and keep the newest.
+        try:
+            self._sock.setblocking(False)
+            while True:
+                data, _ = self._sock.recvfrom(64)
+                newer = parse(data)
+                if newer is not None:
+                    result = newer
+        except OSError:
+            pass
+        finally:
+            self._sock.settimeout(self.timeout)
+        return result
 
     def close(self) -> None:
         try:

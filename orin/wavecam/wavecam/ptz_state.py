@@ -7,8 +7,9 @@ issues move commands; never blocks the pipeline or API threads.
 Socket-lock discipline (matches ptz_visca.py):
   ViscaIP._lock is held for sendto only. The recv loop runs outside the lock.
   PtzState calls ptz.inquire_pan_tilt() which follows this discipline internally.
-  Because PtzState is the ONLY caller of inquire_pan_tilt() (the pipeline loop
-  does not call it), there is no concurrent recv contention.
+  PtzState is the only HOT-PATH caller of inquire_pan_tilt(); the calibration
+  capture endpoint also inquires (rarely) from a request thread — a known
+  shared-socket race tracked as a follow-up.
 
 Bench-measured constants (2026-06-11, Prisual NDI PTZ, 300s stress test at each
 rate with 10Hz velocity commands interleaved):
@@ -17,10 +18,11 @@ rate with 10Hz velocity commands interleaved):
   - POLL_HZ=2:  594 sent, 3 lost (0.5%), p95=66ms
   10Hz chosen: lowest loss, comfortably under 100ms p95, fine interleave tolerance.
 
-Known follow-up: a stale-late-reply race in ViscaIP.inquire_pan_tilt exists
-(drain-then-send still admits a late reply to the PREVIOUS inquiry). Low
-probability at 10Hz with 82ms p95. Not fixed here — out of plan scope. Track as
-a future hardening item.
+Stale-late-reply defense (2026-06-11): ViscaIP.inquire_pan_tilt sweeps for the
+freshest queued position frame, and _poll_once rejects physically implausible
+jumps (> MAX_SLEW_COUNTS_PER_SEC vs the previous sample) — one garbage frame
+cannot poison the cache. Two consecutive mutually-consistent "implausible"
+samples re-baseline, so a real large move is never locked out.
 """
 from __future__ import annotations
 
@@ -46,6 +48,11 @@ POINTING_TOLERANCE_ENC: int = 30
 # How long to wait after issuing an absolute command before reading back
 # the encoder. Must exceed the camera's settle time for small moves.
 VERIFY_DELAY_SEC: float = 0.5
+
+# Plausibility gate for cache updates: fastest real slew observed is well under
+# 600 counts/s (speed-24 class cameras); anything faster between consecutive
+# samples is a corrupt/stale frame, not motion.
+MAX_SLEW_COUNTS_PER_SEC: float = 1500.0
 
 
 class PtzState:
@@ -92,12 +99,32 @@ class PtzState:
     # ── internal ─────────────────────────────────────────────────────────────
 
     def _poll_once(self) -> None:
-        """Single inquiry cycle. Called by the poll loop and directly in tests."""
+        """Single inquiry cycle. Called by the poll loop and directly in tests.
+
+        Applies the plausibility gate: a sample implying motion faster than
+        MAX_SLEW_COUNTS_PER_SEC since the previous accepted sample is held back
+        once (could be a stale/corrupt frame). If the NEXT sample agrees with
+        the held-back one, both were real (a genuine large move) and the cache
+        re-baselines; if not, the outlier is dropped for good."""
         result = self._ptz.inquire_pan_tilt()
-        if result is not None:
-            with self._lock:
-                self._enc = result
-                self._ts = time.time()
+        if result is None:
+            return
+        now = time.time()
+        with self._lock:
+            if self._enc is not None and self._ts is not None:
+                dt = max(1e-3, now - self._ts)
+                rate = abs(result[0] - self._enc[0]) / dt
+                if rate > MAX_SLEW_COUNTS_PER_SEC:
+                    cand = getattr(self, "_outlier", None)
+                    if cand is not None and abs(result[0] - cand[0]) <= MAX_SLEW_COUNTS_PER_SEC * dt:
+                        self._outlier = None          # two agree: real big move
+                    else:
+                        self._outlier = result        # hold back; wait for confirmation
+                        return
+                else:
+                    self._outlier = None
+            self._enc = result
+            self._ts = now
 
     def _poll_loop(self) -> None:
         period = 1.0 / max(0.1, self._poll_hz)
