@@ -147,7 +147,12 @@ final class WatchClient {
             } catch {
                 // Only allow failover when the server was unreachable
                 if let ue = error as? URLError,
-                   [.cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(ue.code) {
+                   // .timedOut is how an ABSENT subnet fails (tether IP on home
+                   // Wi-Fi blackholes; nothing sends a refusal) — excluding it
+                   // meant the Wi-Fi fallback was never reached and the watch
+                   // showed OFFLINE forever (field report 2026-06-12).
+                   [.cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+                    .timedOut, .networkConnectionLost].contains(ue.code) {
                     lastErr = error
                     resolvedBase = nil  // next poll re-probes both
                 } else {
