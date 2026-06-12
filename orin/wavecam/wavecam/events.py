@@ -19,7 +19,7 @@ class EventRing:
         self._lock = threading.Lock()
         self._ring: deque[dict] = deque(maxlen=maxlen)
 
-    def record(self, kind: str, detail: str, t: float | None = None) -> None:
+    def record(self, kind: str, detail: str | dict, t: float | None = None) -> None:
         ts = t if t is not None else time.time()
         event = {"t": ts, "kind": kind, "detail": detail}
         with self._lock:

@@ -18,13 +18,17 @@ Tolerance and retry rationale (bench 2026-06-11):
 from __future__ import annotations
 
 import time
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Tuple
+
+if TYPE_CHECKING:
+    from .protocols import EventsLike, PtzAbsoluteLike, PtzStateLike
 
 from .ptz_state import POINTING_TOLERANCE_ENC, VERIFY_DELAY_SEC
 
 
 class PointingVerifier:
-    def __init__(self, ptz, ptz_state, events, blocked=None):
+    def __init__(self, ptz: "PtzAbsoluteLike", ptz_state: "PtzStateLike",
+                 events: "EventsLike", blocked: Optional[Callable[[], bool]] = None) -> None:
         self._ptz = ptz
         self._ptz_state = ptz_state
         self._events = events

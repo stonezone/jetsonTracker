@@ -28,7 +28,10 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
+
+if TYPE_CHECKING:
+    from .protocols import PtzInquiryLike
 
 # ── Bench parameters ─────────────────────────────────────────────────────────
 # Filled from the Task 0 bench run (2026-06-11). See plan header for methodology.
@@ -58,7 +61,7 @@ MAX_SLEW_COUNTS_PER_SEC: float = 1500.0
 class PtzState:
     """Background encoder-position cache. One instance per pipeline."""
 
-    def __init__(self, ptz, poll_hz: float = POLL_HZ):
+    def __init__(self, ptz: "PtzInquiryLike", poll_hz: float = POLL_HZ):
         self._ptz = ptz
         self._poll_hz = poll_hz
         self._lock = threading.Lock()
@@ -73,7 +76,7 @@ class PtzState:
         """Return (enc, age_sec) where enc=(pan,tilt) or None if no reply yet.
         age_sec is seconds since the last valid reply, or None."""
         with self._lock:
-            if self._enc is None:
+            if self._enc is None or self._ts is None:
                 return None, None
             return self._enc, time.time() - self._ts
 
