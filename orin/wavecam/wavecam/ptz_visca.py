@@ -120,7 +120,10 @@ class ViscaIP:
                 data, _ = self._sock.recvfrom(64)
             except socket.timeout:
                 break
-            if len(data) >= 7 and data[0] == 0x90 and data[1] == 0x50:
+            # EXACT length 7: an 11-byte pan/tilt position reply also starts
+            # 90 50 and would otherwise be parsed as zoom (cross-talk is real:
+            # both inquiries share this socket at 10Hz/2Hz).
+            if len(data) == 7 and data[0] == 0x90 and data[1] == 0x50:
                 return ((data[2] << 12) | (data[3] << 8) |
                         (data[4] << 4) | data[5])
         return None
@@ -138,7 +141,7 @@ class ViscaIP:
             self._sock.sendto(bytes([self.addr, 0x09, 0x06, 0x12, 0xFF]), (self.ip, self.port))
 
         def parse(data):
-            if len(data) >= 11 and data[0] == 0x90 and data[1] == 0x50:
+            if len(data) == 11 and data[0] == 0x90 and data[1] == 0x50:
                 pan = (data[2] << 12) | (data[3] << 8) | (data[4] << 4) | data[5]
                 tilt = (data[6] << 12) | (data[7] << 8) | (data[8] << 4) | data[9]
                 if pan & 0x8000:

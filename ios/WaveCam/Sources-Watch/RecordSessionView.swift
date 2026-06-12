@@ -40,7 +40,7 @@ struct RecordSessionView: View {
             Button {
                 recorder.startRecording()
             } label: {
-                Text("Start Recording")
+                Text(recorder.startPending ? "Starting…" : "Start Recording")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.black)
                     .frame(maxWidth: .infinity)
@@ -49,6 +49,7 @@ struct RecordSessionView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
+            .disabled(recorder.startPending)
         }
         .padding(.horizontal, 6)
     }

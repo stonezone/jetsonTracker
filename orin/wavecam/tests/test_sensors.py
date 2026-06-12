@@ -293,3 +293,25 @@ class TestSensorsRoute:
         hit = next(e for e in events if e["kind"] == "anchor_suspect")
         assert isinstance(hit["detail"], dict)
         assert hit["detail"]["reason"] == "heading_drift"
+
+
+def test_drift_excursion_survives_heading_flapping():
+    """Review finding: invalid-heading samples (compass recalibrating) must be
+    NEUTRAL — they may neither reset the sustain window (alert would never
+    fire) nor re-arm the fired flag (same excursion would re-alert)."""
+    ring = EventRing()
+    hub = SensorHub(ring, _cfg(enabled=True))
+    t = 1000.0
+    hub.ingest(_sample(heading_deg=10.0, heading_acc=5.0, received_at=t))   # baseline
+    # sustained drift with invalid samples interleaved every 3s
+    for i in range(1, 6):
+        hub.ingest(_sample(heading_deg=40.0, heading_acc=5.0, received_at=t + i * 3))
+        hub.ingest(_sample(heading_deg=None, heading_acc=-1.0, received_at=t + i * 3 + 1))
+    def fired():
+        return [e for e in ring.since(0) if e["kind"] == "anchor_suspect"]
+    assert len(fired()) == 1, "flapping must not suppress the alert"
+    # more drift + flaps after firing: no re-alert for the same excursion
+    for i in range(6, 12):
+        hub.ingest(_sample(heading_deg=40.0, heading_acc=5.0, received_at=t + i * 3))
+        hub.ingest(_sample(heading_deg=None, heading_acc=-1.0, received_at=t + i * 3 + 1))
+    assert len(fired()) == 1, "invalid samples must not re-arm the fired flag"
