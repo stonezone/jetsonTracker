@@ -585,6 +585,19 @@ extension WCEventsResponse {
 
 /// One log line returned by GET /api/v1/logs.
 /// Field names decoded via .convertFromSnakeCase.
+struct WCAgentReport: Decodable {
+    let status: String?          // idle | running | done | error
+    let provider: String?
+    let text: String?
+    let error: String?
+    let durationSec: Double?
+
+    init(status: String?, provider: String?, text: String?, error: String?, durationSec: Double?) {
+        self.status = status; self.provider = provider; self.text = text
+        self.error = error; self.durationSec = durationSec
+    }
+}
+
 struct WCLogLine: Codable, Sendable, Identifiable {
     var tsUnixMs: Int
     var level: String
@@ -1240,18 +1253,30 @@ final class WaveCamClient {
 
     /// POST /api/v1/agent/summon — requests an on-demand diagnostic pass from the supervisor.
     /// Returns true when the server accepts the request (2xx). In mock mode always returns true.
-    func summonAgent() async -> Bool {
+    func summonAgent(provider: String = "claude") async -> Bool {
         if mode == .mock { return true }
         do {
             _ = try await post("agent/summon", body: [
                 "source": "ios_native",
-                "reason": "operator_diagnostics"
+                "reason": "operator_diagnostics",
+                "provider": provider
             ])
             return true
         } catch {
             lastCommandError = "Summon not accepted: \(error.localizedDescription)"
             return false
         }
+    }
+
+    func agentReport() async -> WCAgentReport? {
+        if mode == .mock {
+            return WCAgentReport(status: "done", provider: "claude",
+                                 text: "HEALTHY — mock report.",
+                                 error: nil, durationSec: 3.2)
+        }
+        struct Envelope: Decodable { let report: WCAgentReport? }
+        guard let data = try? await getWithFallback("agent/report") else { return nil }
+        return (try? Self.decoder.decode(Envelope.self, from: data))?.report
     }
 
     // 12 canned log lines across all levels for mock/offline demos.

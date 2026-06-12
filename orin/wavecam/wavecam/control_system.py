@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 
 from .control_utils import make_request_id, normalized_text
 from .ptz_owner import IDLE
+from .advisor import AdvisorService
 from .supervisor import restart_systemd_unit
 
 
@@ -30,6 +31,19 @@ class SystemManager:
         self._api = api
         self._restart_timer: threading.Timer | None = None
         self._restart_pending = False
+        self.advisor = AdvisorService(self._advisor_context)
+
+    def _advisor_context(self) -> dict:
+        """Read-only snapshot for the advisor: status + recent events.
+        Built on the advisor's worker thread — uses only lock-guarded reads."""
+        ctx: dict = {"status": self._api.status_snapshot()}
+        ring = getattr(self.pipeline, "events", None)
+        if ring is not None:
+            try:
+                ctx["events"] = ring.since(0)
+            except Exception:
+                pass
+        return ctx
 
     # ------------------------------------------------------------------
     # Public request handlers
@@ -65,21 +79,30 @@ class SystemManager:
     def request_agent_summon(self, req) -> JSONResponse:
         source = normalized_text(req.source, "unknown", 64)
         reason = normalized_text(req.reason, "operator_diagnostics", 256)
+        provider = normalized_text(getattr(req, "provider", None), "claude", 16)
+        accepted, message = self.advisor.summon(provider)
         return JSONResponse(
             {
-                "ok": True,
+                "ok": accepted,
                 "request_id": make_request_id(),
                 "action": "agent_summon",
-                "accepted": True,
+                "accepted": accepted,
+                "provider": provider,
                 "source": source,
                 "reason": reason,
-                "message": (
-                    "Agent diagnostics request accepted; no automatic shell, service, "
-                    "or camera movement command was run."
+                "message": message + (
+                    " (supervise-only: no shell, service, or camera command will run)"
+                    if accepted else ""
                 ),
                 "status": self._api.status_snapshot(),
             },
-            status_code=202,
+            status_code=202 if accepted else 409,
+        )
+
+    def agent_report(self) -> JSONResponse:
+        return JSONResponse(
+            {"ok": True, "request_id": make_request_id(),
+             "report": self.advisor.report()}
         )
 
     # ------------------------------------------------------------------

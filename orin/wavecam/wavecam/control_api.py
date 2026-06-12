@@ -148,6 +148,7 @@ class RestartRequest(BaseModel):
 class AgentSummonRequest(BaseModel):
     source: str | None = Field(default=None, max_length=64)
     reason: str | None = Field(default=None, max_length=256)
+    provider: str = Field(default="claude", max_length=16)
 
 
 class PhoneSampleRequest(BaseModel):
@@ -549,6 +550,10 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def agent_summon(req: AgentSummonRequest | None = None):
         return api.request_agent_summon(req or AgentSummonRequest())
 
+    @app.get("/api/v1/agent/report", dependencies=[Depends(require(READ))])
+    def agent_report():
+        return api.agent_report()
+
 
 def register_events_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/events", dependencies=[Depends(require(READ))])
@@ -820,6 +825,9 @@ class ControlApiAdapter:
 
     def request_agent_summon(self, req: AgentSummonRequest) -> JSONResponse:
         return self._system.request_agent_summon(req)
+
+    def agent_report(self) -> JSONResponse:
+        return self._system.agent_report()
 
     @property
     def restart_pending(self) -> bool:
