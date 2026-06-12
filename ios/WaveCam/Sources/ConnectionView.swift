@@ -33,6 +33,8 @@ struct ConnectionView: View {
                 if let health {
                     HealthCard(health: health)
                 }
+                WatchCard()
+
                 ConnectionFormCard(
                     selectedMode: $selectedMode,
                     tetherURLText: $tetherURLText,
