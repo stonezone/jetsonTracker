@@ -10,9 +10,11 @@
 #define PKT_LEN 32
 
 // flags bitfield (low byte; high byte = satellites in use)
-#define PKT_FLAG_FIX_VALID 0x01   // GNSS reports a valid 2D/3D fix
+#define PKT_FLAG_FIX_VALID 0x01   // GNSS reports a FRESH fix (age-gated, not just sticky-valid)
 #define PKT_FLAG_SPEED_VALID 0x02
 #define PKT_FLAG_COURSE_VALID 0x04
+
+#define PKT_GPS_AGE_STALE 0xFFFF  // gps_age_ms sentinel: no fix / older than we'll vouch for
 
 #pragma pack(push, 1)
 typedef struct {
@@ -27,7 +29,10 @@ typedef struct {
   uint16_t hacc_cm;     // horizontal accuracy estimate, cm (0 = unknown)
   uint16_t flags_sats;  // low byte PKT_FLAG_*, high byte = sats in use
   uint16_t battery_mv;
-  uint8_t reserved[4];  // future: heading source, temperature, ...
+  uint16_t gps_age_ms;  // ms since the GNSS last committed a fix; 0xFFFF = stale/unknown.
+                        // The base/Orin judge freshness from THIS, not tracker_ms,
+                        // because a beacon fires whether or not GPS updated.
+  uint8_t reserved[2];  // future: heading source, temperature
   uint16_t crc;         // CRC16-CCITT (0xFFFF init) over bytes 0..29
 } TrackerPacket;
 #pragma pack(pop)

@@ -2,29 +2,45 @@
 // L76K GNSS -> 32-byte packet -> SX1262 TX. One-way, stateless.
 // Spec: docs/superpowers/specs/2026-06-12-direct-lora-tracker.md
 //
-// Pin aliases (D0..) come from the vendored seeed_wio_tracker_L1 variant
-// (run fetch_variant.sh once). LED language: green heartbeat = alive,
-// blue flash = packet transmitted; both solid = no GNSS fix yet.
+// Pins/clocks come from the vendored seeed_wio_tracker_L1 variant via its
+// SX126X_* macros (run fetch_variant.sh once). LED: green (LED1) heartbeats
+// when a fresh fix is flowing, solid when GNSS is stale. We never touch LED2
+// — on this board it IS the buzzer (PIN_LED2 == PIN_BUZZER == D12).
 
 #include <Arduino.h>
 #include <RadioLib.h>
 #include <TinyGPSPlus.h>
 
+#include "../common/board.h"
 #include "../common/gps_l76k.h"
 #include "../common/packet.h"
 #include "../common/radio_config.h"
 
-// SX1262 wiring per variant.h: CS=D4 DIO1=D1 RESET=D2 BUSY=D3, RXEN=D5
-// (TXEN is DIO2-controlled on this module -> RADIOLIB_NC).
-SX1262 radio = new Module(D4, D1, D2, D3);
+// SX1262 wiring from variant.h: CS=D4 DIO1=D1 RESET=D2 BUSY=D3; RXEN on a
+// GPIO (SX126X_RXEN), TX gated by DIO2 (SX126X_DIO2_AS_RF_SWITCH); a 1.8V
+// TCXO on DIO3 (SX126X_DIO3_TCXO_VOLTAGE) — that voltage MUST be passed to
+// begin() or the radio won't start.
+SX1262 radio = new Module(SX126X_CS, SX126X_DIO1, SX126X_RESET, SX126X_BUSY);
 
 TinyGPSPlus gps;
 static TrackerPacket pkt;
 static uint16_t seq = 0;
 static uint32_t last_tx_ms = 0;
+static uint32_t tx_fail = 0;
+static uint32_t min_tx_interval_ms = RADIO_MIN_TX_INTERVAL_MS;
+
+// A fix older than this is not vouched for as the subject's current position.
+static const uint32_t FIX_FRESH_MS = 2000;
+
+// GNSS cadence telemetry (answers the open "is the L76K really 5 Hz" question
+// at the bench — PMTK ACK means "accepted", not "delivering fresh fixes").
+static uint32_t last_loc_update_ms = 0;
 
 static uint16_t battery_mv() {
-  // VBAT on D16 behind a /2 divider; 12-bit ADC, 3.6 V internal reference.
+  // VBAT on PIN_VBAT behind a /2 divider; 12-bit ADC. The 3.6 V full-scale
+  // assumes the core's default internal reference (AR_INTERNAL 0.6 V * 1/6),
+  // which is the Adafruit nRF52 default — set explicitly so it isn't folklore.
+  analogReference(AR_INTERNAL);
   analogReadResolution(12);
   uint32_t raw = analogRead(PIN_VBAT);
   return (uint16_t)(raw * 3600UL * 2UL / 4095UL);
@@ -32,51 +48,64 @@ static uint16_t battery_mv() {
 
 void setup() {
   Serial.begin(115200);   // USB debug
-  pinMode(PIN_LED1, OUTPUT);
-  pinMode(PIN_LED2, OUTPUT);
+  pinMode(STATUS_LED, OUTPUT);
 
   // GNSS: wake from standby, then full PMTK bring-up (baud 57600, RMC+GGA
-  // only, rate matched to the beacon but clamped to the L76K's 5 Hz floor).
+  // only, rate matched to the beacon, clamped to the L76K's 5 Hz floor).
   // Re-runs every boot by design: PMTK251/220 revert on cold restart.
   pinMode(PIN_GPS_STANDBY, OUTPUT);
   digitalWrite(PIN_GPS_STANDBY, HIGH);
   delay(300);
   l76k_init(Serial1, Serial, GPS_BAUDRATE, BEACON_INTERVAL_MS);
 
-  // RX/TX switch: RXEN held low while transmitting is handled by RadioLib
-  // via setRfSwitchPins; DIO2 drives TXEN on this module.
-  radio.setRfSwitchPins(D5, RADIOLIB_NC);
+  // RF switch tables (HAL GPIO, no SPI) before begin(); DIO2-as-switch is an
+  // SPI command so it goes AFTER begin(). TXEN slot = NC (DIO2 handles TX).
+  radio.setRfSwitchPins(SX126X_RXEN, RADIOLIB_NC);
   int16_t st = radio.begin(RADIO_FREQ_MHZ, RADIO_BW_KHZ, RADIO_SF, RADIO_CR,
-                           RADIO_SYNC_WORD, RADIO_TX_DBM, RADIO_PREAMBLE);
+                           RADIO_SYNC_WORD, RADIO_TX_DBM, RADIO_PREAMBLE,
+                           SX126X_DIO3_TCXO_VOLTAGE);
   radio.setDio2AsRfSwitch(true);
   if (st != RADIOLIB_ERR_NONE) {
-    // Radio dead: solid green + fast blue blink, keep printing the code.
-    while (true) {
+    while (true) {  // no radio, no point beaconing — blink fast, print the code
       Serial.printf("[tracker] radio init failed: %d\n", st);
-      digitalWrite(PIN_LED1, HIGH);
-      digitalWrite(PIN_LED2, (millis() / 125) % 2);
+      digitalWrite(STATUS_LED, (millis() / 125) % 2);
       delay(1000);
     }
   }
-  Serial.println("[tracker] radio up; waiting for GNSS");
+
+  // Honest airtime guard: derive the floor from the radio's ACTUAL modem
+  // settings instead of trusting a hardcoded constant. ToA is µs; hold the
+  // beacon to >=3x airtime (≈33% duty ceiling) and never faster than the
+  // compile-time RADIO_MIN_TX_INTERVAL_MS.
+  uint32_t toa_ms = radio.getTimeOnAir(PKT_LEN) / 1000;
+  min_tx_interval_ms = max(min_tx_interval_ms, toa_ms * 3);
+  Serial.printf("[tracker] radio up; toa=%lums min_tx=%lums beacon=%dms\n",
+                (unsigned long)toa_ms, (unsigned long)min_tx_interval_ms,
+                BEACON_INTERVAL_MS);
 }
 
 static void fill_packet() {
   memset(&pkt, 0, sizeof(pkt));
   pkt.seq = seq++;
   pkt.tracker_ms = millis();
+  pkt.gps_age_ms = PKT_GPS_AGE_STALE;
   uint16_t flags = 0;
   uint8_t sats = gps.satellites.isValid() ? (uint8_t)gps.satellites.value() : 0;
-  if (gps.location.isValid()) {
+
+  // isValid() is sticky-true forever after the first fix — freshness MUST
+  // come from age(). Only vouch for the position if it was committed recently.
+  uint32_t loc_age = gps.location.age();
+  if (gps.location.isValid() && loc_age < FIX_FRESH_MS) {
     flags |= PKT_FLAG_FIX_VALID;
     pkt.lat_e7 = (int32_t)(gps.location.lat() * 1e7);
     pkt.lon_e7 = (int32_t)(gps.location.lng() * 1e7);
+    pkt.gps_age_ms = (uint16_t)min(loc_age, (uint32_t)(PKT_GPS_AGE_STALE - 1));
   }
-  if (gps.speed.isValid()) {
+  if (gps.speed.isValid() && gps.speed.age() < FIX_FRESH_MS) {
     flags |= PKT_FLAG_SPEED_VALID;
     pkt.speed_cm_s = (uint16_t)min(gps.speed.mps() * 100.0, 65535.0);
   }
-  if (gps.course.isValid()) {
+  if (gps.course.isValid() && gps.course.age() < FIX_FRESH_MS) {
     flags |= PKT_FLAG_COURSE_VALID;
     pkt.course_cdeg = (uint16_t)(gps.course.deg() * 100.0) % 36000;
   }
@@ -90,21 +119,31 @@ static void fill_packet() {
 void loop() {
   while (Serial1.available()) gps.encode(Serial1.read());
 
-  digitalWrite(PIN_LED1, (millis() / 500) % 2);            // heartbeat
+  // Per-commit cadence log: measures the GNSS's REAL fix rate at the bench.
+  if (gps.location.isUpdated()) {
+    uint32_t now = millis();
+    Serial.printf("[gps] update dt=%lums sats=%u\n",
+                  (unsigned long)(now - last_loc_update_ms),
+                  gps.satellites.isValid() ? gps.satellites.value() : 0);
+    last_loc_update_ms = now;
+  }
+
+  // LED: heartbeat while a fresh fix is flowing, solid while GNSS is stale.
+  bool fresh = gps.location.isValid() && gps.location.age() < FIX_FRESH_MS;
+  digitalWrite(STATUS_LED, fresh ? (millis() / 500) % 2 : HIGH);
+
   uint32_t now = millis();
-  if (now - last_tx_ms < BEACON_INTERVAL_MS) return;
-  // Airtime guard: independent of BEACON_INTERVAL_MS so a config edit can
-  // never push the duty cycle past the regulatory budget.
-  if (now - last_tx_ms < RADIO_MIN_TX_INTERVAL_MS) return;
+  if (now - last_tx_ms < (uint32_t)BEACON_INTERVAL_MS) return;
+  if (now - last_tx_ms < min_tx_interval_ms) return;  // airtime/duty guard
   last_tx_ms = now;
 
   fill_packet();
-  digitalWrite(PIN_LED2, HIGH);
   int16_t st = radio.transmit((uint8_t *)&pkt, PKT_LEN);
-  digitalWrite(PIN_LED2, LOW);
+  if (st != RADIOLIB_ERR_NONE) tx_fail++;
 
   if ((pkt.seq % 10) == 0)
-    Serial.printf("[tracker] seq=%u fix=%d sats=%u batt=%umV tx=%d\n",
+    Serial.printf("[tracker] seq=%u fix=%d sats=%u age=%ums batt=%umV tx=%d fail=%lu\n",
                   pkt.seq, (int)(pkt.flags_sats & PKT_FLAG_FIX_VALID),
-                  pkt.flags_sats >> 8, pkt.battery_mv, st);
+                  pkt.flags_sats >> 8, pkt.gps_age_ms, pkt.battery_mv, st,
+                  (unsigned long)tx_fail);
 }

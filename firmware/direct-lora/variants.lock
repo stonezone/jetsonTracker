@@ -1,0 +1,4 @@
+# meshtastic/firmware variant pin — fetched by fetch_variant.sh
+commit=88137c60e6d228150bb1541d7603dca8bcbbb43d
+variant.h sha256=75765ac52f50ab0a74918e105d33bde162efaf5d84c4724e56da425cba53bcaf
+variant.cpp sha256=9b112f0ba371066e71f84163e9c94af6ced1afc3b1296b290e4abd90552d53a2
