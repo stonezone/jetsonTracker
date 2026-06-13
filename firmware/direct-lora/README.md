@@ -10,12 +10,16 @@ binding constraint. Full design + phase gates:
 ./fetch_variant.sh            # once: vendor the Seeed board variant (pinned)
 pio run -e tracker            # surfer node:  L76K -> 32B packet -> SX1262 TX
 pio run -e base               # Orin node:    SX1262 RX -> JSONL on USB serial
+# Each build auto-emits .pio/build/<env>/firmware.uf2 (post:tools/uf2_postbuild.py).
 ```
 
 ## Flash (UF2 only)
-Double-tap reset -> DFU drive appears -> copy
-`.pio/build/<env>/firmware.uf2`. **Never use nRF OTA flashing — documented
-brick risk on this board (Seeed).**
+Double-tap reset -> a DFU drive (e.g. WIOTRACKER/NRF52BOOT) appears -> drag the
+matching `.pio/build/<env>/firmware.uf2` onto it (TRACKER firmware on the
+surfer unit, BASE firmware on the Orin unit — label them). The board reboots
+into the new firmware and the drive disappears. **Never use nRF OTA / BLE
+flashing — documented brick risk on this board (Seeed).** The base builder's
+`firmware.zip` is the OTA package — do NOT use it.
 
 ## LED language
 - tracker: green (LED1) heartbeats while a FRESH fix is flowing, solid when
