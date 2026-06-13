@@ -40,6 +40,7 @@ HOT_CONFIG_KEYS = (
     "fusion.gps_boost",
     "fusion.gps_boost_radius_frac",
     "gps.stale_threshold_sec",
+    "gps.drive_stale_sec",
     "gps.grace_sec",
     "gps.lock_frames",
     "gps.drive_zoom",

@@ -84,7 +84,7 @@ class Pipeline(threading.Thread):
         self.arbiter = TrackingArbiter(
             lock_frames=getattr(cfg.gps, "lock_frames", 5),
             grace_sec=getattr(cfg.gps, "grace_sec", 1.0),
-            max_gps_age_sec=getattr(cfg.gps, "stale_threshold_sec", 10.0),
+            max_gps_age_sec=getattr(cfg.gps, "drive_stale_sec", 8.0),
         )
         # CameraPose — loaded by calibration endpoint; uncalibrated by default
         from .camera_pose import CameraPose
@@ -493,7 +493,7 @@ class Pipeline(threading.Thread):
                 gps_fix = self.gps.get_fix() if self.gps else None
                 gps_fresh = (
                     gps_fix is not None and
-                    gps_fix.age_sec < getattr(self.cfg.gps, "stale_threshold_sec", 10.0)
+                    gps_fix.age_sec < getattr(self.cfg.gps, "drive_stale_sec", 8.0)
                 ) if gps_fix else False
                 gps_calibrated = self.pose.calibrated
                 # C1: base position latched once at setup; tripod is stationary.
