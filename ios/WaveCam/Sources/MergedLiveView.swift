@@ -697,6 +697,9 @@ private struct GPSDetailCard: View {
                 row("Bearing", gps.bearingDeg.map { "\(Int($0.rounded()))°" } ?? "—",
                     gps.bearingDeg != nil ? WC.accent : WC.faint)
                 row("Target", targetText, (gps.stale ?? false) ? WC.warn : WC.ok)
+                if gps.targetBatteryMv != nil || gps.targetSats != nil {
+                    row("Tracker", trackerText, trackerTint)
+                }
                 row("Base fix", baseText, gps.baseAgeSec != nil ? WC.ok : WC.warn)
                 if let alive = gps.readerAlive {
                     row("Ingest", ingestText(alive), alive ? WC.ok : WC.warn)
@@ -740,6 +743,17 @@ private struct GPSDetailCard: View {
     private var baseText: String {
         if let a = gps.baseAgeSec { return "LOCKED · \(age(a))" }
         return "NO FIX — sky"
+    }
+    // Direct-LoRa tracker telemetry: battery voltage + satellite count from the remote packet.
+    private var trackerText: String {
+        var parts: [String] = []
+        if let mv = gps.targetBatteryMv { parts.append(String(format: "%.2f V", Double(mv) / 1000.0)) }
+        if let s = gps.targetSats { parts.append("\(s) sat") }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+    private var trackerTint: Color {
+        if let mv = gps.targetBatteryMv, mv < 3500 { return WC.warn }
+        return WC.ok
     }
     // Reader DOWN = the Orin's serial ingest thread is dead/disconnected (the
     // "silently stale GPS" failure) — restart wavecam.service, not the Wios.
