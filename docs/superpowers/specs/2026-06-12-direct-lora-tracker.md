@@ -26,12 +26,18 @@ with a sequence number and timestamp; loss is measured, not corrected.
   stock-hardware ceiling is 5 Hz; 10 Hz REQUIRES external GNSS.
   Source: Quectel L76K docs via Seeed/Waveshare wikis.
 - **Wio Tracker L1 pin map** (from Meshtastic
-  `variants/nrf52840/seeed_wio_tracker_L1/variant.h`, pinned fetch in
-  `firmware/direct-lora/fetch_variant.sh`):
-  SX1262 CS=D4 DIO1=D1 BUSY=D3 RESET=D2 RXEN=D5 TXEN=none(DIO2 ctl);
-  SPI SCK=8 MOSI=10 MISO=9; GPS on Serial1 TX=D6 RX=D7 @9600,
-  STANDBY=D0; VBAT=D16 (x2.0 divider, 12-bit, 3.6 Vref);
-  LEDs 11(green)/12(blue); button D13 active-low.
+  `variants/nrf52840/seeed_wio_tracker_L1/variant.h`, fetched by
+  `fetch_variant.sh` PINNED to commit `88137c6` + `variants.lock` sha256s —
+  the firmware uses the `SX126X_*` macros, not hardcoded pins):
+  SX1262 CS=D4 DIO1=D1 BUSY=D3 RESET=D2 RXEN=D5, **TX gated by DIO2**
+  (`SX126X_DIO2_AS_RF_SWITCH`), **1.8 V TCXO on DIO3**
+  (`SX126X_DIO3_TCXO_VOLTAGE 1.8` — MUST be passed to `begin()` or the radio
+  won't start; this was the review's highest-value catch);
+  GPS on Serial1 TX=D6 RX=D7 @9600, STANDBY=D0; VBAT=PIN_VBAT (x2 divider,
+  12-bit, AR_INTERNAL); button D13 active-low.
+- **PIN_LED2 IS THE BUZZER** (`PIN_LED2 == PIN_BUZZER == D12 / P1.00`,
+  verified in variant.h) — the firmware drives ONLY PIN_LED1 (`STATUS_LED`);
+  touching LED2 would chirp the buzzer every packet.
 - **External GNSS part (Phase 5 only): SparkFun MAX-M10S breakout
   (GPS-18037)**, ~$22–45, in stock at DigiKey/SparkFun/Amazon. 10 Hz
   (up to 25 Hz single-constellation), UART @38400 default, 3.3 V,
@@ -50,10 +56,17 @@ with a sequence number and timestamp; loss is measured, not corrected.
 | speed_cm_s | 2 | cm/s |
 | course_cdeg | 2 | deg × 100 |
 | hacc_cm | 2 | cm (sat-derived est.) |
-| flags(fix,valid)+sats | 2 | bitfield |
+| flags(fix,valid)+sats | 2 | bitfield (fix = age-gated FRESH, not sticky) |
 | battery_mv | 2 | mV |
-| reserved | 4 | future (heading source, temp) |
+| gps_age_ms | 2 | ms since GNSS commit; 0xFFFF = stale/unknown |
+| reserved | 2 | future (heading source, temp) |
 | crc16 | 2 | CCITT over bytes 0..29 |
+
+**Freshness is carried, not inferred** (review F1): the beacon fires on a
+timer regardless of GNSS, and TinyGPS `isValid()` is sticky-true forever
+after the first fix. So `PKT_FLAG_FIX_VALID` is set only when the fix age is
+< 2 s, and `gps_age_ms` rides along so the Orin judges freshness from the
+GNSS commit time, not the packet's `tracker_ms`.
 
 At SF7/BW250 a 32-byte LoRa payload ≈ 35 ms airtime → 5 Hz ≈ 17% duty:
 legal in US915 (100% duty allowed) with margin; the firmware still
@@ -83,8 +96,25 @@ PMTK251/PMTK220 revert on cold restart/standby.
 
 **Regulatory is an engineering requirement, not a checkbox** (GPT
 correction, adopted): region/frequency/power/duty are compile-time
-constants in `radio_config.h` with a US915 default (902–928 MHz,
-+22 dBm max on SX1262, 100% duty) and a hard airtime guard.
+constants in `radio_config.h` (US915: 902–928 MHz, +22 dBm max, 100% duty).
+The airtime guard is **computed at boot** from `radio.getTimeOnAir(PKT_LEN)`
+and held to ≥3× airtime, so changing SF/BW/payload can't silently blow the
+duty budget — the compile-time 100 ms constant is only the 10 Hz backstop
+the runtime guard is `max()`'d with (review F8).
+
+## Review corrections applied (2026-06-12)
+
+A read-only review (GPT) + a 4-agent adversarial verification against the
+actual `variant.h`, RadioLib 7.1.2, and TinyGPSPlus sources confirmed and
+fixed: F1 age-gated freshness + `gps_age_ms`; F2 reboot-safe loss accounting
+(authoritative signal = `tracker_ms` going backwards; out-of-order ≠ loss);
+F3 the 1.8 V TCXO voltage now passed to `begin()`; F4 `fetch_variant.sh`
+pinned to a SHA + lockfile (the "pinned" claim is now true); F5 LED2/buzzer
+collision avoided; F6/F7 integer-scaled base JSON (the Orin checks `fix`
+before trusting coords, no phantom 0,0, no float-printf dependency); F8
+computed airtime guard; F9 checked `startReceive()` + `tx_fail` counter;
+plus per-commit GNSS cadence logging (so the bench measures the L76K's real
+rate, not the PMTK ACK). Both envs recompile green.
 
 ## Phases (GPT scope, adopted)
 

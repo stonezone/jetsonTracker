@@ -7,26 +7,40 @@
 #include <Arduino.h>
 #include <RadioLib.h>
 
+#include "../common/board.h"
 #include "../common/packet.h"
 #include "../common/radio_config.h"
 
-SX1262 radio = new Module(D4, D1, D2, D3);
+SX1262 radio = new Module(SX126X_CS, SX126X_DIO1, SX126X_RESET, SX126X_BUSY);
 
 static volatile bool rx_flag = false;
 static uint16_t last_seq = 0;
+static uint32_t last_tracker_ms = 0;
 static bool have_seq = false;
 static uint32_t received = 0, lost = 0, bad = 0;
 
 static void on_rx() { rx_flag = true; }
 
+// Re-arm RX, logging + retrying on failure (a silent startReceive() failure
+// would make the base deaf with no diagnostic).
+static void arm_receive(const char *where) {
+  int16_t st = radio.startReceive();
+  if (st != RADIOLIB_ERR_NONE) {
+    Serial.printf("{\"err\":\"start_receive\",\"where\":\"%s\",\"code\":%d}\n", where, st);
+    delay(50);
+    radio.standby();
+    radio.startReceive();
+  }
+}
+
 void setup() {
   Serial.begin(115200);
-  pinMode(PIN_LED1, OUTPUT);
-  pinMode(PIN_LED2, OUTPUT);
+  pinMode(STATUS_LED, OUTPUT);
 
-  radio.setRfSwitchPins(D5, RADIOLIB_NC);
+  radio.setRfSwitchPins(SX126X_RXEN, RADIOLIB_NC);
   int16_t st = radio.begin(RADIO_FREQ_MHZ, RADIO_BW_KHZ, RADIO_SF, RADIO_CR,
-                           RADIO_SYNC_WORD, RADIO_TX_DBM, RADIO_PREAMBLE);
+                           RADIO_SYNC_WORD, RADIO_TX_DBM, RADIO_PREAMBLE,
+                           SX126X_DIO3_TCXO_VOLTAGE);
   radio.setDio2AsRfSwitch(true);
   if (st != RADIOLIB_ERR_NONE) {
     while (true) {
@@ -35,20 +49,20 @@ void setup() {
     }
   }
   radio.setPacketReceivedAction(on_rx);
-  radio.startReceive();
+  arm_receive("setup");
   Serial.println("{\"info\":\"base up, listening\"}");
 }
 
 void loop() {
-  digitalWrite(PIN_LED1, (millis() / 1000) % 2);  // slow heartbeat
+  digitalWrite(STATUS_LED, (millis() / 1000) % 2);  // slow heartbeat
   if (!rx_flag) return;
   rx_flag = false;
 
   TrackerPacket pkt;
   int16_t st = radio.readData((uint8_t *)&pkt, PKT_LEN);
-  float rssi = radio.getRSSI();
-  float snr = radio.getSNR();
-  radio.startReceive();  // re-arm immediately
+  int rssi_x10 = (int)(radio.getRSSI() * 10);
+  int snr_x10 = (int)(radio.getSNR() * 10);
+  arm_receive("loop");  // re-arm immediately
 
   if (st != RADIOLIB_ERR_NONE || !pkt_valid(&pkt)) {
     bad++;
@@ -57,27 +71,40 @@ void loop() {
     return;
   }
 
+  // Reboot detection: tracker_ms is millis() on the tracker — monotonic within
+  // a boot, resets on reboot. A backwards jump is the authoritative signal
+  // (more reliable than seq alone). Reset the session counters instead of
+  // counting ~65000 phantom losses from the seq wrap.
+  if (have_seq && pkt.tracker_ms + 1000 < last_tracker_ms) {
+    Serial.printf("{\"info\":\"tracker_reboot\",\"last_seq\":%u,\"seq\":%u}\n",
+                  last_seq, pkt.seq);
+    have_seq = false;
+    lost = 0;
+  }
+
   if (have_seq) {
-    uint16_t expected = (uint16_t)(last_seq + 1);
-    if (pkt.seq != expected)
-      lost += (uint16_t)(pkt.seq - expected);  // u16 wrap-safe gap
+    int16_t gap = (int16_t)(pkt.seq - (uint16_t)(last_seq + 1));
+    if (gap > 0) lost += gap;          // forward gap = real loss
+    // gap < 0 = duplicate / out-of-order / old packet: do NOT add 65535
   }
   last_seq = pkt.seq;
+  last_tracker_ms = pkt.tracker_ms;
   have_seq = true;
   received++;
 
-  digitalWrite(PIN_LED2, HIGH);
-  // One self-describing JSON line per packet — the Orin reader's contract.
+  // Integer-scaled JSON: no embedded float printf, exact on the Orin, and the
+  // Orin checks "fix" before trusting lat_e7/lon_e7 (no phantom 0,0 point).
   Serial.printf(
-      "{\"seq\":%u,\"tracker_ms\":%lu,\"lat\":%.7f,\"lon\":%.7f,"
-      "\"speed_mps\":%.2f,\"course_deg\":%.2f,\"hacc_m\":%.2f,"
-      "\"fix\":%d,\"sats\":%u,\"batt_mv\":%u,"
-      "\"rssi\":%.1f,\"snr\":%.1f,\"rx\":%lu,\"lost\":%lu}\n",
+      "{\"seq\":%u,\"tracker_ms\":%lu,\"fix\":%d,"
+      "\"lat_e7\":%ld,\"lon_e7\":%ld,\"gps_age_ms\":%u,"
+      "\"speed_cm_s\":%u,\"course_cdeg\":%u,\"hacc_cm\":%u,"
+      "\"sats\":%u,\"batt_mv\":%u,"
+      "\"rssi_x10\":%d,\"snr_x10\":%d,\"rx\":%lu,\"lost\":%lu}\n",
       pkt.seq, (unsigned long)pkt.tracker_ms,
-      pkt.lat_e7 / 1e7, pkt.lon_e7 / 1e7,
-      pkt.speed_cm_s / 100.0, pkt.course_cdeg / 100.0, pkt.hacc_cm / 100.0,
-      (int)(pkt.flags_sats & PKT_FLAG_FIX_VALID), pkt.flags_sats >> 8,
-      pkt.battery_mv, rssi, snr,
+      (int)(pkt.flags_sats & PKT_FLAG_FIX_VALID),
+      (long)pkt.lat_e7, (long)pkt.lon_e7, pkt.gps_age_ms,
+      pkt.speed_cm_s, pkt.course_cdeg, pkt.hacc_cm,
+      pkt.flags_sats >> 8, pkt.battery_mv,
+      rssi_x10, snr_x10,
       (unsigned long)received, (unsigned long)lost);
-  digitalWrite(PIN_LED2, LOW);
 }

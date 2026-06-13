@@ -14,10 +14,12 @@
 #define RADIO_TX_DBM 17      // headroom below SX1262 +22 max; raise after field test
 #define RADIO_PREAMBLE 8
 
-// Airtime guard: a 32-byte SF7/BW250 frame is ~35 ms. Refuse to schedule
-// transmissions closer than this regardless of configured rate — a config
-// error must degrade to a slower beacon, never flood the band.
-#define RADIO_MIN_TX_INTERVAL_MS 100  // hard ceiling 10 Hz
+// Compile-time TX-rate FLOOR (10 Hz ceiling). This is NOT the airtime guard
+// by itself — the real, modem-aware guard is computed at boot from
+// radio.getTimeOnAir(PKT_LEN) and held to >=3x airtime, so changing SF/BW/
+// payload can't silently blow the duty budget. This constant is just the
+// hard "never faster than 10 Hz" backstop the runtime guard is max()'d with.
+#define RADIO_MIN_TX_INTERVAL_MS 100
 
 // Beacon rate (bring-up: 2 Hz; raise to 5 Hz only after the L76K's real
 // outdoor cadence is measured — PMTK accepted != fixes delivered).

@@ -18,9 +18,10 @@ Double-tap reset -> DFU drive appears -> copy
 brick risk on this board (Seeed).**
 
 ## LED language
-- tracker: green 1Hz heartbeat; blue flash per TX; radio-init failure =
-  solid green + fast blue.
-- base: green slow heartbeat; blue flash per valid packet.
+- tracker: green (LED1) heartbeats while a FRESH fix is flowing, solid when
+  GNSS is stale; fast blink = radio-init failure.
+- base: green (LED1) slow heartbeat.
+- NOTE: LED2 is unused on purpose — it is wired to the BUZZER on this board.
 
 ## Bring-up order (do not skip)
 1. Flash proof (hello UF2 boots, serial logs).
