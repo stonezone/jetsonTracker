@@ -46,6 +46,12 @@ final class PhoneSensorPublisher: NSObject {
 
     private var publishTimer: Task<Void, Never>?
     private var running = false
+    private var sensorsActive = false
+    private var disconnectedSince: Date?
+
+    /// Disconnected this long -> sensors stop (GPS Best + 20Hz motion are the
+    /// battery cost; the 1Hz timer itself is negligible). Review 2026-06-12.
+    private static let sensorIdleGrace: TimeInterval = 30
 
     // Latest sensor snapshots (written from callbacks, read on publish timer).
     // All callbacks and the timer run on MainActor so no explicit lock needed.
@@ -72,9 +78,8 @@ final class PhoneSensorPublisher: NSObject {
     func start() {
         guard !running else { return }
         running = true
-        startHeading()
-        startLocation()
-        startAccelerometer()
+        // Sensors start on the first connected tick and stop after a
+        // disconnected grace period — no rig, no GPS/IMU battery burn.
         startPublishTimer()
     }
 
@@ -83,6 +88,20 @@ final class PhoneSensorPublisher: NSObject {
         running = false
         publishTimer?.cancel()
         publishTimer = nil
+        stopSensors()
+    }
+
+    private func startSensors() {
+        guard !sensorsActive else { return }
+        sensorsActive = true
+        startHeading()
+        startLocation()
+        startAccelerometer()
+    }
+
+    private func stopSensors() {
+        guard sensorsActive else { return }
+        sensorsActive = false
         locationManager.stopUpdatingHeading()
         locationManager.stopUpdatingLocation()
         motionManager.stopDeviceMotionUpdates()
@@ -153,7 +172,16 @@ final class PhoneSensorPublisher: NSObject {
     }
 
     private func publish() async {
-        guard client.connected else { return }
+        guard client.connected else {
+            if disconnectedSince == nil {
+                disconnectedSince = Date()
+            } else if Date().timeIntervalSince(disconnectedSince!) > Self.sensorIdleGrace {
+                stopSensors()
+            }
+            return
+        }
+        disconnectedSince = nil
+        startSensors()
         var body: [String: Any] = ["bump": bumpPending]
         bumpPending = false
 

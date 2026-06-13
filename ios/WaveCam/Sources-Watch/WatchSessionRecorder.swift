@@ -7,6 +7,7 @@ import WatchConnectivity
 // MARK: - Watch Session Record types
 
 struct WatchGPSSample: Encodable {
+    var kind = "gps"               // scorer dispatches on this
     let timestamp: Double          // unix seconds
     let lat: Double
     let lon: Double
@@ -16,6 +17,7 @@ struct WatchGPSSample: Encodable {
 }
 
 struct WatchMotionSample: Encodable {
+    var kind = "motion"            // scorer dispatches on this
     let timestamp: Double          // unix seconds
     let heading: Double?           // degrees true, nil if invalid (<0 from CMDeviceMotion)
     let accel_mag: Double          // |userAcceleration| in g
@@ -150,13 +152,15 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
         fileHandle = try? FileHandle(forWritingTo: url)
     }
 
-    private func appendLine(_ dict: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+    private func appendLine<T: Encodable>(_ sample: T) {
+        guard let data = try? Self.encoder.encode(sample),
               let newline = "\n".data(using: .utf8),
               let fh = fileHandle else { return }
         fh.write(data)
         fh.write(newline)
     }
+
+    private static let encoder = JSONEncoder()
 
     // MARK: - Location
 
@@ -182,17 +186,13 @@ final class WatchSessionRecorder: NSObject, ObservableObject {
     private func writeMotionSample() {
         guard let dm = motionManager.deviceMotion else { return }
         let now = Date().timeIntervalSince1970
-        let heading: Double? = dm.heading >= 0 ? dm.heading : nil
         let ua = dm.userAcceleration
-        let accelMag = sqrt(ua.x * ua.x + ua.y * ua.y + ua.z * ua.z)
-        var dict: [String: Any] = [
-            "kind": "motion",
-            "timestamp": now,
-            "accel_mag": accelMag,
-            "yaw": dm.attitude.yaw
-        ]
-        if let h = heading { dict["heading"] = h }
-        appendLine(dict)
+        appendLine(WatchMotionSample(
+            timestamp: now,
+            heading: dm.heading >= 0 ? dm.heading : nil,
+            accel_mag: sqrt(ua.x * ua.x + ua.y * ua.y + ua.z * ua.z),
+            yaw: dm.attitude.yaw
+        ))
         motionSampleCount += 1
     }
 
@@ -238,16 +238,14 @@ extension WatchSessionRecorder: CLLocationManagerDelegate {
             guard let self, self.isRecording else { return }
             guard now.timeIntervalSince(self.lastGPSWrite) >= self.gpsInterval else { return }
             self.lastGPSWrite = now
-            let dict: [String: Any] = [
-                "kind": "gps",
-                "timestamp": loc.timestamp.timeIntervalSince1970,
-                "lat": loc.coordinate.latitude,
-                "lon": loc.coordinate.longitude,
-                "h_acc": loc.horizontalAccuracy,
-                "speed": loc.speed,
-                "course": loc.course
-            ]
-            self.appendLine(dict)
+            self.appendLine(WatchGPSSample(
+                timestamp: loc.timestamp.timeIntervalSince1970,
+                lat: loc.coordinate.latitude,
+                lon: loc.coordinate.longitude,
+                h_acc: loc.horizontalAccuracy,
+                speed: loc.speed,
+                course: loc.course
+            ))
             self.gpsSampleCount += 1
         }
     }
