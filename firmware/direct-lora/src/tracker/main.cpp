@@ -42,10 +42,8 @@ static const uint32_t FIX_FRESH_MS = 2000;
 
 // GNSS cadence telemetry (answers the open "is the L76K really 5 Hz" question
 // at the bench — PMTK ACK means "accepted", not "delivering fresh fixes").
-// Identity-of-commit is millis()-age(): stable between commits, jumps on a
-// new one — so we log once per real fix WITHOUT calling lat()/lng() (which
-// would clear isUpdated() out from under fill_packet()).
-static uint32_t last_loc_commit_ms = 0;
+// Triggered by isUpdated() once per commit; see log_gps_cadence().
+static uint32_t last_loc_update_ms = 0;
 
 static void on_tx_done() { tx_done = true; }
 
@@ -100,7 +98,7 @@ void setup() {
 
 static void fill_packet() {
   memset(&pkt, 0, sizeof(pkt));
-  pkt.seq = seq++;
+  pkt.seq = seq;   // advanced only after the radio ACCEPTS the TX (see loop)
   pkt.tracker_ms = millis();
   pkt.gps_age_ms = PKT_GPS_AGE_STALE;
   uint16_t flags = 0;
@@ -133,20 +131,24 @@ static void fill_packet() {
   pkt_seal(&pkt);
 }
 
-// Log GNSS cadence once per real commit, WITHOUT touching lat()/lng() — those
-// clear isUpdated() and we let fill_packet() own that. Commit identity is
-// millis()-age(): ~constant between commits, jumps when a new sentence lands.
+// Log GNSS cadence once per real commit — the bench measurement of the
+// L76K's true outdoor fix rate.
 static void log_gps_cadence() {
-  if (!gps.location.isValid()) return;
-  uint32_t age = gps.location.age();
-  uint32_t commit_ms = millis() - age;
-  if (commit_ms == last_loc_commit_ms) return;
-  if (last_loc_commit_ms != 0)
+  // isUpdated() fires once per new commit; reading lat()/lng() here clears
+  // that flag exactly once. (The old millis()-age() commit key could jitter
+  // by 1ms — age() calls millis() internally, then we called it again —
+  // double-logging the same commit; the trigger is now unambiguous.)
+  // fill_packet() gates on age(), not isUpdated(), so clearing it here is safe.
+  if (!gps.location.isUpdated()) return;
+  (void)gps.location.lat();
+  (void)gps.location.lng();
+  uint32_t now = millis();
+  if (last_loc_update_ms != 0)
     Serial.printf("[gps] update dt=%lums age=%lums sats=%u\n",
-                  (unsigned long)(commit_ms - last_loc_commit_ms),
-                  (unsigned long)age,
+                  (unsigned long)(now - last_loc_update_ms),
+                  (unsigned long)gps.location.age(),
                   gps.satellites.isValid() ? gps.satellites.value() : 0);
-  last_loc_commit_ms = commit_ms;
+  last_loc_update_ms = now;
 }
 
 void loop() {
@@ -172,9 +174,13 @@ void loop() {
 
   fill_packet();
   int16_t st = radio.startTransmit((uint8_t *)&pkt, PKT_LEN);  // non-blocking
+  // Stamp the attempt time on BOTH paths: a persistent radio fault (SPI/BUSY)
+  // must not become a tight retry loop that spams serial and starves the GPS
+  // UART — a failed start now waits a full beacon interval like any other.
+  last_tx_ms = now;
   if (st == RADIOLIB_ERR_NONE) {
     tx_busy = true;
-    last_tx_ms = now;   // cadence measured from TX start
+    seq++;            // advance only on an accepted TX (failed starts reuse seq)
   } else {
     tx_fail++;
   }
