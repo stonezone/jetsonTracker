@@ -65,6 +65,7 @@ fusion:
   person_aim_y: 0.5
   gps_boost: 0.2
   gps_boost_radius_frac: 0.25
+  gps_roi_enabled: false  # flag-off: enable after field validation
 
 web:
   host: "0.0.0.0"

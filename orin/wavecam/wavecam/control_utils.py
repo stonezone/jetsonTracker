@@ -39,6 +39,7 @@ HOT_CONFIG_KEYS = (
     "fusion.person_aim_y",
     "fusion.gps_boost",
     "fusion.gps_boost_radius_frac",
+    "fusion.gps_roi_enabled",
     "gps.stale_threshold_sec",
     "gps.drive_stale_sec",
     "gps.grace_sec",

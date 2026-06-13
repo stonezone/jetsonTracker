@@ -121,7 +121,10 @@ def test_arbiter_decision_fields():
     a = TrackingArbiter()
     d = a.decide(_vision(False), gps_fresh=True, gps_calibrated=True, base_locked=True, now_sec=0.0)
     assert d.owner == "gps_tracker"
-    assert d.search_roi is None  # reserved for P2
+    # P2 (Package 3) now populates search_roi when GPS is tracking (gps_roi_enabled flag gates the crop)
+    assert d.search_roi is not None
+    cx, cy, w, h = d.search_roi
+    assert 0.0 <= cx <= 1.0 and 0.0 <= cy <= 1.0
 
 
 print("ARBITER TESTS PASSED")

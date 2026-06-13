@@ -115,6 +115,10 @@ class FusionCfg:
     person_aim_y: float = 0.5
     gps_boost: float = 0.2
     gps_boost_radius_frac: float = 0.25
+    # GPS-cued detector ROI (flag-off). When true + arbiter owns gps_tracker:
+    # YOLO runs on a cropped ROI centered at the GPS-pointed frame center.
+    # Flag OFF preserves byte-identical behavior. (review 2026-06-12)
+    gps_roi_enabled: bool = False
 
 
 @dataclass
