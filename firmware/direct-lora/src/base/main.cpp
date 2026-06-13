@@ -15,6 +15,7 @@ SX1262 radio = new Module(SX126X_CS, SX126X_DIO1, SX126X_RESET, SX126X_BUSY);
 
 static volatile bool rx_flag = false;
 static uint16_t last_seq = 0;
+static uint32_t last_rx_ms = 0;   // last valid packet — drives the LED link indicator
 static uint32_t last_tracker_ms = 0;
 static bool have_seq = false;
 static uint32_t received = 0, lost = 0, bad = 0;
@@ -54,7 +55,14 @@ void setup() {
 }
 
 void loop() {
-  digitalWrite(STATUS_LED, (millis() / 1000) % 2);  // slow heartbeat
+  // LED as a serial-free link indicator (USB-CDC enumeration is broken in
+  // this build — see spec; the bootloader's USB works, the app's doesn't).
+  // FAST blink = receiving packets within the last 1.5s (link is live);
+  // SLOW blink = idle/no packets. Turn the tracker on and this flips
+  // slow->fast: that IS Phase 2 passing, visible to the eye.
+  uint32_t led_now = millis();
+  bool linked = last_rx_ms != 0 && (led_now - last_rx_ms) < 1500;
+  digitalWrite(STATUS_LED, linked ? (led_now / 100) % 2 : (led_now / 1000) % 2);
   if (!rx_flag) return;
   rx_flag = false;
 
@@ -91,6 +99,7 @@ void loop() {
   last_tracker_ms = pkt.tracker_ms;
   have_seq = true;
   received++;
+  last_rx_ms = millis();   // drives the fast-blink link indicator
 
   // Integer-scaled JSON: no embedded float printf, exact on the Orin, and the
   // Orin checks "fix" before trusting lat_e7/lon_e7 (no phantom 0,0 point).
