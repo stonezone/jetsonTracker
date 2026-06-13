@@ -33,3 +33,25 @@ flashing — documented brick risk on this board (Seeed).** The base builder's
 3. GPS beacon at 2Hz; MEASURE real outdoor L76K cadence before trying 5Hz.
 4. Orin `DirectRadioGps` reader (config `gps.source`, default meshtastic).
 5. External MAX-M10S only if the L76K is the proven limit.
+
+## Phase 3 — outdoor GPS + rate measurement
+
+`tools/read_base.py` is the instrument. Plug the base into the Orin (it
+enumerates as a CDC ACM on Linux), power the tracker, take the tracker
+outside with sky view, then:
+
+```sh
+python3 tools/read_base.py --port /dev/ttyACM0   # Ctrl-C to stop
+```
+
+It prints rolling link + GPS stats: delivered packet rate, loss, RSSI/SNR
+spread, the remote's `fix` + GPS age, and the base's settle (`stable`/`hold`).
+What to confirm outdoors:
+- **Remote fix flips to 1**, `gps_age` drops from 65535 to small ms, and on
+  the tracker's own USB serial the `[gps] update dt=` lines show the **real
+  L76K cadence** (the open "is it really 5 Hz?" question — measure it, don't
+  assume).
+- **Base reaches `stable:1`** (~20 s of good fix) — that's the cue a settled
+  camera position is ready for `base_lock`.
+- **Loss stays low and RSSI holds** as the tracker moves away (the range/
+  body-shadowing test toward <2 km).
