@@ -29,7 +29,10 @@ ptz:
 camera_ai:
   disable_on_start: true  # safer default: Prisual onboard tracker fights our loop (review 2026-06-12)
   http_base: "http://192.168.100.88"
-  off_path: "/cgi-bin/ptzctrl.cgi?ptzcmd&aimode&off"
+  # Probed live 2026-06-12: param.cgi with get_/post_ prefixes, basic auth.
+  # post_aimode&off -> {"status":"200"}; get_aimode -> "get_aimode=Off".
+  off_path: "/cgi-bin/param.cgi?post_aimode&off"
+  verify_path: "/cgi-bin/param.cgi?get_aimode"
 
 color:
   enabled: true
