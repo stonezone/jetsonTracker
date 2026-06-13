@@ -10,6 +10,7 @@
 #include <RadioLib.h>
 #include <TinyGPSPlus.h>
 
+#include "../common/gps_l76k.h"
 #include "../common/packet.h"
 #include "../common/radio_config.h"
 
@@ -29,28 +30,18 @@ static uint16_t battery_mv() {
   return (uint16_t)(raw * 3600UL * 2UL / 4095UL);
 }
 
-static void l76k_set_rate_ms(uint16_t ms) {
-  // PMTK220: position fix interval. Send with checksum; the module ACKs on
-  // the same port (we don't parse the ACK — outdoor cadence measurement is
-  // the real verification, per spec).
-  char body[32];
-  snprintf(body, sizeof(body), "PMTK220,%u", ms);
-  uint8_t ck = 0;
-  for (const char *c = body; *c; ++c) ck ^= (uint8_t)*c;
-  Serial1.printf("$%s*%02X\r\n", body, ck);
-}
-
 void setup() {
   Serial.begin(115200);   // USB debug
   pinMode(PIN_LED1, OUTPUT);
   pinMode(PIN_LED2, OUTPUT);
 
-  // GNSS: wake from standby, 9600 8N1 per variant defaults.
+  // GNSS: wake from standby, then full PMTK bring-up (baud 57600, RMC+GGA
+  // only, rate matched to the beacon but clamped to the L76K's 5 Hz floor).
+  // Re-runs every boot by design: PMTK251/220 revert on cold restart.
   pinMode(PIN_GPS_STANDBY, OUTPUT);
   digitalWrite(PIN_GPS_STANDBY, HIGH);
-  Serial1.begin(GPS_BAUDRATE);
-  delay(500);
-  l76k_set_rate_ms(BEACON_INTERVAL_MS);  // ask GNSS to match the beacon rate
+  delay(300);
+  l76k_init(Serial1, Serial, GPS_BAUDRATE, BEACON_INTERVAL_MS);
 
   // RX/TX switch: RXEN held low while transmitting is handled by RadioLib
   // via setRfSwitchPins; DIO2 drives TXEN on this module.

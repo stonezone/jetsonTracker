@@ -59,6 +59,22 @@ At SF7/BW250 a 32-byte LoRa payload ≈ 35 ms airtime → 5 Hz ≈ 17% duty:
 legal in US915 (100% duty allowed) with margin; the firmware still
 carries an airtime guard so a config error cannot flood the band.
 
+## GNSS bring-up (PMTK, verified against the Quectel protocol spec)
+
+Implemented in `src/common/gps_l76k.h`; re-runs on EVERY boot because
+PMTK251/PMTK220 revert on cold restart/standby.
+
+1. Open at 9600 (module default) → `$PMTK251,57600` (NO ACK by design —
+   the port speed changes underneath) → reopen at 57600. Even at 2 Hz,
+   57600 keeps NMEA buffer pressure at zero; 5 Hz REQUIRES ≥57600.
+2. `$PMTK314,0,1,0,1,...` — RMC+GGA only, every fix (lat/lon/speed/
+   course + quality/sats/HDOP is everything the packet needs).
+3. `$PMTK220,<ms>` — beacon-matched, clamped to 200 ms (the L76K module
+   max is 5 Hz per Seeed, even though generic PMTK can express 100 ms —
+   do NOT assume 10 Hz from this module).
+4. ACKs (`$PMTK001,<cmd>,3` = success) are logged for 1.5 s, never
+   blocking: measured outdoor NMEA cadence is the real verification.
+
 ## Radio plan (test in this order)
 
 1. LoRa SF7 / BW250 / CR4:5 / US915 @ 2 Hz  ← bring-up target
