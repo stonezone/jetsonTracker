@@ -116,6 +116,26 @@ computed airtime guard; F9 checked `startReceive()` + `tx_fail` counter;
 plus per-commit GNSS cadence logging (so the bench measures the L76K's real
 rate, not the PMTK ACK). Both envs recompile green.
 
+### Round 2 (blocking before Phase 3 — GPS-rate testing)
+
+The first round fixed everything *around* the blocking-transmit bug but left
+`radio.transmit()` itself blocking — the highest-severity finding was named,
+not fixed. Round 2 closes it:
+- **Non-blocking TX** (`startTransmit()` + `setPacketSentAction()` DIO1 ISR +
+  `finishTransmit()`): the loop pumps `gps.encode()` continuously through the
+  background airtime. A blocking transmit would have dropped NMEA bytes into
+  the 64-byte nRF52 ring mid-sentence and made the L76K's cadence look worse
+  than it is — which would have poisoned the exact 5 Hz measurement Phase 3
+  exists to make. `last_tx_ms` is stamped at TX start; the boot-computed
+  airtime guard guarantees the radio is always idle before the next beacon.
+- **Cadence logger fixed**: `isUpdated()` is NOT self-clearing (it clears when
+  `lat()`/`lng()` are read — only at the beacon interval), so the old logger
+  re-fired every loop between beacons. Now keyed on commit identity
+  (`millis()-age()`), logging once per real fix without touching `lat()`.
+- **hacc/sats zeroed unless the fix is fresh** — the JSON can't imply quality
+  for a position we won't vouch for.
+RadioLib 7.1.2 TX API verified against source before writing. Both envs green.
+
 ## Phases (GPT scope, adopted)
 
 1. **Build+flash proof** — stock variant builds, hello-world UF2 boots,

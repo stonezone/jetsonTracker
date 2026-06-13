@@ -29,12 +29,25 @@ static uint32_t last_tx_ms = 0;
 static uint32_t tx_fail = 0;
 static uint32_t min_tx_interval_ms = RADIO_MIN_TX_INTERVAL_MS;
 
+// Non-blocking TX state: the radio transmits in the background (DIO1 fires
+// on completion) so the loop NEVER stops draining the GPS UART during the
+// ~tens-of-ms airtime. The Adafruit nRF52 Serial1 RX ring is only 64 bytes;
+// a blocking transmit() would drop NMEA bytes mid-sentence and make the
+// L76K's cadence look worse than it is — fatal to honest 5 Hz measurement.
+static volatile bool tx_done = false;
+static bool tx_busy = false;
+
 // A fix older than this is not vouched for as the subject's current position.
 static const uint32_t FIX_FRESH_MS = 2000;
 
 // GNSS cadence telemetry (answers the open "is the L76K really 5 Hz" question
 // at the bench — PMTK ACK means "accepted", not "delivering fresh fixes").
-static uint32_t last_loc_update_ms = 0;
+// Identity-of-commit is millis()-age(): stable between commits, jumps on a
+// new one — so we log once per real fix WITHOUT calling lat()/lng() (which
+// would clear isUpdated() out from under fill_packet()).
+static uint32_t last_loc_commit_ms = 0;
+
+static void on_tx_done() { tx_done = true; }
 
 static uint16_t battery_mv() {
   // VBAT on PIN_VBAT behind a /2 divider; 12-bit ADC. The 3.6 V full-scale
@@ -72,6 +85,7 @@ void setup() {
       delay(1000);
     }
   }
+  radio.setPacketSentAction(on_tx_done);  // DIO1 -> tx_done, non-blocking TX
 
   // Honest airtime guard: derive the floor from the radio's ACTUAL modem
   // settings instead of trusting a hardcoded constant. ToA is µs; hold the
@@ -109,40 +123,64 @@ static void fill_packet() {
     flags |= PKT_FLAG_COURSE_VALID;
     pkt.course_cdeg = (uint16_t)(gps.course.deg() * 100.0) % 36000;
   }
-  if (gps.hdop.isValid())
+  // hacc/sats only mean anything alongside a fresh fix; zero them otherwise
+  // so the JSON can't imply quality for a position we won't vouch for.
+  if ((flags & PKT_FLAG_FIX_VALID) && gps.hdop.isValid())
     pkt.hacc_cm = (uint16_t)min(gps.hdop.hdop() * 500.0, 65535.0);  // ~5m/HDOP heuristic
+  if (!(flags & PKT_FLAG_FIX_VALID)) sats = 0;
   pkt.flags_sats = flags | ((uint16_t)sats << 8);
   pkt.battery_mv = battery_mv();
   pkt_seal(&pkt);
 }
 
-void loop() {
-  while (Serial1.available()) gps.encode(Serial1.read());
-
-  // Per-commit cadence log: measures the GNSS's REAL fix rate at the bench.
-  if (gps.location.isUpdated()) {
-    uint32_t now = millis();
-    Serial.printf("[gps] update dt=%lums sats=%u\n",
-                  (unsigned long)(now - last_loc_update_ms),
+// Log GNSS cadence once per real commit, WITHOUT touching lat()/lng() — those
+// clear isUpdated() and we let fill_packet() own that. Commit identity is
+// millis()-age(): ~constant between commits, jumps when a new sentence lands.
+static void log_gps_cadence() {
+  if (!gps.location.isValid()) return;
+  uint32_t age = gps.location.age();
+  uint32_t commit_ms = millis() - age;
+  if (commit_ms == last_loc_commit_ms) return;
+  if (last_loc_commit_ms != 0)
+    Serial.printf("[gps] update dt=%lums age=%lums sats=%u\n",
+                  (unsigned long)(commit_ms - last_loc_commit_ms),
+                  (unsigned long)age,
                   gps.satellites.isValid() ? gps.satellites.value() : 0);
-    last_loc_update_ms = now;
+  last_loc_commit_ms = commit_ms;
+}
+
+void loop() {
+  // Pump the GPS UART EVERY iteration, including throughout a background TX.
+  while (Serial1.available()) gps.encode(Serial1.read());
+  log_gps_cadence();
+
+  // Reap a finished background transmit.
+  if (tx_busy && tx_done) {
+    tx_done = false;
+    if (radio.finishTransmit() != RADIOLIB_ERR_NONE) tx_fail++;
+    tx_busy = false;
   }
 
   // LED: heartbeat while a fresh fix is flowing, solid while GNSS is stale.
   bool fresh = gps.location.isValid() && gps.location.age() < FIX_FRESH_MS;
   digitalWrite(STATUS_LED, fresh ? (millis() / 500) % 2 : HIGH);
 
+  if (tx_busy) return;                                   // radio still sending
   uint32_t now = millis();
   if (now - last_tx_ms < (uint32_t)BEACON_INTERVAL_MS) return;
-  if (now - last_tx_ms < min_tx_interval_ms) return;  // airtime/duty guard
-  last_tx_ms = now;
+  if (now - last_tx_ms < min_tx_interval_ms) return;     // airtime/duty guard
 
   fill_packet();
-  int16_t st = radio.transmit((uint8_t *)&pkt, PKT_LEN);
-  if (st != RADIOLIB_ERR_NONE) tx_fail++;
+  int16_t st = radio.startTransmit((uint8_t *)&pkt, PKT_LEN);  // non-blocking
+  if (st == RADIOLIB_ERR_NONE) {
+    tx_busy = true;
+    last_tx_ms = now;   // cadence measured from TX start
+  } else {
+    tx_fail++;
+  }
 
   if ((pkt.seq % 10) == 0)
-    Serial.printf("[tracker] seq=%u fix=%d sats=%u age=%ums batt=%umV tx=%d fail=%lu\n",
+    Serial.printf("[tracker] seq=%u fix=%d sats=%u age=%ums batt=%umV start=%d fail=%lu\n",
                   pkt.seq, (int)(pkt.flags_sats & PKT_FLAG_FIX_VALID),
                   pkt.flags_sats >> 8, pkt.gps_age_ms, pkt.battery_mv, st,
                   (unsigned long)tx_fail);
