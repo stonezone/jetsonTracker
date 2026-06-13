@@ -113,8 +113,16 @@ class FusionCfg:
     lost_grace_sec: float = 0.8
     person_aim_x: float = 0.5
     person_aim_y: float = 0.5
+    # Scale match_dist by subject bbox height so a far (small) person has a
+    # tighter association radius than a near (large) one (flag-off; review 2026-06-12).
+    # 240 px ≈ near subject height at 720p — empirical, to be field-tuned.
+    match_dist_scale: bool = False
     gps_boost: float = 0.2
     gps_boost_radius_frac: float = 0.25
+    # GPS-cued detector ROI (flag-off). When true + arbiter owns gps_tracker:
+    # YOLO runs on a cropped ROI centered at the GPS-pointed frame center.
+    # Flag OFF preserves byte-identical behavior. (review 2026-06-12)
+    gps_roi_enabled: bool = False
 
 
 @dataclass
@@ -139,7 +147,10 @@ class GpsCfg:
     # P1: GPS-mode PTZ speeds (conservative — GPS has latency + bearing uncertainty)
     max_pan_speed: int = 4      # 1..24, vision uses up to 10
     max_tilt_speed: int = 3     # 1..20, vision uses up to 12
-    stale_threshold_sec: float = 10.0  # remote fix age > this → stale
+    stale_threshold_sec: float = 10.0  # remote fix age > this → stale (display/status)
+    # drive_stale_sec is tighter: a 44s-old fix on an 8m/s foiler points ~350m behind
+    # (review 2026-06-12); this gate keeps steering honest without affecting the HUD display
+    drive_stale_sec: float = 8.0    # remote fix age > this → too old to STEER
     # P2: GPS-driven zoom (off by default — untuned; enable when ready)
     drive_zoom: bool = False
     # P1: handoff hysteresis

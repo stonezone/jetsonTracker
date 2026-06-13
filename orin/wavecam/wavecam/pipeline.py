@@ -28,6 +28,49 @@ from .tracking_arbiter import TrackingArbiter
 
 DEFAULT_STOP_RESEND_INTERVAL_SEC = 0.25
 
+# GPS-cued ROI minimum size (px) — ensures the detector has enough context even
+# when the GPS-predicted position is at a frame edge (review 2026-06-12).
+_ROI_MIN_PX = 320
+
+
+def compute_roi_crop(
+    roi_norm: tuple,
+    frame_h: int,
+    frame_w: int,
+) -> tuple:
+    """Convert a normalized (cx, cy, w, h) ROI to a clamped pixel crop box.
+
+    Returns (x1, y1, x2, y2) in pixel coords. Clamped to frame bounds;
+    minimum side enforced at _ROI_MIN_PX px.
+    """
+    cx_n, cy_n, w_n, h_n = roi_norm
+    cx = cx_n * frame_w
+    cy = cy_n * frame_h
+    half_w = max(w_n * frame_w / 2.0, _ROI_MIN_PX / 2.0)
+    half_h = max(h_n * frame_h / 2.0, _ROI_MIN_PX / 2.0)
+    # Enforce minimum square (use the larger half-side)
+    side = max(half_w, half_h)
+    x1 = int(max(0, cx - side))
+    y1 = int(max(0, cy - side))
+    x2 = int(min(frame_w, cx + side))
+    y2 = int(min(frame_h, cy + side))
+    # Re-enforce minimum size after edge clamping
+    if x2 - x1 < _ROI_MIN_PX:
+        x2 = min(frame_w, x1 + _ROI_MIN_PX)
+    if y2 - y1 < _ROI_MIN_PX:
+        y2 = min(frame_h, y1 + _ROI_MIN_PX)
+    return (x1, y1, x2, y2)
+
+
+def offset_boxes(boxes: list, x1: int, y1: int) -> list:
+    """Shift PersonBox coordinates from crop space back to full-frame space."""
+    from .detector import PersonBox
+    return [
+        PersonBox(b.x1 + x1, b.y1 + y1, b.x2 + x1, b.y2 + y1, b.conf)
+        for b in boxes
+    ]
+
+
 
 class SharedState:
     def __init__(self):
@@ -84,7 +127,7 @@ class Pipeline(threading.Thread):
         self.arbiter = TrackingArbiter(
             lock_frames=getattr(cfg.gps, "lock_frames", 5),
             grace_sec=getattr(cfg.gps, "grace_sec", 1.0),
-            max_gps_age_sec=getattr(cfg.gps, "stale_threshold_sec", 10.0),
+            max_gps_age_sec=getattr(cfg.gps, "drive_stale_sec", 8.0),
         )
         # CameraPose — loaded by calibration endpoint; uncalibrated by default
         from .camera_pose import CameraPose
@@ -451,13 +494,24 @@ class Pipeline(threading.Thread):
                 blobs, mask = self.color.detect(frame)
 
             # throttled YOLO; reuse last boxes within TTL
+            # When gps_roi_enabled + GPS owns, crop detector input to the
+            # arbiter's search_roi so YOLO focuses on the likely subject area.
+            # Color detection stays full-frame. Flag OFF = byte-identical path.
             persons = None
             if self.detector is not None:
                 self._frame_i += 1
                 run_yolo = (self._frame_i % max(1, self.cfg.detector.every_n)) == 0
                 if run_yolo:
                     try:
-                        self._last_boxes = self.detector.detect(frame)
+                        _roi_enabled = bool(getattr(self.cfg.fusion, "gps_roi_enabled", False))
+                        _prev_roi = getattr(self, "_prev_search_roi", None)
+                        if _roi_enabled and _prev_roi is not None:
+                            _rx1, _ry1, _rx2, _ry2 = compute_roi_crop(_prev_roi, h, w)
+                            _crop = frame[_ry1:_ry2, _rx1:_rx2]
+                            _raw_boxes = self.detector.detect(_crop)
+                            self._last_boxes = offset_boxes(_raw_boxes, _rx1, _ry1)
+                        else:
+                            self._last_boxes = self.detector.detect(frame)
                         self._last_boxes_time = t0
                     except Exception as e:  # pragma: no cover
                         print(f"[pipeline] YOLO inference error: {e}")
@@ -493,7 +547,7 @@ class Pipeline(threading.Thread):
                 gps_fix = self.gps.get_fix() if self.gps else None
                 gps_fresh = (
                     gps_fix is not None and
-                    gps_fix.age_sec < getattr(self.cfg.gps, "stale_threshold_sec", 10.0)
+                    gps_fix.age_sec < getattr(self.cfg.gps, "drive_stale_sec", 8.0)
                 ) if gps_fix else False
                 gps_calibrated = self.pose.calibrated
                 # C1: base position latched once at setup; tripod is stationary.
@@ -507,6 +561,8 @@ class Pipeline(threading.Thread):
                                                base_locked, t0)
                 prev_state = self._arbiter_state
                 self._arbiter_state = decision.owner
+                # Stash search_roi for next frame's YOLO crop (gps_roi_enabled flag gates use)
+                self._prev_search_roi = decision.search_roi
 
                 # Record state transitions (once per change, not per frame)
                 if self._prev_locked != fr.locked:

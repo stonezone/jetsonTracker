@@ -92,7 +92,11 @@ class TrackingArbiter:
         # --- decide ownership ---
         owner = self._decide_owner(vision.locked, gps_viable, now_sec)
         self._last_owner = owner
-        return ArbiterDecision(owner=owner)
+        # When GPS owns, emit a search_roi centered at frame center (the camera
+        # is already pointed at the GPS target). Consumers may use this to crop
+        # the detector input (P2, gps_roi_enabled flag gates the crop).
+        roi = (0.5, 0.5, 0.5, 0.5) if owner == "gps_tracker" else None
+        return ArbiterDecision(owner=owner, search_roi=roi)
 
     def _decide_owner(self, vision_locked: bool, gps_viable: bool,
                       now_sec: float) -> str:

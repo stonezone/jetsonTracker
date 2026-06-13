@@ -38,6 +38,28 @@ CONF_SUSTAIN = 0.45         # color-only / person-near-track: holds a lock, neve
 CONF_PERSON_ONLY = 0.2      # person with no color: never holds, never starts
 CONF_BOOST_CAP = 0.95
 
+# Scale-aware match_dist reference height (px). 240 px ≈ a near subject at 720p;
+# at distance the person is smaller so the radius scales down proportionally.
+# Clamp range ensures the radius stays usable across the full zoom range.
+# (review 2026-06-12 — empirical, to be field-tuned)
+MATCH_DIST_SCALE_REF_H = 240.0  # reference bbox height (px)
+MATCH_DIST_SCALE_LO = 40.0      # minimum effective radius (px)
+MATCH_DIST_SCALE_HI = 240.0     # maximum effective radius (px)
+
+
+def _effective_match_dist(cfg, person_bbox_h: float) -> float:
+    """Return effective match_dist for a person with the given bbox height.
+
+    When cfg.match_dist_scale is False (default) this is always cfg.match_dist
+    so the flag-off path is byte-identical.  When True, the radius scales with
+    person height: a far (small) box gets a tighter association window.
+    """
+    base = float(cfg.match_dist)
+    if not bool(getattr(cfg, "match_dist_scale", False)):
+        return base
+    scaled = base * (person_bbox_h / MATCH_DIST_SCALE_REF_H)
+    return max(MATCH_DIST_SCALE_LO, min(MATCH_DIST_SCALE_HI, scaled))
+
 
 @dataclass
 class FusionResult:
@@ -103,9 +125,10 @@ class Fusion:
 
     def _confirmed(self, blobs, persons):
         """Persons with a color blob within match_dist (orange + YOLO agree)."""
-        md = self.cfg.match_dist
         return [p for p in persons
-                if any(_dist((b.cx, b.cy), _person_center(p)) <= md for b in blobs)]
+                if any(_dist((b.cx, b.cy), _person_center(p))
+                       <= _effective_match_dist(self.cfg, _person_xywh(p)[3])
+                       for b in blobs)]
 
     def _select(self, blobs, persons,
                 gps_cue_px: Optional[Tuple[float, float, float]] = None):
@@ -125,7 +148,7 @@ class Fusion:
             return None, None, None, 0.0, False
         if self._ema is not None and persons:
             p, d = self._nearest_person(persons, self._ema)
-            if p is not None and d <= self.cfg.match_dist:
+            if p is not None and d <= _effective_match_dist(self.cfg, _person_xywh(p)[3]):
                 bbox = _person_xywh(p)
                 conf = CONF_SUSTAIN
                 if gps_cue_px is not None:

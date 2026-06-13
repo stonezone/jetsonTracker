@@ -27,7 +27,7 @@ ptz:
   ff_deadzone_mult: 1.5
 
 camera_ai:
-  disable_on_start: false
+  disable_on_start: true  # safer default: Prisual onboard tracker fights our loop (review 2026-06-12)
   http_base: "http://192.168.100.88"
   off_path: "/cgi-bin/ptzctrl.cgi?ptzcmd&aimode&off"
 
@@ -63,8 +63,10 @@ fusion:
   lost_grace_sec: 0.8
   person_aim_x: 0.5
   person_aim_y: 0.5
+  match_dist_scale: false  # flag-off: scale match_dist by subject bbox height (review 2026-06-12)
   gps_boost: 0.2
   gps_boost_radius_frac: 0.25
+  gps_roi_enabled: false  # flag-off: enable after field validation
 
 web:
   host: "0.0.0.0"
@@ -81,6 +83,7 @@ gps:
   dev_path: /dev/ttyACM0
   remote_id: "!9f5802d5"
   stale_threshold_sec: 45
+  drive_stale_sec: 8.0  # drive-stale gate (tighter than display stale); review 2026-06-12
   drive_zoom: false
 
 estimator:

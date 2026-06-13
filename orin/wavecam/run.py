@@ -69,9 +69,6 @@ def main():
     cfg_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
     cfg = load_config(cfg_path)
 
-    # onboard AI off (best effort)
-    disable_onboard_ai(cfg.camera_ai)
-
     # PTZ backend
     if cfg.ptz.enabled:
         ptz = ViscaIP(cfg.ptz.ip, cfg.ptz.port, cfg.ptz.address)
@@ -92,6 +89,10 @@ def main():
     pipe.recorder = Recorder(
         RecorderConfig(rtsp_main=main_stream_from_detection_source(cfg.camera.source))
     )
+
+    # onboard AI off (best effort); pipe.events captures outcome for /events
+    disable_onboard_ai(cfg.camera_ai, events=pipe.events)
+
     # LoRa GPS cue (Meshtastic): exposes the remote fix in /api/v1/status; now also
     # drives PTZ coarse-pointing via the arbiter (P1). Failsafe — never blocks vision.
     # The reader thread auto-connects and auto-reconnects; connect() starts it even if

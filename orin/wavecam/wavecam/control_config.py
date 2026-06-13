@@ -104,11 +104,14 @@ class ConfigManager:
             "fusion.unlock_threshold": lambda: set_float(cfg.fusion, "unlock_threshold", value, 0.05, 0.95, dry_run=dry_run),
             "fusion.require_person": lambda: set_bool(cfg.fusion, "require_person", value, dry_run=dry_run),
             "fusion.match_dist": lambda: set_float(cfg.fusion, "match_dist", value, 20.0, 500.0, dry_run=dry_run),
+            "fusion.match_dist_scale": lambda: set_bool(cfg.fusion, "match_dist_scale", value, dry_run=dry_run),
             "fusion.person_aim_x": lambda: set_float(cfg.fusion, "person_aim_x", value, 0.0, 1.0, dry_run=dry_run),
             "fusion.person_aim_y": lambda: set_float(cfg.fusion, "person_aim_y", value, 0.0, 1.0, dry_run=dry_run),
             "fusion.gps_boost": lambda: set_float(cfg.fusion, "gps_boost", value, 0.0, 0.5, dry_run=dry_run),
             "fusion.gps_boost_radius_frac": lambda: set_float(cfg.fusion, "gps_boost_radius_frac", value, 0.05, 0.75, dry_run=dry_run),
+            "fusion.gps_roi_enabled": lambda: set_bool(cfg.fusion, "gps_roi_enabled", value, dry_run=dry_run),
             "gps.stale_threshold_sec": lambda: self.apply_gps_float("stale_threshold_sec", value, 1.0, 120.0, dry_run=dry_run),
+            "gps.drive_stale_sec": lambda: self.apply_gps_float("drive_stale_sec", value, 1.0, 60.0, dry_run=dry_run),
             "gps.grace_sec": lambda: self.apply_gps_float("grace_sec", value, 0.1, 10.0, dry_run=dry_run),
             "gps.lock_frames": lambda: self.apply_gps_int("lock_frames", value, 1, 30, dry_run=dry_run),
             "gps.drive_zoom": lambda: self.apply_gps_bool("drive_zoom", value, dry_run=dry_run),
@@ -221,13 +224,15 @@ class ConfigManager:
         return None
 
     def _sync_arbiter_from_gps(self) -> None:
-        """Push hot-updated gps.lock_frames / gps.grace_sec into the running arbiter."""
+        """Push hot-updated gps.lock_frames / gps.grace_sec / drive_stale_sec into the running arbiter."""
         arbiter = getattr(self.pipeline, "arbiter", None)
         gps_cfg = self._gps_cfg()
         if arbiter is None or gps_cfg is None:
             return
         arbiter.lock_frames = int(getattr(gps_cfg, "lock_frames", arbiter.lock_frames))
         arbiter.grace_sec = float(getattr(gps_cfg, "grace_sec", arbiter.grace_sec))
+        arbiter.max_gps_age_sec = float(getattr(gps_cfg, "drive_stale_sec",
+                                               getattr(arbiter, "max_gps_age_sec", 8.0)))
 
     # ------------------------------------------------------------------
     # Estimator config helpers
