@@ -1,82 +1,92 @@
-"""Package 1: camera_ai disable path records events; startup never blocked.
+"""Onboard camera-AI disable: real CGI, basic auth, verify-after-set.
 
-Tests:
-  - CGI failure → event recorded with FAILED message
-  - CGI success → event recorded with "disabled"
-  - disable_on_start=False → no event, returns False
-  - startup never raises (failure is non-fatal)
+The original endpoint was folklore that 500'd silently for months — these
+tests pin the probed-live contract (post_aimode&off sets, get_aimode reads
+back) and that every outcome lands in events without ever blocking boot.
 """
 from __future__ import annotations
-from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
-import urllib.error
 
 from wavecam.camera_http import disable_onboard_ai
+from wavecam.config import CameraAiCfg
 from wavecam.events import EventRing
 
 
-def _cfg(disable: bool = True, http_base: str = "http://cam", off_path: str = "/ai/off"):
-    return SimpleNamespace(
-        disable_on_start=disable,
-        http_base=http_base,
-        off_path=off_path,
+def _cfg(**over):
+    base = dict(
+        disable_on_start=True,
+        http_base="http://cam",
+        off_path="/cgi-bin/param.cgi?post_aimode&off",
+        verify_path="/cgi-bin/param.cgi?get_aimode",
     )
+    base.update(over)
+    return CameraAiCfg(**base)
 
 
-def test_failure_records_event_and_continues():
-    """CGI failure → event recorded; function returns False (non-fatal)."""
-    events = EventRing()
-    cfg = _cfg()
-    with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
-        result = disable_onboard_ai(cfg, events=events)
-    assert result is False
-    recorded = events.since(0)
-    assert len(recorded) == 1
-    assert recorded[0]["kind"] == "camera_ai"
-    assert "FAILED" in recorded[0]["detail"]
+def _events_kinds(ring):
+    return [(e["kind"], e["detail"]) for e in ring.since(0)]
 
 
-def test_success_records_disabled_event():
-    """CGI 200 → event recorded with 'disabled'."""
-    events = EventRing()
-    cfg = _cfg()
-    mock_resp = MagicMock()
-    mock_resp.__enter__ = lambda s: s
-    mock_resp.__exit__ = MagicMock(return_value=False)
-    mock_resp.status = 200
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        result = disable_onboard_ai(cfg, events=events)
-    assert result is True
-    recorded = events.since(0)
-    assert len(recorded) == 1
-    assert recorded[0]["kind"] == "camera_ai"
-    assert recorded[0]["detail"] == "disabled"
+def test_disabled_and_verified():
+    calls = []
+
+    def fake_get(url, user, password, timeout=2.0):
+        calls.append((url, user, password))
+        return "get_aimode=Off" if "get_aimode" in url else '{"status":"200"}'
+
+    ring = EventRing()
+    assert disable_onboard_ai(_cfg(), events=ring, http_get=fake_get) is True
+    assert calls[0][0] == "http://cam/cgi-bin/param.cgi?post_aimode&off"
+    assert calls[0][1:] == ("admin", "admin")   # factory-default basic auth
+    assert calls[1][0] == "http://cam/cgi-bin/param.cgi?get_aimode"
+    assert _events_kinds(ring) == [("camera_ai", "disabled (verified Off)")]
 
 
-def test_disabled_on_start_false_no_event():
-    """disable_on_start=False → no event, no HTTP call."""
-    events = EventRing()
-    cfg = _cfg(disable=False)
-    result = disable_onboard_ai(cfg, events=events)
-    assert result is False
-    assert events.since(0) == []
+def test_set_accepted_but_readback_on_is_failure():
+    """Trusting the status code is how the 500 went unnoticed — a readback
+    that isn't Off must be reported as a failure."""
+    def fake_get(url, user, password, timeout=2.0):
+        return "get_aimode=On" if "get_aimode" in url else '{"status":"200"}'
+
+    ring = EventRing()
+    assert disable_onboard_ai(_cfg(), events=ring, http_get=fake_get) is False
+    kinds = _events_kinds(ring)
+    assert kinds[0][0] == "camera_ai"
+    assert "FAILED" in kinds[0][1]
 
 
-def test_failure_without_events_arg_does_not_raise():
-    """events=None is the default; failure path must not raise."""
-    cfg = _cfg()
-    with patch("urllib.request.urlopen", side_effect=OSError("unreachable")):
-        result = disable_onboard_ai(cfg)   # no events kwarg
-    assert result is False
+def test_http_error_records_event_and_never_raises():
+    def fake_get(url, user, password, timeout=2.0):
+        raise OSError("HTTP Error 500: Internal Server Error")
+
+    ring = EventRing()
+    assert disable_onboard_ai(_cfg(), events=ring, http_get=fake_get) is False
+    assert "FAILED" in _events_kinds(ring)[0][1]
 
 
-def test_http_error_records_event():
-    """urllib HTTPError (non-2xx) also records FAILED event."""
-    events = EventRing()
-    cfg = _cfg()
-    with patch("urllib.request.urlopen",
-               side_effect=urllib.error.URLError("timeout")):
-        result = disable_onboard_ai(cfg, events=events)
-    assert result is False
-    recorded = events.since(0)
-    assert any("FAILED" in e["detail"] for e in recorded)
+def test_disable_on_start_false_is_noop():
+    def fake_get(url, user, password, timeout=2.0):
+        raise AssertionError("must not be called")
+
+    ring = EventRing()
+    assert disable_onboard_ai(_cfg(disable_on_start=False),
+                              events=ring, http_get=fake_get) is False
+    assert _events_kinds(ring) == []
+
+
+def test_unconfigured_cgi_is_noop():
+    ring = EventRing()
+    cfg = _cfg(http_base="", off_path="")
+    assert disable_onboard_ai(cfg, events=ring) is False
+    assert _events_kinds(ring) == []
+
+
+def test_custom_credentials_used():
+    seen = []
+
+    def fake_get(url, user, password, timeout=2.0):
+        seen.append((user, password))
+        return "get_aimode=Off"
+
+    cfg = _cfg(http_user="zack", http_pass="hunter2")
+    assert disable_onboard_ai(cfg, events=None, http_get=fake_get) is True
+    assert all(c == ("zack", "hunter2") for c in seen)

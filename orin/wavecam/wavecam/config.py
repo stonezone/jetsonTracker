@@ -80,6 +80,11 @@ class CameraAiCfg:
     disable_on_start: bool = True
     http_base: str = ""
     off_path: str = ""
+    verify_path: str = ""
+    # Camera factory defaults (documented in the Prisual manual); override in
+    # YAML if the camera's web login was ever changed.
+    http_user: str = "admin"
+    http_pass: str = "admin"
 
 
 @dataclass
