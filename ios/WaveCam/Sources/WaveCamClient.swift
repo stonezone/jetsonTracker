@@ -100,6 +100,9 @@ struct WCStatus: Codable, Sendable {
         // Reader-health fields (backend ≥ P1 review build); nil on older backends.
         var readerAlive: Bool?
         var lastPollAgeSec: Double?
+        // Direct-LoRa tracker telemetry (backend exposes these when source=direct_lora); nil otherwise.
+        var targetBatteryMv: Int?
+        var targetSats: Int?
     }
     struct Media: Codable, Sendable {
         var recording: Bool
