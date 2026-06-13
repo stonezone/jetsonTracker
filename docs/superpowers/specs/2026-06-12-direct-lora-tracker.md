@@ -184,3 +184,52 @@ RadioLib 7.1.2 TX API verified against source before writing. Both envs green.
 | nothing | Phases 1–4 | existing 2× Wio L1 + 1100 mAh | $0 |
 | 10 Hz GNSS | Phase 5 only | SparkFun MAX-M10S (GPS-18037) | ~$22–45 |
 | spare U.FL antenna | Phase 6 | 915 MHz whip, flexible | ~$8 |
+
+## Base position & session hard-lock (reviewed + designed 2026-06-13)
+
+How the camera's location and heading are set today (reviewed in-code), and
+how direct-LoRa feeds the same path so calibration/pointing are unchanged.
+
+**The existing mechanism (Meshtastic path):**
+- **Camera position** = the base Wio's own GPS fix, exposed as
+  `MeshtasticGps.get_camera_position()`. Hard-locked once at the `base_lock`
+  calibration step → `CameraPose.lat/lon/alt`, persisted to the calibration
+  store. One capture per session ("base_locked", pose-latched).
+- **Camera heading** (`reference_heading`) = solved from GPS geometry, NOT a
+  magnetometer: aim the camera at the visible remote, and `calibrate_pan_aim`
+  pairs the pan encoder with the **base→remote bearing** (computed from base
+  position + remote position, surfaced as `status.gps.bearing_deg`). iOS
+  refuses the heading capture unless that bearing is live (needs BOTH fixes).
+- **The phone is NOT in the calibration path.** `PhoneSensorPublisher` →
+  `/sensors/phone` feeds the SensorHub drift/bump monitor (anchor-suspect:
+  "did the tripod get knocked?"). It does not set the camera location/heading.
+
+**What direct-LoRa adds (this firmware):** the base now reads its own L76K and
+emits a `{"base":1,fix,lat_e7,lon_e7,alt_m,sats,hdop_x10,stable,hold_s}` line
+at 1 Hz, alongside the relayed `{"seq":...}` tracker packets. It runs a
+running-mean over each continuous good-fix run (HDOP ≤ 2.5) and sets
+`stable:1` after `BASE_SETTLE_MS` (20 s) — the Orin's cue that a settled
+camera position is ready to latch.
+
+**Orin side (Codex's lane, Phase 4, not yet built):** `DirectRadioGps` must
+mirror the `MeshtasticGps` contract — `get_fix()` from `{"seq":...}` lines
+(the subject), `get_camera_position()` from `{"base":1,...}` lines (the
+camera, only when `stable:1`). Same `NormalizedFix` seam, `gps.source:
+meshtastic|direct_lora`. With that, `base_lock` AND the heading solve work
+**unchanged** — both just need base + remote fixes, which direct-LoRa now
+provides.
+
+**Wio vs iPhone — decision:**
+- **Camera POSITION: base Wio L76K** (primary, self-contained, matches the
+  existing design). The iPhone is *not* needed for position.
+- **Camera HEADING: GPS base→remote geometry** (aim at remote). No compass.
+- **iPhone: the drift/bump monitor only** — optional, confirms the tripod
+  hasn't moved mid-session. Not a location/heading source.
+
+**Session hard-lock flow (direct-LoRa, at session start):**
+1. Power base (on Orin USB) + remote; let the base GPS settle outdoors until
+   `stable:1` (~20 s+ with sky view).
+2. `base_lock` → latches the settled camera position into `CameraPose`.
+3. Aim camera at the visible remote → `heading` capture solves
+   `reference_heading` from the base→remote bearing + pan encoder.
+4. Both persist to the calibration store; pose stays latched for the session.

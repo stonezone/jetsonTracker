@@ -6,12 +6,27 @@
 
 #include <Arduino.h>
 #include <RadioLib.h>
+#include <TinyGPSPlus.h>
 
 #include "../common/board.h"
+#include "../common/gps_l76k.h"
 #include "../common/packet.h"
 #include "../common/radio_config.h"
 
 SX1262 radio = new Module(SX126X_CS, SX126X_DIO1, SX126X_RESET, SX126X_BUSY);
+
+// The base is a Wio Tracker L1 too — it has its own L76K. That fix is the
+// CAMERA/tripod reference position: the Orin's base_lock calibration reads it,
+// and the base->remote bearing (camera position + relayed tracker position)
+// is what solves the pan heading. So the base must report its own position,
+// stabilized. Stationary tripod -> 1 Hz is plenty.
+TinyGPSPlus base_gps;
+static double base_lat_mean = 0, base_lon_mean = 0, base_alt_mean = 0;
+static uint32_t base_n = 0;            // samples in the current valid run
+static uint32_t base_fix_since_ms = 0; // when the current valid+good run began
+static uint32_t last_base_emit_ms = 0;
+static const uint32_t BASE_SETTLE_MS = 20000;  // continuous good fix before "stable"
+static const uint16_t BASE_HDOP_X10_MAX = 25;  // HDOP <= 2.5 to count toward a lock
 
 static volatile bool rx_flag = false;
 static uint16_t last_seq = 0;
@@ -51,7 +66,55 @@ void setup() {
   }
   radio.setPacketReceivedAction(on_rx);
   arm_receive("setup");
-  Serial.println("{\"info\":\"base up, listening\"}");
+
+  // Base's own GPS = the camera reference position. 1 Hz (stationary tripod).
+  pinMode(PIN_GPS_STANDBY, OUTPUT);
+  digitalWrite(PIN_GPS_STANDBY, HIGH);
+  delay(300);
+  l76k_init(Serial1, Serial, GPS_BAUDRATE, 1000);
+
+  Serial.println("{\"info\":\"base up, listening + base GPS\"}");
+}
+
+// Accumulate the base's own fix while valid + good HDOP (running mean, so the
+// locked position settles); reset the window the moment the fix drops.
+static void update_base_gps() {
+  while (Serial1.available()) base_gps.encode(Serial1.read());
+  bool valid = base_gps.location.isValid() && base_gps.location.age() < 2000;
+  uint16_t hdop_x10 = base_gps.hdop.isValid()
+      ? (uint16_t)min(base_gps.hdop.hdop() * 10.0, 65535.0) : 999;
+  if (valid && hdop_x10 <= BASE_HDOP_X10_MAX) {
+    if (base_fix_since_ms == 0) {          // start of a fresh valid run
+      base_fix_since_ms = millis();
+      base_n = 0;
+      base_lat_mean = base_lon_mean = base_alt_mean = 0;
+    }
+    base_n++;
+    base_lat_mean += (base_gps.location.lat() - base_lat_mean) / base_n;
+    base_lon_mean += (base_gps.location.lng() - base_lon_mean) / base_n;
+    double alt = base_gps.altitude.isValid() ? base_gps.altitude.meters() : 0.0;
+    base_alt_mean += (alt - base_alt_mean) / base_n;
+  } else {
+    base_fix_since_ms = 0;                 // lost it -> restart the settle window
+  }
+}
+
+// One {"base":1,...} line per second. "stable" goes 1 after a continuous
+// good-fix run >= BASE_SETTLE_MS; that's the Orin's cue that base_lock can
+// latch a settled camera position. lat/lon are the running mean.
+static void emit_base_position() {
+  bool valid = base_fix_since_ms != 0;
+  bool stable = valid && (millis() - base_fix_since_ms) >= BASE_SETTLE_MS;
+  uint32_t hold_s = valid ? (millis() - base_fix_since_ms) / 1000 : 0;
+  uint16_t hdop_x10 = base_gps.hdop.isValid()
+      ? (uint16_t)min(base_gps.hdop.hdop() * 10.0, 65535.0) : 999;
+  Serial.printf(
+      "{\"base\":1,\"fix\":%d,\"lat_e7\":%ld,\"lon_e7\":%ld,\"alt_m\":%d,"
+      "\"sats\":%u,\"hdop_x10\":%u,\"stable\":%d,\"hold_s\":%lu}\n",
+      valid ? 1 : 0, (long)(base_lat_mean * 1e7), (long)(base_lon_mean * 1e7),
+      (int)base_alt_mean,
+      base_gps.satellites.isValid() ? base_gps.satellites.value() : 0,
+      hdop_x10, stable ? 1 : 0, (unsigned long)hold_s);
 }
 
 void loop() {
@@ -63,6 +126,15 @@ void loop() {
   uint32_t led_now = millis();
   bool linked = last_rx_ms != 0 && (led_now - last_rx_ms) < 1500;
   digitalWrite(STATUS_LED, linked ? (led_now / 100) % 2 : (led_now / 1000) % 2);
+
+  // Base's own GPS: pump every loop, emit a {"base":1,...} line at 1 Hz.
+  // Done before the rx_flag early-return so it runs even with no packets.
+  update_base_gps();
+  if (millis() - last_base_emit_ms >= 1000) {
+    last_base_emit_ms = millis();
+    emit_base_position();
+  }
+
   if (!rx_flag) return;
   rx_flag = false;
 
