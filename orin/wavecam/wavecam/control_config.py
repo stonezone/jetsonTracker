@@ -104,6 +104,7 @@ class ConfigManager:
             "fusion.unlock_threshold": lambda: set_float(cfg.fusion, "unlock_threshold", value, 0.05, 0.95, dry_run=dry_run),
             "fusion.require_person": lambda: set_bool(cfg.fusion, "require_person", value, dry_run=dry_run),
             "fusion.match_dist": lambda: set_float(cfg.fusion, "match_dist", value, 20.0, 500.0, dry_run=dry_run),
+            "fusion.match_dist_scale": lambda: set_bool(cfg.fusion, "match_dist_scale", value, dry_run=dry_run),
             "fusion.person_aim_x": lambda: set_float(cfg.fusion, "person_aim_x", value, 0.0, 1.0, dry_run=dry_run),
             "fusion.person_aim_y": lambda: set_float(cfg.fusion, "person_aim_y", value, 0.0, 1.0, dry_run=dry_run),
             "fusion.gps_boost": lambda: set_float(cfg.fusion, "gps_boost", value, 0.0, 0.5, dry_run=dry_run),

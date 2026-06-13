@@ -63,6 +63,7 @@ fusion:
   lost_grace_sec: 0.8
   person_aim_x: 0.5
   person_aim_y: 0.5
+  match_dist_scale: false  # flag-off: scale match_dist by subject bbox height (review 2026-06-12)
   gps_boost: 0.2
   gps_boost_radius_frac: 0.25
   gps_roi_enabled: false  # flag-off: enable after field validation

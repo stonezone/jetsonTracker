@@ -113,6 +113,10 @@ class FusionCfg:
     lost_grace_sec: float = 0.8
     person_aim_x: float = 0.5
     person_aim_y: float = 0.5
+    # Scale match_dist by subject bbox height so a far (small) person has a
+    # tighter association radius than a near (large) one (flag-off; review 2026-06-12).
+    # 240 px ≈ near subject height at 720p — empirical, to be field-tuned.
+    match_dist_scale: bool = False
     gps_boost: float = 0.2
     gps_boost_radius_frac: float = 0.25
     # GPS-cued detector ROI (flag-off). When true + arbiter owns gps_tracker:

@@ -35,6 +35,7 @@ HOT_CONFIG_KEYS = (
     "fusion.unlock_threshold",
     "fusion.require_person",
     "fusion.match_dist",
+    "fusion.match_dist_scale",
     "fusion.person_aim_x",
     "fusion.person_aim_y",
     "fusion.gps_boost",
