@@ -1,24 +1,21 @@
-// L76K GNSS bring-up over PMTK (Quectel protocol; facts per GPT research
-// 2026-06-12, cross-checked against the Quectel Lx0/Lx6 protocol spec):
+// L76K / CASIC GNSS bring-up for the Seeed Wio Tracker L1.
 //
-//   - PMTK220 <interval ms>: 100..10000; values <=1000 are exact. L76K's
-//     listed module max is 5 Hz -> 200 ms is the floor we target.
-//   - PMTK251 <baud>: NO ACK by design (port speed changes underneath);
-//     reverts to 9600 on full cold restart / standby, so this whole
-//     sequence re-runs on EVERY boot.
-//   - PMTK314: per-sentence output divider; RMC+GGA every fix is all the
-//     packet needs (lat/lon/speed/course + quality/sats/HDOP).
-//   - ACK: $PMTK001,<cmd>,<flag> with flag 3 = success.
-//   - Checksum: XOR of chars between '$' and '*'.
-//
-// 5 Hz NMEA needs >=57600 baud to drain the UART; we use 57600 even at
-// 2 Hz to keep buffer pressure at zero.
+// CRITICAL (root-caused 2026-06-13, ground truth = pinned Meshtastic SHA
+// 88137c60): the GNSS on this board speaks CASIC/PCAS, NOT MTK/PMTK, and runs
+// at a FIXED 9600 baud. Meshtastic keeps it at 9600 (GPS_BAUDRATE_FIXED), inits
+// with PCAS commands, sends NO PMTK, and never switches to 57600. An earlier
+// PMTK251->57600 attempt here was IGNORED by the module (it stayed at 9600)
+// while the MCU moved to 57600 -> permanent baud mismatch -> zero parsed NMEA
+// (the sats=0/no-fix bug seen on both boards outdoors). Pins and standby were
+// already correct: PIN_SERIAL1_RX/TX = the GPS UART pins, and standby HIGH =
+// awake (GPS_STANDBY_ACTIVE defaults LOW upstream). The fix is: stay at 9600,
+// drop PMTK, use the Meshtastic PCAS init sequence.
 #pragma once
 #include <Arduino.h>
 
-#define L76K_RUN_BAUD 57600
-#define L76K_MIN_INTERVAL_MS 200  // module max 5 Hz (Seeed L76K spec)
-
+// Send a $<body>*<checksum>\r\n NMEA/PCAS sentence (checksum = XOR of body
+// chars). Verified to reproduce Meshtastic's literal checksums, e.g.
+// l76k_send("PCAS04,7") -> "$PCAS04,7*1E".
 static inline void l76k_send(Stream &port, const char *body) {
   uint8_t ck = 0;
   for (const char *p = body; *p; ++p) ck ^= (uint8_t)*p;
@@ -29,22 +26,26 @@ static inline void l76k_send(Stream &port, const char *body) {
   port.print(tail);
 }
 
-// Drain the GNSS UART for `window_ms`, echoing any $PMTK001 ACK lines to
-// the debug port. Non-blocking beyond the window: a missing ACK is logged,
-// never fatal (outdoor cadence measurement is the real verification).
-static inline void l76k_log_acks(HardwareSerial &gps, Stream &dbg,
-                                 uint32_t window_ms) {
+// Drain the GNSS UART for `window_ms`, echoing the first few raw NMEA/PCAS lines
+// plus the total byte count to the debug port. This is the proof the module is
+// talking: bytes>0 = GNSS alive at this baud; bytes==0 = still silent (deeper
+// issue). Replaces the old PMTK-ACK sniffer (this module never emits $PMTK001).
+static inline void l76k_drain_echo(HardwareSerial &gps, Stream &dbg,
+                                   uint32_t window_ms) {
   uint32_t until = millis() + window_ms;
-  char line[100];
+  char line[120];
   size_t n = 0;
+  uint32_t bytes = 0, lines = 0;
   while ((int32_t)(until - millis()) > 0) {
     while (gps.available()) {
       char c = (char)gps.read();
+      bytes++;
       if (c == '\n' || n >= sizeof(line) - 1) {
         line[n] = 0;
-        if (strstr(line, "$PMTK001")) {
-          dbg.print("[l76k] ");
+        if (n > 0 && line[0] == '$' && lines < 6) {
+          dbg.print("[gps] ");
           dbg.println(line);
+          lines++;
         }
         n = 0;
       } else if (c != '\r') {
@@ -52,31 +53,25 @@ static inline void l76k_log_acks(HardwareSerial &gps, Stream &dbg,
       }
     }
   }
+  dbg.printf("[gps] init drain: %lu bytes, %lu lines\n",
+             (unsigned long)bytes, (unsigned long)lines);
 }
 
-// Full boot sequence. `interval_ms` is clamped to the module's 5 Hz floor.
-// Sequence per protocol spec: raise baud first (at the old rate), reopen,
-// then filter + rate at the new rate.
+// Bring up the GNSS. `baud` must be the module's fixed 9600. `interval_ms` is
+// currently unused: we mirror Meshtastic's L76K path, which sets no rate (module
+// default ~1 Hz). A PCAS02 rate command can be added later once a fix is proven.
 static inline void l76k_init(HardwareSerial &gps, Stream &dbg,
-                             uint32_t default_baud, uint16_t interval_ms) {
-  if (interval_ms < L76K_MIN_INTERVAL_MS) interval_ms = L76K_MIN_INTERVAL_MS;
-
-  gps.begin(default_baud);
-  delay(200);
-  l76k_send(gps, "PMTK251,57600");  // no ACK by design
-  gps.flush();
-  delay(150);
-  gps.end();
-  gps.begin(L76K_RUN_BAUD);
-  delay(100);
-
-  // RMC + GGA every fix, everything else off.
-  l76k_send(gps, "PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0");
-  char rate[24];
-  snprintf(rate, sizeof(rate), "PMTK220,%u", interval_ms);
-  l76k_send(gps, rate);
-
-  dbg.printf("[l76k] init: baud=%u filter=RMC+GGA interval=%ums\n",
-             (unsigned)L76K_RUN_BAUD, interval_ms);
-  l76k_log_acks(gps, dbg, 1500);  // expect $PMTK001,314,3 and $PMTK001,220,3
+                             uint32_t baud, uint16_t interval_ms) {
+  (void)interval_ms;
+  gps.begin(baud);
+  delay(250);
+  // Meshtastic GNSS_MODEL_MTK/L76K init (literal PCAS commands + 250 ms gaps):
+  l76k_send(gps, "PCAS04,7");                          // constellations: GPS+GLONASS+BeiDou
+  delay(250);
+  l76k_send(gps, "PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0");  // NMEA output: GGA + RMC on
+  delay(250);
+  l76k_send(gps, "PCAS11,3");                           // nav/dynamic mode
+  delay(250);
+  dbg.printf("[l76k] init: PCAS @ %u baud (GGA+RMC)\n", (unsigned)baud);
+  l76k_drain_echo(gps, dbg, 1500);
 }
