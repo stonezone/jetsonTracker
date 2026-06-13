@@ -147,8 +147,12 @@ class LoopCfg:
 @dataclass
 class GpsCfg:
     enabled: bool = False
+    source: str = "meshtastic"  # "meshtastic" | "direct_lora"
     dev_path: str = "/dev/ttyACM0"
     remote_id: str = ""  # "" => auto-detect the non-local mesh node
+    direct_dev_path: str = "/dev/ttyACM0"
+    direct_baud: int = 115200
+    direct_reconnect_sec: float = 3.0
     # P1: GPS-mode PTZ speeds (conservative — GPS has latency + bearing uncertainty)
     max_pan_speed: int = 4      # 1..24, vision uses up to 10
     max_tilt_speed: int = 3     # 1..20, vision uses up to 12

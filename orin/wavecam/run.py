@@ -56,6 +56,32 @@ def install_shutdown_handlers(pipe, ptz, force_exit: bool) -> dict:
     return state
 
 
+def start_gps_reader(cfg):
+    gps_cfg = getattr(cfg, "gps", None)
+    if not getattr(gps_cfg, "enabled", False):
+        return None
+
+    source = str(getattr(gps_cfg, "source", "meshtastic") or "meshtastic").strip().lower()
+    if source == "direct_lora":
+        from wavecam.gps_direct_lora import DirectRadioGps
+
+        gps = DirectRadioGps(
+            dev_path=getattr(gps_cfg, "direct_dev_path", "/dev/ttyACM0"),
+            baud=getattr(gps_cfg, "direct_baud", 115200),
+            reconnect_sec=getattr(gps_cfg, "direct_reconnect_sec", 3.0),
+        )
+    else:
+        from wavecam.gps_meshtastic import MeshtasticGps
+
+        gps = MeshtasticGps(
+            dev_path=getattr(gps_cfg, "dev_path", "/dev/ttyACM0"),
+            remote_id=getattr(gps_cfg, "remote_id", "") or None,
+        )
+
+    gps.connect()
+    return gps
+
+
 def main():
     import uvicorn
 
@@ -93,17 +119,16 @@ def main():
     # onboard AI off (best effort); pipe.events captures outcome for /events
     disable_onboard_ai(cfg.camera_ai, events=pipe.events)
 
-    # LoRa GPS cue (Meshtastic): exposes the remote fix in /api/v1/status; now also
-    # drives PTZ coarse-pointing via the arbiter (P1). Failsafe — never blocks vision.
-    # The reader thread auto-connects and auto-reconnects; connect() starts it even if
-    # the device isn't ready yet (USB enumeration race after reboot).
+    # LoRa GPS cue: exposes the remote fix in /api/v1/status; now also drives PTZ
+    # coarse-pointing via the arbiter (P1). Failsafe — never blocks vision.
     if getattr(cfg.gps, "enabled", False):
         try:
-            from wavecam.gps_meshtastic import MeshtasticGps
-            _gps = MeshtasticGps(dev_path=cfg.gps.dev_path, remote_id=cfg.gps.remote_id or None)
-            _gps.connect()  # starts reader thread (retries until device appears)
-            pipe.gps = _gps
-            print(f"[run] GPS: Meshtastic ingest started on {cfg.gps.dev_path}")
+            _gps = start_gps_reader(cfg)
+            if _gps is not None:
+                pipe.gps = _gps
+                source = str(getattr(cfg.gps, "source", "meshtastic") or "meshtastic").strip().lower()
+                path = cfg.gps.direct_dev_path if source == "direct_lora" else cfg.gps.dev_path
+                print(f"[run] GPS: {source} ingest started on {path}")
         except Exception as exc:  # never let GPS break the vision pipeline
             print(f"[run] GPS init skipped (non-fatal): {exc}")
     pipe.start()
