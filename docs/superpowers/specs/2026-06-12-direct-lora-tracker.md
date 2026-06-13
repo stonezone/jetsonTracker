@@ -44,6 +44,14 @@ with a sequence number and timestamp; loss is measured, not corrected.
   <25 mW. Wires to the same Serial1 pins; L76K held in STANDBY (D0).
 - Bootloader: UF2 drag-drop DFU (double-tap reset). **Never use nRF OTA
   flashing — documented brick risk (Seeed).**
+- **SoftDevice layout: the Wio bootloader runs S140 7.3.0 → app base 0x27000**
+  (per INFO_UF2.TXT: `UF2 Bootloader 0.9.2`, `S140 7.3.0`). The PlatformIO
+  `adafruit_feather_nrf52840` board def links for S140 6.1.1 (app base
+  0x26000); flashing that boot-looped the board on first bring-up (orange LED
+  fast-flash, no USB enumeration, no DFU catchable during the loop). Fixed
+  with `board_build.ldscript = ld/nrf52840_s140_v7.ld` (the framework's own
+  nrf52840 v6 script with FLASH ORIGIN 0x26000→0x27000; RAM/sections
+  unchanged). VERIFY the built UF2's first address is 0x27000, not 0x26000.
 
 ## Packet format (32 bytes, little-endian, CRC16-CCITT)
 
