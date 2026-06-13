@@ -99,6 +99,15 @@ struct MergedLiveView: View {
             feedCard(fullscreen: true)
                 .ignoresSafeArea()
 
+            // Joystick — bottom-left. Restored here after the Glass Rail redesign
+            // (build 9) rebuilt fullscreenLayout from scratch and dropped it, leaving
+            // fullscreen with no manual PTZ. Fullscreen is the tripod-monitoring mode,
+            // so the joystick must stay reachable, matching the non-fullscreen feed layer.
+            overlaidJoystick(size: isLandscape ? 190 : 172)
+                .padding(.leading, WCSpace.md)
+                .padding(.bottom, WCSpace.md)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+
             // Telemetry HUD — fullscreen is the tripod-monitoring mode, so lock/GPS
             // state must stay visible (it was dropped here pre-2026-06-10, leaving
             // the operator blind to LOCKED/GPS while in fullscreen).
