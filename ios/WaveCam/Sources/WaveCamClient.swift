@@ -231,6 +231,7 @@ struct WCConfig: Codable, Sendable {
         var logs: Bool?
         var cinematicZoom: Bool?
         var mediaDelete: Bool?
+        var trackingMode: Bool?
     }
 
     struct Current: Codable, Sendable {
@@ -240,6 +241,7 @@ struct WCConfig: Codable, Sendable {
         var detector: Detector
         var web: Web
         var gps: GPSCfg?   // absent on backends before the P2 deploy — feature-detected
+        var tracking: Tracking?   // absent before the GPS-only-mode backend — feature-detected
 
         struct PTZ: Codable, Sendable {
             var deadzone: Double
@@ -267,6 +269,9 @@ struct WCConfig: Codable, Sendable {
             var staleThresholdSec: Double?
             var graceSec: Double?
             var driveZoom: Bool?
+        }
+        struct Tracking: Codable, Sendable {
+            var mode: String?   // "auto" | "gps_only" | "vision_only"
         }
         struct ColorCfg: Codable, Sendable {
             var preset: String
