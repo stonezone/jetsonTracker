@@ -8,6 +8,7 @@ pyyaml
 fastapi<1
 uvicorn[standard]<1
 pydantic>=2,<3
+pyserial>=3.5,<4
 
 # --- vision ---
 # On a Jetson (JetPack 6.2.x) prefer the SYSTEM OpenCV (CUDA build) over pip.
