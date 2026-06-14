@@ -57,6 +57,18 @@ class TrackingArbiter:
         self._vision_owns = False  # True once vision takes over from GPS
         self._last_owner: str = "idle"
 
+    def reset_vision_state(self) -> None:
+        """Reset vision hysteresis so ownership must be re-earned from scratch.
+
+        Call after manual operator intervention (joystick release / stop) so the
+        arbiter doesn't immediately restore a stale vision_follow owner that was
+        saved before the operator took over."""
+        self._consecutive_locked = 0
+        self._last_locked_time = None
+        self._vision_owns = False
+        if self._last_owner not in ("vision_follow", "gps_tracker", "idle"):
+            self._last_owner = "idle"
+
     def decide(self,
                vision: FusionResult,
                gps_fresh: bool,

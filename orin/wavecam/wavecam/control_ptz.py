@@ -53,16 +53,17 @@ class PtzDispatcher:
     def release_manual_owner(self, restore_autonomous: bool = True) -> None:
         with self._lock:
             released = self.pipeline.owner.release("manual")
-            restore_owner = self._restore_owner_after_manual
             self._restore_owner_after_manual = None
             self._manual_pan_tilt_active = False
-            if (
-                released
-                and restore_autonomous
-                and restore_owner in AUTONOMOUS
-                and not self.pipeline.owner.killed
-            ):
-                self.pipeline.owner.request(restore_owner)
+            # Reset arbiter hysteresis so vision must re-earn lock from scratch
+            # after manual intervention. Prevents stale vision_follow from
+            # immediately fighting the operator on joystick release / stop.
+            if hasattr(self.pipeline, "arbiter"):
+                self.pipeline.arbiter.reset_vision_state()
+            if released and restore_autonomous and not self.pipeline.owner.killed:
+                # Let the arbiter naturally acquire in the next frame — don't
+                # force-restore a saved owner that may no longer be viable.
+                pass
 
     def start_autonomous(self, owner: str) -> bool:
         with self._lock:

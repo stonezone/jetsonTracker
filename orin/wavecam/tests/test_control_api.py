@@ -124,7 +124,7 @@ class DummyPipeline:
         self.gps = None
         self.health = HealthRegistry()
         self.events = EventRing()
-        self.arbiter = types.SimpleNamespace(lock_frames=5, grace_sec=1.0)
+        self.arbiter = types.SimpleNamespace(lock_frames=5, grace_sec=1.0, reset_vision_state=lambda: None)
         self.ptz_state = types.SimpleNamespace(latest=lambda: (None, None))
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
@@ -456,8 +456,10 @@ def test_api_v1_ptz_stop_restores_autonomous_owner_after_takeover():
     stopped = client.post("/api/v1/ptz/stop", json={"hold": False, "source": "ios_native"})
 
     assert stopped.status_code == 200
-    assert stopped.json()["status"]["ptz"]["owner"] == "testbed"
-    assert pipe.owner.owner == "testbed"
+    # After the arbiter-reset fix, release no longer restores the saved
+    # autonomous owner — the arbiter re-decides in the next frame.
+    assert stopped.json()["status"]["ptz"]["owner"] == "idle"
+    assert pipe.owner.owner == "idle"
 
 
 def test_api_v1_ptz_stop_holds_manual_owner_to_block_autonomous_owner():
