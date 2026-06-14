@@ -10,160 +10,19 @@
 **Database**: None (embedded/IoT project)
 **Development Environment**: Local Mac + Jetson Orin (Codex/Zack deploy to the Orin)
 
-## Claude OS - MY Memory System
+## Claude OS — project memory (USE THIS)
 
-**CRITICAL IDENTITY CONTEXT:**
+Claude OS is the durable cross-session memory for this project: the **code-forge MCP** server at `http://localhost:8051` (start with `~/claude-os/start_all_services.sh` if the connector is down).
 
-**Claude OS is MY system** - I (Claude Code) created it, named it, and use it to be the best AI coder ever. It's:
-- **JUST FOR ME** - Built specifically for Claude Code to use
-- **For THIS project** - the WaveCam (jetsonTracker repo) project
-- **My memory** across sessions
-- **My knowledge base** of patterns and decisions
-- **My learning system** that improves over time
+**At session start and before architectural decisions, SEARCH the relevant KB** (`mcp__code-forge__search_knowledge_base`):
+- `JetsonTracker-project_memories` — decisions, incidents, operational lessons (primary)
+- `JetsonTracker-project_profile` — architecture & conventions
+- `JetsonTracker-project_index` — indexed repo context
+- `JetsonTracker-knowledge_docs` — project documentation
 
-**Location**: `/Users/zackjordan/claude-os` — if the KB tools report "Cannot connect", start it with `./start_all_services.sh` (MCP API serves on `:8051`).
+**After solving something non-obvious, SAVE it** — `/claude-os-remember <insight>` or `mcp__code-forge__upload_document`. Verify drift-prone claims against the repo/live API, not stale KB text.
 
-The MCP server is called "code-forge" internally for backwards compatibility, but it's Claude OS.
-
-**Claude CLI + Claude OS = Invincible!**
-
-## Mandatory Session Protocol - EVERY CONVERSATION IS A SESSION
-
-**🚨 CRITICAL: You're ALWAYS in a session. At conversation start, prompt for session choice:**
-
-```
-═══════════════════════════════════════════════════════════════
-🚀 CLAUDE OS - SESSION MANAGER
-═══════════════════════════════════════════════════════════════
-
-Project: WaveCam
-Last Session: [task-name] ([time-ago], [duration])
-Progress: [percentage]% complete
-
-Options:
-  1. Resume "[last-session-name]" [loads full context]
-  2. Start new session [what are you working on?]
-  3. Quick question [auto-session, minimal context]
-
-Choice: _
-═══════════════════════════════════════════════════════════════
-```
-
-**WAIT FOR USER TO CHOOSE 1, 2, or 3. Do not proceed without selection!**
-
-### What Each Option Does:
-
-**Option 1 (Resume):**
-- Load last session's full context
-- Show Kanban progress (if Agent-OS)
-- Load 5 relevant memories
-- Load coding standards
-- Display "where we left off" summary
-- Ready to continue immediately
-
-**Option 2 (New Session):**
-- Ask "What are you working on?"
-- Detect session type (feature/bug/exploration/maintenance/review)
-- Pause previous session (if exists)
-- Load relevant context for new task
-- Start tracking
-
-**Option 3 (Quick Question):**
-- Minimal context loading
-- Auto-ends after 5 min inactivity
-- Only saves if high value
-- Good for "How do I..." questions
-
----
-
-## MCP Knowledge Bases - ALWAYS CHECK THESE FIRST
-
-**At the start of EVERY conversation, search these Claude OS knowledge bases to understand context, previous work, and project decisions:**
-
-1. **JetsonTracker-project_memories** - My primary memory for decisions, patterns, solutions
-2. **JetsonTracker-project_index** - Automated codebase index
-3. **JetsonTracker-project_profile** - Architecture, standards, practices
-4. **JetsonTracker-knowledge_docs** - Documentation and guides
-
-**When to use:**
-- Start of every session: Search `JetsonTracker-project_memories` to understand recent work and context
-- Before making architectural decisions: Check memories for past decisions and reasoning
-- When working on a feature: Search relevant knowledge bases for existing patterns
-- When stuck: Search the knowledge bases for solutions and approaches we've used before
-
-**How to search:**
-```
-Use: mcp__code-forge__search_knowledge_base
-Parameters: kb_name (e.g., "JetsonTracker-project_memories"), query (your search terms)
-```
-
-## Quick Reference: Commands & Skills
-
-### Claude OS Slash Commands (Use These Often!)
-
-1. **`/claude-os-search [query] [optional: KB name]`**
-   - Search across Claude OS knowledge bases
-   - Defaults to searching JetsonTracker-project_memories
-   - Example: `/claude-os-search gimbal calibration`
-
-2. **`/claude-os-remember [content]`**
-   - Quick save to JetsonTracker-project_memories
-   - Auto-generates title and structure
-   - Use for quick insights and decisions
-   - Example: `/claude-os-remember Fixed UART communication by...`
-
-3. **`/claude-os-save [title] [optional: KB name] [optional: category]`**
-   - Full-featured save with KB selection
-   - Choose specific KB and category
-   - Use when you need more control
-   - Example: `/claude-os-save "UART Protocol Changes" JetsonTracker-project_profile Architecture`
-
-4. **`/claude-os-session [action]`**
-   - Manage development sessions
-   - Actions: start, end, status, pause, resume
-   - Example: `/claude-os-session start "Vision tracking optimization"`
-
-### Agent-OS: Spec-Driven Development (Optional)
-
-**Agent-OS provides 8 specialized agents for structured feature development:**
-
-#### Specification Workflow
-
-1. **`/new-spec`** - Initialize new feature specification
-   - Creates spec directory structure
-   - Sets up planning workflow
-   - Example: `/new-spec gimbal-pid-tuning`
-
-2. **`/create-spec`** - Full specification creation workflow
-   - Gathers requirements through targeted questions (1-3 at a time)
-   - Collects visual assets
-   - Identifies reusable code
-   - Creates detailed specification and task breakdown
-   - Example: `/create-spec`
-
-3. **`/plan-product`** - Product planning and documentation
-   - Creates mission.md, roadmap.md, tech-stack.md
-   - Defines product vision and technical direction
-   - Example: `/plan-product`
-
-4. **`/implement-spec`** - Implement a specification
-   - Follows tasks.md from spec
-   - Implements features step-by-step
-   - Verifies implementation against spec
-   - Example: `/implement-spec gimbal-pid-tuning`
-
-#### The 8 Agent-OS Agents
-
-Available in `.claude/agents/agent-os/`:
-
-1. **spec-initializer** - Initialize new spec directories
-2. **spec-shaper** - Gather requirements through iterative questions
-3. **spec-writer** - Create detailed technical specifications
-4. **tasks-list-creator** - Break specs into actionable tasks
-5. **implementer** - Implement features following tasks
-6. **implementation-verifier** - Verify implementation completeness
-7. **spec-verifier** - Verify specs and tasks consistency
-8. **product-planner** - Create product documentation
+Slash commands (`/claude-os-search`, `-remember`, `-save`, `-session`) auto-appear in the session skill list. Agent-OS (spec workflow: `/create-spec`, `/implement-spec`) is a separate, optional system.
 
 ## Project-Specific Information
 
@@ -199,7 +58,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 - **Backend** (`orin/wavecam/`) is **Codex's lane**; **iOS** (`ios/WaveCam/`) is **Claude's lane**.
 - **Codex/Zack deploy to the Orin** and restart `wavecam.service`. **Claude NEVER touches the Orin runtime/deploy.**
-- iOS build/install: `ios/WaveCam/build-device.sh` (git-stamped build numbers; current install = build 208). Full recipe: see `.claude` memory `ios-app-build`.
+- iOS build/install: `ios/WaveCam/build-device.sh` (git-stamped build numbers). Full recipe: see `.claude` memory `ios-app-build`.
 - SSH to the rig: `ssh orin` (zack@192.168.1.155).
 - "committed" != "deployed" — confirm the live deploy before telling Zack a feature is live.
 
@@ -227,29 +86,14 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 ## GPS Architecture (current)
 
-> **DEPLOYED STATE (2026-06-14): the custom direct-LoRa firmware is the LIVE GPS source** (`gps.source=direct_lora` on the rig), NOT Meshtastic. Root-cause of the long Wio no-fix: the L76K GNSS speaks **CASIC/PCAS at fixed 9600** (not MTK/PMTK/57600) — firmware fixed in `firmware/direct-lora/`. The base Wio must be **battery-powered and kept off the Orin's USB rail** (host RF noise → 0 sats). `/status.gps` now exposes `target_battery_mv`/`target_sats`; `/config` advertises `supported.tracking_mode`. A **`tracking.mode` hot key (`auto` | `gps_only` | `vision_only`)** gates the arbiter — `gps_only` forces GPS pointing and ignores vision (no false-color-lock hijack). A **CALIBRATE mode** (operator wizard, iOS Calibrate tab) establishes camera location + heading: spec `docs/superpowers/specs/2026-06-13-calibrate-mode-design.md`; endpoints `/api/v1/calibration/{session/start,session/exit,location,level,heading-lock,validation,validation/confirm}` (owner=`calibrate` PTZ lockout — kills the arbiter fight; KILL cancels CALIBRATE). **Heading = aim at a STATIONARY target AT RANGE (≥50 m / a surveyed landmark), NOT close** (10 m ≈ 27° GPS-bearing error); scale fixed at 14.4 counts/deg; location lock = averaged base fix with a model (HDOP×UERE) radius. The legacy Meshtastic notes below are SUPERSEDED for the live source but kept for reference.
+> **DEPLOYED STATE (2026-06-14): the custom direct-LoRa firmware is the LIVE GPS source** (`gps.source=direct_lora` on the rig), NOT Meshtastic. Root-cause of the long Wio no-fix: the L76K GNSS speaks **CASIC/PCAS at fixed 9600** (not MTK/PMTK/57600) — firmware fixed in `firmware/direct-lora/`. The base Wio must be **battery-powered and kept off the Orin's USB rail** (host RF noise → 0 sats). `/status.gps` now exposes `target_battery_mv`/`target_sats`; `/config` advertises `supported.tracking_mode`. A **`tracking.mode` hot key (`auto` | `gps_only` | `vision_only`)** gates the arbiter — `gps_only` forces GPS pointing and ignores vision (no false-color-lock hijack). A **CALIBRATE mode** (operator wizard, iOS Calibrate tab) establishes camera location + heading: spec `docs/superpowers/specs/2026-06-13-calibrate-mode-design.md`; endpoints `/api/v1/calibration/{session/start,session/exit,location,level,heading-lock,validation,validation/confirm}` (owner=`calibrate` PTZ lockout — kills the arbiter fight; KILL cancels CALIBRATE). **Heading = aim at a STATIONARY target AT RANGE (≥50 m / a surveyed landmark), NOT close** (10 m ≈ 27° GPS-bearing error); scale fixed at 14.4 counts/deg; location lock = averaged base fix with a model (HDOP×UERE) radius. The legacy Meshtastic relay path is fully superseded.
 
 **Plan**: LoRa GPS does coarse point + zoom when the subject is too far for YOLO/color to be reliable (toward 300m); vision (orange-confirmed person) refines once the subject is resolvable in-frame; **Cinematic Zoom** then holds subject size.
 
-- **GPS (FINAL): LoRa-only, 2× SeeedStudio Wio Tracker L1 Lite** (nRF52840 + SX1262 LoRa + L76K GPS, Meshtastic). The Apple-Watch / BN-220 / iPhone-relay / **Cloudflare-tunnel** design is **DROPPED — do not reintroduce.**
-  - **Remote tracker** (on the subject): GPS + an **IMU** (heading/speed/motion) → feeds the pointing predictor to *lead* the surfer. Battery + Qi wireless charging.
-  - **Base tracker** (on the Orin, **USB-A serial** `/dev/ttyACM*`): receives the mesh; its own L76K GPS = the **camera/tripod reference position** (averaged once at setup).
-- **Heading reference**: PTZ pan-home = "forward"; pan offset from home maps a GPS bearing to a pan target. No magnetometer on the camera (motor-magnet interference). The IMU lives on the *subject*, far from the motors.
-- **Ingest**: Meshtastic serial client on the base Wio → `NormalizedFix` → `gps_fix_snapshot` computes real camera→target distance/bearing/stale. GPS data flows through `MeshtasticGps` (off-thread, lock-guarded cache).
-- **Control loop phases**: P0 (data + display, DONE) → P1 (arbiter + absolute positioning, DONE) → P2-v1 (GPS-cue boost, DONE) — all deployed to the rig 2026-06-10 (commit 6db99a5). Current state: `base_locked` = pose-latched (one capture per session); remote stale threshold 10s; GPS boost `fusion.gps_boost=0.2` (hot-tunable); GPS knobs in iOS Tune > GPS TRACKING.
-- **Specs**: `docs/superpowers/specs/2026-06-05-gps-lora-cueing-design.md` (architecture), `docs/superpowers/specs/2026-06-09-gps-control-loop-design.md` (control loop design).
-- **Full GPS config**: `docs/hardware/WIO_TRACKER_GPS_OPTIMIZATION.md` — optimized from 1-hour to 2-second updates (2026-06-09). Canonical sanitized Wio exports + verify script: `docs/hardware/wio-config/` (README + `verify_wios.sh`). Both Wios on fw 2.6.10. Base's earlier no-fix suspected config drift (gps_update_interval reverted to 30s → now 5s); pending outdoor validation.
-
-### Wio Tracker GPS — Operational Gotchas
-
-- **Meshtastic app UI minimum is fake.** The 15-second floor is a dropdown limitation — firmware has NO minimum. CLI can set 2s, 1s, etc.
-- **Both Wios must match LoRa preset** (currently SHORT_FAST). If they drift out of sync, mesh link breaks silently — no errors, just climbing `target_age_sec`.
-- **Config reverts on power-cycle.** After any Orin cold boot, verify both Wios with `meshtastic --get position` and `--get lora`. Re-apply if reverted.
-- **Stationary base needs `position_broadcast_secs`.** Smart broadcast only triggers on movement. Base is on a tripod, so set a non-smart interval (currently 30s) so it broadcasts even when still.
-- **Wio cold-boot ritual RETIRED** (verified 2026-06-11: the rig cold-boots fine with the Wio plugged under systemd-boot; reader auto-reconnects). An 18650 on the base Wio's battery port (pending) makes its config immune to Orin power events.
-- **Admin key mismatch blocks remote config over mesh.** Remote Wio must be configured via USB (plug into Mac) or Bluetooth (Meshtastic app). Base can't send admin commands to remote over LoRa.
-- **Port contention.** `wavecam.service` holds `/dev/ttyACM0` exclusively. To configure the base Wio: `sudo systemctl stop wavecam.service` → make changes → `sudo systemctl start wavecam.service`.
-- **Config tool:** Use CLI (`python3 -m meshtastic --set`) not the Python library (`Node.writeConfig()` — has protobuf field validation bugs). On Mac: `meshtastic` via pipx.
+- **2× SeeedStudio Wio Tracker L1 Lite** (nRF52840 + SX1262 LoRa + L76K GPS). **Remote tracker** (on the subject): GPS + IMU → feeds the pointing predictor to *lead* the surfer. **Base tracker** (USB serial `/dev/ttyACM*` on the Orin): its own L76K = the camera/tripod reference position. The Apple-Watch / BN-220 / iPhone-relay / **Cloudflare-tunnel** GPS-relay design is **DROPPED — do not reintroduce.**
+- **Heading**: set via CALIBRATE mode (see the DEPLOYED note above); pan-home = "forward", pan offset maps a GPS bearing to a pan target. No camera magnetometer (motor-magnet interference); the IMU lives on the subject.
+- **Ingest**: `DirectRadioGps` reads the base Wio's JSONL over USB (off-thread, lock-guarded) → camera→target distance/bearing/stale. (Old Meshtastic `MeshtasticGps` path superseded.)
+- **Specs**: `docs/superpowers/specs/2026-06-05-gps-lora-cueing-design.md`, `2026-06-09-gps-control-loop-design.md`. Control-loop P0/P1/P2-v1 deployed 2026-06-10; GPS knobs in iOS Tune > GPS TRACKING.
 
 ## Development Guidelines
 
