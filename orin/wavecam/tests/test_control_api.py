@@ -613,6 +613,41 @@ def test_api_v1_calibration_captures_heading_tilt_zoom_state():
     assert config_state["current"]["calibration"]["reference_heading"] == 247.1
 
 
+def test_calibration_capture_during_session_restores_calibrate_owner():
+    """Regression test for B13: after a standalone capture (heading/tilt/zoom/
+    base-lock) during an active CALIBRATE session, the owner must remain
+    calibrate — NOT drop to idle."""
+    client = make_client()
+    pipe = client.app.state.pipeline
+    # Simulate an active CALIBRATE session
+    assert pipe.owner.request("calibrate")
+
+    response = client.post(
+        "/api/v1/calibration/heading",
+        json={
+            "requested_owner": "manual",
+            "takeover": True,
+            "heading_deg": 180.0,
+            "source": "test",
+        },
+    )
+    assert response.status_code == 200
+    # Owner must be restored to calibrate, not idle
+    assert pipe.owner.owner == "calibrate"
+    # A second capture must also succeed (session still active)
+    response2 = client.post(
+        "/api/v1/calibration/tilt",
+        json={
+            "requested_owner": "manual",
+            "takeover": True,
+            "tilt_deg": -2.5,
+            "source": "test",
+        },
+    )
+    assert response2.status_code == 200
+    assert pipe.owner.owner == "calibrate"
+
+
 def test_heading_capture_stamps_measured_pan_scale():
     """The aim capture must stamp the hard-stop-measured scale (14.4 counts/deg),
     not the retired 4.47 folklore value that left every GPS slew ~3.2x short."""
