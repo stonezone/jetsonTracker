@@ -597,7 +597,8 @@ def test_api_v1_calibration_captures_heading_tilt_zoom_state():
     assert heading.status_code == 200
     assert tilt.status_code == 200
     assert zoom.status_code == 200
-    assert pipe.owner.owner == "manual"
+    # Owner released back to idle after each capture (try/finally release_manual_owner)
+    assert pipe.owner.owner == "idle"
 
     state = client.get("/api/v1/calibration").json()["calibration"]
     assert state["reference_heading"] == 247.1

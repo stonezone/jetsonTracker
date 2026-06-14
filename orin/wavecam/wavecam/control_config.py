@@ -127,8 +127,8 @@ class ConfigManager:
             "detector.person_class": lambda: set_int(cfg.detector, "person_class", value, 0, 79, dry_run=dry_run),
             "detector.every_n": lambda: set_int(cfg.detector, "every_n", value, 1, 30, dry_run=dry_run),
             "detector.box_ttl_sec": lambda: set_float(cfg.detector, "box_ttl_sec", value, 0.1, 5.0, dry_run=dry_run),
-            "web.show_mask": lambda: set_bool(self.pipeline.state, "show_mask", value, dry_run=dry_run),
-            "web.show_hud": lambda: set_bool(self.pipeline.state, "show_hud", value, dry_run=dry_run),
+            "web.show_mask": lambda: self._set_web_bool("show_mask", value, dry_run=dry_run),
+            "web.show_hud": lambda: self._set_web_bool("show_hud", value, dry_run=dry_run),
             "web.jpeg_quality": lambda: set_int(cfg.web, "jpeg_quality", value, 30, 95, dry_run=dry_run),
             "estimator.shadow": lambda: self.apply_estimator_bool("shadow", value, dry_run=dry_run),
             "estimator.enabled": lambda: self.apply_estimator_bool("enabled", value, dry_run=dry_run),
@@ -327,3 +327,12 @@ class ConfigManager:
         if sensors_cfg is None:
             return f"sensors.{attr}: sensors section not present in config."
         return set_bool(sensors_cfg, attr, value, dry_run=dry_run)
+
+    def _set_web_bool(self, attr: str, value: Any, dry_run: bool = False) -> str | None:
+        """Apply a web overlay toggle to both pipeline.state (live) and cfg.web
+        (persisted) so the setting survives restarts and the hot-config persist
+        path reads the live value."""
+        err = set_bool(self.pipeline.state, attr, value, dry_run=dry_run)
+        if err is not None:
+            return err
+        return set_bool(self.pipeline.cfg.web, attr, value, dry_run=dry_run)

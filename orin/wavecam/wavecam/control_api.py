@@ -304,7 +304,7 @@ def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def status():
         return api.status_snapshot()
 
-    @app.get("/api/v1/preview.mjpeg", dependencies=[Depends(require(READ))])
+    @app.get("/api/v1/preview.mjpeg", dependencies=[Depends(require(READ, allow_query_token=True))])
     def preview():
         return StreamingResponse(
             api.frames(),
@@ -471,14 +471,17 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         refusal = api.validate_calibration_capture(req)
         if refusal is not None:
             return refusal
-        api.capture_calibration(
-            "heading",
-            {
-                "heading_deg": req.heading_deg,
-                "source": normalized_text(req.source, "unknown", 64),
-                "note": normalized_optional_text(req.note, 256),
-            },
-        )
+        try:
+            api.capture_calibration(
+                "heading",
+                {
+                    "heading_deg": req.heading_deg,
+                    "source": normalized_text(req.source, "unknown", 64),
+                    "note": normalized_optional_text(req.note, 256),
+                },
+            )
+        finally:
+            api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
         return api.calibration_ok()
 
@@ -487,14 +490,17 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         refusal = api.validate_calibration_capture(req)
         if refusal is not None:
             return refusal
-        api.capture_calibration(
-            "tilt",
-            {
-                "tilt_deg": req.tilt_deg,
-                "source": normalized_text(req.source, "unknown", 64),
-                "note": normalized_optional_text(req.note, 256),
-            },
-        )
+        try:
+            api.capture_calibration(
+                "tilt",
+                {
+                    "tilt_deg": req.tilt_deg,
+                    "source": normalized_text(req.source, "unknown", 64),
+                    "note": normalized_optional_text(req.note, 256),
+                },
+            )
+        finally:
+            api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
         return api.calibration_ok()
 
@@ -503,14 +509,17 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         refusal = api.validate_calibration_capture(req)
         if refusal is not None:
             return refusal
-        api.capture_calibration(
-            "zoom",
-            {
-                "zoom_fov_deg": req.zoom_fov_deg,
-                "source": normalized_text(req.source, "unknown", 64),
-                "note": normalized_optional_text(req.note, 256),
-            },
-        )
+        try:
+            api.capture_calibration(
+                "zoom",
+                {
+                    "zoom_fov_deg": req.zoom_fov_deg,
+                    "source": normalized_text(req.source, "unknown", 64),
+                    "note": normalized_optional_text(req.note, 256),
+                },
+            )
+        finally:
+            api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
         return api.calibration_ok()
 
@@ -520,11 +529,15 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         if refusal is not None:
             return refusal
         if api.pipeline.gps is None or api.pipeline.gps.get_camera_position() is None:
+            api.release_manual_owner(restore_autonomous=True)
             return api.refusal("gps_unavailable", "Base GPS has no fix yet.", 503)
-        api.capture_calibration("base_lock", {
-            "source": normalized_text(req.source, "unknown", 64),
-            "note": normalized_optional_text(req.note, 256),
-        })
+        try:
+            api.capture_calibration("base_lock", {
+                "source": normalized_text(req.source, "unknown", 64),
+                "note": normalized_optional_text(req.note, 256),
+            })
+        finally:
+            api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
         return api.calibration_ok()
 

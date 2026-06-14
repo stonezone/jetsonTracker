@@ -98,12 +98,19 @@ def authorize(auth: AuthConfig, token: str | None, action: str) -> None:
         raise AuthError("forbidden", f"Role '{role}' may not perform '{action}'.", 403)
 
 
-def require(action: str):
-    """FastAPI dependency factory enforcing `action` against the request's role."""
+def require(action: str, allow_query_token: bool = False):
+    """FastAPI dependency factory enforcing `action` against the request's role.
+
+    When *allow_query_token* is True, a ``?token=…`` query parameter is accepted
+    as a fallback bearer token so streaming endpoints that cannot attach headers
+    (e.g. iOS URLSessionDataTask MJPEG) can authenticate."""
 
     def dependency(request: Request) -> None:
         auth = getattr(request.app.state, "auth", None) or AuthConfig()
-        authorize(auth, bearer_token(request.headers), action)
+        token = bearer_token(request.headers)
+        if token is None and allow_query_token:
+            token = request.query_params.get("token") or None
+        authorize(auth, token, action)
 
     return dependency
 

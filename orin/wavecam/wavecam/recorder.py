@@ -72,6 +72,12 @@ class Recorder:
         pattern = self.config.rec_dir / segment_pattern
         cmd = self._command(pattern, seconds)
         self._proc = self._popen(cmd)
+        # Verify ffmpeg is still alive a moment after spawn — a missing binary,
+        # bad RTSP source, or full disk can kill it instantly.
+        time.sleep(0.25)
+        if self._proc.poll() is not None:
+            self._proc = None
+            return {"ok": True, "started": False, "error": "ffmpeg exited immediately (check RTSP source and path)"}
         self._active_segment_prefix = segment_prefix
         self._active_segment_pattern = segment_pattern
         return {

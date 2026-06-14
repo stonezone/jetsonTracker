@@ -141,7 +141,7 @@ def build_status_snapshot(pipeline, revision: int, media: dict | None = None) ->
         "revision": revision,
         "time_unix_ms": int(time.time() * 1000),
         "session": build_session(legacy, pipeline),
-        "safety": build_safety(legacy),
+        "safety": build_safety(legacy, pipeline),
         "ptz": build_ptz(legacy, pipeline),
         "tracking": build_tracking(legacy),
         "gps": build_gps(pipeline, legacy),
@@ -177,11 +177,12 @@ def session_mode(legacy: dict, pipeline=None) -> str:
     return "vision"
 
 
-def build_safety(legacy: dict) -> dict:
+def build_safety(legacy: dict, pipeline=None) -> dict:
+    last_kill = getattr(pipeline, "_last_kill", None) or {}
     return {
         "killed": bool(legacy.get("killed", False)),
-        "kill_reason": None,
-        "last_kill_at_unix_ms": None,
+        "kill_reason": last_kill.get("reason"),
+        "last_kill_at_unix_ms": last_kill.get("at_unix_ms"),
     }
 
 

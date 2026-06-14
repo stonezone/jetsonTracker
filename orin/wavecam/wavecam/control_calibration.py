@@ -720,6 +720,18 @@ class CalibrationManager:
             return self._api.refusal("killed", "KILL is latched; resume before calibration capture.")
         if req.requested_owner != "manual":
             return self._api.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
+        current = self.pipeline.owner.owner
+        # Allow takeover from calibrate owner (standalone captures must work during
+        # an active calibration session). Save it so release_manual_owner can restore
+        # the session when the capture is done.
+        if current == "calibrate" and req.takeover:
+            if not self.pipeline.owner.release("calibrate"):
+                return self._api.refusal("owner_busy", "Cannot release calibrate owner.")
+            self._api._ptz._restore_owner_after_manual = "calibrate"
+            if not self.pipeline.owner.request("manual"):
+                self.pipeline.owner.request("calibrate")  # restore
+                return self._api.refusal("owner_busy", "Cannot claim manual for capture.")
+            return None
         if not self._api.claim_manual(takeover=req.takeover):
             return self._api.refusal("owner_busy", "Another PTZ owner holds the camera.")
         return None

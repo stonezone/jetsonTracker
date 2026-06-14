@@ -15,6 +15,7 @@ from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 from .ptz_visca import PAN_STOP, TILT_STOP
 
 HOME_ZOOM_WIDE_DEADMAN_MS = 4000
+HOME_PAN_TILT_DEADMAN_MS = 8000
 
 
 class PtzDispatcher:
@@ -48,7 +49,12 @@ class PtzDispatcher:
             if not self.pipeline.owner.release(current_owner):
                 return False
             self._restore_owner_after_manual = current_owner
-            return self.pipeline.owner.request("manual")
+            if self.pipeline.owner.request("manual"):
+                return True
+            # Takeover failed after we released the previous owner — restore it.
+            if not self.pipeline.owner.killed:
+                self.pipeline.owner.request(current_owner)
+            return False
 
     def release_manual_owner(self, restore_autonomous: bool = True) -> None:
         with self._lock:
@@ -108,6 +114,7 @@ class PtzDispatcher:
                 int(getattr(self.pipeline.cfg.ptz, "zoom_max_speed", 5)),
             )
             self.schedule_zoom_deadman(HOME_ZOOM_WIDE_DEADMAN_MS)
+            self.schedule_manual_deadman(HOME_PAN_TILT_DEADMAN_MS)
 
     def hold_manual_owner(self) -> None:
         with self._lock:

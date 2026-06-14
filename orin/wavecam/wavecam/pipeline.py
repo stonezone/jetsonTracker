@@ -174,13 +174,16 @@ class Pipeline(threading.Thread):
         self._shadow_writer: Optional["ShadowWriter"] = None
         self._est_tick = 0
         self._est_active_shadow: bool = False
+        self._restarting = False
+        self._last_kill: dict | None = None
 
-    def kill(self, on: bool = True):
+    def kill(self, on: bool = True, reason: str | None = None):
         self.state.killed = on
         if on:
             self.state.set_status(killed=True, state="KILLED")
             self.owner.kill()                  # sticky latch + owner -> idle
             self._pointing_verifier.clear()    # no resend may outlive a KILL
+            self._last_kill = {"reason": reason or "operator", "at_unix_ms": int(time.time() * 1000)}
             if self.cfg.ptz.enabled:
                 self.ptz.stop()                # immediate pan/tilt stop
                 self.ptz.zoom("stop")          # + zoom stop
@@ -188,8 +191,9 @@ class Pipeline(threading.Thread):
         else:
             self.state.set_status(killed=False, state="SEARCHING")
             self.owner.resume()
-            if self.cfg.ptz.enabled:
-                self.owner.request("testbed")  # re-acquire on RESUME
+            # Leave owner idle — the arbiter re-decides in the next frame.
+            # The public API resume path already uses resume_without_autostart()
+            # which matches this behavior.
             self.events.record("kill", "resumed")
 
     def _send_cmd(self, cmd):
@@ -536,13 +540,13 @@ class Pipeline(threading.Thread):
 
             # control: always compute (for the overlay); SEND only while we own
             # the PTZ and are not killed.
-            if self.state.killed:
+            if self.state.killed or self._restarting:
                 cmd = STOP_CMD
                 abs_cmd = None
-                self._send_cmd(cmd)               # killed -> force stop
+                self._send_cmd(cmd)               # killed/restarting -> force stop
                 self._send_zoom("stop")
                 zoom_cmd = "hold"
-                self._arbiter_state = "killed"
+                self._arbiter_state = "restarting" if self._restarting else "killed"
             else:
                 cmd = self.servo.compute(fr.target_xy, (w, h))
                 zoom_cmd = None

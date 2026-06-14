@@ -128,6 +128,7 @@ class SystemManager:
         current_owner = self.pipeline.owner.owner
         if current_owner != IDLE:
             self.pipeline.owner.release(current_owner)
+        self.pipeline._restarting = True
         self.pipeline.state.set_status(state="RESTARTING", cmd="stop")
 
     def schedule_service_restart(self, delay_seconds: float) -> None:

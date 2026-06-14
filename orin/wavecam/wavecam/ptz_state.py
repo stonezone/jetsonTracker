@@ -135,10 +135,13 @@ class PtzState:
         with self._lock:
             if self._enc is not None and self._ts is not None:
                 dt = max(1e-3, now - self._ts)
-                rate = abs(result[0] - self._enc[0]) / dt
-                if rate > MAX_SLEW_COUNTS_PER_SEC:
+                pan_rate = abs(result[0] - self._enc[0]) / dt
+                tilt_rate = abs(result[1] - self._enc[1]) / dt
+                if pan_rate > MAX_SLEW_COUNTS_PER_SEC or tilt_rate > MAX_SLEW_COUNTS_PER_SEC:
                     cand = getattr(self, "_outlier", None)
-                    if cand is not None and abs(result[0] - cand[0]) <= MAX_SLEW_COUNTS_PER_SEC * dt:
+                    if (cand is not None
+                            and abs(result[0] - cand[0]) <= MAX_SLEW_COUNTS_PER_SEC * dt
+                            and abs(result[1] - cand[1]) <= MAX_SLEW_COUNTS_PER_SEC * dt):
                         self._outlier = None          # two agree: real big move
                     else:
                         self._outlier = result        # hold back; wait for confirmation

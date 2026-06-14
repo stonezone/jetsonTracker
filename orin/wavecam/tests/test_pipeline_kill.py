@@ -72,7 +72,7 @@ def test_resume_clears_killed_status_without_waiting_for_next_frame():
     assert status["killed"] is False
     assert status["state"] == "SEARCHING"
     assert pipe.owner.killed is False
-    assert pipe.owner.owner == "testbed"
+    assert pipe.owner.owner == "idle"
 
 
 def test_pipeline_repeats_stop_commands_when_stop_state_persists():

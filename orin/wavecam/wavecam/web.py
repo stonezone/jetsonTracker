@@ -500,8 +500,11 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/ptz/stop", dependencies=[Depends(require(PTZ))])
     def ptz_stop():
-        # STOP: halt pan/tilt AND zoom, and release the current owner (pause
-        # autonomous) WITHOUT clearing the kill latch.
+        # STOP: halt pan/tilt AND zoom, cancel stale deadman timers, and
+        # release the current owner WITHOUT clearing the kill latch.
+        api = app.state.control_api
+        api.cancel_manual_deadman()
+        api.cancel_zoom_deadman()
         pipeline.ptz.stop()
         pipeline.ptz.zoom("stop")
         pipeline.owner.release(pipeline.owner.owner)
