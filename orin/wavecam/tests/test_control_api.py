@@ -660,6 +660,174 @@ def test_api_v1_calibration_is_owner_gated_kill_safe_and_validated():
     assert killed.json()["code"] == "killed"
 
 
+def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    started = client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True, "source": "test"},
+    )
+
+    assert started.status_code == 200
+    assert pipe.owner.owner == "calibrate"
+    assert started.json()["calibration"]["active"] is True
+    assert started.json()["calibration"]["banner"] == "CALIBRATE ACTIVE"
+
+    auto = client.post("/api/v1/ptz/auto", json={})
+    manual = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "takeover": True, "pan": 0.4},
+    )
+
+    assert auto.status_code == 409
+    assert auto.json()["code"] == "calibrating"
+    assert manual.status_code == 409
+    assert manual.json()["code"] == "owner_busy"
+    assert pipe.owner.owner == "calibrate"
+
+    location = client.post(
+        "/api/v1/calibration/location",
+        json={
+            "source": "test",
+            "samples": [
+                {"lat": 21.600000, "lon": -158.000000, "alt_m": 3.0,
+                 "hdop": 1.2, "h_acc_m": 4.0, "fix_age_sec": 1.0,
+                 "uptime_sec": 90.0, "sats": 9},
+                {"lat": 21.600010, "lon": -158.000010, "alt_m": 3.2,
+                 "hdop": 1.1, "h_acc_m": 4.5, "fix_age_sec": 1.0,
+                 "uptime_sec": 95.0, "sats": 10},
+            ],
+        },
+    )
+    assert location.status_code == 200
+    loc = location.json()["calibration"]["session"]["location"]
+    assert loc["sample_count"] == 2
+    assert loc["error_radius_m"] == 6.0
+    assert "hdop*UERE" in loc["model"]
+    assert pipe.pose.has_base is True
+
+    level = client.post(
+        "/api/v1/calibration/level",
+        json={"roll_deg": 0.2, "pitch_deg": -0.1, "source": "test"},
+    )
+    assert level.status_code == 200
+
+    preview_required = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={"bearing_deg": 90.0, "distance_m": 250.0, "pan_enc": 1000.0},
+    )
+    assert preview_required.status_code == 409
+    assert preview_required.json()["code"] == "operator_accept_required"
+
+    heading = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={
+            "method": "landmark",
+            "operator_accepted": True,
+            "bearing_deg": 90.0,
+            "distance_m": 250.0,
+            "pan_enc": 1000.0,
+            "vision_error_deg": 0.2,
+            "latency_error_deg": 0.1,
+            "source": "test",
+        },
+    )
+    assert heading.status_code == 200
+    heading_state = heading.json()["calibration"]["session"]["heading_lock"]
+    assert heading_state["pan_enc_per_deg"] == 14.4
+    assert heading_state["confidence"] > 0.0
+    assert abs(pipe.pose.bearing_to_pan_encoder(91.0) - 1014.4) < 0.01
+
+    validation = client.post(
+        "/api/v1/calibration/validation",
+        json={"bearing_deg": 91.0, "distance_m": 250.0, "pan_enc": 1014.4},
+    )
+    assert validation.status_code == 200
+    assert validation.json()["calibration"]["session"]["validation"]["miss_deg"] == 0.0
+    assert validation.json()["calibration"]["valid"] is False
+
+    confirmed = client.post(
+        "/api/v1/calibration/validation/confirm",
+        json={"accepted": True, "source": "test"},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["calibration"]["valid"] is True
+    assert confirmed.json()["status"]["calibration"]["active"] is True
+
+    exited = client.post(
+        "/api/v1/calibration/session/exit",
+        json={"confirm": True, "restore_prior": True, "source": "test"},
+    )
+    assert exited.status_code == 200
+    assert exited.json()["calibration"]["active"] is False
+    assert exited.json()["calibration"]["banner"] == "VALID"
+    assert pipe.owner.owner == "testbed"
+
+
+def test_api_v1_calibrate_heading_refuses_bad_error_budget():
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    assert client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True},
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/calibration/location",
+        json={
+            "method": "manual_map_pin",
+            "lat": 21.6,
+            "lon": -158.0,
+            "manual_error_radius_m": 15.0,
+        },
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/calibration/level",
+        json={"roll_deg": 0.0, "pitch_deg": 0.0},
+    ).status_code == 200
+
+    refused = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={
+            "method": "landmark",
+            "operator_accepted": True,
+            "bearing_deg": 90.0,
+            "distance_m": 10.0,
+            "pan_enc": 1000.0,
+            "max_uncertainty_deg": 2.0,
+        },
+    )
+
+    assert refused.status_code == 409
+    body = refused.json()
+    assert body["code"] == "uncertainty_too_high"
+    assert body["uncertainty_deg"] > 2.0
+    assert pipe.pose.calibrated is False
+    assert pipe.owner.owner == "calibrate"
+
+
+def test_api_v1_calibrate_kill_cancels_session():
+    client = make_client()
+    pipe = client.app.state.pipeline
+
+    started = client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True},
+    )
+    assert started.status_code == 200
+    assert pipe.owner.owner == "calibrate"
+
+    killed = client.post("/api/v1/safety/kill", json={"reason": "test"})
+
+    assert killed.status_code == 200
+    assert pipe.owner.owner == "idle"
+    assert killed.json()["status"]["calibration"]["active"] is False
+    assert killed.json()["status"]["calibration"]["valid"] is False
+
+
 def test_api_v1_ptz_zoom_endpoint_is_owner_gated():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -1405,6 +1573,9 @@ if __name__ == "__main__":
     test_api_v1_ptz_home_is_owner_gated_and_kill_respecting()
     test_api_v1_calibration_captures_heading_tilt_zoom_state()
     test_api_v1_calibration_is_owner_gated_kill_safe_and_validated()
+    test_api_v1_calibrate_session_locks_ptz_and_requires_validation()
+    test_api_v1_calibrate_heading_refuses_bad_error_budget()
+    test_api_v1_calibrate_kill_cancels_session()
     test_api_v1_ptz_zoom_endpoint_is_owner_gated()
     test_api_v1_zoom_stop_does_not_release_manual_owner_while_pan_tilt_active()
     test_api_v1_ptz_zoom_refuses_while_killed()

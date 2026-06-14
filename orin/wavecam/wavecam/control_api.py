@@ -50,7 +50,7 @@ from .control_utils import (
     normalized_optional_text,
     normalized_text,
 )
-from .ptz_owner import AUTONOMOUS, IDLE
+from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 
 
 FrameSource = Callable[[], Any]
@@ -116,6 +116,84 @@ class TiltCalibrationRequest(CalibrationBaseRequest):
 
 class ZoomCalibrationRequest(CalibrationBaseRequest):
     zoom_fov_deg: float = Field(ge=1.0, le=180.0)
+
+
+class CalibrationSessionStartRequest(CalibrationBaseRequest):
+    pass
+
+
+class CalibrationSessionExitRequest(BaseModel):
+    confirm: bool = False
+    restore_prior: bool = True
+    source: str | None = Field(default=None, max_length=64)
+
+
+class CalibrationLocationSample(BaseModel):
+    lat: float = Field(ge=-90.0, le=90.0)
+    lon: float = Field(ge=-180.0, le=180.0)
+    alt_m: float = 0.0
+    hdop: float | None = Field(default=None, ge=0.0)
+    h_acc_m: float | None = Field(default=None, ge=0.0)
+    fix_age_sec: float | None = Field(default=None, ge=0.0)
+    uptime_sec: float | None = Field(default=None, ge=0.0)
+    sats: int | None = Field(default=None, ge=0)
+
+
+class CalibrationLocationRequest(CalibrationBaseRequest):
+    method: str = Field(default="base_wio_average", max_length=32)
+    samples: list[CalibrationLocationSample] = Field(default_factory=list)
+    use_live_base: bool = True
+    lat: float | None = Field(default=None, ge=-90.0, le=90.0)
+    lon: float | None = Field(default=None, ge=-180.0, le=180.0)
+    alt_m: float = 0.0
+    manual_error_radius_m: float | None = Field(default=None, ge=0.0)
+    offset_north_m: float = 0.0
+    offset_east_m: float = 0.0
+    offset_up_m: float = 0.0
+    uere_m: float = Field(default=5.0, ge=0.1, le=50.0)
+    max_fix_age_sec: float = Field(default=5.0, ge=0.1, le=300.0)
+    max_hdop: float = Field(default=3.0, ge=0.1, le=99.9)
+    max_h_acc_m: float = Field(default=20.0, ge=0.1, le=1000.0)
+    min_sats: int = Field(default=4, ge=0, le=64)
+    skip_warmup: bool = True
+
+
+class CalibrationLevelRequest(CalibrationBaseRequest):
+    roll_deg: float = Field(ge=-90.0, le=90.0)
+    pitch_deg: float = Field(ge=-90.0, le=90.0)
+    max_tilt_deg: float = Field(default=0.5, ge=0.0, le=10.0)
+
+
+class CalibrationHeadingLockRequest(CalibrationBaseRequest):
+    method: str = Field(default="landmark", max_length=32)
+    operator_accepted: bool = False
+    bearing_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+    target_lat: float | None = Field(default=None, ge=-90.0, le=90.0)
+    target_lon: float | None = Field(default=None, ge=-180.0, le=180.0)
+    distance_m: float | None = Field(default=None, ge=0.0)
+    pan_enc: float | None = None
+    max_uncertainty_deg: float = Field(default=2.0, ge=0.1, le=45.0)
+    base_error_radius_m: float | None = Field(default=None, ge=0.0)
+    remote_error_radius_m: float | None = Field(default=None, ge=0.0)
+    lever_arm_error_m: float | None = Field(default=None, ge=0.0)
+    vision_error_deg: float | None = Field(default=None, ge=0.0)
+    latency_error_deg: float | None = Field(default=None, ge=0.0)
+    tilt_error_deg: float | None = Field(default=None, ge=0.0)
+    position_error_deg: float | None = Field(default=None, ge=0.0)
+
+
+class CalibrationValidationRequest(CalibrationBaseRequest):
+    bearing_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+    target_lat: float | None = Field(default=None, ge=-90.0, le=90.0)
+    target_lon: float | None = Field(default=None, ge=-180.0, le=180.0)
+    distance_m: float | None = Field(default=None, ge=0.0)
+    pan_enc: float | None = None
+    max_miss_deg: float = Field(default=2.0, ge=0.1, le=45.0)
+
+
+class CalibrationValidationConfirmRequest(BaseModel):
+    accepted: bool = True
+    source: str | None = Field(default=None, max_length=64)
 
 
 class RecordStartRequest(BaseModel):
@@ -252,6 +330,7 @@ def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/safety/kill", dependencies=[Depends(require(SAFETY))])
     def safety_kill(_: SafetyKillRequest | None = None):
+        api.cancel_calibration_session("killed")
         api.pipeline.kill(True)
         api.media.stop_for_safety()
         api.cancel_manual_deadman()
@@ -275,6 +354,8 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
     @app.post("/api/v1/ptz/auto", dependencies=[Depends(require(PTZ))])
     def ptz_auto():
+        if api.pipeline.owner.owner == CALIBRATE:
+            return api.refusal("calibrating", "CALIBRATE owns PTZ; exit calibration before auto PTZ.")
         if not api.start_autonomous("testbed"):
             return api.refusal("killed", "KILL is latched; resume before starting auto PTZ.")
         api.bump_revision()
@@ -342,6 +423,48 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/calibration", dependencies=[Depends(require(READ))])
     def calibration_get():
         return api.calibration_ok()
+
+    @app.post("/api/v1/calibration/session/start", dependencies=[Depends(require(PTZ))])
+    def calibration_session_start(req: CalibrationSessionStartRequest):
+        response = api.start_calibration_session(req)
+        api.bump_revision()
+        return response
+
+    @app.post("/api/v1/calibration/session/exit", dependencies=[Depends(require(PTZ))])
+    def calibration_session_exit(req: CalibrationSessionExitRequest):
+        response = api.exit_calibration_session(req)
+        api.bump_revision()
+        return response
+
+    @app.post("/api/v1/calibration/location", dependencies=[Depends(require(PTZ))])
+    def calibration_location(req: CalibrationLocationRequest):
+        response = api.lock_calibration_location(req)
+        api.bump_revision()
+        return response
+
+    @app.post("/api/v1/calibration/level", dependencies=[Depends(require(PTZ))])
+    def calibration_level(req: CalibrationLevelRequest):
+        response = api.check_calibration_level(req)
+        api.bump_revision()
+        return response
+
+    @app.post("/api/v1/calibration/heading-lock", dependencies=[Depends(require(PTZ))])
+    def calibration_heading_lock(req: CalibrationHeadingLockRequest):
+        response = api.lock_calibration_heading(req)
+        api.bump_revision()
+        return response
+
+    @app.post("/api/v1/calibration/validation", dependencies=[Depends(require(PTZ))])
+    def calibration_validation(req: CalibrationValidationRequest):
+        response = api.validate_calibration_heading(req)
+        api.bump_revision()
+        return response
+
+    @app.post("/api/v1/calibration/validation/confirm", dependencies=[Depends(require(PTZ))])
+    def calibration_validation_confirm(req: CalibrationValidationConfirmRequest):
+        response = api.confirm_calibration_validation(req)
+        api.bump_revision()
+        return response
 
     @app.post("/api/v1/calibration/heading", dependencies=[Depends(require(PTZ))])
     def calibration_heading(req: HeadingCalibrationRequest):
@@ -641,6 +764,7 @@ class ControlApiAdapter:
         self._pending_restart_config: dict[str, Any] = {}
         self._ptz = PtzDispatcher(pipeline, self.bump_revision)
         self._calibration = CalibrationManager(self._store, pipeline, self._lock, self)
+        pipeline.calibration_status = self.calibration_state
         self._config = ConfigManager(pipeline, self)
         self._system = SystemManager(pipeline, self._lock, self)
         self.presets = PresetStore(self)
@@ -711,6 +835,30 @@ class ControlApiAdapter:
 
     def capture_calibration(self, step: str, values: dict) -> None:
         self._calibration.capture_calibration(step, values)
+
+    def start_calibration_session(self, req: CalibrationSessionStartRequest) -> JSONResponse:
+        return self._calibration.start_session(req)
+
+    def exit_calibration_session(self, req: CalibrationSessionExitRequest) -> JSONResponse:
+        return self._calibration.exit_session(req)
+
+    def cancel_calibration_session(self, reason: str = "cancelled") -> None:
+        self._calibration.cancel_session(reason)
+
+    def lock_calibration_location(self, req: CalibrationLocationRequest) -> JSONResponse:
+        return self._calibration.lock_location(req)
+
+    def check_calibration_level(self, req: CalibrationLevelRequest) -> JSONResponse:
+        return self._calibration.check_level(req)
+
+    def lock_calibration_heading(self, req: CalibrationHeadingLockRequest) -> JSONResponse:
+        return self._calibration.heading_lock(req)
+
+    def validate_calibration_heading(self, req: CalibrationValidationRequest) -> JSONResponse:
+        return self._calibration.validate_heading(req)
+
+    def confirm_calibration_validation(self, req: CalibrationValidationConfirmRequest) -> JSONResponse:
+        return self._calibration.confirm_validation(req)
 
     def get_fov_curve(self) -> dict:
         return self._calibration.get_fov_curve()
@@ -889,6 +1037,3 @@ def find_guide_asset(asset_path: str) -> Path | None:
         if path.is_file() and path.is_relative_to(asset_root):
             return path
     return None
-
-
-

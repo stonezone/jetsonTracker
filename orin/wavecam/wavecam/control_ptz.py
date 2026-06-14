@@ -11,7 +11,7 @@ import threading
 from typing import Callable
 
 from .control_snapshots import map_axis, zoom_speed
-from .ptz_owner import AUTONOMOUS, IDLE
+from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 from .ptz_visca import PAN_STOP, TILT_STOP
 
 HOME_ZOOM_WIDE_DEADMAN_MS = 4000
@@ -73,6 +73,8 @@ class PtzDispatcher:
             self._restore_owner_after_manual = None
             self._manual_pan_tilt_active = False
             current_owner = self.pipeline.owner.owner
+            if current_owner == CALIBRATE:
+                return False
             if current_owner != IDLE:
                 self.pipeline.owner.release(current_owner)
             if not self.pipeline.owner.request(owner):
