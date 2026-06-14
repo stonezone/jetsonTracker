@@ -148,13 +148,12 @@ struct WatchStatusView: View {
         ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color.gray.opacity(0.25))
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.green.opacity(0.6))
-                .frame(width: holdProgress > 0
-                       ? max(0, holdProgress) * .infinity
-                       : 0)
-                .animation(.linear(duration: 0.05), value: holdProgress)
-
+            GeometryReader { geo in
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.green.opacity(0.6))
+                    .frame(width: max(0, min(1, holdProgress)) * geo.size.width)
+                    .animation(.linear(duration: 0.05), value: holdProgress)
+            }
             Text(holdProgress > 0 ? "HOLD..." : "Hold to Resume")
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white)

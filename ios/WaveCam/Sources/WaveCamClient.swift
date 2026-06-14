@@ -890,6 +890,11 @@ final class WaveCamClient {
     /// latch overlay appears immediately, before the ~1Hz poll round-trips (review: optimistic KILL).
     private(set) var optimisticKilled = false
 
+    /// True while a KILL request is in flight and the backend has not yet confirmed it.
+    /// Gates `refresh()` so a poll returning killed==false cannot prematurely clear the
+    /// latch — the UI must never falsely report "not killed" while the camera may still move.
+    private var killInFlight = false
+
     private var mockKilled = false
     private var pollTask: Task<Void, Never>?
     private var nextTetherProbeAt = Date.distantPast
@@ -959,10 +964,16 @@ final class WaveCamClient {
             status = try Self.decoder.decode(WCStatus.self, from: data)
             connected = true
             lastError = nil
-            // Fresh status is authoritative — drop the optimistic latch and let
-            // `killed` drive `effectiveKilled` (:450), so a FAILED kill can't leave a
-            // false "STOP LATCHED" while the camera still moves (error alert covers it).
-            optimisticKilled = false
+            if status?.safety.killed == true {
+                // Backend confirmed the kill — safe to drop the optimistic latch.
+                optimisticKilled = false
+                killInFlight = false
+            } else if !killInFlight {
+                // No pending kill request; fresh status is authoritative.
+                optimisticKilled = false
+            }
+            // When killInFlight==true and killed==false the latch stays set:
+            // the kill POST is still in flight and the UI must not falsely clear.
         } catch {
             if mockFallbackEnabled {
                 status = .mockTracking(killed: mockKilled)
@@ -1005,18 +1016,28 @@ final class WaveCamClient {
 
     func kill(reason: String = "operator") async {
         optimisticKilled = true
-        if mode == .mock { mockKilled = true; await refresh(); return }
+        killInFlight = true
+        if mode == .mock { mockKilled = true; killInFlight = false; await refresh(); return }
         do {
             _ = try await post("safety/kill", body: ["reason": reason, "source": "ios_native"])
             lastCommandError = nil
         } catch {
             lastCommandError = "Safety stop not confirmed by Orin: \(error.localizedDescription)"
+            // Request never reached the server — do not leave a false latch.
+            optimisticKilled = false
+            killInFlight = false
         }
         await refresh()
+        if killed {
+            // Backend confirmed; refresh() already cleared the latch, but be explicit.
+            optimisticKilled = false
+            killInFlight = false
+        }
     }
 
     func resume() async {
         optimisticKilled = false
+        killInFlight = false
         if mode == .mock { mockKilled = false; await refresh(); return }
         do {
             _ = try await post("safety/resume", body: ["source": "ios_native"])
@@ -1652,9 +1673,9 @@ final class WaveCamClient {
 
     // MARK: media (read-only; guard mode == .live like config())
 
-    /// GET /api/v1/media/list — returns [] in mock mode or when the endpoint is unavailable.
-    /// Throws a `WaveCamMediaListUnavailable` sentinel when the backend responds with 503
-    /// (MediaUnavailable) so the caller can surface a distinct "update the Orin" message.
+    /// GET /api/v1/media/list — returns [] in mock mode.
+    /// Propagates any HTTP or network error (including 503 MediaUnavailable) as a thrown error;
+    /// the caller is responsible for surfacing the failure to the operator.
     func mediaList() async throws -> [WCMediaFile] {
         guard mode == .live else { return [] }
         let data = try await getWithFallback("media/list")
@@ -1678,9 +1699,10 @@ final class WaveCamClient {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
-        // Move from the ephemeral temp location to a durable Documents file.
-        let dest = FileManager.default.temporaryDirectory
-            .appendingPathComponent("WaveCam-\(name)", conformingTo: .mpeg4Movie)
+        // Move from the ephemeral download temp location to the app Documents directory
+        // (UIFileSharingEnabled) so the file persists through iOS temp-dir purges.
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dest = docs.appendingPathComponent("WaveCam-\(name)", conformingTo: .mpeg4Movie)
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.moveItem(at: tempURL, to: dest)
         return dest

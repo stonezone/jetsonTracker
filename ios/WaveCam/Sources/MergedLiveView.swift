@@ -170,7 +170,7 @@ struct MergedLiveView: View {
     private func feedCard(fullscreen: Bool) -> some View {
         ZStack {
             if let url = client.previewURL {
-                MJPEGPreviewView(url: url)
+                MJPEGPreviewView(url: url, token: client.token)
             } else {
                 mockFeed
             }

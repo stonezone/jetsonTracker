@@ -57,9 +57,11 @@ struct WatchSnapshot {
 @MainActor
 @Observable
 final class WatchClient {
-    // Primary = USB tether; fallback = LAN Wi-Fi (matches iOS defaults)
-    private let tetherBase = URL(string: "http://172.20.10.8:8088/api/v1")!
-    private let wifiBase   = URL(string: "http://192.168.1.155:8088/api/v1")!
+    // Primary = USB tether; fallback = LAN Wi-Fi.
+    // Live values come from WatchConnectionStore (synced from the paired iPhone);
+    // these computed vars fall back to the store defaults if no sync has occurred yet.
+    private var tetherBase: URL { WatchConnectionStore.shared.tetherURL }
+    private var wifiBase:   URL { WatchConnectionStore.shared.wifiURL }
 
     private(set) var snapshot = WatchSnapshot.offline
     private(set) var online   = false
@@ -132,12 +134,15 @@ final class WatchClient {
 
     /// Try tether first, fall back to Wi-Fi. Idempotent failover for GET (reads are safe to retry).
     private func get(_ path: String) async throws -> Data {
-        let candidates = resolvedBase.map { [$0] } ?? [tetherBase, wifiBase]
+        let candidates = routeCandidates(preferred: resolvedBase)
         var lastErr: Error = URLError(.cannotConnectToHost)
         for base in candidates {
             do {
                 var req = URLRequest(url: base.appending(path: path))
                 req.timeoutInterval = 3
+                if let token = WatchConnectionStore.shared.token {
+                    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                }
                 let (data, resp) = try await URLSession.shared.data(for: req)
                 if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                     throw URLError(.badServerResponse)
@@ -167,13 +172,16 @@ final class WatchClient {
     @discardableResult
     private func post(_ path: String, body: [String: Any]) async -> Bool {
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return false }
-        let candidates = resolvedBase.map { [$0] } ?? [tetherBase, wifiBase]
+        let candidates = routeCandidates(preferred: resolvedBase)
         for base in candidates {
             do {
                 var req = URLRequest(url: base.appending(path: path))
                 req.httpMethod = "POST"
                 req.timeoutInterval = 5
                 req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                if let token = WatchConnectionStore.shared.token {
+                    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                }
                 req.httpBody = payload
                 let (_, resp) = try await URLSession.shared.data(for: req)
                 if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
@@ -190,5 +198,23 @@ final class WatchClient {
             }
         }
         return false
+    }
+}
+
+// MARK: - Route helpers
+
+private extension WatchClient {
+    /// Prefer the cached route but keep both hardcoded fallbacks so a single
+    /// cached-route failure does not prevent failover in the same request.
+    func routeCandidates(preferred: URL? = nil) -> [URL] {
+        let fallbacks = [tetherBase, wifiBase]
+        guard let preferred else { return fallbacks }
+        var seen = Set<String>()
+        var result: [URL] = []
+        for url in [preferred] + fallbacks {
+            guard seen.insert(url.absoluteString).inserted else { continue }
+            result.append(url)
+        }
+        return result
     }
 }

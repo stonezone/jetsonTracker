@@ -184,10 +184,10 @@ private enum AgentRequestState {
         }
     }
 
-    var buttonTitle: String {
+    func buttonTitle(provider: AgentProvider) -> String {
         switch self {
         case .requesting: "Requesting..."
-        default: "Summon Codex"
+        default: "Summon \(provider.label)"
         }
     }
 
@@ -376,7 +376,7 @@ private struct AgentRequestCard: View {
             Button {
                 onSummon()
             } label: {
-                Label(state.buttonTitle, systemImage: state.buttonIcon)
+                Label(state.buttonTitle(provider: provider), systemImage: state.buttonIcon)
                     .font(.system(size: 13, weight: .black))
                     .tracking(1.2)
                     .frame(maxWidth: .infinity)
@@ -391,7 +391,7 @@ private struct AgentRequestCard: View {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(WC.accent.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
             )
-            .accessibilityLabel("Summon Codex diagnostics")
+            .accessibilityLabel("Summon \(provider.label) diagnostics")
         }
     }
 }

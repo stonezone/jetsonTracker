@@ -11,6 +11,11 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
 
     static let shared = WatchSessionReceiver()
 
+    /// Called once when WCSession activation completes successfully. Set before
+    /// calling activate() so it fires on first launch before any other delegate
+    /// callback can arrive.
+    var onActivated: (() -> Void)?
+
     private override init() {}
 
     func activate() {
@@ -23,7 +28,10 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
 
     func session(_ session: WCSession,
                  activationDidCompleteWith activationState: WCSessionActivationState,
-                 error: Error?) {}
+                 error: Error?) {
+        guard activationState == .activated, error == nil else { return }
+        onActivated?()
+    }
 
     func sessionDidBecomeInactive(_ session: WCSession) {}
     func sessionDidDeactivate(_ session: WCSession) {
