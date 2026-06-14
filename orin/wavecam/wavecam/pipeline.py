@@ -128,6 +128,7 @@ class Pipeline(threading.Thread):
             lock_frames=getattr(cfg.gps, "lock_frames", 5),
             grace_sec=getattr(cfg.gps, "grace_sec", 1.0),
             max_gps_age_sec=getattr(cfg.gps, "drive_stale_sec", 8.0),
+            mode=getattr(getattr(cfg, "tracking", None), "mode", "auto"),
         )
         # CameraPose — loaded by calibration endpoint; uncalibrated by default
         from .camera_pose import CameraPose
@@ -557,6 +558,8 @@ class Pipeline(threading.Thread):
                                                        self.arbiter.lock_frames))
                 self.arbiter.grace_sec = float(getattr(self.cfg.gps, "grace_sec",
                                                        self.arbiter.grace_sec))
+                self.arbiter.mode = getattr(getattr(self.cfg, "tracking", None),
+                                            "mode", "auto")
                 decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
                                                base_locked, t0)
                 prev_state = self._arbiter_state

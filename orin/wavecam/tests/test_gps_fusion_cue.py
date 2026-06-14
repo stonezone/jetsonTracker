@@ -65,7 +65,7 @@ class _DummyPipeline:
         self.recorder = None
         self.pose = CameraPose()
         self.gps = None
-        self.arbiter = types.SimpleNamespace(lock_frames=5, grace_sec=1.0)
+        self.arbiter = types.SimpleNamespace(lock_frames=5, grace_sec=1.0, mode="auto")
         self.cfg = types.SimpleNamespace(
             ptz=types.SimpleNamespace(
                 enabled=False,
@@ -112,6 +112,7 @@ class _DummyPipeline:
                 max_pan_speed=4,
                 max_tilt_speed=3,
             ),
+            tracking=types.SimpleNamespace(mode="auto"),
         )
 
     def kill(self, on=True):
@@ -250,6 +251,30 @@ def test_hot_config_gps_grace_sec_syncs_arbiter():
     assert pipe.arbiter.grace_sec == 2.5
 
 
+def test_hot_config_tracking_mode_mutates_cfg_and_syncs_arbiter():
+    client = _client()
+    pipe = client.app.state.pipeline
+
+    resp = client.post("/api/v1/config/hot",
+                       json={"patch": {"tracking.mode": "gps_only"}})
+
+    assert resp.status_code == 200
+    assert pipe.cfg.tracking.mode == "gps_only"
+    assert pipe.arbiter.mode == "gps_only"
+
+
+def test_hot_config_tracking_mode_rejects_invalid_value():
+    client = _client()
+    pipe = client.app.state.pipeline
+
+    resp = client.post("/api/v1/config/hot",
+                       json={"patch": {"tracking.mode": "orange_only"}})
+
+    assert resp.status_code == 422
+    assert pipe.cfg.tracking.mode == "auto"
+    assert pipe.arbiter.mode == "auto"
+
+
 # ---------------------------------------------------------------------------
 # Config snapshot includes new keys
 # ---------------------------------------------------------------------------
@@ -262,6 +287,8 @@ def test_config_snapshot_includes_gps_and_fusion_gps_keys():
     assert "gps_boost" in body["current"]["fusion"]
     assert "gps_boost_radius_frac" in body["current"]["fusion"]
     assert "gps" in body["current"]
+    assert body["current"]["tracking"]["mode"] == "auto"
+    assert body["supported"]["tracking_mode"] is True
     assert "stale_threshold_sec" in body["current"]["gps"]
     assert "grace_sec" in body["current"]["gps"]
     assert "lock_frames" in body["current"]["gps"]
@@ -278,3 +305,4 @@ def test_config_snapshot_includes_gps_and_fusion_gps_keys():
     assert "gps.drive_zoom" in hot
     assert "gps.max_pan_speed" in hot
     assert "gps.max_tilt_speed" in hot
+    assert "tracking.mode" in hot

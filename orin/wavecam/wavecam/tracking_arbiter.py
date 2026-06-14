@@ -46,10 +46,12 @@ class TrackingArbiter:
     def __init__(self,
                  lock_frames: int = DEFAULT_LOCK_FRAMES,
                  grace_sec: float = DEFAULT_GRACE_SEC,
-                 max_gps_age_sec: float = DEFAULT_MAX_GPS_AGE_SEC):
+                 max_gps_age_sec: float = DEFAULT_MAX_GPS_AGE_SEC,
+                 mode: str = "auto"):
         self.lock_frames = lock_frames
         self.grace_sec = grace_sec
         self.max_gps_age_sec = max_gps_age_sec
+        self.mode = mode
         self._consecutive_locked = 0
         self._last_locked_time: Optional[float] = None
         self._vision_owns = False  # True once vision takes over from GPS
@@ -72,11 +74,28 @@ class TrackingArbiter:
         """
         # --- GPS viability (C1: base must be locked) ---
         gps_viable = gps_fresh and gps_calibrated and base_locked
+        mode = self._tracking_mode()
+
+        if mode == "gps_only":
+            self._vision_owns = False
+            self._consecutive_locked = 0
+            self._last_locked_time = None
+            owner = "gps_tracker" if gps_viable else "idle"
+            self._last_owner = owner
+            roi = (0.5, 0.5, 0.5, 0.5) if owner == "gps_tracker" else None
+            return ArbiterDecision(owner=owner, search_roi=roi)
+
+        if mode == "vision_only":
+            gps_viable = False
+            if self._last_owner == "gps_tracker":
+                self._last_owner = "idle"
+                self._vision_owns = False
+                self._consecutive_locked = 0
 
         # --- GPS→STOP on data loss (MUST run before state mutation) ---
         # If we were GPS-tracking and GPS became unviable, release to idle
         # (camera holds position, doesn't coast on stale bearing).
-        if not gps_viable and self._last_owner == "gps_tracker":
+        if mode == "auto" and not gps_viable and self._last_owner == "gps_tracker":
             self._last_owner = "idle"
             self._vision_owns = False
             self._consecutive_locked = 0
@@ -97,6 +116,10 @@ class TrackingArbiter:
         # the detector input (P2, gps_roi_enabled flag gates the crop).
         roi = (0.5, 0.5, 0.5, 0.5) if owner == "gps_tracker" else None
         return ArbiterDecision(owner=owner, search_roi=roi)
+
+    def _tracking_mode(self) -> str:
+        mode = str(getattr(self, "mode", "auto") or "auto").strip().lower()
+        return mode if mode in ("auto", "gps_only", "vision_only") else "auto"
 
     def _decide_owner(self, vision_locked: bool, gps_viable: bool,
                       now_sec: float) -> str:
