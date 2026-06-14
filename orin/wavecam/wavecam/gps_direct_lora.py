@@ -41,6 +41,15 @@ def _float_value(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _int_value(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class DirectRadioGps:
     """Live direct-LoRa GPS source.
 
@@ -68,6 +77,10 @@ class DirectRadioGps:
         self._cam: Optional[Tuple[float, float, float]] = None
         self._cam_ts: float = 0.0
         self._last_poll_ts: Optional[float] = None
+        self._target_telemetry: dict[str, int | None] = {
+            "target_battery_mv": None,
+            "target_sats": None,
+        }
 
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -133,6 +146,10 @@ class DirectRadioGps:
                 self.enabled = False
                 with self._lock:
                     self._latest = None
+                    self._target_telemetry = {
+                        "target_battery_mv": None,
+                        "target_sats": None,
+                    }
                 self._stop.wait(self.reconnect_sec)
 
     def _handle_line(self, line: str, now: Optional[float] = None) -> None:
@@ -170,12 +187,17 @@ class DirectRadioGps:
 
     def _handle_remote_line(self, data: dict, now: float) -> None:
         fix = None
+        telemetry = {
+            "target_battery_mv": _int_value(data.get("batt_mv")),
+            "target_sats": _int_value(data.get("sats")),
+        }
         if _flag(data.get("fix")):
             lat = _e7_to_deg(data.get("lat_e7"))
             lon = _e7_to_deg(data.get("lon_e7"))
             if lat is None or lon is None:
                 with self._lock:
                     self._latest = None
+                    self._target_telemetry = telemetry
                     self._last_poll_ts = now
                 return
             gps_age_sec = max(0.0, _float_value(data.get("gps_age_ms")) / 1000.0)
@@ -192,6 +214,7 @@ class DirectRadioGps:
 
         with self._lock:
             self._latest = fix
+            self._target_telemetry = telemetry
             self._last_poll_ts = now
 
     def reader_alive(self) -> bool:
@@ -224,6 +247,11 @@ class DirectRadioGps:
         if cam is None or ts <= 0:
             return None
         return max(0.0, (time.time() if now is None else now) - ts)
+
+    def get_target_telemetry(self) -> dict[str, int | None]:
+        """Latest tracker-side telemetry from the remote packet."""
+        with self._lock:
+            return dict(self._target_telemetry)
 
     def _close_serial(self) -> None:
         ser = self._serial

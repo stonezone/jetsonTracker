@@ -168,6 +168,11 @@ class GpsCfg:
 
 
 @dataclass
+class TrackingCfg:
+    mode: str = "auto"  # "auto" | "gps_only" | "vision_only"
+
+
+@dataclass
 class EstimatorCfg:
     # Plan-3 target estimator (shadow mode). enabled=False keeps the estimator
     # out of the loop entirely until a rig opts in; the G2 FOV-curve gate
@@ -213,6 +218,7 @@ class Config:
     web: WebCfg
     loop: LoopCfg
     gps: GpsCfg = field(default_factory=GpsCfg)
+    tracking: TrackingCfg = field(default_factory=TrackingCfg)
     estimator: EstimatorCfg = field(default_factory=EstimatorCfg)
     sensors: SensorsCfg = field(default_factory=SensorsCfg)
     source_path: str = ""   # set by load_config; the rig yaml; empty in unit tests
@@ -242,6 +248,7 @@ def _apply_overlay(cfg: "Config", overlay_path: str) -> None:
         "web": "web",
         "loop": "loop",
         "gps": "gps",
+        "tracking": "tracking",
         "estimator": "estimator",
         "sensors": "sensors",
     }
@@ -286,6 +293,7 @@ def load_config(path: str) -> Config:
         web=WebCfg(**{**WebCfg().__dict__, **_d(raw, "web", {})}),
         loop=LoopCfg(**{**LoopCfg().__dict__, **_d(raw, "loop", {})}),
         gps=GpsCfg(**{**GpsCfg().__dict__, **_d(raw, "gps", {})}),
+        tracking=TrackingCfg(**{**TrackingCfg().__dict__, **_d(raw, "tracking", {})}),
         estimator=EstimatorCfg(**{**EstimatorCfg().__dict__, **_d(raw, "estimator", {})}),
         sensors=SensorsCfg(**{**SensorsCfg().__dict__, **_d(raw, "sensors", {})}),
     )
@@ -306,5 +314,9 @@ def load_config(path: str) -> Config:
               f"— resetting to defaults lock={d.lock_threshold:g}/unlock={d.unlock_threshold:g}")
         cfg.fusion.lock_threshold = d.lock_threshold
         cfg.fusion.unlock_threshold = d.unlock_threshold
+    if cfg.tracking.mode not in ("auto", "gps_only", "vision_only"):
+        print(f"[config] INVALID tracking.mode in {path}: {cfg.tracking.mode!r} "
+              "— resetting to 'auto'")
+        cfg.tracking.mode = "auto"
     cfg.source_path = path
     return cfg

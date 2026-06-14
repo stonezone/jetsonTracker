@@ -28,6 +28,10 @@ def test_remote_seq_line_updates_subject_fix_from_scaled_json():
     assert abs(fix.ts - 999.75) < 1e-6
     assert abs(fix.age_sec - 1.25) < 1e-6
     assert fix.src == "direct_lora"
+    assert g.get_target_telemetry() == {
+        "target_battery_mv": 3890,
+        "target_sats": 9,
+    }
 
 
 def test_remote_no_fix_clears_subject_snapshot():
@@ -39,8 +43,12 @@ def test_remote_no_fix_clears_subject_snapshot():
     )
     assert g.get_fix(now=1000.0) is not None
 
-    g._handle_line('{"seq":2,"fix":0,"gps_age_ms":65535}', now=1001.0)
+    g._handle_line('{"seq":2,"fix":0,"gps_age_ms":65535,"sats":4,"batt_mv":3810}', now=1001.0)
     assert g.get_fix(now=1001.0) is None
+    assert g.get_target_telemetry() == {
+        "target_battery_mv": 3810,
+        "target_sats": 4,
+    }
 
 
 def test_base_line_updates_camera_position_only_when_stable():
@@ -84,6 +92,7 @@ def test_public_reads_are_non_blocking_and_never_touch_serial():
     for _ in range(20000):
         g.get_fix(now=1001.0)
         g.get_camera_position()
+        g.get_target_telemetry()
     assert time.monotonic() - t0 < 1.0
 
 

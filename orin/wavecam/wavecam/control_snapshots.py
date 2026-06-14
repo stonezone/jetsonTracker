@@ -67,6 +67,9 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "max_pan_speed": getattr(getattr(cfg, "gps", None), "max_pan_speed", 4),
                 "max_tilt_speed": getattr(getattr(cfg, "gps", None), "max_tilt_speed", 3),
             },
+            "tracking": {
+                "mode": getattr(getattr(cfg, "tracking", None), "mode", "auto"),
+            },
             "color": {
                 "enabled": cfg.color.enabled,
                 "preset": getattr(cfg.color, "preset", "orange_red"),
@@ -115,6 +118,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
             "ptz_home": callable(getattr(getattr(pipeline, "ptz", None), "home", None)),
             "show_hud": True,
             "gps": getattr(pipeline, "gps", None) is not None,
+            "tracking_mode": True,
             "yolo_classes": list(YOLO_CLASSES),
             "person_aim_y": {
                 "0.20": "head/upper face",
@@ -220,21 +224,26 @@ def build_gps(pipeline, legacy: dict) -> dict:
     # through as None when they aren't in the source dict).
     reader_alive_val = None
     last_poll_age_val = None
+    target_telemetry = {}
     if gps is not None:
         ra = getattr(gps, "reader_alive", None)
         lp = getattr(gps, "last_poll_age_sec", None)
+        tt = getattr(gps, "get_target_telemetry", None)
         reader_alive_val = ra() if callable(ra) else None
         last_poll_age_val = lp() if callable(lp) else None
+        target_telemetry = tt() if callable(tt) else {}
     source = gps_snapshot_source(pipeline, legacy, threshold=threshold)
     if source is None:
         status["reader_alive"] = reader_alive_val
         status["last_poll_age_sec"] = last_poll_age_val
+        status.update(target_telemetry)
         return status
     status.update(normalize_gps(source))
     # Overlay the live reader health (takes precedence over any stale source dict value)
     if gps is not None:
         status["reader_alive"] = reader_alive_val
         status["last_poll_age_sec"] = last_poll_age_val
+        status.update(target_telemetry)
     return status
 
 
@@ -312,6 +321,8 @@ def normalize_gps(status: dict) -> dict:
         "stale": bool(status.get("stale", False)),
         "reader_alive": status.get("reader_alive"),
         "last_poll_age_sec": status.get("last_poll_age_sec"),
+        "target_battery_mv": status.get("target_battery_mv", status.get("target_batt_mv")),
+        "target_sats": status.get("target_sats"),
     }
 
 
@@ -325,6 +336,8 @@ def unknown_gps() -> dict:
         "stale": True,
         "reader_alive": None,
         "last_poll_age_sec": None,
+        "target_battery_mv": None,
+        "target_sats": None,
     }
 
 

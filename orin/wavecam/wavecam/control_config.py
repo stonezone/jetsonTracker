@@ -117,6 +117,7 @@ class ConfigManager:
             "gps.drive_zoom": lambda: self.apply_gps_bool("drive_zoom", value, dry_run=dry_run),
             "gps.max_pan_speed": lambda: self.apply_gps_int("max_pan_speed", value, 1, 24, dry_run=dry_run),
             "gps.max_tilt_speed": lambda: self.apply_gps_int("max_tilt_speed", value, 1, 20, dry_run=dry_run),
+            "tracking.mode": lambda: self.apply_tracking_mode(value, dry_run=dry_run),
             "color.preset": lambda: self.apply_color_preset(value, dry_run=dry_run),
             "color.min_area": lambda: set_int(cfg.color, "min_area", value, 1, 500000, dry_run=dry_run),
             "color.max_area": lambda: set_int(cfg.color, "max_area", value, 100, 1000000, dry_run=dry_run),
@@ -233,6 +234,32 @@ class ConfigManager:
         arbiter.grace_sec = float(getattr(gps_cfg, "grace_sec", arbiter.grace_sec))
         arbiter.max_gps_age_sec = float(getattr(gps_cfg, "drive_stale_sec",
                                                getattr(arbiter, "max_gps_age_sec", 8.0)))
+
+    # ------------------------------------------------------------------
+    # Tracking mode helpers
+    # ------------------------------------------------------------------
+
+    def apply_tracking_mode(self, value: Any, dry_run: bool = False) -> str | None:
+        if not isinstance(value, str):
+            return "mode must be a string."
+        mode = value.strip().lower()
+        if mode not in ("auto", "gps_only", "vision_only"):
+            return "mode must be one of auto, gps_only, vision_only."
+        if dry_run:
+            return None
+        tracking_cfg = getattr(self.pipeline.cfg, "tracking", None)
+        if tracking_cfg is None:
+            return "tracking.mode: tracking section not present in config."
+        tracking_cfg.mode = mode
+        self._sync_arbiter_from_tracking()
+        return None
+
+    def _sync_arbiter_from_tracking(self) -> None:
+        arbiter = getattr(self.pipeline, "arbiter", None)
+        tracking_cfg = getattr(self.pipeline.cfg, "tracking", None)
+        if arbiter is None or tracking_cfg is None:
+            return
+        arbiter.mode = getattr(tracking_cfg, "mode", "auto")
 
     # ------------------------------------------------------------------
     # Estimator config helpers

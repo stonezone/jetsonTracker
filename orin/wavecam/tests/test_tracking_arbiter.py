@@ -127,4 +127,44 @@ def test_arbiter_decision_fields():
     assert 0.0 <= cx <= 1.0 and 0.0 <= cy <= 1.0
 
 
+def test_gps_only_mode_forces_gps_even_when_vision_locked():
+    a = TrackingArbiter(lock_frames=1, mode="gps_only")
+
+    d = a.decide(_vision(True, 0.9), gps_fresh=True, gps_calibrated=True,
+                 base_locked=True, now_sec=0.0)
+
+    assert d.owner == "gps_tracker"
+    assert d.search_roi is not None
+
+
+def test_gps_only_mode_releases_to_idle_when_gps_not_viable():
+    a = TrackingArbiter(lock_frames=1, mode="gps_only")
+
+    d = a.decide(_vision(True, 0.9), gps_fresh=False, gps_calibrated=True,
+                 base_locked=True, now_sec=0.0)
+
+    assert d.owner == "idle"
+    assert d.search_roi is None
+
+
+def test_vision_only_mode_never_uses_gps():
+    a = TrackingArbiter(mode="vision_only")
+
+    d = a.decide(_vision(False), gps_fresh=True, gps_calibrated=True,
+                 base_locked=True, now_sec=0.0)
+
+    assert d.owner == "idle"
+    assert d.search_roi is None
+
+
+def test_vision_only_mode_allows_vision_after_lock_hysteresis():
+    a = TrackingArbiter(lock_frames=1, mode="vision_only")
+
+    d = a.decide(_vision(True, 0.9), gps_fresh=True, gps_calibrated=True,
+                 base_locked=True, now_sec=0.0)
+
+    assert d.owner == "vision_follow"
+    assert d.search_roi is None
+
+
 print("ARBITER TESTS PASSED")

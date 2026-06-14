@@ -88,6 +88,27 @@ def test_load_config_overlay_merges_over_main(tmp_path):
     assert cfg.fusion.gps_boost == 0.2         # untouched section preserved
 
 
+def test_load_config_tracking_mode_from_overlay(tmp_path):
+    y = tmp_path / "config.yaml"
+    y.write_text("tracking:\n  mode: auto\n")
+    ov = tmp_path / "config.local.yaml"
+    ov.write_text("tracking:\n  mode: gps_only\n")
+
+    cfg = load_config(str(y))
+
+    assert cfg.tracking.mode == "gps_only"
+
+
+def test_load_config_invalid_tracking_mode_resets_to_auto(tmp_path, capsys):
+    y = tmp_path / "config.yaml"
+    y.write_text("tracking:\n  mode: orange_only\n")
+
+    cfg = load_config(str(y))
+
+    assert cfg.tracking.mode == "auto"
+    assert "INVALID tracking.mode" in capsys.readouterr().out
+
+
 def test_load_config_overlay_unknown_section_ignored(tmp_path, capsys):
     """An unknown section in the overlay is ignored with a warning, no crash."""
     y = tmp_path / "config.yaml"

@@ -172,6 +172,7 @@ class DummyPipeline:
                 max_pan_speed=4,
                 max_tilt_speed=3,
             ),
+            tracking=types.SimpleNamespace(mode="auto"),
             estimator=types.SimpleNamespace(
                 shadow=True,
                 enabled=True,
@@ -214,6 +215,19 @@ def make_client():
     return TestClient(build_app(DummyPipeline()))
 
 
+def test_root_web_ui_exposes_live_ptz_gps_and_ios_parity_controls():
+    body = make_client().get("/").text
+
+    assert "id=ptzJoystick" in body
+    assert "/api/v1/status" in body
+    assert "CINEMATIC ZOOM" in body
+    assert "ptz.cinematic_zoom_enabled" in body
+    assert "tracking.mode" in body
+    assert "gps.drive_zoom" in body
+    assert "target_sats" in body
+    assert "target_battery_mv" in body
+
+
 def wait_until(predicate, timeout_sec=0.5):
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
@@ -252,6 +266,8 @@ def test_api_v1_status_reports_pipeline_gps_snapshot_when_available():
         "distance_m": 184.2,
         "bearing_deg": 247.1,
         "stale": False,
+        "target_battery_mv": 3890,
+        "target_sats": 11,
     }
 
     response = client.get("/api/v1/status")
@@ -264,6 +280,8 @@ def test_api_v1_status_reports_pipeline_gps_snapshot_when_available():
     assert gps["distance_m"] == 184.2
     assert gps["bearing_deg"] == 247.1
     assert gps["stale"] is False
+    assert gps["target_battery_mv"] == 3890
+    assert gps["target_sats"] == 11
 
 
 def test_api_v1_safety_resume_does_not_restart_tracking_owner():
@@ -1480,3 +1498,47 @@ def test_gps_fix_snapshot_marks_stale_when_target_age_exceeds_threshold():
     snap = gps_fix_snapshot(fix, FakeGpsStale())
     assert snap is not None
     assert snap["stale"] is True                   # 15s > 10s threshold
+
+
+def test_build_gps_includes_live_reader_target_telemetry():
+    from wavecam.control_snapshots import build_gps
+    from wavecam.gps_stub import NormalizedFix
+
+    class FakeGps:
+        def get_fix(self):
+            return NormalizedFix(
+                lat=22.001,
+                lon=-158.0,
+                course=90.0,
+                speed=5.0,
+                ts=1000.0,
+                age_sec=1.0,
+                src="direct_lora",
+            )
+
+        def get_camera_position(self):
+            return (22.0, -158.0, 0.0)
+
+        def get_camera_age(self, now=None):
+            return 2.0
+
+        def reader_alive(self):
+            return True
+
+        def last_poll_age_sec(self):
+            return 0.2
+
+        def get_target_telemetry(self):
+            return {"target_battery_mv": 3910, "target_sats": 14}
+
+    pipe = types.SimpleNamespace(
+        cfg=types.SimpleNamespace(gps=types.SimpleNamespace(stale_threshold_sec=10.0)),
+        gps=FakeGps(),
+    )
+
+    gps = build_gps(pipe, {})
+
+    assert gps["source"] == "direct_lora"
+    assert gps["target_battery_mv"] == 3910
+    assert gps["target_sats"] == 14
+    assert gps["reader_alive"] is True
