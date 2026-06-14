@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchConnectivity
 
 /// Connection settings for switching between the live Orin API and offline mock
 /// data without rebuilding the phone app.
@@ -109,7 +110,13 @@ struct ConnectionView: View {
             token: tokenText,
             mockFallbackEnabled: mockFallbackEnabled
         )
-        Task { await client.refresh() }
+        broadcastWatchContext(tether: tetherURLText, wifi: wifiURLText, token: tokenText)
+        Task {
+            await client.refresh()
+            if selectedMode == .live, !client.connected, let error = client.lastError {
+                validationError = "Cannot reach Orin: \(error)"
+            }
+        }
     }
 
     private func useDefault() {
@@ -119,6 +126,18 @@ struct ConnectionView: View {
         tokenText = ""
         mockFallbackEnabled = false
         applySettings()
+    }
+
+    /// Pushes connection settings to the paired Apple Watch so WatchClient can
+    /// use the same URLs and token without manual re-configuration on the watch.
+    private func broadcastWatchContext(tether: String, wifi: String, token: String) {
+        guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
+        let ctx: [String: Any] = [
+            "wavecam_auth_token": token,
+            "wavecam_tether_url": tether,
+            "wavecam_wifi_url": wifi,
+        ]
+        try? WCSession.default.updateApplicationContext(ctx)
     }
 
     private func storedRouteTexts() -> (tether: String, wifi: String) {
@@ -344,11 +363,12 @@ private struct HealthCard: View {
                         .foregroundStyle(health.ok == true ? WC.ok : WC.kill)
                 }
                 if let components = health.components, !components.isEmpty {
+                    let sortedNames = components.keys.sorted()
                     VStack(spacing: 0) {
-                        ForEach(components.keys.sorted(), id: \.self) { name in
+                        ForEach(sortedNames, id: \.self) { name in
                             if let comp = components[name] {
                                 HealthRow(name: name, component: comp)
-                                if name != components.keys.sorted().last {
+                                if name != sortedNames.last {
                                     Divider().overlay(WC.line)
                                 }
                             }

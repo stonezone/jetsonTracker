@@ -120,7 +120,6 @@ private struct GuideButton: View {
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(WC.accent.opacity(0.32)))
                 .frame(width: 44, height: 44)   // 44pt hit target around the 30pt badge
                 .contentShape(Rectangle())
-                .accessibilityLabel("Operator guide")
         }
         .buttonStyle(.plain)
         .padding(.trailing, 6)

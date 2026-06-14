@@ -17,6 +17,8 @@ struct EmergencyStopButton: View {
 
     var body: some View {
         Button {
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.error)
             Task { await client.kill() }
         } label: {
             label

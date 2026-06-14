@@ -7,7 +7,7 @@ struct SessionLogView: View {
     @Environment(WaveCamClient.self) private var client
 
     @State private var events: [WCEvent] = []
-    @State private var sinCursor: Double = 0
+    @State private var sinceCursor: Double = 0
     @State private var isLoading = false
     @State private var pollTimer: Timer? = nil
 
@@ -43,16 +43,16 @@ struct SessionLogView: View {
         isLoading = true
         if let fetched = await client.events(since: 0) {
             events = fetched
-            sinCursor = fetched.last?.t ?? 0
+            sinceCursor = fetched.last?.t ?? 0
         }
         isLoading = false
     }
 
     @MainActor
     private func pollNew() async {
-        guard let fetched = await client.events(since: sinCursor), !fetched.isEmpty else { return }
+        guard let fetched = await client.events(since: sinceCursor), !fetched.isEmpty else { return }
         events.append(contentsOf: fetched)
-        sinCursor = fetched.last?.t ?? sinCursor
+        sinceCursor = fetched.last?.t ?? sinceCursor
     }
 }
 

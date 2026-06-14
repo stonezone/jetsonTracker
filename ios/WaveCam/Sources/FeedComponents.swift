@@ -6,17 +6,20 @@ import UIKit
 /// on top of the operator camera feed.
 struct MJPEGPreviewView: UIViewRepresentable {
     let url: URL
+    var token: String?
 
     func makeUIView(context: Context) -> UIImageView {
         let imageView = UIImageView()
         imageView.backgroundColor = UIColor(WC.deep)
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
+        context.coordinator.token = token
         context.coordinator.start(url: url, imageView: imageView)
         return imageView
     }
 
     func updateUIView(_ imageView: UIImageView, context: Context) {
+        context.coordinator.token = token
         context.coordinator.start(url: url, imageView: imageView)
     }
 
@@ -41,14 +44,24 @@ struct MJPEGPreviewView: UIViewRepresentable {
         private var task: URLSessionDataTask?
         // imageView is written on stateQueue; its image property is set on main.
         private weak var imageView: UIImageView?
+        /// Bearer token forwarded from the iOS client; nil when auth is disabled.
+        /// Written on the main thread (makeUIView/updateUIView); the value is
+        /// captured into a local in start() before the hop to stateQueue so that
+        /// connect(url:) never races the main-thread setter.
+        var token: String?
         private var lastFrameAt = Date.distantPast
         private var watchdogWorkItem: DispatchWorkItem?
         private let stallTimeout: TimeInterval = 3.0
 
         func start(url: URL, imageView: UIImageView) {
+            // Snapshot token on the calling (main) thread before dispatching to
+            // stateQueue; this is the only read that crosses the queue boundary.
+            let capturedToken = token
             stateQueue.async { [weak self] in
                 guard let self else { return }
                 self.imageView = imageView
+                // Bring stateQueue's copy of token in sync with the captured value.
+                self.token = capturedToken
                 guard self.loadedURL != url else { return }
                 self.stopLocked()
                 self.loadedURL = url
@@ -64,7 +77,12 @@ struct MJPEGPreviewView: UIViewRepresentable {
             // All delegate callbacks are dispatched to stateQueue before touching state.
             let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
             self.session = session
-            let task = session.dataTask(with: url)
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 10
+            if let token {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            let task = session.dataTask(with: request)
             self.task = task
             lastFrameAt = Date()
             scheduleWatchdog()

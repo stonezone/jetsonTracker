@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchConnectivity
 
 @main
 struct WaveCamApp: App {
@@ -29,6 +30,12 @@ struct WaveCamApp: App {
                     KeychainStore.migrateLegacyToken(legacyDefaultsKey: WaveCamDefaults.tokenKey)
                     applyStoredSettings()
                     // Activate WatchConnectivity receiver for incoming session JSONL files.
+                    // Set the activation callback first so the broadcast fires once the
+                    // session is .activated — on first launch broadcastWatchContext() is a
+                    // no-op if called before activation completes (activationState=.notActivated).
+                    WatchSessionReceiver.shared.onActivated = { [self] in
+                        broadcastWatchContext()
+                    }
                     WatchSessionReceiver.shared.activate()
                     await client.refresh()
                     // Start the sensor publisher after settings are applied so it inherits
@@ -64,6 +71,19 @@ struct WaveCamApp: App {
             token: token,
             mockFallbackEnabled: mockFallbackEnabled
         )
+    }
+
+    /// Pushes the stored token + URLs to the paired watch so WatchClient has
+    /// current credentials without requiring a manual Connection Settings Apply.
+    private func broadcastWatchContext() {
+        guard WCSession.isSupported(), WCSession.default.activationState == .activated else { return }
+        let token = KeychainStore.load(account: KeychainStore.tokenAccount) ?? ""
+        let ctx: [String: Any] = [
+            "wavecam_auth_token": token,
+            "wavecam_tether_url": tetherBaseURLString,
+            "wavecam_wifi_url": wifiBaseURLString,
+        ]
+        try? WCSession.default.updateApplicationContext(ctx)
     }
 
     private func storedRouteURLs() -> (tether: URL, wifi: URL) {

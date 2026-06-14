@@ -23,7 +23,7 @@ struct WaveCamWatchApp: App {
     }
 }
 
-// MARK: - WCSession delegate (activates the session; receives are handled on iPhone)
+// MARK: - WCSession delegate (activates session; receives context from iPhone)
 
 @MainActor
 final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate {
@@ -33,5 +33,27 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
         WCSession.default.activate()
     }
 
-    nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {}
+    nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+        // Apply any context that arrived before activation completed.
+        let ctx = session.receivedApplicationContext
+        if !ctx.isEmpty {
+            Task { @MainActor in WatchConnectionStore.shared.apply(ctx) }
+        }
+    }
+
+    /// Called when the iPhone pushes updated connection settings or token.
+    nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        Task { @MainActor in WatchConnectionStore.shared.apply(applicationContext) }
+    }
+
+    /// Called after the OS finishes delivering a transferred file to the iPhone.
+    /// Delete the local JSONL source only on success — the file must persist until
+    /// the OS completes the transfer (WCSession.transferFile is async by nature).
+    nonisolated func session(_ session: WCSession,
+                             didFinish fileTransfer: WCSessionFileTransfer,
+                             error: Error?) {
+        guard error == nil else { return }
+        let url = fileTransfer.file.fileURL
+        try? FileManager.default.removeItem(at: url)
+    }
 }
