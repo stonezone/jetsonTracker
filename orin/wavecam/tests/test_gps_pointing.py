@@ -91,7 +91,7 @@ def test_gps_pointing_cmd_uses_latched_pose_without_live_gps():
     pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0, gps=None)
     fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
                         ts=1000.0, age_sec=2.0, src="lora")
-    cmd = pipe._gps_pointing_cmd(fix)
+    cmd = pipe._gps_pointing_cmd(fix, calibration_valid=True)
     assert cmd is not None
     assert isinstance(cmd.pan_enc, int)
 
@@ -109,10 +109,10 @@ def test_gps_pointing_cmd_base_jitter_does_not_change_bearing():
     pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0)
     fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
                         ts=1000.0, age_sec=2.0, src="lora")
-    cmd1 = pipe._gps_pointing_cmd(fix)
+    cmd1 = pipe._gps_pointing_cmd(fix, calibration_valid=True)
     # Simulate base jitter by wiring a GPS that would return a different position
     pipe.gps = JitteryGps(21.65)
-    cmd2 = pipe._gps_pointing_cmd(fix)
+    cmd2 = pipe._gps_pointing_cmd(fix, calibration_valid=True)
     assert cmd1 is not None and cmd2 is not None
     # Latched pose is used — same bearing regardless of live GPS
     assert cmd1.pan_enc == cmd2.pan_enc
@@ -124,7 +124,7 @@ def test_gps_pointing_cmd_drive_zoom_false_gives_none_zoom():
     pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0, drive_zoom=False)
     fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
                         ts=1000.0, age_sec=2.0, src="lora")
-    cmd = pipe._gps_pointing_cmd(fix)
+    cmd = pipe._gps_pointing_cmd(fix, calibration_valid=True)
     assert cmd is not None
     assert cmd.zoom_enc is None
 
@@ -133,6 +133,6 @@ def test_gps_pointing_cmd_drive_zoom_true_gives_zoom_enc():
     pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=2.0, drive_zoom=True)
     fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
                         ts=1000.0, age_sec=2.0, src="lora")
-    cmd = pipe._gps_pointing_cmd(fix)
+    cmd = pipe._gps_pointing_cmd(fix, calibration_valid=True)
     assert cmd is not None
     assert cmd.zoom_enc is not None and cmd.zoom_enc >= 0

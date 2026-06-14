@@ -62,7 +62,8 @@ class TrackingArbiter:
                gps_fresh: bool,
                gps_calibrated: bool,
                base_locked: bool,
-               now_sec: float) -> ArbiterDecision:
+               now_sec: float,
+               calibration_valid: bool = False) -> ArbiterDecision:
         """Return who drives this frame.
 
         Args:
@@ -71,9 +72,15 @@ class TrackingArbiter:
             gps_calibrated: True if CameraPose is calibrated (pan_enc_per_deg ≠ 0).
             base_locked: True if base GPS has a current fix (camera position known).
             now_sec: monotonic time for grace-window tracking.
+            calibration_valid: True ONLY when the CURRENT CALIBRATE session is both
+                valid and confirmed. Fail-closed default (False) — persisted pose
+                flags survive restart/cancel/KILL and are NOT sufficient for GPS
+                authority (audit 2026-06-13).
         """
-        # --- GPS viability (C1: base must be locked) ---
-        gps_viable = gps_fresh and gps_calibrated and base_locked
+        # --- GPS viability (C1: base locked; C2: CURRENT calibration session valid
+        # AND confirmed — persisted pose flags alone are NOT sufficient) ---
+        gps_viable = (gps_fresh and gps_calibrated and base_locked
+                      and calibration_valid)
         mode = self._tracking_mode()
 
         if mode == "gps_only":

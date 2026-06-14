@@ -407,12 +407,16 @@ class Pipeline(threading.Thread):
             self._last_abs_cmd_key = key
             self._last_abs_cmd_time = now
 
-    def _gps_pointing_cmd(self, fix):
+    def _gps_pointing_cmd(self, fix, calibration_valid: bool = False):
         """Compute a GPS absolute pointing command from a cached fix, or None.
 
         Uses the latched pose position when available (tripod is stationary once
-        locked); falls back to live get_camera_position() for bench/manual flows."""
-        if fix is None or not self.pose.calibrated:
+        locked); falls back to live get_camera_position() for bench/manual flows.
+
+        Defense-in-depth: returns None unless the CURRENT calibration session is
+        valid+confirmed, so a stale pose can never produce a command even if an
+        owner was somehow granted (audit 2026-06-13)."""
+        if fix is None or not self.pose.calibrated or not calibration_valid:
             return None
         if self.pose.has_base:
             base = GeoPoint(lat=self.pose.lat, lon=self.pose.lon, alt_m=self.pose.alt_m)
@@ -553,6 +557,12 @@ class Pipeline(threading.Thread):
                 gps_calibrated = self.pose.calibrated
                 # C1: base position latched once at setup; tripod is stationary.
                 base_locked = self.pose.has_base
+                # C2 (safety, audit 2026-06-13): GPS may drive ONLY when the CURRENT
+                # CALIBRATE session is valid AND confirmed. Persisted pose.calibrated/
+                # has_base survive restart, cancel, and KILL, so they are NOT sufficient.
+                _calib = (self.calibration_status()
+                          if callable(getattr(self, "calibration_status", None)) else {})
+                calibration_valid = bool(_calib.get("valid")) and bool(_calib.get("confirmed"))
                 # Sync arbiter hysteresis params from cfg so hot-config takes effect.
                 self.arbiter.lock_frames = int(getattr(self.cfg.gps, "lock_frames",
                                                        self.arbiter.lock_frames))
@@ -561,7 +571,8 @@ class Pipeline(threading.Thread):
                 self.arbiter.mode = getattr(getattr(self.cfg, "tracking", None),
                                             "mode", "auto")
                 decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
-                                               base_locked, t0)
+                                               base_locked, t0,
+                                               calibration_valid=calibration_valid)
                 prev_state = self._arbiter_state
                 self._arbiter_state = decision.owner
                 # Stash search_roi for next frame's YOLO crop (gps_roi_enabled flag gates use)
@@ -600,7 +611,7 @@ class Pipeline(threading.Thread):
                         self.owner.request("gps_tracker")
                     # Only drive GPS if we actually own it (not blocked)
                     if self.owner.owner == "gps_tracker":
-                        abs_cmd = self._gps_pointing_cmd(gps_fix)
+                        abs_cmd = self._gps_pointing_cmd(gps_fix, calibration_valid)
                         if abs_cmd is not None:
                             self._send_absolute_cmd(abs_cmd)
                         else:

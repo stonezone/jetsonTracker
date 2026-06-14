@@ -107,7 +107,7 @@ def test_arbiter_emits_roi_when_gps_owns():
     """Arbiter sets search_roi when GPS is tracking."""
     a = TrackingArbiter()
     d = a.decide(_vision(False), gps_fresh=True, gps_calibrated=True,
-                 base_locked=True, now_sec=0.0)
+                 base_locked=True, now_sec=0.0, calibration_valid=True)
     assert d.owner == "gps_tracker"
     assert d.search_roi is not None
     cx, cy, w, h = d.search_roi

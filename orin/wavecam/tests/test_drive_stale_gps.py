@@ -57,7 +57,7 @@ def test_fix_aged_5s_viable_with_default_drive_stale():
     gps_fresh = _gps_fresh(age_sec=5.0, drive_stale_sec=drive_stale)
     assert gps_fresh is True
     a = TrackingArbiter(max_gps_age_sec=drive_stale)
-    d = a.decide(_vision(), gps_fresh=gps_fresh, gps_calibrated=True, base_locked=True, now_sec=0.0)
+    d = a.decide(_vision(), gps_fresh=gps_fresh, gps_calibrated=True, base_locked=True, now_sec=0.0, calibration_valid=True)
     assert d.owner == "gps_tracker"
 
 
