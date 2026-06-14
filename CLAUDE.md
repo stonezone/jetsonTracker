@@ -56,8 +56,8 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 ### Development Workflow
 
-- **Backend** (`orin/wavecam/`) is **Codex's lane**; **iOS** (`ios/WaveCam/`) is **Claude's lane**.
-- **Codex/Zack deploy to the Orin** and restart `wavecam.service`. **Claude NEVER touches the Orin runtime/deploy.**
+- **Backend** (`orin/wavecam/`) is **Codex's primary lane**; **iOS** (`ios/WaveCam/`) is **Claude's lane**. **Claude may edit backend code when Zack assigns it** — claim the scope on the bus first to avoid colliding with Codex/DeepSeek.
+- **Deploy to the Orin** (rsync + restart `wavecam.service`): Codex/Zack, or **Claude when authorized** — the deployer **must claim the scope on the bus first** to avoid collisions. (KILL-reachable + supervise-only safety invariants always hold.)
 - iOS build/install: `ios/WaveCam/build-device.sh` (git-stamped build numbers). Full recipe: see `.claude` memory `ios-app-build`.
 - SSH to the rig: `ssh orin` (zack@192.168.1.155).
 - "committed" != "deployed" — confirm the live deploy before telling Zack a feature is live.
@@ -149,7 +149,7 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - Don't create features without searching memories for existing patterns
 - Don't end a session without saving key learnings
 - Don't let the agent/automation move the camera without the supervise-only gate + a reachable Emergency Stop
-- Don't touch the Orin runtime/deploy (Codex/Zack's lane); don't `git push` to remote
+- Don't edit backend code or deploy to the Orin without Zack's assignment + a bus claim first (Codex's primary lane); don't `git push` to remote
 
 ## Gotchas (hard-won — 2026-06-05, expanded 2026-06-12)
 
