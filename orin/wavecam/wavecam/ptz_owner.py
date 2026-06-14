@@ -11,7 +11,8 @@ import threading
 from typing import Dict
 
 IDLE = "idle"
-OWNERS = {IDLE, "manual", "vision_follow", "gps_tracker", "testbed"}
+CALIBRATE = "calibrate"
+OWNERS = {IDLE, "manual", "vision_follow", "gps_tracker", "testbed", CALIBRATE}
 AUTONOMOUS = {"vision_follow", "gps_tracker", "testbed"}
 
 

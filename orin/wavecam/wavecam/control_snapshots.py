@@ -145,6 +145,7 @@ def build_status_snapshot(pipeline, revision: int, media: dict | None = None) ->
         "ptz": build_ptz(legacy, pipeline),
         "tracking": build_tracking(legacy),
         "gps": build_gps(pipeline, legacy),
+        "calibration": build_calibration(pipeline),
         "media": media if media is not None else unknown_media(),
         "services": snapshot_services(read_health()),
         "network": build_network(legacy),
@@ -363,6 +364,13 @@ def build_network(legacy: dict) -> dict:
         "camera_lan": bool(legacy.get("connected", False)),
         "uplink": None,
     }
+
+
+def build_calibration(pipeline) -> dict:
+    getter = getattr(pipeline, "calibration_status", None)
+    if callable(getter):
+        return getter()
+    return empty_calibration_state()
 
 
 # ---------------------------------------------------------------------------
