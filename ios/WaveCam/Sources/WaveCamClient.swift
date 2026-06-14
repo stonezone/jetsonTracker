@@ -334,6 +334,10 @@ enum WaveCamCalibrationError: LocalizedError, Sendable {
     case ownerBusy
     case unavailable   // endpoint not present (backend not yet deployed)
     case gpsUnavailable   // base Wio has no fix yet — base-lock refused
+    case operatorAcceptRequired   // heading-lock preview step: must explicitly accept
+    case uncertaintyTooHigh(Double)   // heading uncertainty exceeds budget
+    case levelRequired   // level check must pass before heading
+    case panAxisNotLevel(Double)   // tripod not level — tilt magnitude in degrees
     case httpError(Int, String?)
     case networkError(String)
 
@@ -347,11 +351,187 @@ enum WaveCamCalibrationError: LocalizedError, Sendable {
             return "Base GPS has no fix yet — give the base tracker open sky and wait for the Base fix line on the GPS chip."
         case .unavailable:
             return "On-device calibration requires the latest Orin build — checklist only for now."
+        case .operatorAcceptRequired:
+            return "Preview requires explicit tap-to-accept before the heading is locked."
+        case let .uncertaintyTooHigh(deg):
+            return String(format: "Heading uncertainty %.1f° exceeds the 2° budget — move closer or use a known landmark.", deg)
+        case .levelRequired:
+            return "A passing level check is required before heading capture."
+        case let .panAxisNotLevel(deg):
+            return String(format: "Tripod not level — tilt is %.1f° (max 0.5°). Level the tripod then re-check.", deg)
         case let .httpError(code, msg):
             return msg.map { "\($0) (HTTP \(code))" } ?? "HTTP \(code)"
         case let .networkError(desc):
             return "Network error: \(desc)"
         }
+    }
+}
+
+// MARK: - Calibrate session models (PR #88 / codex/calibrate-backend)
+
+/// Location entry from POST /api/v1/calibration/location response.
+struct WCCalLocationEntry: Codable, Sendable {
+    var lat: Double?
+    var lon: Double?
+    var altM: Double?
+    var errorRadiusM: Double?
+    var sampleCount: Int?
+    var rejectedCount: Int?
+    var model: String?
+    var capturedAtUnixMs: Int?
+}
+
+extension WCCalLocationEntry {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        lat = try c.decodeIfPresent(Double.self, forKey: .lat)
+        lon = try c.decodeIfPresent(Double.self, forKey: .lon)
+        altM = try c.decodeIfPresent(Double.self, forKey: .altM)
+        errorRadiusM = try c.decodeIfPresent(Double.self, forKey: .errorRadiusM)
+        sampleCount = try c.decodeIfPresent(Int.self, forKey: .sampleCount)
+        rejectedCount = try c.decodeIfPresent(Int.self, forKey: .rejectedCount)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        capturedAtUnixMs = try c.decodeIfPresent(Int.self, forKey: .capturedAtUnixMs)
+    }
+}
+
+/// Level result from POST /api/v1/calibration/level response.
+struct WCCalLevelEntry: Codable, Sendable {
+    var rollDeg: Double?
+    var pitchDeg: Double?
+    var tiltMagDeg: Double?
+    var maxTiltDeg: Double?
+    var passed: Bool?
+}
+
+extension WCCalLevelEntry {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        rollDeg = try c.decodeIfPresent(Double.self, forKey: .rollDeg)
+        pitchDeg = try c.decodeIfPresent(Double.self, forKey: .pitchDeg)
+        tiltMagDeg = try c.decodeIfPresent(Double.self, forKey: .tiltMagDeg)
+        maxTiltDeg = try c.decodeIfPresent(Double.self, forKey: .maxTiltDeg)
+        passed = try c.decodeIfPresent(Bool.self, forKey: .passed)
+    }
+}
+
+/// Heading lock entry from POST /api/v1/calibration/heading-lock response.
+struct WCCalHeadingLockEntry: Codable, Sendable {
+    var bearingDeg: Double?
+    var panEnc: Double?
+    var panEncPerDeg: Double?
+    var distanceM: Double?
+    var uncertaintyDeg: Double?
+    var confidence: Double?
+    var method: String?
+}
+
+extension WCCalHeadingLockEntry {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bearingDeg = try c.decodeIfPresent(Double.self, forKey: .bearingDeg)
+        panEnc = try c.decodeIfPresent(Double.self, forKey: .panEnc)
+        panEncPerDeg = try c.decodeIfPresent(Double.self, forKey: .panEncPerDeg)
+        distanceM = try c.decodeIfPresent(Double.self, forKey: .distanceM)
+        uncertaintyDeg = try c.decodeIfPresent(Double.self, forKey: .uncertaintyDeg)
+        confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
+        method = try c.decodeIfPresent(String.self, forKey: .method)
+    }
+}
+
+/// Validation result from POST /api/v1/calibration/validation response.
+struct WCCalValidationEntry: Codable, Sendable {
+    var bearingDeg: Double?
+    var predictedBearingDeg: Double?
+    var missDeg: Double?
+    var maxMissDeg: Double?
+    var distanceM: Double?
+    var accepted: Bool?
+}
+
+extension WCCalValidationEntry {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bearingDeg = try c.decodeIfPresent(Double.self, forKey: .bearingDeg)
+        predictedBearingDeg = try c.decodeIfPresent(Double.self, forKey: .predictedBearingDeg)
+        missDeg = try c.decodeIfPresent(Double.self, forKey: .missDeg)
+        maxMissDeg = try c.decodeIfPresent(Double.self, forKey: .maxMissDeg)
+        distanceM = try c.decodeIfPresent(Double.self, forKey: .distanceM)
+        accepted = try c.decodeIfPresent(Bool.self, forKey: .accepted)
+    }
+}
+
+/// Session sub-object nested inside the `calibration` key for wizard-step endpoints.
+struct WCCalibrationSession: Codable, Sendable {
+    var location: WCCalLocationEntry?
+    var level: WCCalLevelEntry?
+    var headingLock: WCCalHeadingLockEntry?
+    var validation: WCCalValidationEntry?
+}
+
+extension WCCalibrationSession {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        location = try c.decodeIfPresent(WCCalLocationEntry.self, forKey: .location)
+        level = try c.decodeIfPresent(WCCalLevelEntry.self, forKey: .level)
+        headingLock = try c.decodeIfPresent(WCCalHeadingLockEntry.self, forKey: .headingLock)
+        validation = try c.decodeIfPresent(WCCalValidationEntry.self, forKey: .validation)
+    }
+}
+
+/// Top-level calibration state returned by all session-wizard endpoints (PR #88).
+/// The existing `WCCalibrationState` is the legacy per-axis state; this carries the
+/// PR-88 session fields. Both can coexist in the response — the session envelope is
+/// parsed from `calibration` and session sub-fields from `calibration.session`.
+struct WCCalibrationSessionState: Codable, Sendable {
+    var active: Bool
+    var valid: Bool
+    var confirmed: Bool
+    var banner: String
+    var ageSec: Double?
+    var ownerActive: Bool?
+    var session: WCCalibrationSession?
+    // Legacy axis fields forwarded for backwards compat.
+    var referenceHeading: Double?
+}
+
+extension WCCalibrationSessionState {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        active = try c.decodeIfPresent(Bool.self, forKey: .active) ?? false
+        valid = try c.decodeIfPresent(Bool.self, forKey: .valid) ?? false
+        confirmed = try c.decodeIfPresent(Bool.self, forKey: .confirmed) ?? false
+        banner = try c.decodeIfPresent(String.self, forKey: .banner) ?? "INVALID"
+        ageSec = try c.decodeIfPresent(Double.self, forKey: .ageSec)
+        ownerActive = try c.decodeIfPresent(Bool.self, forKey: .ownerActive)
+        session = try c.decodeIfPresent(WCCalibrationSession.self, forKey: .session)
+        referenceHeading = try c.decodeIfPresent(Double.self, forKey: .referenceHeading)
+    }
+}
+
+/// Envelope for all PR-88 session-wizard responses. `calibration` carries the
+/// session-state; `status` is the full status snapshot; `code`/`message` carry
+/// structured refusal reasons on 4xx responses.
+private struct WCCalibrationSessionResponse: Codable, Sendable {
+    var ok: Bool?
+    var code: String?
+    var message: String?
+    var uncertaintyDeg: Double?
+    var missDeg: Double?
+    var calibration: WCCalibrationSessionState?
+    var status: WCStatus?
+}
+
+extension WCCalibrationSessionResponse {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try c.decodeIfPresent(Bool.self, forKey: .ok)
+        code = try c.decodeIfPresent(String.self, forKey: .code)
+        message = try c.decodeIfPresent(String.self, forKey: .message)
+        uncertaintyDeg = try c.decodeIfPresent(Double.self, forKey: .uncertaintyDeg)
+        missDeg = try c.decodeIfPresent(Double.self, forKey: .missDeg)
+        calibration = try c.decodeIfPresent(WCCalibrationSessionState.self, forKey: .calibration)
+        status = try c.decodeIfPresent(WCStatus.self, forKey: .status)
     }
 }
 
@@ -1080,6 +1260,164 @@ final class WaveCamClient {
             return .failure(.httpError(apiError.statusCode, apiError.localizedDescription))
         } catch {
             return .failure(.networkError(error.localizedDescription))
+        }
+    }
+
+    // MARK: calibrate wizard session (PR #88 endpoints)
+
+    /// POST /api/v1/calibration/session/start
+    /// Sets PTZ owner to "calibrate" (tracker locked out); returns banner "CALIBRATE ACTIVE".
+    func calibrateSessionStart(source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/session/start", body: [
+            "requested_owner": "manual",
+            "takeover": true,
+            "source": source
+        ])
+    }
+
+    /// POST /api/v1/calibration/session/exit
+    /// Releases the "calibrate" PTZ owner and restores prior mode.
+    func calibrateSessionExit(source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/session/exit", body: [
+            "confirm": true,
+            "restore_prior": true,
+            "source": source
+        ])
+    }
+
+    /// POST /api/v1/calibration/location
+    /// Locks the base GPS position. `useLive` = use the backend's live base-Wio fix directly
+    /// (no samples from iOS); the backend averages and applies HDOP×UERE radius model.
+    func calibrateLocation(useLive: Bool = true, source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/location", body: [
+            "method": "base_wio_average",
+            "use_live_base": useLive,
+            "source": source
+        ])
+    }
+
+    /// POST /api/v1/calibration/level
+    /// Checks pan-axis level. `rollDeg` / `pitchDeg` come from the iPhone's motion sensor
+    /// when the phone is rigidly mounted; backend refuses above 0.5° tilt magnitude.
+    func calibrateLevel(rollDeg: Double, pitchDeg: Double, source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/level", body: [
+            "roll_deg": rollDeg,
+            "pitch_deg": pitchDeg,
+            "source": source
+        ])
+    }
+
+    /// POST /api/v1/calibration/heading-lock (preview probe — operator_accepted: false).
+    /// Backend returns 409 `operator_accept_required`; caller shows the preview and then
+    /// calls calibrateHeadingLockAccept once the operator taps to confirm.
+    func calibrateHeadingLockPreview(
+        bearingDeg: Double,
+        distanceM: Double?,
+        source: String = "ios_native"
+    ) async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "method": "landmark",
+            "operator_accepted": false,
+            "bearing_deg": bearingDeg,
+            "source": source
+        ]
+        if let d = distanceM { body["distance_m"] = d }
+        return await sendCalibrationSession("calibration/heading-lock", body: body)
+    }
+
+    /// POST /api/v1/calibration/heading-lock (operator_accepted: true).
+    /// Locks the heading. Must be called only after the operator has reviewed the preview.
+    func calibrateHeadingLockAccept(
+        bearingDeg: Double,
+        distanceM: Double?,
+        source: String = "ios_native"
+    ) async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = [
+            "method": "landmark",
+            "operator_accepted": true,
+            "bearing_deg": bearingDeg,
+            "source": source
+        ]
+        if let d = distanceM { body["distance_m"] = d }
+        return await sendCalibrationSession("calibration/heading-lock", body: body)
+    }
+
+    /// POST /api/v1/calibration/validation
+    /// Sight an independent check-point; backend returns predicted vs actual miss.
+    func calibrateValidation(
+        bearingDeg: Double,
+        distanceM: Double?,
+        source: String = "ios_native"
+    ) async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        var body: [String: Any] = ["bearing_deg": bearingDeg, "source": source]
+        if let d = distanceM { body["distance_m"] = d }
+        return await sendCalibrationSession("calibration/validation", body: body)
+    }
+
+    /// POST /api/v1/calibration/validation/confirm
+    /// Operator confirms the validation; marks calibration valid and exits CALIBRATE mode.
+    func calibrateValidationConfirm(accepted: Bool = true, source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/validation/confirm", body: [
+            "accepted": accepted,
+            "source": source
+        ])
+    }
+
+    private func sendCalibrationSession(
+        _ path: String,
+        body: [String: Any]
+    ) async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        do {
+            let data = try await post(path, body: body)
+            let response = try Self.decoder.decode(WCCalibrationSessionResponse.self, from: data)
+            if let s = response.status { self.status = s; connected = true }
+            guard let cal = response.calibration else {
+                return .failure(.httpError(200, "Backend returned no calibration session state."))
+            }
+            return .success(cal)
+        } catch let apiError as WaveCamAPIError {
+            if let obj = try? JSONSerialization.jsonObject(with: apiError.data) as? [String: Any] {
+                let code = obj["code"] as? String ?? ""
+                let message = obj["message"] as? String
+                let uncertaintyDeg = obj["uncertainty_deg"] as? Double ?? 0
+                switch code {
+                case "killed": return .failure(.killed)
+                case "owner_busy": return .failure(.ownerBusy)
+                case "operator_accept_required": return .failure(.operatorAcceptRequired)
+                case "uncertainty_too_high": return .failure(.uncertaintyTooHigh(uncertaintyDeg))
+                case "level_required": return .failure(.levelRequired)
+                case "pan_axis_not_level":
+                    let tiltMag = obj["uncertainty_deg"] as? Double ?? 0
+                    return .failure(.panAxisNotLevel(tiltMag))
+                default: return .failure(.httpError(apiError.statusCode, message ?? code))
+                }
+            }
+            return .failure(.httpError(apiError.statusCode, apiError.localizedDescription))
+        } catch {
+            return .failure(.networkError(error.localizedDescription))
+        }
+    }
+
+    /// True = calibration session wizard is available (PR #88 backend); false = 404; nil = network error.
+    func calibrateSessionAvailable() async -> Bool? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("calibration")
+            let response = try Self.decoder.decode(WCCalibrationSessionResponse.self, from: data)
+            // PR #88 backend adds `active`/`banner` fields; older backends omit them.
+            return response.calibration?.banner != nil
+        } catch let error as WaveCamAPIError where error.statusCode == 404 {
+            return false
+        } catch {
+            return nil
         }
     }
 
