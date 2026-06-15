@@ -142,6 +142,29 @@ def test_unlock_is_sticky_until_relatch():
     assert r.alert is False  # alert fires once, on the confirming frame only
 
 
+def test_min_consecutive_boundary_suspect_then_unlocked():
+    # DeepSeek PR #96 note: exercise the exact suspect->confirmed boundary.
+    m = _mon(min_consecutive=3, window_size=5)
+    m.latch(21.6, -158.0, 2.0)
+    states = [m.update(21.6 + 0.0001 * (i + 1), -158.0, 2.0, t=float(i)).state
+              for i in range(3)]
+    assert states[1] == SUSPECT   # 2 samples: below the confirm floor
+    assert states[2] == UNLOCKED  # 3rd sample confirms
+
+
+def test_sticky_unlock_retains_distance_and_trend():
+    # Kimi PR #96 note: the sticky-unlocked readout keeps the confirming values.
+    m = _mon(min_consecutive=3)
+    m.latch(21.6, -158.0, 2.0)
+    for i in range(3):
+        r = m.update(21.6 + 0.0001 * (i + 1), -158.0, 2.0, t=float(i))
+    assert r.state == UNLOCKED and r.mean_distance_m > 0
+    s = m.update(21.6, -158.0, 2.0, t=99.0)  # later stationary fix, still sticky
+    assert s.state == UNLOCKED
+    assert s.mean_distance_m == r.mean_distance_m
+    assert s.trend_m == r.trend_m
+
+
 if __name__ == "__main__":
     import sys
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

@@ -87,12 +87,16 @@ class BaseDriftMonitor:
         self._samples: Deque[BaseDriftSample] = deque(maxlen=self._window_size)
         self._latched: Optional[Tuple[float, float, float]] = None
         self._unlocked = False  # sticky once confirmed, until re-latch
+        self._last_mean = 0.0   # retained so the sticky-unlocked readout keeps the value
+        self._last_trend = 0.0
 
     def latch(self, lat: float, lon: float, alt_m: float = 0.0) -> None:
         """Record the trusted calibration base position and clear drift state."""
         self._latched = (lat, lon, alt_m)
         self._samples.clear()
         self._unlocked = False
+        self._last_mean = 0.0
+        self._last_trend = 0.0
 
     def update(self,
                lat: float,
@@ -109,7 +113,8 @@ class BaseDriftMonitor:
 
         # Sticky: once confirmed drifted, stay unlocked until a fresh latch.
         if self._unlocked:
-            return BaseDriftResult(UNLOCKED, False, 0.0, 0.0, len(self._samples), False)
+            return BaseDriftResult(UNLOCKED, False, self._last_mean, self._last_trend,
+                                   len(self._samples), False)
 
         # Quality gate -> unknown (preserve current lock; do not judge).
         if self._latched is None:
@@ -135,6 +140,8 @@ class BaseDriftMonitor:
 
         if len(self._samples) >= self._min_consecutive:
             self._unlocked = True
+            self._last_mean = mean_dist
+            self._last_trend = trend
             return BaseDriftResult(UNLOCKED, False, mean_dist, trend,
                                    len(self._samples), True)
         return BaseDriftResult(SUSPECT, True, mean_dist, trend,
