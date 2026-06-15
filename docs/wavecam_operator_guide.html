@@ -723,6 +723,7 @@
       <div class="nav-links" aria-label="Page sections">
         <a href="#start">Start</a>
         <a href="#controls">Controls</a>
+        <a href="#calibrate">Calibrate</a>
         <a href="#states">States</a>
         <a href="#tuning">Tuning</a>
         <a href="#cinematic">Zoom</a>
@@ -739,7 +740,7 @@
           <a class="button primary" href="#start">Start sequence</a>
           <a class="button" href="#troubleshooting">Recover a bad lock</a>
         </div>
-        <div class="hero-note">Current app tabs: Live, PTZ, Calibrate, Tools, Connect. Watch app tabs: Status/Tracking, Record Session.</div>
+        <div class="hero-note">Current app tabs: Live, PTZ, Calibrate, Tune, Tools, Connect. Watch app tabs: Status/Tracking, Record Session. Tune exposes hot config; Calibrate sets camera location + heading.</div>
       </div>
 
       <div class="rig-scene reveal" aria-label="WaveCam rig illustration">
@@ -764,7 +765,7 @@
         </div>
         <div class="hud-card">
           <div class="hud-row"><span>LIVE</span><strong class="ok">WIFI</strong></div>
-          <div class="hud-row"><span>OWNER</span><strong>testbed</strong></div>
+          <div class="hud-row"><span>OWNER</span><strong>vision_follow</strong></div>
           <div class="hud-row"><span>CMD</span><strong>p0/t0</strong></div>
           <div class="hud-row"><span>STOP</span><strong class="kill">latched</strong></div>
         </div>
@@ -787,7 +788,8 @@
             <div class="step"><div><strong>Confirm API route.</strong><span>Connect tab now has two fields: USB tether <code>http://172.20.10.8:8088/api/v1</code> and Wi-Fi/hotspot <code>http://192.168.1.155:8088/api/v1</code>. The app uses the first route that answers and shows <code>USB</code>, <code>WIFI</code>, <code>CUSTOM</code>, or <code>OFFLINE</code>.</span></div></div>
             <div class="step"><div><strong>Check Live.</strong><span>Live should show video. Top status should say <code>USB</code> or <code>WIFI</code> when the app can reach the backend.</span></div></div>
             <div class="step"><div><strong>If STOP LATCHED appears, hold resume.</strong><span>This clears KILL only. It does not automatically restart tracking.</span></div></div>
-            <div class="step"><div><strong>Open PTZ and tap Start Auto.</strong><span>That requests autonomous tracking ownership. The owner should move to <code>testbed</code> and state should become SEARCHING or TRACKING.</span></div></div>
+            <div class="step"><div><strong>Calibrate before tracking.</strong><span>iOS Calibrate tab: location lock (averaged base fix) &rarr; level &rarr; heading. Heading needs a stationary target &ge;50 m away. Once validated and confirmed, <code>authority.calibration_valid</code> becomes true. Re-do this after any tripod move.</span></div></div>
+          <div class="step"><div><strong>Open PTZ and tap Start Auto.</strong><span>That requests autonomous tracking ownership. The owner should move to <code>vision_follow</code> (close range) or <code>gps_tracker</code> (far range), and state should become SEARCHING or TRACKING.</span></div></div>
           </div>
 
           <dl class="state-board">
@@ -849,6 +851,32 @@
             <strong>Joystick and zoom</strong>
             <p>Temporary manual takeover. Release stops movement and restores autonomous owner when there is one.</p>
           </div>
+        </div>
+      </section>
+
+      <section id="calibrate">
+        <div class="section-head">
+          <div>
+            <div class="kicker">03b Calibrate</div>
+            <h2>Location, level, and heading</h2>
+          </div>
+          <p>Calibration establishes where the camera is and which way it points. It is required before GPS tracking and after any tripod move. The Calibrate tab owns PTZ during the wizard; KILL cancels it.</p>
+        </div>
+
+        <div class="workflow">
+          <div class="flow-lane">
+            <div class="step"><div><strong>Location lock.</strong><span>Averages the base Wio GPS fix to set camera lat/lon/alt. Needs a clear sky fix and the base Wio off the Orin USB rail during acquisition.</span></div></div>
+            <div class="step"><div><strong>Level.</strong><span>Hold the camera level (tilt at horizontal). Sets the tilt reference.</span></div></div>
+            <div class="step"><div><strong>Heading.</strong><span>Aim the camera at a stationary target at least 50 m away. This maps pan offset to GPS bearing. Driveway headings aimed at closer targets will be coarse — that is expected for a close-range shakedown.</span></div></div>
+            <div class="step"><div><strong>Validate &rarr; Confirm.</strong><span>Only after confirm does <code>authority.calibration_valid</code> become true and GPS authority unlock.</span></div></div>
+          </div>
+
+          <dl class="state-board">
+            <div class="state-row"><dt>base_locked</dt><dd>True once the base GPS has a stable fix. Drift monitoring starts here.</dd></div>
+            <div class="state-row"><dt>calibration_valid</dt><dd>True only after validate &rarr; confirm. GPS pointing is refused until this is true.</dd></div>
+            <div class="state-row"><dt>base_drift_state</dt><dd><code>unknown &rarr; locked &rarr; suspect &rarr; unlocked</code>. Only <code>unlocked</code> withholds GPS authority.</dd></div>
+            <div class="state-row"><dt>Re-do</dt><dd>Any tripod nudge, relocation, or questionable GPS pointing requires a fresh CALIBRATE.</dd></div>
+          </dl>
         </div>
       </section>
 
@@ -1010,8 +1038,44 @@
               <td>Lower for faster validation at higher compute cost; raise if CPU/GPU load becomes a problem.</td>
             </tr>
             <tr>
+              <td>detector.tracker</td>
+              <td>None</td>
+              <td>YOLO tracker preset (e.g. <code>bytetrack.yaml</code>, <code>botsort.yaml</code>). Binds to the model instance.</td>
+              <td>Restart-required. Enable to reduce ID swaps when multiple people are in frame. Default off keeps plain prediction.</td>
+            </tr>
+            <tr>
+              <td>fusion.gps_bearing_cue_enabled</td>
+              <td>false</td>
+              <td>Projects base&rarr;target bearing onto the frame for a GPS-cued confidence boost.</td>
+              <td>Enable only after GPS pointing is calibrated and stable at range. Default off preserves the legacy frame-center cue.</td>
+            </tr>
+            <tr>
+              <td>fusion.gps_roi_enabled</td>
+              <td>false</td>
+              <td>Runs YOLO on a cropped ROI centered at the GPS-pointed frame center.</td>
+              <td>Enable only after GPS bearing is verified; helps acquisition when the subject is small/far.</td>
+            </tr>
+            <tr>
+              <td>gps.drive_zoom</td>
+              <td>false</td>
+              <td>Zooms to a fraction of max zoom based on target distance.</td>
+              <td>Default off. Enable only after pan/tilt tracking is solid and calibration is valid. Curve knobs: <code>drive_zoom_near_m=40</code>, <code>drive_zoom_far_m=250</code>, <code>drive_zoom_max_frac=0.6</code>.</td>
+            </tr>
+            <tr>
+              <td>gps.base_drift_enabled</td>
+              <td>true</td>
+              <td>Monitors the base/tripod GPS for drift. Only confirmed drift withholds GPS authority.</td>
+              <td>Hot. Keep on. Threshold/window knobs are restart-only (defaults: <code>threshold_m=4.0</code>, <code>min_trend_m=2.0</code>).</td>
+            </tr>
+            <tr>
+              <td>tracking.mode</td>
+              <td>auto</td>
+              <td>Arbiter mode: <code>auto</code> lets vision/GPS trade; <code>gps_only</code> forces GPS pointing; <code>vision_only</code> ignores GPS.</td>
+              <td>Use <code>vision_only</code> in the driveway. Use <code>gps_only</code> to debug GPS pointing without color-lock hijack.</td>
+            </tr>
+            <tr>
               <td>ptz.deadzone</td>
-              <td>0.05</td>
+              <td>0.08</td>
               <td>Center hold region where pan/tilt should stop.</td>
               <td>Raise when the camera jitters near center. Lower only when it feels too lazy around center.</td>
             </tr>
@@ -1029,9 +1093,9 @@
             </tr>
             <tr>
               <td>ptz.max_pan_speed / ptz.max_tilt_speed</td>
-              <td>10 / 12</td>
+              <td>10 / 8</td>
               <td>Upper pan/tilt velocity limits for the servo.</td>
-              <td>Lower when tracking overshoots. Raise only after deadzone and target selection are correct.</td>
+              <td>Lower when tracking overshoots. GPS mode clamps to <code>gps.max_pan_speed=4</code> / <code>gps.max_tilt_speed=3</code> regardless of this value.</td>
             </tr>
             <tr>
               <td>ptz.cinematic_zoom_enabled / ptz.zoom_target_frac</td>
@@ -1052,6 +1116,16 @@
             <li>Watch Live. Zoom should move only when tracking is locked on a YOLO person box. It should hold on color-only frames, no-lock frames, and inside the zoom deadband.</li>
             <li>Nudge manual zoom once. Expected result: auto-zoom suppresses briefly, pan/tilt tracking continues, and zoom stops when the server deadman expires.</li>
             <li>If framing twitches, locks the wrong subject, or zoom fights the operator, disable Cinematic Zoom and retest pan/tilt before changing zoom thresholds.</li>
+          </ol>
+        </div>
+
+        <div class="callout" id="gps-zoom" style="margin-top:1rem">
+          <h3>GPS-driven Zoom enable/test flow</h3>
+          <ol>
+            <li>Complete pan/tilt tracking in <code>gps_only</code> or <code>auto</code> mode at 50&ndash;300 m range and verify <code>authority.calibration_valid: true</code>.</li>
+            <li>Enable <code>gps.drive_zoom</code> in Tune. Defaults are conservative: <code>drive_zoom_near_m=40</code>, <code>drive_zoom_far_m=250</code>, <code>drive_zoom_max_frac=0.6</code>.</li>
+            <li>Watch the zoom encoder while walking the tracker through near/far ranges. Zoom should increase as distance grows and stop at the max-fraction cap.</li>
+            <li>If zoom is jumpy, keep it off for the water test and retune after; PR #98 rate-limit is the noted follow-up.</li>
           </ol>
         </div>
 
@@ -1076,12 +1150,12 @@
         </div>
 
         <div class="callout" style="margin-top:1rem">
-          <h3>Current gaps</h3>
+          <h3>Field-test notes</h3>
           <ol>
+            <li>Run the <a href="field-test-checklist.html">Field Test Checklist</a>: driveway shakedown first, then water test. GPS bearing accuracy is not meaningful at driveway range.</li>
             <li>Hot tuning does not write back to YAML automatically; <code>persist:true</code> is rejected instead of ignored.</li>
             <li>Restart-only keys still require editing persistent config or the Orin web UI before using the confirmed restart path.</li>
-            <li>Cinematic Zoom is backend-wired and default off. Use the enable/test flow above before making it a persistent default.</li>
-            <li>The service restart timeout was fixed with a VISCA brake plus fast systemd stop; this is validated, but it is not a graceful TensorRT thread teardown.</li>
+            <li>Cinematic Zoom and GPS-driven Zoom are backend-wired and default off. Use the enable/test flows above before making either a persistent default.</li>
           </ol>
         </div>
       </section>
@@ -1089,7 +1163,7 @@
       <section id="troubleshooting">
         <div class="section-head">
           <div>
-            <div class="kicker">06 Recovery</div>
+            <div class="kicker">07 Recovery</div>
             <h2>Common failures and the fastest safe response</h2>
           </div>
           <p>Use Stop PTZ when you want the camera held still but the system still reachable. Use Emergency Stop when physical motion itself is wrong or unsafe.</p>
@@ -1099,9 +1173,11 @@
           <div class="fault-list">
             <div class="fault"><strong>Camera tracks the wrong object.</strong><span>Hit Stop PTZ or Emergency Stop. If orange gear is stealing lock, enable <code>fusion.require_person</code> and consider raising <code>fusion.lock_threshold</code>.</span></div>
             <div class="fault"><strong>No Live video.</strong><span>Check Local Network permission, active route (<code>USB</code>/<code>WIFI</code>), both Connect tab URLs, and whether <code>/api/v1/preview.mjpeg</code> returns bytes.</span></div>
-            <div class="fault"><strong>PTZ buttons do nothing.</strong><span>If safety is KILLED, resume first. If owner is not manual/testbed, read the owner field before repeating commands.</span></div>
+            <div class="fault"><strong>PTZ buttons do nothing.</strong><span>If safety is KILLED, resume first. If owner is not <code>manual</code>, <code>vision_follow</code>, or <code>gps_tracker</code>, read the owner field before repeating commands.</span></div>
             <div class="fault"><strong>Tilt direction is wrong.</strong><span>Use <code>ptz.invert_tilt</code> in the Orin web tuning UI, hot config, or YAML. Current Orin servo config default is <code>false</code>.</span></div>
             <div class="fault"><strong>Camera twitches near center.</strong><span>Raise <code>ptz.deadzone</code> or <code>ptz.ff_deadzone_mult</code>. Leave <code>ptz.ff_gain</code> at <code>0.00</code> unless you are deliberately testing lead compensation.</span></div>
+            <div class="fault"><strong>Heading capture fails.</strong><span>Needs live tracker fix, <code>authority.base_locked: true</code>, and a stationary target &ge;50 m away. Re-do CALIBRATE after any tripod move.</span></div>
+            <div class="fault"><strong>GPS tracker never owns PTZ.</strong><span>Check <code>authority.calibration_valid</code>, <code>authority.base_drift_state</code>, and <code>authority.gps_fresh</code> in <code>/status</code>. Any false gate blocks GPS authority.</span></div>
           </div>
 
           <div class="callout">
@@ -1121,7 +1197,7 @@
       <section id="quick-checks">
         <div class="section-head">
           <div>
-            <div class="kicker">07 Checks</div>
+            <div class="kicker">08 Checks</div>
             <h2>Shell checks when the app is unclear</h2>
           </div>
           <p>These are read-only or safety-stop checks. They are useful when the UI looks stale, frozen, or disconnected.</p>

@@ -8,10 +8,10 @@
   :root { --ink:#111; --paper:#fff; --accent:#0a7a2f; --warn:#b00020; --dim:#555; --box:#f2f2f2; }
   * { box-sizing:border-box; }
   body { font:17px/1.5 -apple-system,system-ui,sans-serif; color:var(--ink); background:var(--paper);
-         max-width:680px; margin:0 auto; padding:16px; }
+         max-width:720px; margin:0 auto; padding:16px; }
   h1 { font-size:1.5em; margin:.2em 0 .1em; }
   .sub { color:var(--dim); margin-bottom:1.2em; }
-  .phase { margin:1.6em 0 .6em; font-size:1.15em; font-weight:700; border-bottom:3px solid var(--ink); padding-bottom:4px; }
+  .phase { margin:1.8em 0 .6em; font-size:1.15em; font-weight:700; border-bottom:3px solid var(--ink); padding-bottom:4px; }
   .step { background:var(--box); border-radius:10px; padding:12px 14px; margin:10px 0; }
   .step.done { opacity:.45; }
   .step label { display:flex; gap:10px; align-items:flex-start; font-weight:700; cursor:pointer; }
@@ -27,13 +27,16 @@
   .trouble h3 { margin:.2em 0 .4em; }
   .trouble dt { font-weight:700; margin-top:.6em; }
   .trouble dd { margin:0 0 0 0; color:#333; }
+  .off { background:#f0f7ff; border:1px solid #90c2e7; border-radius:10px; padding:10px 14px; margin:12px 0; }
 </style>
 </head>
 <body>
 <h1>Field Test Checklist</h1>
-<div class="sub">Current &middot; goal: validate vision + GPS tracking end-to-end on the live direct-LoRa stack.</div>
+<div class="sub">Current &middot; goal: validate control + vision + safety + observability, then prove GPS tracking at range.</div>
 
-<div class="note"><b>Safety first:</b> the KILL / Emergency-Stop button in the app must stay reachable the whole session. The shadow estimator <b>never moves the camera</b> — if the camera does anything unexpected, that's the active tracker: hit STOP.</div>
+<div class="note"><b>Safety first:</b> the KILL / Emergency-Stop button in the app must stay reachable the whole session. The estimator <b>never moves the camera</b> — if the camera does anything unexpected, hit STOP.</div>
+
+<div class="note"><b>Diagnostic read:</b> watch <code>GET /api/v1/status</code> on a laptop: <code>ssh orin 'curl -s localhost:8088/api/v1/status'</code>. The iOS app mirrors owner, state, locked, and confidence; the Phase 0&ndash;4 authority fields (<code>base_drift_state</code>, <code>track_id</code>, <code>gps_cue</code>) live in the API.</div>
 
 <div class="phase">A — Before you walk out (2 min)</div>
 
@@ -43,11 +46,9 @@
   <div class="ifnot">Wrong build = stale app — come back inside and rebuild/install.</div>
 </div>
 
-<div class="phase">B — Power &amp; connect (outside)</div>
-
 <div class="step"><label><input type="checkbox" id="s2"><span>2. Power the rig</span></label>
   <div class="do">Battery &rarr; Orin + camera + base Wio. Wait ~90 s.</div>
-  <div class="expect">Camera does its init pan/tilt dance; Orin boots headless from NVMe.</div>
+  <div class="expect">Camera does its init pan/tilt dance; Orin boots headless from NVMe; <code>wavecam.service</code> is active.</div>
   <div class="ifnot">No camera dance after 2 min &rarr; check the camera's power lead first, then troubleshooting box below.</div>
 </div>
 
@@ -57,52 +58,85 @@
   <div class="ifnot">Toggle the tether cable once; then hotspot; then troubleshooting box.</div>
 </div>
 
-<div class="step"><label><input type="checkbox" id="s4"><span>4. Wio / GPS sanity (always after a power event)</span></label>
-  <div class="do">Power on the tracker Wio (worn in a waterproof case, outside, clear sky). Base Wio has a battery installed — let it acquire on battery, then plug into Orin USB.</div>
+<div class="phase">B — Driveway shakedown (close range)</div>
+
+<div class="note"><b>Why driveway first:</b> prove control + vision + safety + observability before the water test. GPS <b>bearing accuracy is not meaningful here</b> (≈27&deg; error at 10 m; heading needs a stationary target &ge;50 m). Keep <code>gps.drive_zoom</code> and <code>fusion.gps_bearing_cue_enabled</code> OFF.</div>
+
+<div class="step"><label><input type="checkbox" id="s4"><span>4. Wio / GPS sanity</span></label>
+  <div class="do">Base Wio has a battery installed — let it acquire on battery outside, then plug into Orin USB. Power on the tracker Wio (worn outside, clear sky).</div>
   <div class="expect"><code>reader_alive</code> true; <code>gps.source</code> = <code>direct_lora</code>; base fix arrives within ~2 min; tracker sats > 0 and <code>target_age_sec</code> stays low.</div>
   <div class="ifnot"><code>target_age_sec</code> climbing forever = no LoRa packets reaching the base. Check tracker battery/antenna, base LED, and that both Wios run matching direct-LoRa firmware.</div>
 </div>
 
-<div class="step"><label><input type="checkbox" id="s5"><span>5. Base lock (once per session)</span></label>
-  <div class="do">Let the base GPS settle ~2 min after fix, then Calibrate tab &rarr; capture <b>Base Lock</b>.</div>
-  <div class="expect"><code>base_locked</code> true in status; stays latched for the whole session.</div>
-  <div class="ifnot">No base fix after 5 min in clear sky &rarr; step 4's IF-NOT path.</div>
+<div class="step"><label><input type="checkbox" id="s5"><span>5. CALIBRATE</span></label>
+  <div class="do">iOS Calibrate tab &rarr; location lock (averaged base fix) &rarr; level &rarr; heading. In the driveway you can aim at anything; the flow and <code>authority.calibration_valid: true</code> are what matter.</div>
+  <div class="expect"><code>authority.base_locked: true</code>; <code>authority.base_drift_state: locked</code>; after validate &rarr; confirm, <code>authority.calibration_valid: true</code>.</div>
+  <div class="ifnot">Calibration valid stays false &rarr; check base fix, level step, and that heading capture completed.</div>
 </div>
 
-<div class="phase">C — Calibration</div>
-
-<div class="step"><label><input type="checkbox" id="s6"><span>6. Heading capture</span></label>
-  <div class="do">Place the tracker at least 50 m away with clear sky. Aim the camera at the tracker manually. Calibrate tab &rarr; <b>Capture heading</b>.</div>
-  <div class="expect"><code>calibrated: true</code> in status; GPS chip shows live distance+bearing.</div>
-  <div class="ifnot">Capture blocked = no live GPS bearing. Check tracker fix and base stability.</div>
-</div>
-
-<div class="phase">D — The session</div>
-
-<div class="step"><label><input type="checkbox" id="s7"><span>7. Vision-only check (close range)</span></label>
-  <div class="do">Set <code>tracking.mode: vision_only</code>. Start AUTO. Walk ~10&ndash;30 m from the camera wearing the orange rashguard.</div>
-  <div class="expect">Camera locks and follows via color+YOLO fusion. Status shows <code>src=both</code> or <code>src=color</code>.</div>
+<div class="step"><label><input type="checkbox" id="s6"><span>6. Vision lock</span></label>
+  <div class="do">Set <code>tracking.mode: vision_only</code>. Start AUTO. Stand ~10&ndash;30 m from the camera wearing the orange rashguard.</div>
+  <div class="expect"><code>tracking.locked: true</code>, <code>tracking.state: TRACKING</code>, <code>authority.owner: vision_follow</code>; camera follows as you walk laterally.</div>
   <div class="ifnot">Locks wrong object &rarr; turn on <b>Show mask</b>, tune color preset, or raise <code>fusion.require_person</code>.</div>
 </div>
 
-<div class="step"><label><input type="checkbox" id="s8"><span>8. GPS-only check (far range)</span></label>
-  <div class="do">Set <code>tracking.mode: gps_only</code>. Walk 50&ndash;300 m out with the tracker Wio.</div>
-  <div class="expect">Camera slews to GPS bearing and follows coarsely.</div>
-  <div class="ifnot">No slew &rarr; verify calibrated + base_locked + GPS fresh. Points wrong &rarr; recalibrate heading at ≥50 m.</div>
+<div class="step"><label><input type="checkbox" id="s7"><span>7. KILL test</span></label>
+  <div class="do">Emergency Stop.</div>
+  <div class="expect">Camera stops immediately; <code>safety.killed: true</code>; <code>authority.owner: idle</code>; manual + auto both blocked. Resume &rarr; it re-searches.</div>
+  <div class="ifnot">Camera keeps moving &rarr; use physical power. Do not proceed until KILL is verified.</div>
 </div>
 
-<div class="step"><label><input type="checkbox" id="s9"><span>9. Auto handoff (full run)</span></label>
-  <div class="do">Set <code>tracking.mode: auto</code>. Start AUTO. Move through close, mid, and far ranges; let vision and GPS trade ownership.</div>
+<div class="step"><label><input type="checkbox" id="s8"><span>8. Manual release</span></label>
+  <div class="do">Resume, start AUTO, then joystick nudge.</div>
+  <div class="expect"><code>authority.owner: manual</code> while nudging; release &rarr; auto-releases after the deadman (~0.8 s) back to search/auto.</div>
+  <div class="ifnot">Owner sticks at manual &rarr; check deadman timeout or <code>ptz.command_min_interval</code>.</div>
+</div>
+
+<div class="step"><label><input type="checkbox" id="s9"><span>9. Base-drift bump test</span></label>
+  <div class="do">With base locked, physically nudge/drag the tripod a few metres.</div>
+  <div class="expect"><code>authority.base_drift_state</code> goes <code>locked &rarr; suspect &rarr; unlocked</code> and GPS authority is withheld. Re-CALIBRATE to clear.</div>
+  <div class="ifnot">No state change &rarr; confirm <code>gps.base_drift_enabled: true</code>; if it trips on jitter, raise <code>gps.base_drift_threshold_m</code> (restart to change thresholds).</div>
+</div>
+
+<div class="phase">C — Water test (50&ndash;300 m)</div>
+
+<div class="step"><label><input type="checkbox" id="s10"><span>10. Recalibrate heading at range</span></label>
+  <div class="do">Before entering the water, place the tracker at a stationary target &ge;50 m away. Aim the camera at it. Calibrate tab &rarr; capture heading, validate, confirm.</div>
+  <div class="expect"><code>authority.calibration_valid: true</code>; GPS chip shows live distance + bearing; <code>authority.base_drift_state: locked</code>.</div>
+  <div class="ifnot">Capture blocked = no live GPS bearing. Check tracker fix and base stability.</div>
+</div>
+
+<div class="step"><label><input type="checkbox" id="s11"><span>11. GPS-only check</span></label>
+  <div class="do">Set <code>tracking.mode: gps_only</code>. Walk or paddle 50&ndash;300 m out with the tracker Wio.</div>
+  <div class="expect">Camera slews to GPS bearing and follows coarsely; <code>authority.owner: gps_tracker</code>.</div>
+  <div class="ifnot">No slew &rarr; verify calibrated + base_locked + GPS fresh. Points wrong &rarr; recalibrate heading at &ge;50 m.</div>
+</div>
+
+<div class="step"><label><input type="checkbox" id="s12"><span>12. Auto handoff</span></label>
+  <div class="do">Set <code>tracking.mode: auto</code>. Move through close, mid, and far ranges; let vision and GPS trade ownership.</div>
   <div class="expect">Smooth handoff: vision owns close range, GPS owns far range, camera holds (not coasts) during dropouts.</div>
   <div class="ifnot">Hunting or freezes &rarr; note range/behavior, hit STOP, adjust lock/unlock thresholds or GPS boost in Tune.</div>
 </div>
 
-<div class="phase">E — Wrap up</div>
+<div class="step"><label><input type="checkbox" id="s13"><span>13. Optional v3 features (enable only after basics pass)</span></label>
+  <div class="do">One at a time, after each previous step is solid: <code>detector.tracker</code> (restart-required; e.g. <code>bytetrack.yaml</code>), <code>fusion.gps_bearing_cue_enabled</code>, <code>fusion.gps_roi_enabled</code>, <code>gps.drive_zoom</code>.</div>
+  <div class="expect">Each feature improves lock continuity or zoom framing without destabilizing pan/tilt.</div>
+  <div class="ifnot">Disable the last feature and retest pan/tilt stability before changing its knobs.</div>
+</div>
 
-<div class="step"><label><input type="checkbox" id="s10"><span>10. Stop and capture evidence</span></label>
+<div class="phase">D — Wrap up</div>
+
+<div class="step"><label><input type="checkbox" id="s14"><span>14. Stop and capture evidence</span></label>
   <div class="do">Hit STOP / KILL. Pull recordings, logs, and any watch session JSONL you recorded.</div>
   <div class="expect">Clips on the Orin Media tab; watch sessions transferred to the paired iPhone.</div>
   <div class="ifnot">If the service is wedged, Tools &rarr; Restart WaveCam.</div>
+</div>
+
+<div class="off">
+  <b>Intentionally OFF by default</b> for the first field run:
+  <code>detector.tracker</code> (None), <code>fusion.gps_bearing_cue_enabled</code> (false),
+  <code>fusion.gps_roi_enabled</code> (false), <code>gps.drive_zoom</code> (false).
+  Base drift is ON (<code>gps.base_drift_enabled: true</code>) but fail-safe — only confirmed drift withholds GPS.
 </div>
 
 <div class="trouble">
@@ -116,6 +150,10 @@
 <dd>Tools &rarr; Restart WaveCam. The watchdog also auto-recovers a wedged service within 2 min.</dd>
 <dt>Camera won't move at all</dt>
 <dd>Check E-stop state in the app first — a latched stop looks identical to a fault.</dd>
+<dt>Heading capture keeps failing</dt>
+<dd>Needs a live tracker fix, base lock, and a stationary target &ge;50 m away. Re-do CALIBRATE after any tripod move.</dd>
+<dt>Base drift trips too easily / not at all</dt>
+<dd><code>gps.base_drift_enabled</code> is hot. Threshold/window knobs are restart-only; default <code>threshold_m=4.0</code>, <code>min_trend_m=2.0</code>.</dd>
 </dl>
 </div>
 
