@@ -211,6 +211,7 @@ def build_authority(pipeline) -> dict:
         "gate_age_sec": gate_age_sec,
         "base_drift_state": auth.get("base_drift_state"),
         "base_drift_distance_m": auth.get("base_drift_distance_m"),
+        "gps_cue": getattr(pipeline, "_last_gps_cue", None),
     }
 
 

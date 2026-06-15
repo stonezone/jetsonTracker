@@ -15,7 +15,8 @@ from .capture import FrameGrabber
 from .color_detector import ColorDetector
 from .controller import VisualServo, STOP_CMD, PtzAbsoluteCommand
 from .fusion import Fusion
-from .gps_geo import GeoPoint
+from .gps_geo import GeoPoint, bearing_deg
+from .gps_bearing_cue import compute_bearing_cue
 from .gps_pointing import compute_target, ZoomCurve
 from .overlay import annotate
 from .detector import class_label as _detector_class_label
@@ -193,6 +194,7 @@ class Pipeline(threading.Thread):
         self._base_drift_last_run = 0.0
         self._base_drift_latched_at: Optional[tuple] = None
         self._base_drift_last_result = None
+        self._last_gps_cue = None
 
     def kill(self, on: bool = True, reason: str | None = None):
         self.state.killed = on
@@ -428,6 +430,43 @@ class Pipeline(threading.Thread):
             self._last_abs_cmd_key = key
             self._last_abs_cmd_time = now
 
+    def _gps_cue(self, w: int, h: int):
+        """Fusion GPS cue while gps_tracker owns. Bearing-projected onto the frame
+        when fusion.gps_bearing_cue_enabled (Plan v3 Phase 3) and the inputs are
+        available; otherwise the legacy frame-center cue (byte-identical default).
+        Returns (cx, cy, radius_px) or None. Advisory only — never commands PTZ."""
+        radius_frac = float(getattr(self.cfg.fusion, "gps_boost_radius_frac", 0.25))
+        center = (w / 2.0, h / 2.0, radius_frac * min(w, h))
+        self._last_gps_cue = center
+        if not getattr(self.cfg.fusion, "gps_bearing_cue_enabled", False):
+            return center
+        if self.gps is None or not self.pose.calibrated or not self.pose.has_base:
+            return center
+        fix = self.gps.get_fix()
+        fov_curve = getattr(getattr(self, "_store", None), "fov_curve", None) or []
+        ptz_state = getattr(self, "ptz_state", None)
+        enc = ptz_state.latest()[0] if ptz_state is not None else None
+        if fix is None or not fov_curve or enc is None:
+            return center
+        cur_bearing = self.pose.pan_encoder_to_bearing(enc[0])
+        if cur_bearing is None:
+            return center
+        tgt_bearing = bearing_deg(self.pose.lat, self.pose.lon, fix.lat, fix.lon)
+        zoom_enc = ptz_state.latest_zoom()[0] if ptz_state is not None else None
+        cue = compute_bearing_cue(
+            tgt_bearing, cur_bearing, fov_curve, int(zoom_enc or 0), int(w), int(h),
+            bearing_uncertainty_deg=float(
+                getattr(self.cfg.fusion, "gps_bearing_cue_uncertainty_deg", 5.0)),
+            max_offscreen_deg=float(
+                getattr(self.cfg.fusion, "gps_bearing_cue_max_offscreen_deg", 10.0)),
+        )
+        if cue is None:
+            self._last_gps_cue = None  # target off-frame -> no boost (GPS re-aims)
+            return None
+        out = (cue.cx, cue.cy, cue.radius_px)
+        self._last_gps_cue = (round(cue.cx, 1), round(cue.cy, 1), round(cue.radius_px, 1))
+        return out
+
     def _update_base_drift(self, now: float):
         """Observer: run the base-drift monitor (throttled) and update
         pose.base_locked. Returns the latest BaseDriftResult, or None if not run
@@ -580,11 +619,11 @@ class Pipeline(threading.Thread):
 
             # P2: GPS-cue boost — when gps_tracker owned last frame the camera is
             # already aimed at the subject; boost blobs near frame center.
-            gps_cue_px = None
             if self._arbiter_state == "gps_tracker":
-                radius_frac = float(getattr(self.cfg.fusion, "gps_boost_radius_frac", 0.25))
-                r = radius_frac * min(w, h)
-                gps_cue_px = (w / 2.0, h / 2.0, r)
+                gps_cue_px = self._gps_cue(w, h)
+            else:
+                gps_cue_px = None
+                self._last_gps_cue = None
 
             fr = self.fusion.update(blobs, persons, gps_cue_px=gps_cue_px)
 
