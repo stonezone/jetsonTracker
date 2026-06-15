@@ -50,7 +50,7 @@ color:
 
 detector:
   enabled: true
-  model: "/data/projects/gimbal/models/yolov8n.engine"
+  model: "/data/projects/gimbal/models/yolo11n.engine"
   conf: 0.35
   imgsz: 640
   person_class: 0
