@@ -185,7 +185,7 @@
     </div>
     <div class="summary">
       <div class="summary-row"><b>iPhone</b><span>The WaveCam app is your console: Live feed, PTZ joystick, Calibrate, Tune, Connect, Media. It auto-picks USB&nbsp;tether or Wi-Fi and labels the active route.</span></div>
-      <div class="summary-row"><b>Orin</b><span>Jetson Orin Nano runs the backend (<code>:8088</code>): vision tracking (YOLOv8n TensorRT + color), camera link, safety, tuning, and the MJPEG preview.</span></div>
+      <div class="summary-row"><b>Orin</b><span>Jetson Orin Nano runs the backend (<code>:8088</code>): vision tracking (YOLO26n TensorRT + color), camera link, safety, tuning, and the MJPEG preview.</span></div>
       <div class="summary-row"><b>Camera</b><span>Prisual NDI PTZ does the pan / tilt / zoom. Only the Orin talks to it &mdash; the phone never commands the camera directly.</span></div>
       <div class="summary-row"><b>You</b><span>Wear orange, hit <span style="color:var(--accent)">AUTO</span>, keep <span style="color:var(--kill)">KILL</span> within reach. Vision keeps you framed; LoRa GPS coarse-points the camera at long range once calibrated.</span></div>
     </div>
@@ -198,7 +198,7 @@
       <div class="sec-head">
         <div class="kicker">How it works</div>
         <h2>One subject, one camera, one safe path</h2>
-        <p class="sub">WaveCam finds you two ways at once and fuses them: a neural net (YOLOv8n) spots a <em>person</em>, and a color detector spots your <em>orange rashguard</em>. When both agree, it <b>locks</b> and the camera follows. Everything routes through the Orin so there is exactly one authority for movement and safety.</p>
+        <p class="sub">WaveCam finds you two ways at once and fuses them: a neural net (YOLO26n) spots a <em>person</em>, and a color detector spots your <em>orange rashguard</em>. When both agree, it <b>locks</b> and the camera follows. Everything routes through the Orin so there is exactly one authority for movement and safety.</p>
       </div>
       <div class="grid g3">
         <div class="card"><span class="pill subj">Cue</span><h3>Color + person fusion</h3><p>Your orange rashguard is the standout cue on a blue ocean. YOLO confirms it&rsquo;s a person, not a buoy. Agreement within a pixel distance = a confirmed target. Score = 0.5 + 0.5&times;YOLO_conf.</p></div>
@@ -1009,6 +1009,49 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
       </div>
     </section>
 
+    <!-- DRIVEWAY + WATER TEST -->
+    <section id="test-flow">
+      <div class="sec-head">
+        <div class="kicker">Field Test Flow</div>
+        <h2>Driveway shakedown → Water test</h2>
+        <p class="sub">Two-stage validation before the first surf session. All new features (Phases 0&ndash;4) are <b>default-off</b> &mdash; enable one at a time and verify before moving on.</p>
+      </div>
+
+      <div class="tablewrap" style="margin-bottom:0.9rem">
+        <h3 style="margin:0 0 0.6rem">Stage 1 — Driveway Shakedown</h3>
+        <p style="color:var(--muted); font-size:0.9rem; margin:0 0 0.7rem">Close-range validation. Heading accuracy is NOT meaningful at driveway range (needs &ge;50 m stationary target).</p>
+        <table>
+          <thead><tr><th>Step</th><th>What to do</th><th>Verify</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Power on, confirm <code>/api/v1/status</code> healthy</td><td>fps &gt; 0, owner=<code>idle</code>, not killed</td></tr>
+            <tr><td>2</td><td>Run CALIBRATE: base lock, heading at &ge;50m target, tilt level, FOV anchor</td><td><code>base_locked=true</code>, <code>calibration_valid=true</code></td></tr>
+            <tr><td>3</td><td>Toggle <code>tracking.mode</code> (<code>auto</code> / <code>gps_only</code> / <code>vision_only</code>)</td><td>Owner follows the mode; vision lock acquires on orange</td></tr>
+            <tr><td>4</td><td>Test KILL — press in iOS, confirm motion stops</td><td>State=<code>KILLED</code>, all PTZ commands blocked</td></tr>
+            <tr><td>5</td><td>Manual nudge (joystick deadman)</td><td>Owner=<code>manual</code>, release → <code>idle</code></td></tr>
+            <tr><td>6</td><td>Bump the tripod &ge;10 cm, wait for base drift monitor</td><td><code>base_drift_state</code> transitions to <code>unlocked</code></td></tr>
+            <tr><td>7</td><td>Read <code>/status</code> authority section</td><td>All fields present: <code>gps_fresh</code>, <code>base_locked</code>, <code>base_drift_state</code>, <code>calibration_valid</code>, <code>gate_age_sec</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tablewrap">
+        <h3 style="margin:0 0 0.6rem">Stage 2 — Water Test</h3>
+        <p style="color:var(--muted); font-size:0.9rem; margin:0 0 0.7rem">Real beach conditions. Enable features one at a time after validating the baseline.</p>
+        <table>
+          <thead><tr><th>Step</th><th>What to do</th><th>Verify</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Run CALIBRATE on the beach (heading at &ge;50m surveyed landmark)</td><td><code>base_locked=true</code>, <code>calibration_valid=true</code></td></tr>
+            <tr><td>2</td><td>Validate direct-LoRa at 50 / 150 / 300 m over water</td><td>GPS fix stays fresh; bearing points at rider within &plusmn;30 enc</td></tr>
+            <tr><td>3</td><td>Enable <code>gps.drive_zoom</code>, verify distance→zoom curve</td><td>Zoom follows distance with conservative <code>max_frac=0.6</code></td></tr>
+            <tr><td>4</td><td>Enable <code>fusion.gps_bearing_cue_enabled</code></td><td>GPS-bearing cue appears on-frame near expected position</td></tr>
+            <tr><td>5</td><td>Enable <code>detector.tracker</code> (restart required)</td><td><code>track_id</code> persists across YOLO dropouts in /status</td></tr>
+            <tr><td>6</td><td>Full auto-framing session: <code>tracking.mode=auto</code>, ride</td><td>Vision locks within the GPS cue region; camera follows through turns</td></tr>
+            <tr><td>7</td><td>Post-session: bump tripod, confirm base drift withholds GPS</td><td><code>base_drift_state=unlocked</code>, GPS authority denied until recalibration</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- CONNECT -->
     <section id="connect">
       <div class="sec-head">
@@ -1128,7 +1171,7 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
 
   <footer class="footer">
     <span>WaveCam &mdash; Operator Guide v2</span>
-    <span>Tracking: YOLOv8n TensorRT + color fusion &middot; LoRa GPS coarse-point &middot; shadow Kalman estimator &middot; Orin :8088 &middot; KILL always reachable</span>
+    <span>Tracking: YOLO26n TensorRT + color fusion &middot; LoRa GPS coarse-point &middot; shadow Kalman estimator &middot; Orin :8088 &middot; KILL always reachable</span>
   </footer>
 </body>
 </html>

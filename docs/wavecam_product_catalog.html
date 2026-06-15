@@ -1033,11 +1033,11 @@
             <div class="stack-list" aria-label="Technology stack">
               <div class="stack-row">
                 <b>Camera</b>
-                <span>Professional PTZ camera with 20x optical zoom, live preview, session recording, and remote movement control.</span>
+                <span>Prisual NDI PTZ with 20x optical zoom, controlled via RAW VISCA over UDP. RTSP main (1080p60) and sub (640x360) streams. Live preview, session recording, remote PTZ.</span>
               </div>
               <div class="stack-row">
                 <b>Compute</b>
-                <span>Local field computer running the tracking loop, health checks, dashboard, and media control services.</span>
+                <span>Jetson Orin Nano running YOLO26n TensorRT at 30+ FPS. Tracking loop, health checks, dashboard, media control, and GPS ingest on one device.</span>
               </div>
               <div class="stack-row">
                 <b>Vision</b>
@@ -1045,7 +1045,7 @@
               </div>
               <div class="stack-row">
                 <b>GPS</b>
-                <span>Rider position cueing for long-range acquisition and reacquisition when the subject is too small for vision alone.</span>
+                <span>2x SeeedStudio Wio Tracker L1 Lite (custom direct-LoRa firmware). Remote tracker on the rider transmits GPS over LoRa; base Wio feeds JSONL to the Orin via USB. Coarse pointing + zoom at range, base drift detection, GPS-bearing fusion cueing.</span>
               </div>
               <div class="stack-row">
                 <b>Media</b>
@@ -1069,10 +1069,13 @@
                 <div><span class="ok">movement</span> camera control online</div>
                 <div><span class="ok">vision</span> target tracking active</div>
                 <div><span class="warn">position</span> waiting for rider cue</div>
+                <div><span class="ok">base_drift</span> locked (tripod stationary)</div>
                 <div><span class="ok">dashboard</span> operator controls online</div>
                 <br>
-                <div>mode: vision_follow</div>
-                <div>owner: autonomous</div>
+                <div>mode: auto</div>
+                <div>owner: vision_follow</div>
+                <div>track_id: 5</div>
+                <div>authority: gps_fresh=true base_locked=true</div>
                 <div>kill_latched: false</div>
               </div>
             </aside>
@@ -1095,13 +1098,18 @@
             </article>
             <article class="deployment-card">
               <span class="status-pill test">2</span>
-              <h3>Calibrate and preview</h3>
-              <p>Frame the riding area, check the rider cue, preview the camera feed, and confirm that manual override behaves correctly.</p>
+              <h3>Driveway shakedown</h3>
+              <p>Verify CALIBRATE mode (base lock, heading at ≥50m, tilt level, FOV anchor). Confirm KILL stops motion, manual nudge works, tracking.mode toggles, and /status authority section shows correct gate inputs.</p>
             </article>
             <article class="deployment-card">
               <span class="status-pill plan">3</span>
-              <h3>Start follow</h3>
-              <p>Begin tracking, record locally, optionally stream, and keep status, stop, and manual camera controls available throughout the session.</p>
+              <h3>Water test</h3>
+              <p>Validate direct-LoRa at 50/150/300 m, confirm calibration at real beach range, and exercise auto-framing end-to-end. Vision lock with GPS fallback; verify base drift monitor holds the lock through a bumped-tripod test.</p>
+            </article>
+            <article class="deployment-card">
+              <span class="status-pill">4</span>
+              <h3>Surf session</h3>
+              <p>After water-test validation: enable tracking features one by one (GPS zoom, bearing cue, persistent tracker), run full auto-framing, and keep KILL within reach at all times.</p>
             </article>
           </div>
         </div>
