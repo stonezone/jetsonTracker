@@ -30,6 +30,7 @@ class PersonBox:
     x2: float
     y2: float
     conf: float
+    track_id: int | None = None
 
     @property
     def center(self) -> Tuple[float, float]:
@@ -47,6 +48,18 @@ class PersonDetector:
         self.model = YOLO(cfg.model)
 
     def detect(self, frame_bgr) -> List[PersonBox]:
+        # Phase-2 (v3): when a tracker is configured, use YOLO.track for persistent
+        # IDs; fail-open to plain predict on any error or when tracker is None so the
+        # default path is byte-identical to before. Adapted from Kimi's Phase-B draft.
+        tracker = getattr(self.cfg, "tracker", None)
+        if tracker:
+            try:
+                return self._track(frame_bgr, tracker)
+            except Exception as e:  # pragma: no cover - optional dependency
+                print(f"[detector] tracker failed ({e}), falling back to predict")
+        return self._predict(frame_bgr)
+
+    def _predict(self, frame_bgr) -> List[PersonBox]:
         res = self.model.predict(
             frame_bgr,
             conf=self.cfg.conf,
@@ -54,6 +67,21 @@ class PersonDetector:
             imgsz=self.cfg.imgsz,
             verbose=False,
         )
+        return self._boxes_from_result(res)
+
+    def _track(self, frame_bgr, tracker: str) -> List[PersonBox]:
+        res = self.model.track(
+            frame_bgr,
+            conf=self.cfg.conf,
+            classes=[self.cfg.person_class],
+            imgsz=self.cfg.imgsz,
+            tracker=tracker,
+            persist=True,
+            verbose=False,
+        )
+        return self._boxes_from_result(res, with_track=True)
+
+    def _boxes_from_result(self, res, with_track: bool = False) -> List[PersonBox]:
         out: List[PersonBox] = []
         if not res:
             return out
@@ -62,5 +90,8 @@ class PersonDetector:
             return out
         for b in r.boxes:
             x1, y1, x2, y2 = b.xyxy[0].tolist()
-            out.append(PersonBox(x1, y1, x2, y2, float(b.conf[0])))
+            tid = None
+            if with_track and b.id is not None:
+                tid = int(b.id[0])
+            out.append(PersonBox(x1, y1, x2, y2, float(b.conf[0]), track_id=tid))
         return out

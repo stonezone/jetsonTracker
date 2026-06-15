@@ -106,6 +106,10 @@ class DetectorCfg:
     person_class: int = 0
     every_n: int = 3
     box_ttl_sec: float = 0.6
+    # Phase-2 (v3): persistent tracker. None = plain predict (current behavior).
+    # "bytetrack.yaml" | "botsort.yaml" enable YOLO tracking (fail-open if missing).
+    # Restart-required (the tracker is bound to the model instance).
+    tracker: str | None = None
 
 
 @dataclass

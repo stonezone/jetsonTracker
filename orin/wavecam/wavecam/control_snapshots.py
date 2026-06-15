@@ -241,6 +241,7 @@ def build_tracking(legacy: dict) -> dict:
         "has_color": bool(legacy.get("has_color", False)),
         "has_person": bool(legacy.get("has_person", False)),
         "matched": bool(legacy.get("matched", False)),
+        "track_id": legacy.get("track_id"),
     }
 
 

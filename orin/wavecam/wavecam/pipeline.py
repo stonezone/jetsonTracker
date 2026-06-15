@@ -66,7 +66,8 @@ def offset_boxes(boxes: list, x1: int, y1: int) -> list:
     """Shift PersonBox coordinates from crop space back to full-frame space."""
     from .detector import PersonBox
     return [
-        PersonBox(b.x1 + x1, b.y1 + y1, b.x2 + x1, b.y2 + y1, b.conf)
+        PersonBox(b.x1 + x1, b.y1 + y1, b.x2 + x1, b.y2 + y1, b.conf,
+                  track_id=getattr(b, "track_id", None))
         for b in boxes
     ]
 
@@ -725,7 +726,7 @@ class Pipeline(threading.Thread):
 
             self.state.set_status(
                 state=("KILLED" if self.state.killed else fr.state),
-                conf=fr.conf, locked=fr.locked,
+                conf=fr.conf, locked=fr.locked, track_id=fr.track_id,
                 has_color=fr.has_color, has_person=fr.has_person, matched=fr.matched,
                 fps=round(fps, 1), connected=self.grab.connected,
                 ptz_enabled=self.cfg.ptz.enabled,

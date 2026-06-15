@@ -89,6 +89,7 @@ RESTART_REQUIRED_KEYS = (
     "color.enabled",
     "detector.enabled",
     "detector.model",
+    "detector.tracker",
     "web.host",
     "web.port",
 )
