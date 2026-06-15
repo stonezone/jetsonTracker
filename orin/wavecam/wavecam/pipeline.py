@@ -176,6 +176,7 @@ class Pipeline(threading.Thread):
         self._est_active_shadow: bool = False
         self._restarting = False
         self._last_kill: dict | None = None
+        self._last_authority: dict | None = None
 
     def kill(self, on: bool = True, reason: str | None = None):
         self.state.killed = on
@@ -579,6 +580,17 @@ class Pipeline(threading.Thread):
                                                calibration_valid=calibration_valid)
                 prev_state = self._arbiter_state
                 self._arbiter_state = decision.owner
+                # Observability (Plan v3 Phase 0): record why authority resolved
+                # this frame — the GPS gate inputs — for field diagnosis. Read-only.
+                self._last_authority = {
+                    "owner": decision.owner,
+                    "mode": self.arbiter.mode,
+                    "gps_fresh": gps_fresh,
+                    "gps_calibrated": gps_calibrated,
+                    "base_locked": base_locked,
+                    "calibration_valid": calibration_valid,
+                    "gps_age_sec": round(gps_fix.age_sec, 2) if gps_fix is not None else None,
+                }
                 # Stash search_roi for next frame's YOLO crop (gps_roi_enabled flag gates use)
                 self._prev_search_roi = decision.search_roi
 
