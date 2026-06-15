@@ -524,8 +524,13 @@ class Pipeline(threading.Thread):
         drive_zoom = getattr(gps_cfg, "drive_zoom", False)
         target = GeoPoint(lat=fix.lat, lon=fix.lon,
                           speed_mps=fix.speed, course_deg=fix.course)
-        pt = compute_target(base, target, self.pose, lead_s=0.65,
-                            zoom=ZoomCurve() if drive_zoom else None)
+        zoom_curve = ZoomCurve(
+            near_m=float(getattr(gps_cfg, "drive_zoom_near_m", 40.0)),
+            far_m=float(getattr(gps_cfg, "drive_zoom_far_m", 250.0)),
+            max_enc=float(getattr(gps_cfg, "drive_zoom_max_enc", 16384.0)),
+            max_frac=float(getattr(gps_cfg, "drive_zoom_max_frac", 0.6)),
+        ) if drive_zoom else None
+        pt = compute_target(base, target, self.pose, lead_s=0.65, zoom=zoom_curve)
         return PtzAbsoluteCommand(
             pan_enc=int(pt.pan_enc), tilt_enc=int(pt.tilt_enc),
             zoom_enc=int(pt.zoom_enc) if pt.zoom_enc is not None else None,

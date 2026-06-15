@@ -173,6 +173,14 @@ class GpsCfg:
     drive_stale_sec: float = 8.0    # remote fix age > this → too old to STEER
     # P2: GPS-driven zoom (off by default — untuned; enable when ready)
     drive_zoom: bool = False
+    # Phase-4 (v3): GPS-driven zoom curve params (used only when drive_zoom=True +
+    # gps_tracker owns + calibration valid). The existing ZoomCurve was hardcoded;
+    # these make it tunable. max_frac is CONSERVATIVE for the first water test —
+    # raise once smoothness is proven at range, or zoom is useless near 300m.
+    drive_zoom_near_m: float = 40.0
+    drive_zoom_far_m: float = 250.0
+    drive_zoom_max_enc: float = 16384.0
+    drive_zoom_max_frac: float = 0.6
     # P1: handoff hysteresis
     lock_frames: int = 5        # K consecutive vision-locked frames → hand to vision
     grace_sec: float = 1.0      # unlock grace before falling back to GPS
