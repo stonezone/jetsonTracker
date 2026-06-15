@@ -209,6 +209,8 @@ def build_authority(pipeline) -> dict:
         "calibration_valid": auth.get("calibration_valid"),
         "gps_age_sec": auth.get("gps_age_sec"),
         "gate_age_sec": gate_age_sec,
+        "base_drift_state": auth.get("base_drift_state"),
+        "base_drift_distance_m": auth.get("base_drift_distance_m"),
     }
 
 
