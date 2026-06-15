@@ -195,8 +195,11 @@ class DirectRadioGps:
             lat = _e7_to_deg(data.get("lat_e7"))
             lon = _e7_to_deg(data.get("lon_e7"))
             if lat is None or lon is None:
+                # Corrupt/partial line (fix flag set, coords unparseable): keep the
+                # last-known-good fix instead of erasing it. get_fix() re-ages it
+                # from its ts and the downstream age gate (drive_stale_sec) drops it
+                # once stale, so a transient bad packet no longer drops the track.
                 with self._lock:
-                    self._latest = None
                     self._target_telemetry = telemetry
                     self._last_poll_ts = now
                 return

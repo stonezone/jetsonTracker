@@ -65,6 +65,19 @@ def test_minimum_size_enforced_at_edge():
     assert x1 >= 0 and y1 >= 0
 
 
+def test_minimum_size_enforced_at_high_edge():
+    """A tiny ROI pinned against the high (right/bottom) edge must still yield a
+    crop at least _ROI_MIN_PX on each side. The min-size re-enforcement must be
+    two-sided: at the high edge x2/y2 are already at the frame bound, so the
+    inner edge (x1/y1) has to be pulled in instead of only pushing x2/y2 out."""
+    W, H = 1920, 1080
+    x1, y1, x2, y2 = compute_roi_crop((0.999, 0.999, 0.01, 0.01), frame_h=H, frame_w=W)
+    assert (x2 - x1) >= min(_ROI_MIN_PX, W)
+    assert (y2 - y1) >= min(_ROI_MIN_PX, H)
+    assert 0 <= x1 < x2 <= W
+    assert 0 <= y1 < y2 <= H
+
+
 # --- offset_boxes ---
 
 def test_offset_boxes_round_trip():

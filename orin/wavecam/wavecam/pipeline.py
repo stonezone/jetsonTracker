@@ -55,11 +55,16 @@ def compute_roi_crop(
     y1 = int(max(0, cy - side))
     x2 = int(min(frame_w, cx + side))
     y2 = int(min(frame_h, cy + side))
-    # Re-enforce minimum size after edge clamping
+    # Re-enforce minimum size after edge clamping. Two-sided: push the high edge
+    # out, then pull the low edge in if the box is pinned against the high frame
+    # bound — otherwise an ROI near the right/bottom edge stays undersized because
+    # x2/y2 are already capped at the frame and can't grow.
     if x2 - x1 < _ROI_MIN_PX:
         x2 = min(frame_w, x1 + _ROI_MIN_PX)
+        x1 = max(0, x2 - _ROI_MIN_PX)
     if y2 - y1 < _ROI_MIN_PX:
         y2 = min(frame_h, y1 + _ROI_MIN_PX)
+        y1 = max(0, y2 - _ROI_MIN_PX)
     return (x1, y1, x2, y2)
 
 
