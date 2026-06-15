@@ -72,6 +72,7 @@ class FusionResult:
     has_color: bool = False
     has_person: bool = False
     matched: bool = False             # color blob and person box agree
+    track_id: Optional[int] = None    # persistent id of the tracked person (None = no tracker)
 
 
 def _dist(a: Tuple[float, float], b: Tuple[float, float]) -> float:
@@ -101,6 +102,7 @@ class Fusion:
         self._locked = False
         self._ema: Optional[Tuple[float, float]] = None
         self._last_seen = 0.0
+        self._last_track_id: Optional[int] = None
 
     def _continuity(self, items, center_of):
         """Prefer the candidate nearest the last smoothed center (anti-flip);
@@ -130,6 +132,17 @@ class Fusion:
                        <= _effective_match_dist(self.cfg, _person_xywh(p)[3])
                        for b in blobs)]
 
+    def _prefer_track_id(self, persons):
+        """Return the person whose track_id matches the last selected box, else None.
+        A no-op when no tracker is active (last_track_id stays None), so the
+        flag-off path is byte-identical. (Plan v3 Phase 2; adapted from Kimi.)"""
+        if self._last_track_id is None:
+            return None
+        for p in persons:
+            if getattr(p, "track_id", None) == self._last_track_id:
+                return p
+        return None
+
     def _select(self, blobs, persons,
                 gps_cue_px: Optional[Tuple[float, float, float]] = None):
         """(raw_xy, bbox, person_bbox, conf, matched) by priority + continuity.
@@ -141,14 +154,20 @@ class Fusion:
         blobs within radius get a confidence boost (see module docstring)."""
         confirmed = self._confirmed(blobs, persons)
         if confirmed:
-            p = self._continuity(confirmed, self._person_aim)
+            p = self._prefer_track_id(confirmed) or self._continuity(confirmed, self._person_aim)
+            self._last_track_id = getattr(p, "track_id", None)
             bbox = _person_xywh(p)
             return self._person_aim(p), bbox, bbox, CONF_MATCHED_BASE + CONF_MATCHED_BASE * p.conf, True
         if self.cfg.require_person:
             return None, None, None, 0.0, False
         if self._ema is not None and persons:
             p, d = self._nearest_person(persons, self._ema)
+            # Prefer the same persistent track over pure proximity (no-op without a tracker)
+            same_id = self._prefer_track_id(persons)
+            if same_id is not None:
+                p, d = same_id, _dist(self._person_aim(same_id), self._ema)
             if p is not None and d <= _effective_match_dist(self.cfg, _person_xywh(p)[3]):
+                self._last_track_id = getattr(p, "track_id", None)
                 bbox = _person_xywh(p)
                 conf = CONF_SUSTAIN
                 if gps_cue_px is not None:
@@ -221,4 +240,5 @@ class Fusion:
             has_color=has_color,
             has_person=has_person,
             matched=matched,
+            track_id=self._last_track_id if state != "SEARCHING" else None,
         )
