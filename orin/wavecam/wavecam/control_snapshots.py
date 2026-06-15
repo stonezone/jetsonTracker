@@ -142,6 +142,7 @@ def build_status_snapshot(pipeline, revision: int, media: dict | None = None) ->
         "time_unix_ms": int(time.time() * 1000),
         "session": build_session(legacy, pipeline),
         "safety": build_safety(legacy, pipeline),
+        "authority": build_authority(pipeline),
         "ptz": build_ptz(legacy, pipeline),
         "tracking": build_tracking(legacy),
         "gps": build_gps(pipeline, legacy),
@@ -183,6 +184,31 @@ def build_safety(legacy: dict, pipeline=None) -> dict:
         "killed": bool(legacy.get("killed", False)),
         "kill_reason": last_kill.get("reason"),
         "last_kill_at_unix_ms": last_kill.get("at_unix_ms"),
+    }
+
+
+def build_authority(pipeline) -> dict:
+    """Why PTZ ownership resolved this frame — the GPS-authority gate inputs — for
+    field diagnosis (Plan v3 Phase 0). owner/killed are live; the gate inputs are
+    the last decided values cached by the pipeline (None before the first frame)."""
+    auth = getattr(pipeline, "_last_authority", None) or {}
+    owner = getattr(pipeline, "owner", None)
+    owner_state = owner.state() if owner is not None else {}
+    ts = auth.get("ts")
+    # Age of the cached GPS-gate inputs. They are recomputed every frame the arbiter
+    # runs (including under manual ownership) and only go stale while KILLED or
+    # restarting — a climbing gate_age_sec makes that explicit (Kimi PR #95 note).
+    gate_age_sec = round(time.time() - ts, 2) if ts else None
+    return {
+        "owner": owner_state.get("owner", auth.get("owner")),
+        "killed": bool(owner_state.get("killed", False)),
+        "mode": auth.get("mode"),
+        "gps_fresh": auth.get("gps_fresh"),
+        "gps_calibrated": auth.get("gps_calibrated"),
+        "base_locked": auth.get("base_locked"),
+        "calibration_valid": auth.get("calibration_valid"),
+        "gps_age_sec": auth.get("gps_age_sec"),
+        "gate_age_sec": gate_age_sec,
     }
 
 
