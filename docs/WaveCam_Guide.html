@@ -174,7 +174,7 @@
 
   <header class="hero">
     <div>
-      <div class="eyeline">Operator Guide &middot; v2 &middot; Estimator era</div>
+      <div class="eyeline">Operator Guide &middot; v3</div>
       <h1>Film yourself,<br /><em>hands-free.</em></h1>
       <p class="lede">WaveCam is a vision-guided PTZ camera that keeps you in frame while you foil-surf 50&ndash;300&nbsp;m offshore. A Jetson Orin watches for your <span style="color:var(--brand-2)">orange rashguard</span> plus a person detection, locks on, and drives the camera &mdash; you just ride. This guide walks every screen and every tuning control in the app.</p>
       <div class="btn-row">
@@ -384,19 +384,15 @@
       </div>
 
       <details style="margin-bottom:1.1rem; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface2); padding:0.9rem 1rem;">
-        <summary style="cursor:pointer; font-weight:700; color:var(--text); font-size:0.97rem;">When to run <code>verify_wios.sh</code> &mdash; exception path (expand)</summary>
+        <summary style="cursor:pointer; font-weight:700; color:var(--text); font-size:0.97rem;">When the GPS link misbehaves &mdash; direct-LoRa check (expand)</summary>
         <div style="margin-top:0.8rem; color:var(--muted); font-size:0.91rem; display:grid; gap:0.6rem;">
-          <p style="margin:0"><b>Only run this from the Mac</b> &mdash; not every session. Trigger it when: either Wio was power-cycled without the Orin, or the app&rsquo;s Preflight shows the mesh misbehaving (remote not heard, base fix never appears).</p>
-          <p style="margin:0"><b>Remote Wio:</b> Plug into your Mac USB-C, then:</p>
-          <code style="display:block; white-space:pre-wrap; padding:0.5rem 0.75rem; border-radius:8px; font-size:0.83rem;">cd docs/hardware/wio-config
-./verify_wios.sh /dev/cu.usbmodem1101</code>
-          <p style="margin:0"><b>Base Wio (via the Orin):</b></p>
-          <code style="display:block; white-space:pre-wrap; padding:0.5rem 0.75rem; border-radius:8px; font-size:0.83rem;">ssh orin
-sudo systemctl stop wavecam.service
-python3 -m meshtastic --get position --get lora.modem_preset
-# re-apply:  python3 -m meshtastic --configure docs/hardware/wio-config/base.yaml
-sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
-          <p style="margin:0"><b>What good looks like:</b> <code>gps_mode ENABLED</code>, <code>modem_preset SHORT_FAST</code> on both units, <code>position_broadcast_secs 30</code> on base, smart broadcast on with 2 s / 5 m on remote.</p>
+          <p style="margin:0">Both Wios run the same <b>fixed-config direct-LoRa firmware</b> (<code>firmware/direct-lora/</code>). There is no Meshtastic mesh, no preset to mismatch, and nothing to configure &mdash; so a bad link is hardware, power, or firmware, not config. Check this when the remote isn&rsquo;t heard or the base fix never appears.</p>
+          <p style="margin:0"><b>Base Wio:</b> acquire the fix on <b>battery</b> (off the Orin&rsquo;s USB rail &mdash; host RF noise can drown the L76K to 0 sats), then connect USB data.</p>
+          <p style="margin:0"><b>Watch the live GPS state</b> (from a laptop):</p>
+          <code style="display:block; white-space:pre-wrap; padding:0.5rem 0.75rem; border-radius:8px; font-size:0.83rem;">ssh orin "curl -s localhost:8088/api/v1/status"   # see the gps section
+# or read the base serial directly:
+python3 firmware/direct-lora/tools/read_base.py</code>
+          <p style="margin:0"><b>What good looks like:</b> <code>status.gps</code> shows a fresh target fix (<code>target_sats &gt; 0</code>, <code>target_age_sec</code> low) and the base position latched. If the remote is never heard, check the tracker battery/antenna and that <b>both</b> Wios run the matching direct-LoRa firmware.</p>
         </div>
       </details>
 
@@ -1170,7 +1166,7 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
   </main>
 
   <footer class="footer">
-    <span>WaveCam &mdash; Operator Guide v2</span>
+    <span>WaveCam &mdash; Operator Guide v3</span>
     <span>Tracking: YOLO26n TensorRT + color fusion &middot; LoRa GPS coarse-point &middot; shadow Kalman estimator &middot; Orin :8088 &middot; KILL always reachable</span>
   </footer>
 </body>
