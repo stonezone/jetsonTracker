@@ -872,7 +872,11 @@
           </div>
           <div class="panel">
             <h3>Owner</h3>
-            <p><code>idle</code> no PTZ writer. <code>manual</code> operator hold/nudge. <code>testbed</code> autonomous tracker owns PTZ.</p>
+            <p><code>idle</code> no PTZ writer. <code>manual</code> operator hold/nudge. <code>gps_tracker</code> GPS owns. <code>vision_follow</code> vision owns. <code>calibrate</code> calibration mode active. <code>testbed</code> retired.</p>
+          </div>
+          <div class="panel">
+            <h3>Authority (new v3)</h3>
+            <p><code>/status</code> authority section shows why GPS does or doesn&rsquo;t own: <code>gps_fresh</code>, <code>gps_calibrated</code>, <code>base_locked</code>, <code>calibration_valid</code>, <code>base_drift_state</code> (5-state), <code>gate_age_sec</code>. Check this before diagnosing GPS-inactive issues.</p>
           </div>
           <div class="panel">
             <h3>Command</h3>

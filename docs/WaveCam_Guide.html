@@ -308,7 +308,22 @@
 
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">GPS chip</span><span class="pill">Top-left HUD</span></div>
-            <div class="ctrl-what">Feature-detected: only appears once the backend reports a <code>gps.source</code>. Shows camera-to-target range and bearing, or &ldquo;GPS&middot;NO FIX&rdquo; while base position is not yet locked. <span style="color:var(--ok)">Green dot</span> = fix is fresh; <span style="color:var(--warn)">amber</span> = stale. Tap to expand: source, range, bearing, target age, base fix status, ingest health. If Ingest reads <b>DOWN &mdash; restart svc</b>, the Orin&rsquo;s serial reader died; fix is <code>systemctl restart wavecam.service</code>, not touching the Wios.</div>
+            <div class="ctrl-what">Feature-detected: only appears once the backend reports a <code>gps.source</code>. Shows camera-to-target range and bearing, or &ldquo;GPS&middot;NO FIX&rdquo; while base position is not yet locked. <span style="color:var(--ok)">Green dot</span> = fix is fresh; <span style="color:var(--warn)">amber</span> = stale. Tap to expand: source, range, bearing, target age, base fix status, ingest health, <b>base drift state</b> (5-state monitor), and <b>track ID</b> when tracker is active.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Authority section</span><span class="pill">/status</span></div>
+            <div class="ctrl-what">New in v3. Shows why GPS does or doesn&rsquo;t own the PTZ:
+              <ul style="margin:0.4rem 0 0; padding-left:1.1rem">
+                <li><b>owner</b> &mdash; current PTZ authority (<code>idle</code>, <code>gps_tracker</code>, <code>vision_follow</code>, <code>manual</code>, <code>calibrate</code>).</li>
+                <li><b>gps_fresh</b> &mdash; fix age within <code>drive_stale_sec</code>.</li>
+                <li><b>gps_calibrated</b> &mdash; pan calibration valid.</li>
+                <li><b>base_locked</b> &mdash; base position trusted (phase-1 drift monitor).</li>
+                <li><b>base_drift_state</b> &mdash; <code>disabled</code> | <code>unknown</code> | <code>locked</code> | <code>suspect</code> | <code>unlocked</code>. Only <code>unlocked</code> withholds GPS.</li>
+                <li><b>calibration_valid</b> &mdash; current CALIBRATE session confirmed.</li>
+              </ul>
+              The gate-age field shows how many seconds since authority was last recomputed &mdash; useful for diagnosing stale reads.
+            </div>
           </div>
 
           <div class="ctrl">
@@ -789,6 +804,64 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
             <div class="ctrl-what">When on, GPS also adjusts zoom by distance while pointing. Off by default &mdash; untuned. Let Cinematic Zoom handle framing independently until GPS zoom is characterized.</div>
           </div>
 
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Zoom near distance</span><span class="pill restart">Restart</span><span class="ctrl-key">gps.drive_zoom_near_m</span></div>
+            <div class="ctrl-what">Distance where the zoom curve bottoms out (widest). Default 40 m. Below this, stays wide.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Zoom far distance</span><span class="pill restart">Restart</span><span class="ctrl-key">gps.drive_zoom_far_m</span></div>
+            <div class="ctrl-what">Distance where the zoom curve maxes out. Default 250 m. Beyond this, stays at max fraction.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Zoom max fraction</span><span class="pill restart">Restart</span><span class="ctrl-key">gps.drive_zoom_max_frac</span></div>
+            <div class="ctrl-what">Conservative ceiling for GPS-driven zoom (0.60 = 60% of max encoder). Default 0.60 for first water test &mdash; keeps search margin. Restart to change.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Zoom rate limit</span><span class="pill restart">Restart</span><span class="ctrl-key">gps.drive_zoom_rate_limit</span></div>
+            <div class="ctrl-what">Max zoom encoder change per call. Default 300. Smooths transitions when distance changes rapidly.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h3><span class="pill">D</span> Base Drift Monitor <span class="tag">v3 Phase 1 &middot; new</span></h3>
+        <p class="card" style="margin-bottom:0.8rem">Detects tripod movement by watching fresh base GPS fixes against the latched calibration position. Only <b>CONFIRMED</b> sustained drift withholds GPS authority — noisy or stale base GPS never false-denies pointing. Unknown/suspect states preserve the lock.</p>
+        <div class="ctrls">
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Base drift enabled</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.base_drift_enabled</span></div>
+            <div class="ctrl-what">Turns the base drift monitor on/off. When off, base_locked is always true and GPS authority is never withheld. Default: true.</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Drift threshold</span><span class="pill restart">Restart</span><span class="ctrl-key">gps.base_drift_threshold_m</span></div>
+            <div class="ctrl-what">Mean distance from latched base that triggers the drift check (metres). Default 4.0. Single jumps under this are ignored.</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Drift trend minimum</span><span class="pill restart">Restart</span><span class="ctrl-key">gps.base_drift_min_trend_m</span></div>
+            <div class="ctrl-what">Linear trend must exceed this (metres) for drift to be flagged. Default 2.0. Rejects scatter without a directional march.</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Drift interval</span><span class="pill restart">Restart</span><span class="ctrl-key">gps.base_drift_interval_sec</span></div>
+            <div class="ctrl-what">How often the monitor samples the base fix. Default 2.0 s. Throttled — not every frame.</div>
+          </div>
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Max fix age</span><span class="pill restart">Restart</span><span class="ctrl-key">gps.base_drift_max_fix_age_sec</span></div>
+            <div class="ctrl-what">Base fix older than this → state is <code>unknown</code> (preserves lock). Default 10 s. A stale fix does NOT mean the tripod moved.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h3><span class="pill">T</span> Persistent Tracker <span class="tag">v3 Phase 2 &middot; new &middot; restart-required</span></h3>
+        <p class="card" style="margin-bottom:0.8rem">When enabled, YOLO runs in <code>track</code> mode (ByteTrack or BoT-SORT) and the fusion layer prefers the same track ID across frames. Helps prevent target swaps when multiple people or orange objects are in frame. Default-off — no behavior change until a tracker is configured + the service restarted.</p>
+        <div class="ctrls">
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Tracker backend</span><span class="pill restart">Restart</span><span class="ctrl-key">detector.tracker</span></div>
+            <div class="ctrl-what"><code>null</code> (default, off), <code>"bytetrack.yaml"</code>, or <code>"botsort.yaml"</code>. Enables persistent IDs across frames. Fail-open: falls back to plain YOLO if the tracker dependency is missing.</div>
+          </div>
         </div>
       </div>
 
@@ -859,6 +932,12 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
             <tr><td><b>Grace window (arbiter)</b></td><td>1.0 s default</td><td>After vision loses a lock, it retains ownership for this long before GPS can reclaim.</td></tr>
             <tr><td><b>EMA alpha</b> (<code>fusion.ema_alpha</code>)</td><td>0.5</td><td>Exponential moving average weight on the raw target position.</td></tr>
             <tr><td><b>Lost grace</b> (<code>fusion.lost_grace_sec</code>)</td><td>0.8 s</td><td>If the target disappears, the tracker holds the EMA position (COASTING state) for up to 0.8 s before the lock drops and the EMA resets.</td></tr>
+            <tr><td><b>Base drift state</b> (<code>base_drift_state</code> in /status authority)</td><td><code>disabled</code> | <code>unknown</code> | <code>locked</code> | <code>suspect</code> | <code>unlocked</code></td><td>5-state tripod movement monitor. Only <code>unlocked</code> (CONFIRMED drift) withholds GPS authority. <code>unknown</code>/<code>suspect</code> preserve the lock so noisy base GPS never false-denies pointing.</td></tr>
+            <tr><td><b>Base drift distance</b> (<code>base_drift_distance_m</code>)</td><td>metres</td><td>Mean distance from latched base to current fix. Monitored every <code>base_drift_interval_sec</code> (default 2 s).</td></tr>
+            <tr><td><b>Base drift threshold</b> (<code>gps.base_drift_threshold_m</code>)</td><td>4.0 m default</td><td>Mean distance must exceed this for drift to be considered. Single jumps under this are ignored.</td></tr>
+            <tr><td><b>Persistent track ID</b> (<code>track_id</code> in /status tracking)</td><td><code>null</code> | integer</td><td>When <code>detector.tracker</code> is configured, YOLO assigns persistent track IDs. Fusion prefers the same ID across frames, reducing target swaps. <code>null</code> when tracker is off.</td></tr>
+            <tr><td><b>Detector tracker backend</b> (<code>detector.tracker</code>)</td><td><code>null</code> (default) | <code>"bytetrack.yaml"</code> | <code>"botsort.yaml"</code></td><td>Restart-required. Enables persistent track IDs. Fail-open: falls back to plain YOLO if the tracker is missing. Default null (off, byte-identical to prior behavior).</td></tr>
+            <tr><td><b>GPS drive zoom params</b></td><td><code>drive_zoom_near_m</code> 40 m, <code>drive_zoom_far_m</code> 250 m, <code>drive_zoom_max_frac</code> 0.60, <code>drive_zoom_rate_limit</code> 300 enc/call</td><td>Distance→zoom curve. Near = widest, far = 60% of max zoom (conservative ceiling for first water test). Rate-limited for smooth transitions. Restart to change.</td></tr>
           </tbody>
         </table>
       </div>
