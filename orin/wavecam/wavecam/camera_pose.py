@@ -48,6 +48,13 @@ class CameraPose:
     tilt_anchor_elev: float = 0.0
     tilt_enc_per_deg: float = 0.0  # 0 => uncalibrated (hold a fixed tilt)
 
+    def __post_init__(self) -> None:
+        # Runtime-only base-trust flag — NOT a dataclass field, so asdict() excludes
+        # it and it is never persisted; every load() starts trusted. The
+        # BaseDriftMonitor flips base_locked to False only on CONFIRMED tripod drift
+        # (Plan v3 Phase 1), so a transient drift never survives a restart.
+        self.base_locked: bool = True
+
     @property
     def calibrated(self) -> bool:
         """Pan-calibrated = the bearing→pan mapping is usable."""

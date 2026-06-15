@@ -177,6 +177,21 @@ class Pipeline(threading.Thread):
         self._restarting = False
         self._last_kill: dict | None = None
         self._last_authority: dict | None = None
+        # Phase-1 (v3): base-drift monitor (observer; updates pose.base_locked only).
+        from .base_drift import BaseDriftMonitor
+        _g = cfg.gps
+        self._base_drift = BaseDriftMonitor(
+            threshold_m=getattr(_g, "base_drift_threshold_m", 4.0),
+            min_trend_m=getattr(_g, "base_drift_min_trend_m", 2.0),
+            window_size=getattr(_g, "base_drift_window", 10),
+            min_consecutive=getattr(_g, "base_drift_min_consecutive", 5),
+            max_fix_age_sec=getattr(_g, "base_drift_max_fix_age_sec", 10.0),
+            min_sats=getattr(_g, "base_drift_min_sats", 0),
+        )
+        self._base_drift_interval_sec = float(getattr(_g, "base_drift_interval_sec", 2.0))
+        self._base_drift_last_run = 0.0
+        self._base_drift_latched_at: Optional[tuple] = None
+        self._base_drift_last_result = None
 
     def kill(self, on: bool = True, reason: str | None = None):
         self.state.killed = on
@@ -412,6 +427,39 @@ class Pipeline(threading.Thread):
             self._last_abs_cmd_key = key
             self._last_abs_cmd_time = now
 
+    def _update_base_drift(self, now: float):
+        """Observer: run the base-drift monitor (throttled) and update
+        pose.base_locked. Returns the latest BaseDriftResult, or None if not run
+        this tick. Never issues PTZ commands (Plan v3 Phase 1)."""
+        if not getattr(self.cfg.gps, "base_drift_enabled", True):
+            self.pose.base_locked = True  # feature off -> do not gate GPS authority
+            self._base_drift_last_result = None
+            return None
+        if self.gps is None or not self.pose.has_base:
+            return self._base_drift_last_result
+        if now - self._base_drift_last_run < self._base_drift_interval_sec:
+            return self._base_drift_last_result
+        self._base_drift_last_run = now
+        latch_key = (round(self.pose.lat, 7), round(self.pose.lon, 7))
+        if latch_key != self._base_drift_latched_at:
+            self._base_drift.latch(self.pose.lat, self.pose.lon, self.pose.alt_m)
+            self._base_drift_latched_at = latch_key
+        get_cam = getattr(self.gps, "get_camera_position", None)
+        cam = get_cam() if callable(get_cam) else None
+        if cam is None:
+            return self._base_drift_last_result  # no fresh base fix -> leave lock as-is
+        get_age = getattr(self.gps, "get_camera_age", None)
+        age = get_age() if callable(get_age) else None
+        result = self._base_drift.update(
+            cam[0], cam[1], cam[2], now,
+            fix_age_sec=age, currently_locked=self.pose.base_locked,
+        )
+        if result.locked != self.pose.base_locked:
+            self.events.record("base_drift", result.state)
+        self.pose.base_locked = result.locked
+        self._base_drift_last_result = result
+        return result
+
     def _gps_pointing_cmd(self, fix, calibration_valid: bool = False):
         """Compute a GPS absolute pointing command from a cached fix, or None.
 
@@ -560,8 +608,10 @@ class Pipeline(threading.Thread):
                     gps_fix.age_sec < getattr(self.cfg.gps, "drive_stale_sec", 8.0)
                 ) if gps_fix else False
                 gps_calibrated = self.pose.calibrated
-                # C1: base position latched once at setup; tripod is stationary.
-                base_locked = self.pose.has_base
+                # C1: base position latched at setup; Phase-1 base-drift monitor
+                # withholds authority on CONFIRMED tripod drift (observer only).
+                self._update_base_drift(t0)
+                base_locked = self.pose.has_base and self.pose.base_locked
                 # C2 (safety, audit 2026-06-13): GPS may drive ONLY when the CURRENT
                 # CALIBRATE session is valid AND confirmed. Persisted pose.calibrated/
                 # has_base survive restart, cancel, and KILL, so they are NOT sufficient.
@@ -588,6 +638,10 @@ class Pipeline(threading.Thread):
                     "gps_fresh": gps_fresh,
                     "gps_calibrated": gps_calibrated,
                     "base_locked": base_locked,
+                    "base_drift_state": (self._base_drift_last_result.state
+                                         if self._base_drift_last_result is not None else None),
+                    "base_drift_distance_m": (round(self._base_drift_last_result.mean_distance_m, 2)
+                                              if self._base_drift_last_result is not None else None),
                     "calibration_valid": calibration_valid,
                     "gps_age_sec": round(gps_fix.age_sec, 2) if gps_fix is not None else None,
                     "ts": time.time(),

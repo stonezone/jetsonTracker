@@ -165,6 +165,18 @@ class GpsCfg:
     # P1: handoff hysteresis
     lock_frames: int = 5        # K consecutive vision-locked frames → hand to vision
     grace_sec: float = 1.0      # unlock grace before falling back to GPS
+    # Phase-1 (v3): base-drift / staleness revalidation. The monitor withholds GPS
+    # authority on CONFIRMED tripod drift; unknown/suspect keep the lock so noisy or
+    # stale base GPS never false-denies pointing. base_drift_enabled is hot; the
+    # thresholds are read at startup (restart to change).
+    base_drift_enabled: bool = True
+    base_drift_threshold_m: float = 4.0
+    base_drift_min_trend_m: float = 2.0
+    base_drift_window: int = 10
+    base_drift_min_consecutive: int = 5
+    base_drift_interval_sec: float = 2.0
+    base_drift_max_fix_age_sec: float = 10.0
+    base_drift_min_sats: int = 0   # 0 = sats gate off (base sats not yet ingested)
 
 
 @dataclass
