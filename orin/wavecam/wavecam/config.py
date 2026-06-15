@@ -147,7 +147,7 @@ class LoopCfg:
 @dataclass
 class GpsCfg:
     enabled: bool = False
-    source: str = "meshtastic"  # "meshtastic" | "direct_lora"
+    source: str = "direct_lora"  # "direct_lora" (live) | "meshtastic" (legacy fallback)
     dev_path: str = "/dev/ttyACM0"
     remote_id: str = ""  # "" => auto-detect the non-local mesh node
     direct_dev_path: str = "/dev/ttyACM0"

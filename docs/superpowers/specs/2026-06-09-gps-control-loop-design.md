@@ -1,5 +1,11 @@
 # GPS-in-the-Control-Loop — Design (2026-06-09)
 
+> **Current stack note (2026-06-14):** This design was implemented with the custom
+> direct-LoRa firmware (`firmware/direct-lora/`) and `DirectRadioGps`, not the
+> Meshtastic path referenced below. The control-loop architecture, arbiter, and
+> calibration flow remain accurate; replace `MeshtasticGps` with `DirectRadioGps`
+> mentally when reading.
+
 ## Goal
 
 Make the LoRa GPS remote position a **coarse-pointing input in the PTZ control loop**, blended with the existing YOLO + orange-color vision, and surface GPS data in the **web UI** (`:8088`) and the iOS app.
@@ -18,7 +24,7 @@ Make the LoRa GPS remote position a **coarse-pointing input in the PTZ control l
 ## Architecture
 
 ```
-MeshtasticGps (remote fix + base fix)  ── off-thread, done
+DirectRadioGps / MeshtasticGps (remote fix + base fix)  ── off-thread, done
         │
         ▼
 geo + camera_pose + gps_pointing   ◄── PORT from legacy gps_fusion (pure, tested)

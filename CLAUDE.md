@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**WaveCam** is a vision-based auto-filming PTZ camera (a SoloShot replacement) that films Zack foil-surfing **50-300m offshore**. A Jetson Orin Nano runs YOLOv8 person detection plus a bright-**orange-rashguard color cue** to keep the subject framed; a **Prisual NDI PTZ camera** does pan/tilt/zoom; a native **iOS app** is the operator console; **LoRa GPS** will coarse-point/zoom at distance while vision refines. Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + device installs + Zack-comms.
+**WaveCam** is a vision-based auto-filming PTZ camera (a SoloShot replacement) that films Zack foil-surfing **50-300m offshore**. A Jetson Orin Nano runs YOLOv8 person detection plus a bright-**orange-rashguard color cue** to keep the subject framed; a **Prisual NDI PTZ camera** does pan/tilt/zoom; a native **iOS app + watchOS companion** are the operator consoles; **direct-LoRa Wio GPS** already provides coarse-point/zoom while vision refines. Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + device installs + Zack-comms.
 
 > The DIY 2xNEMA17 stepper gimbal and the Apple-Watch/BN-220 GPS in the old "jetsonTracker" design are **SUPERSEDED**. The canonical current architecture lives in the `.claude` memory `wavecam-architecture-pivot` — verify against reality, not legacy docs.
 
@@ -65,13 +65,15 @@ jetsonTracker/                 # master repo (product = WaveCam)
 ### Live System Map
 
 - **`:8088`** = WaveCam control API (`/api/v1`) + the live tuning web page. This is the **ACTIVE tracker** the iOS app drives. Tools > Web points here.
+- **`https://wavecam.freddieland.com`** = same `:8088` UI/API exposed through the Cloudflare `robot-core` tunnel (Google Auth + Access policy, `zackjordan@gmail.com` only).
 - **`:8080`** = retired legacy Dash service. It should stay stopped/disabled; do not re-enable it.
+- **`:8765` / `ws.stonezone.net`** = retired Apple Watch/iPhone Cloudflare GPS relay. `gps-server.service` is disabled and the tunnel ingress was removed.
 
 ### Hardware Stack
 
 - **Camera**: Prisual **NDI PTZ** — RAW VISCA over UDP `192.168.100.88:1259` (no auth; NOT Sony 8-byte framed). Video = RTSP (`/1` 1080p60, `/2` 640x360); ONVIF `:81` backup.
 - **Compute**: Jetson Orin Nano (YOLOv8n TensorRT). Wired LAN `192.168.100.10`.
-- **GPS**: LoRa — SeeedStudio **Wio Tracker L1 Lite** (nRF52840, L76K multi-constellation, Meshtastic). Coarse point/zoom at distance; vision refines.
+- **GPS**: LoRa — SeeedStudio **Wio Tracker L1 Lite** (nRF52840, SX1262, L76K multi-constellation) running the custom `firmware/direct-lora/` firmware. The remote tracker sends GPS over LoRa; the base Wio emits JSONL over USB; `DirectRadioGps` feeds WaveCam. Meshtastic is no longer used.
 - **Legacy gimbal**: STM32 Nucleo **F401RE** + 2x NEMA17 (the old DIY pan/tilt; firmware archived under `archive/legacy-20260606/stm32-nucleo-stepper/`).
 - **Operator app**: iOS WaveCam (iPhone-only, personal dev build) on the live `/api/v1`.
 - **Field uplink**: iPhone USB tether via the Orin's **USB-A host port** (`172.20.10.8/28`); Wi-Fi hotspot is the fallback.
@@ -81,12 +83,13 @@ jetsonTracker/                 # master repo (product = WaveCam)
 - **Orin ↔ Camera**: RAW VISCA UDP `192.168.100.88:1259`; video over RTSP.
 - **Orin control API**: `http://<orin>:8088/api/v1` (status / safety / ptz / media / config / telemetry / agent / system).
 - **Live detector model**: YOLO (`yolo26n` family, TensorRT engine) — rebuilt directly on the Orin 2026-06-10 (cross-device export problem is resolved). To confirm what's running: `GET /api/v1/config` or trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`.
-- **Legacy Orin ↔ STM32**: UART `/dev/ttyACM0` @115200 (F401RE gimbal), archived and not part of the active WaveCam runtime.
+- **Orin ↔ base Wio**: USB serial `/dev/ttyACM0` @115200, JSONL from the custom direct-LoRa firmware.
+- **Legacy Orin ↔ STM32**: UART (F401RE gimbal), archived and not part of the active WaveCam runtime.
 - **Two-agent collab**: `.agent-collab/bin/collab.py` (emit / claim-open / claim-close). Claim before editing shared files.
 
 ## GPS Architecture (current)
 
-> **DEPLOYED STATE (2026-06-14): the custom direct-LoRa firmware is the LIVE GPS source** (`gps.source=direct_lora` on the rig), NOT Meshtastic. Root-cause of the long Wio no-fix: the L76K GNSS speaks **CASIC/PCAS at fixed 9600** (not MTK/PMTK/57600) — firmware fixed in `firmware/direct-lora/`. The base Wio must be **battery-powered and kept off the Orin's USB rail** (host RF noise → 0 sats). `/status.gps` now exposes `target_battery_mv`/`target_sats`; `/config` advertises `supported.tracking_mode`. A **`tracking.mode` hot key (`auto` | `gps_only` | `vision_only`)** gates the arbiter — `gps_only` forces GPS pointing and ignores vision (no false-color-lock hijack). A **CALIBRATE mode** (operator wizard, iOS Calibrate tab) establishes camera location + heading: spec `docs/superpowers/specs/2026-06-13-calibrate-mode-design.md`; endpoints `/api/v1/calibration/{session/start,session/exit,location,level,heading-lock,validation,validation/confirm}` (owner=`calibrate` PTZ lockout — kills the arbiter fight; KILL cancels CALIBRATE). **Heading = aim at a STATIONARY target AT RANGE (≥50 m / a surveyed landmark), NOT close** (10 m ≈ 27° GPS-bearing error); scale fixed at 14.4 counts/deg; location lock = averaged base fix with a model (HDOP×UERE) radius. The legacy Meshtastic relay path is fully superseded.
+> **DEPLOYED STATE (2026-06-14): the custom direct-LoRa firmware is the LIVE GPS source** (`gps.source=direct_lora` on the rig), NOT Meshtastic. Root-cause of the long Wio no-fix: the L76K GNSS speaks **CASIC/PCAS at fixed 9600** (not MTK/PMTK/57600) — firmware fixed in `firmware/direct-lora/`. The base Wio now has a battery installed; acquire the fix on battery power and keep it off the Orin's USB rail (host RF noise → 0 sats), then connect USB data. `/status.gps` now exposes `target_battery_mv`/`target_sats`; `/config` advertises `supported.tracking_mode`. A **`tracking.mode` hot key (`auto` | `gps_only` | `vision_only`)** gates the arbiter — `gps_only` forces GPS pointing and ignores vision (no false-color-lock hijack). A **CALIBRATE mode** (operator wizard, iOS Calibrate tab) establishes camera location + heading: spec `docs/superpowers/specs/2026-06-13-calibrate-mode-design.md`; endpoints `/api/v1/calibration/{session/start,session/exit,location,level,heading-lock,validation,validation/confirm}` (owner=`calibrate` PTZ lockout — kills the arbiter fight; KILL cancels CALIBRATE). **Heading = aim at a STATIONARY target AT RANGE (≥50 m / a surveyed landmark), NOT close** (10 m ≈ 27° GPS-bearing error); scale fixed at 14.4 counts/deg; location lock = averaged base fix with a model (HDOP×UERE) radius. The legacy Meshtastic relay path is fully superseded.
 
 **Plan**: LoRa GPS does coarse point + zoom when the subject is too far for YOLO/color to be reliable (toward 300m); vision (orange-confirmed person) refines once the subject is resolvable in-frame; **Cinematic Zoom** then holds subject size.
 
@@ -168,13 +171,11 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - **iOS networking:** every GET should go through `getWithFallback` (tether→Wi-Fi); a non-failover request surfaces as a false "Orin unreachable."
 - **Orin outage triage:** ping the gateway (`192.168.1.1`) vs the Orin (`.155`). Gateway clean + Orin 100% loss = the Orin (likely DHCP IP-drift, e.g. to `.50`). A `.155` DHCP reservation is in place; full procedure in `docs/ORIN_FIELD_RELIABILITY.md`.
 - **Collab bus:** partners can replay stale events as "fresh" — independently verify any state claim (`git fetch`, your own `curl`/`ping`) before acting. The Stop-hook now drains the inbox backlog to the latest event per turn (fixed 2026-06-05).
-- **Wio config reverts on Orin cold boot.** The base Wio power-cycles when the Orin cold-boots and loses all Meshtastic settings. Verify `position_broadcast_smart_enabled`, LoRa preset, and intervals after any power event. See `docs/hardware/WIO_TRACKER_GPS_OPTIMIZATION.md`.
 - **Orin BOOT ARCHITECTURE changed 2026-06-11 (the microSD DIED mid-migration).** The rig now boots **pure NVMe**: UEFI entry `WaveCam NVMe boot` → **systemd-boot** on `/dev/nvme0n1p3` (aligned FAT16 ESP) → `/boot/Image` + `/boot/initrd` copies ON THE ESP → root `nvme0n1p1`. The L4T launcher is GONE from the boot path (its SD-resident A/B machinery died with the card; kept as `BOOTAA64.l4t` for reference). Fallback: the **WAVEBOOT** spare SD card (tested, `WaveCam card boot` second in order) — insert it and the rig boots. **Kernel/initrd updates must also be copied to `/boot/efi/boot/` or the rig boots the OLD kernel.** Full recovery lessons: `.claude` memory `orin-sd-death-recovery` (incl.: L4T kernel ignores cmdline `initrd=`; EFI-shell `cp` can corrupt — always `comp`/sha256; failed boots flip `OS chain A status: Unbootable` in Setup → L4T Configuration; odd-sector/forced-FAT32 ESPs are firmware-hostile).
 - **The old Wio cold-boot stall is GONE under systemd-boot** (verified 2026-06-11: clean cold boot with the Wio plugged in; reader auto-connected, no restart needed). The unplug-to-boot ritual is retired.
-- **LoRa preset mismatch = silent mesh failure.** Both Wios must be on the same preset (currently SHORT_FAST). If they differ, `target_age_sec` climbs with no error. Verify with `meshtastic --get lora` on both.
-- **Stationary nodes need non-smart broadcast.** Smart broadcast triggers on movement only. The base Wio is tripod-mounted — set `position_broadcast_secs` to a low value (currently 30s) or it only sends once per hour.
-- **Meshtastic app UI minimum is fake.** The 15-second dropdown floor is cosmetic — firmware accepts any positive integer. Use CLI to set intervals the app won't allow.
-- **Never call meshtastic lib on the API request thread.** `get_fix()` and `get_camera_position()` must be non-blocking lock reads of a background thread's cached snapshot. The 2026-06-08 incident proved this — direct `iface.nodes` access on the request thread hung the entire HTTP API.
+- **Direct-LoRa Wio firmware is fixed-config.** Both Wios run the same custom firmware from `firmware/direct-lora/`. There is no Meshtastic preset/interval to configure. Debug via `firmware/direct-lora/tools/read_base.py` or by watching `/api/v1/status.gps`.
+- **Base Wio has a battery installed; use it for acquisition, not the Orin USB rail.** Host RF noise from the Orin can drown the L76K GPS and produce 0 sats. Connect USB data after the fix is stable.
+- **Never block the API request thread on GPS I/O.** `get_fix()` and `get_camera_position()` are non-blocking reads of a background thread's cached snapshot. Direct serial/GPS calls on the request thread will hang the HTTP API.
 
 ## IMPORTANT: Project Context
 

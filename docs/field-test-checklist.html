@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WaveCam Field Test Checklist — 2026-06-11</title>
+<title>WaveCam Field Test Checklist</title>
 <style>
   :root { --ink:#111; --paper:#fff; --accent:#0a7a2f; --warn:#b00020; --dim:#555; --box:#f2f2f2; }
   * { box-sizing:border-box; }
@@ -22,8 +22,6 @@
   .expect::before { content:"EXPECT: "; font-weight:800; }
   .ifnot::before { content:"IF NOT: "; font-weight:800; }
   code { background:#e6e6e6; padding:1px 5px; border-radius:4px; font-size:.92em; }
-  .claude { border-left:6px solid #7b2ff2; }
-  .claude .who { color:#7b2ff2; font-weight:800; font-size:.85em; }
   .note { background:#fff8e1; border:1px solid #e0c200; border-radius:10px; padding:10px 14px; margin:12px 0; }
   .trouble { background:#fdecec; border:1px solid var(--warn); border-radius:10px; padding:10px 14px; margin:18px 0; }
   .trouble h3 { margin:.2em 0 .4em; }
@@ -33,16 +31,16 @@
 </head>
 <body>
 <h1>Field Test Checklist</h1>
-<div class="sub">2026-06-11 &middot; rig <code>a305ee0</code> &middot; phone build <code>278</code> &middot; goal: first <b>shadow-mode</b> session + Plan-2 bench numbers</div>
+<div class="sub">Current &middot; goal: validate vision + GPS tracking end-to-end on the live direct-LoRa stack.</div>
 
-<div class="note"><b>Safety first:</b> the KILL / Emergency-Stop button in the app must stay reachable the whole session. The shadow estimator <b>never moves the camera</b> — if the camera does anything unexpected, that's the existing tracker: hit STOP and tell Claude.</div>
+<div class="note"><b>Safety first:</b> the KILL / Emergency-Stop button in the app must stay reachable the whole session. The shadow estimator <b>never moves the camera</b> — if the camera does anything unexpected, that's the active tracker: hit STOP.</div>
 
 <div class="phase">A — Before you walk out (2 min)</div>
 
 <div class="step"><label><input type="checkbox" id="s1"><span>1. Verify the phone app version</span></label>
   <div class="do">Open WaveCam &rarr; Connect tab.</div>
-  <div class="expect">Build <code>278</code>, rig version <code>a305ee0</code> once connected.</div>
-  <div class="ifnot">Wrong build = yesterday's app — come back inside, tell Claude "rebuild".</div>
+  <div class="expect">App connects and status returns 200; version/commit matches the Orin.</div>
+  <div class="ifnot">Wrong build = stale app — come back inside and rebuild/install.</div>
 </div>
 
 <div class="phase">B — Power &amp; connect (outside)</div>
@@ -55,70 +53,67 @@
 
 <div class="step"><label><input type="checkbox" id="s3"><span>3. Phone &harr; Orin link</span></label>
   <div class="do">Plug the iPhone into the Orin's USB-A port (tether), or enable Personal Hotspot as fallback. Open the app.</div>
-  <div class="expect">Connect tab green; version line shows <code>a305ee0</code>.</div>
+  <div class="expect">Connect tab green; USB or WIFI route is active.</div>
   <div class="ifnot">Toggle the tether cable once; then hotspot; then troubleshooting box.</div>
 </div>
 
 <div class="step"><label><input type="checkbox" id="s4"><span>4. Wio / GPS sanity (always after a power event)</span></label>
-  <div class="do">App &rarr; GPS detail card. Put the remote Wio on (worn, outside, clear sky).</div>
-  <div class="expect"><code>reader_alive</code> true; base fix arrives within ~2 min; remote <code>target_age_sec</code> drops under 10 s and stays there.</div>
-  <div class="ifnot"><code>target_age_sec</code> climbing forever = LoRa config reverted on power-cycle. Tap <b>Ingest restart</b> first; if still climbing, tell Claude — do not fiddle with Meshtastic settings by hand.</div>
+  <div class="do">Power on the tracker Wio (worn in a waterproof case, outside, clear sky). Base Wio has a battery installed — let it acquire on battery, then plug into Orin USB.</div>
+  <div class="expect"><code>reader_alive</code> true; <code>gps.source</code> = <code>direct_lora</code>; base fix arrives within ~2 min; tracker sats > 0 and <code>target_age_sec</code> stays low.</div>
+  <div class="ifnot"><code>target_age_sec</code> climbing forever = no LoRa packets reaching the base. Check tracker battery/antenna, base LED, and that both Wios run matching direct-LoRa firmware.</div>
 </div>
 
 <div class="step"><label><input type="checkbox" id="s5"><span>5. Base lock (once per session)</span></label>
-  <div class="do">Let the base GPS settle ~2 min after fix, then Calibration tab &rarr; capture <b>Base Lock</b>.</div>
+  <div class="do">Let the base GPS settle ~2 min after fix, then Calibrate tab &rarr; capture <b>Base Lock</b>.</div>
   <div class="expect"><code>base_locked</code> true in status; stays latched for the whole session.</div>
   <div class="ifnot">No base fix after 5 min in clear sky &rarr; step 4's IF-NOT path.</div>
 </div>
 
-<div class="phase">C — With Claude on the line</div>
+<div class="phase">C — Calibration</div>
 
-<div class="step claude"><label><input type="checkbox" id="s6"><span>6. FOV calibration (~10 min) — unlocks shadow mode</span></label>
-  <div class="who">CLAUDE DRIVES — you confirm framing</div>
-  <div class="do">Rig powered, camera with a clear view of a distinct landmark. Say <b>"calibrate"</b> in the Claude session (or Telegram). Claude moves the camera through wide / mid / tele and posts 3+ entries to <code>/calibration/fov</code>.</div>
-  <div class="expect">Within seconds of the 3rd entry, <code>shadow_mode: true</code> in the app status, and purple <b>shadow</b> rows start appearing in the Log tab.</div>
-  <div class="ifnot">Shadow stays false &rarr; Claude checks the estimator init log remotely; nothing for you to do.</div>
+<div class="step"><label><input type="checkbox" id="s6"><span>6. Heading capture</span></label>
+  <div class="do">Place the tracker at least 50 m away with clear sky. Aim the camera at the tracker manually. Calibrate tab &rarr; <b>Capture heading</b>.</div>
+  <div class="expect"><code>calibrated: true</code> in status; GPS chip shows live distance+bearing.</div>
+  <div class="ifnot">Capture blocked = no live GPS bearing. Check tracker fix and base stability.</div>
 </div>
 
-<div class="step claude"><label><input type="checkbox" id="s7"><span>7. Plan-2 bench script (15 min, automated)</span></label>
-  <div class="who">CLAUDE STARTS IT — zero hands needed</div>
-  <div class="do">Camera idle (not tracking). Say <b>"bench"</b>. The camera will make small repeated test moves — that's the script measuring encoder poll rate and VISCA reply latency/loss.</div>
-  <div class="expect">Camera twitches periodically for ~15 min, then stops. Claude confirms the measured constants.</div>
-  <div class="ifnot">Nothing visible after Claude says it started &rarr; tell Claude; don't restart anything yourself.</div>
+<div class="phase">D — The session</div>
+
+<div class="step"><label><input type="checkbox" id="s7"><span>7. Vision-only check (close range)</span></label>
+  <div class="do">Set <code>tracking.mode: vision_only</code>. Start AUTO. Walk ~10&ndash;30 m from the camera wearing the orange rashguard.</div>
+  <div class="expect">Camera locks and follows via color+YOLO fusion. Status shows <code>src=both</code> or <code>src=color</code>.</div>
+  <div class="ifnot">Locks wrong object &rarr; turn on <b>Show mask</b>, tune color preset, or raise <code>fusion.require_person</code>.</div>
 </div>
 
-<div class="phase">D — The actual session</div>
-
-<div class="step"><label><input type="checkbox" id="s8"><span>8. Shadow tracking session (&ge;20 min)</span></label>
-  <div class="do">Wear the remote Wio + orange rashguard. Start AUTO tracking. Move around 50&ndash;300 m out — vary distance, do real turns.</div>
-  <div class="expect">Camera follows (GPS owner far out, vision lock when close). Log tab keeps filling with purple shadow rows showing bearing/distance. Session JSONL grows on the rig (Claude verifies remotely).</div>
-  <div class="ifnot">Tracking misbehaves &rarr; STOP, note what happened, keep the session running if safe — bad-tracking data is exactly what the shadow comparison needs.</div>
+<div class="step"><label><input type="checkbox" id="s8"><span>8. GPS-only check (far range)</span></label>
+  <div class="do">Set <code>tracking.mode: gps_only</code>. Walk 50&ndash;300 m out with the tracker Wio.</div>
+  <div class="expect">Camera slews to GPS bearing and follows coarsely.</div>
+  <div class="ifnot">No slew &rarr; verify calibrated + base_locked + GPS fresh. Points wrong &rarr; recalibrate heading at ≥50 m.</div>
 </div>
 
-<div class="phase">E — Optional hardware (if time)</div>
-
-<div class="step"><label><input type="checkbox" id="s9"><span>9. 18650 on the base Wio</span></label>
-  <div class="do"><b>CHECK POLARITY before connecting</b> — Wio battery ports are not all wired the same. Connect the 18650 to the base Wio's battery port.</div>
-  <div class="expect">Base Wio stays up through an Orin power-cycle; its config stops reverting.</div>
-  <div class="ifnot">Any doubt about polarity = skip; a reversed cell kills the board.</div>
+<div class="step"><label><input type="checkbox" id="s9"><span>9. Auto handoff (full run)</span></label>
+  <div class="do">Set <code>tracking.mode: auto</code>. Start AUTO. Move through close, mid, and far ranges; let vision and GPS trade ownership.</div>
+  <div class="expect">Smooth handoff: vision owns close range, GPS owns far range, camera holds (not coasts) during dropouts.</div>
+  <div class="ifnot">Hunting or freezes &rarr; note range/behavior, hit STOP, adjust lock/unlock thresholds or GPS boost in Tune.</div>
 </div>
 
-<div class="phase">F — Wrap up</div>
+<div class="phase">E — Wrap up</div>
 
-<div class="step"><label><input type="checkbox" id="s10"><span>10. Tell Claude "done"</span></label>
-  <div class="do">Nothing else — leave the rig powered until Claude confirms.</div>
-  <div class="expect">Claude pulls the shadow JSONL + bench results off the rig, reviews them, and reports whether this counts as shadow session 1 of 2.</div>
+<div class="step"><label><input type="checkbox" id="s10"><span>10. Stop and capture evidence</span></label>
+  <div class="do">Hit STOP / KILL. Pull recordings, logs, and any watch session JSONL you recorded.</div>
+  <div class="expect">Clips on the Orin Media tab; watch sessions transferred to the paired iPhone.</div>
+  <div class="ifnot">If the service is wedged, Tools &rarr; Restart WaveCam.</div>
 </div>
 
 <div class="trouble">
 <h3>Troubleshooting</h3>
 <dl>
 <dt>App can't reach the Orin</dt>
-<dd>Ping test from phone is useless — just toggle tether &rarr; hotspot. If both fail and you have cell signal, tell Claude; gateway-vs-Orin triage is documented and remote.</dd>
+<dd>Toggle tether &rarr; hotspot. If both fail and you have cell signal, check Connect tab routes or restart the Orin Wi-Fi.</dd>
 <dt>GPS stale mid-session</dt>
-<dd>GPS card &rarr; <b>Ingest restart</b> button. Fixes the stale-serial-after-Wio-reboot case in ~10 s.</dd>
+<dd>Tracker lost fix or base lost packets. Check tracker LED (fast flash = no fix). If the base serial reader died, restart <code>wavecam.service</code>.</dd>
 <dt>Service wedged / app shows stale everything</dt>
-<dd>Tools &rarr; Service &rarr; Restart. The new watchdog also auto-recovers a wedged service within 2 min on its own.</dd>
+<dd>Tools &rarr; Restart WaveCam. The watchdog also auto-recovers a wedged service within 2 min.</dd>
 <dt>Camera won't move at all</dt>
 <dd>Check E-stop state in the app first — a latched stop looks identical to a fault.</dd>
 </dl>

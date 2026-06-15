@@ -739,7 +739,7 @@
           <a class="button primary" href="#start">Start sequence</a>
           <a class="button" href="#troubleshooting">Recover a bad lock</a>
         </div>
-        <div class="hero-note">Current app tabs: Live, PTZ, Calibrate, Tools, Connect.</div>
+        <div class="hero-note">Current app tabs: Live, PTZ, Calibrate, Tools, Connect. Watch app tabs: Status/Tracking, Record Session.</div>
       </div>
 
       <div class="rig-scene reveal" aria-label="WaveCam rig illustration">
@@ -889,10 +889,35 @@
         </div>
       </section>
 
+      <section id="watch">
+        <div class="section-head">
+          <div>
+            <div class="kicker">05 Watch</div>
+            <h2>WaveCamWatch companion</h2>
+          </div>
+          <p>The bundled watchOS app is a safety and offline-recording companion. It polls the Orin directly over the same routes as the iPhone app; it does <em>not</em> feed GPS or heading into the Orin.</p>
+        </div>
+
+        <div class="grid-3">
+          <div class="panel">
+            <h3>Status / Tracking tab</h3>
+            <p>Shows Orin connection state, safety/owner/tracking status, and a small preview. Tap <strong>Kill</strong> to emergency-stop the rig, <strong>Resume</strong> to clear the latch, and <strong>Record Start/Stop</strong> to command the Orin recorder remotely.</p>
+          </div>
+          <div class="panel">
+            <h3>Record Session tab</h3>
+            <p>Records 1 Hz watch GPS + 4 Hz IMU to a JSONL file on the watch. This is for <em>offline</em> scoring and reference; it is independent of the Orin’s video recording.</p>
+          </div>
+          <div class="panel">
+            <h3>Transfer</h3>
+            <p>Finished watch sessions transfer to the paired iPhone. From there they can be shared off-device for analysis.</p>
+          </div>
+        </div>
+      </section>
+
       <section id="tuning">
         <div class="section-head">
           <div>
-            <div class="kicker">05 Tuning</div>
+            <div class="kicker">06 Tuning</div>
             <h2>Tracking trigger and weights</h2>
           </div>
           <p>The Orin web UI at <code>http://192.168.1.155:8088/</code> exposes the full live tuning surface. The native Tune tab exposes the common hot controls, restart-only key list, and confirmed Restart WaveCam action. Persistent defaults live in <code>/data/projects/gimbal/wavecam/config.orin.servo.yaml</code>.</p>

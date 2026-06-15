@@ -1,4 +1,9 @@
-"""Meshtastic LoRa GPS ingest — the live replacement for ``GpsStub``.
+"""Meshtastic LoRa GPS ingest — LEGACY fallback, kept for compatibility.
+
+The live GPS source is the custom direct-LoRa firmware in ``firmware/direct-lora/``
+(read by :class:`DirectRadioGps`). This module is retained as a fallback when
+``gps.source: meshtastic`` is explicitly configured, but it is no longer the active
+field transport.
 
 Reads the REMOTE tracker's position from the BASE Wio Tracker L1 over USB serial
 (``/dev/ttyACM*``) and produces a :class:`NormalizedFix`. The L76K position packets
@@ -6,13 +11,9 @@ omit ground speed/track unless those flags are enabled, so ``course``/``speed`` 
 derived from position deltas. The BASE node's own L76K fix is the camera/tripod
 reference position (:meth:`get_camera_position`).
 
-THREADING (this is the whole point): a daemon **reader thread** owns the Meshtastic
-``SerialInterface`` and refreshes a lock-guarded snapshot (latest remote fix + camera
-position) on a timer. ``get_fix()`` and ``get_camera_position()`` are **non-blocking
-reads of that snapshot and NEVER call the Meshtastic lib**. An earlier version called
-the lib directly on the API request thread and the in-process interface wedged the
-whole HTTP API (2026-06-08 incident). Confining all lib access to the reader thread is
-the fix; the public reads can never block the caller.
+THREADING: a daemon **reader thread** owns the Meshtastic ``SerialInterface`` and
+refreshes a lock-guarded snapshot. ``get_fix()`` and ``get_camera_position()`` are
+non-blocking reads of that snapshot.
 
 Drop-in for ``GpsStub``: same ``enabled`` + ``get_fix()`` contract. ``meshtastic`` is
 imported lazily so the module stays importable without the library.

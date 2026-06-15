@@ -2,33 +2,31 @@
 
 ## Overview
 
-Reusable GPS pointing and fusion math for the future Wio/LoRa phase. The active
-WaveCam runtime is vision-first today; this module is retained because its
-bearing, distance, prediction, and pointing pieces are the basis for coarse GPS
-cueing when the subject is too far for reliable vision lock.
+Reusable GPS pointing and fusion math. The live WaveCam backend (`orin/wavecam/`)
+uses this module's bearing, distance, prediction, and pointing pieces for coarse
+GPS cueing via the custom direct-LoRa firmware in `firmware/direct-lora/`.
 
-The archived Watch/iPhone/Cloudflare relay was a GPS transport. It is not the
-target transport anymore. Future work should feed this module normalized fixes
-from Wio/Meshtastic or another LoRa source.
+The archived Watch/iPhone/Cloudflare relay was an earlier GPS transport and is
+not the target transport anymore.
 
 ## Architecture
 
 ```text
-Wio/LoRa target fix
-        |
-        v
-Normalized GPS fix source -> geo_calc.py -> fusion_engine.py
-        |                         |
-        |                         v
-Camera-base position       pointing_controller.py
-        |                         |
-        v                         v
-Vision tracker ---------> GPS-assisted PTZ cueing
+direct-LoRa tracker Wio -> base Wio -> DirectRadioGps -> NormalizedFix
+                                                          |
+                                                          v
+                                              geo_calc.py -> fusion_engine.py
+                                                          |
+                                                          v
+                                              pointing_controller.py
+                                                          |
+                                                          v
+Vision tracker --------------------------------> GPS-assisted PTZ cueing
 ```
 
 ## Data Flow
 
-1. **GPS stream** (future Wio/LoRa)
+1. **GPS stream** (direct-LoRa Wio)
    - Target fix: subject position, speed, course
    - Camera-base fix: Orin/camera position when available, otherwise configured site position
 

@@ -236,5 +236,8 @@ archive/legacy-20260606/stm32-nucleo-stepper/nucleo/images/ STM32 Nucleo-F401RE-
 # Deploy-time artifact (deploy.sh stamps + cleans it; never commit)
 orin/wavecam/version.json
 
+# Firmware build artifacts (built from firmware/direct-lora/)
+*.uf2
+
 # xcodegen-generated watch plist (source of truth: ios/WaveCam/project.yml info block)
 ios/WaveCam/InfoWatch.plist

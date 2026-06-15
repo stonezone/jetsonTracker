@@ -61,7 +61,9 @@ def start_gps_reader(cfg):
     if not getattr(gps_cfg, "enabled", False):
         return None
 
-    source = str(getattr(gps_cfg, "source", "meshtastic") or "meshtastic").strip().lower()
+    # Default to direct-LoRa, the current live transport. The checked-in configs may
+    # omit `source`; the live Orin overlay explicitly sets `gps.source: direct_lora`.
+    source = str(getattr(gps_cfg, "source", "direct_lora") or "direct_lora").strip().lower()
     if source == "direct_lora":
         from wavecam.gps_direct_lora import DirectRadioGps
 

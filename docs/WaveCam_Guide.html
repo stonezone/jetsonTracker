@@ -848,8 +848,9 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
             <tr><td><b>Matched score</b></td><td>0.5 + 0.5&times;YOLO_conf</td><td>Color+person agree within match_dist. At YOLO_conf=0.35 (default) &rarr; fused = 0.675. Well above lock=0.60.</td></tr>
             <tr><td><b>GPS cue boost</b> (<code>fusion.gps_boost</code>)</td><td>0.20 default, range 0&ndash;0.5</td><td>Added to a blob&rsquo;s confidence when GPS owns the camera and the blob is within the cue radius. At default: 0.45+0.20=0.65 crosses lock=0.60.</td></tr>
             <tr><td><b>GPS cue boost cap</b></td><td>0.95</td><td>Maximum confidence after boost.</td></tr>
-            <tr><td><b>GPS stale threshold</b> (<code>gps.stale_threshold_sec</code>)</td><td>45 s on the rig (code default 10 s)</td><td>Fix age above this &rarr; GPS hands off to vision or idles. Remote broadcasts at 2 s moving / 10 s stationary; 45 s keeps the stationary reacquire case inside the window.</td></tr>
-            <tr><td><b>Remote broadcast cadence</b></td><td>Smart: 2 s / 5 m moving; 10 s stationary fallback</td><td>In the water at surf speed you trigger the 5 m threshold constantly &mdash; effectively 2 s max age. Bobbing for a set may see 10 s gaps. Both within the 10 s threshold.</td></tr>
+            <tr><td><b>GPS stale threshold</b> (<code>gps.stale_threshold_sec</code>)</td><td>45 s on the rig (code default 10 s)</td><td>Fix age above this &rarr; GPS hands off to vision or idles. The direct-LoRa tracker beacon runs at 1&ndash;5 Hz depending on firmware config; 45 s covers a long dropout.</td></tr>
+            <tr><td><b>Remote beacon cadence</b></td><td>1 Hz default; up to 5 Hz with verified L76K cadence</td><td>The custom firmware transmits a 32-byte LoRa packet on every beacon tick. Higher rates need outdoor validation that the L76K GNSS actually delivers fresh fixes that fast.</td></tr>
+            <tr><td><b>Tracking mode</b> (<code>tracking.mode</code>)</td><td><code>auto</code> (default), <code>gps_only</code>, <code>vision_only</code></td><td>Hot key. <code>gps_only</code> ignores vision and forces GPS coarse-pointing; <code>vision_only</code> disables GPS slews; <code>auto</code> lets the arbiter pick.</td></tr>
             <tr><td><b>Pan encoder scale</b></td><td>14.4 counts/degree (4896 / 340)</td><td>Measured 2026-06-11 by driving the Prisual to both mechanical hard stops: &plusmn;2448 counts over &plusmn;170&deg;. The old 4.47 value made every GPS slew land ~3&times; short.</td></tr>
             <tr><td><b>Encoder poll rate</b></td><td>10 Hz</td><td>Bench-validated (2026-06-11, 300 s stress test): 0.0% loss, p95 latency = 81.8 ms under concurrent velocity traffic.</td></tr>
             <tr><td><b>Pointing tolerance</b></td><td>&plusmn;30 encoder counts</td><td>After a GPS absolute slew, the verifier reads back the encoder 0.5 s later. If error &gt; 30 counts (~2&deg;) on either axis, it retries once. A second failure is logged as a <code>pointing_miss</code> event and the move is dropped.</td></tr>
@@ -961,45 +962,37 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
     <section id="wio-config">
       <div class="sec-head">
         <div class="kicker">Wio tracker configuration</div>
-        <h2>Keep both Wios in sync</h2>
-        <p class="sub">Settings can revert on power events. Verify before every session if anything was power-cycled, and re-apply if anything is off. Canonical configs live in <code>docs/hardware/wio-config/</code>.</p>
+        <h2>Direct-LoRa firmware on both Wios</h2>
+        <p class="sub">The live GPS path uses the custom firmware in <code>firmware/direct-lora/</code>. There is no Meshtastic mesh, no preset to mismatch, and no app configuration step. Flash once, then power-cycle to re-apply defaults.</p>
       </div>
 
       <div class="grid g2" style="align-items:start; margin-bottom:0.9rem">
         <div class="callout teal">
-          <h3>Golden rule &mdash; one batched write</h3>
-          <p>Each individual <code>--set</code> call commits a reboot. Apply all settings in a <b>single</b> <code>--configure</code> so the device reboots once. Piecemeal writes are how settings drift out of sync.</p>
+          <h3>Roles</h3>
+          <p><b>Tracker Wio</b> goes on the subject (you). It reads its L76K GNSS and transmits 32-byte LoRa packets.<br/><b>Base Wio</b> plugs into the Orin via USB. It receives the tracker packets and emits JSONL over USB serial for <code>DirectRadioGps</code>.</p>
         </div>
         <div class="callout">
-          <h3>After a Wio power event</h3>
-          <p>If either Wio was power-cycled independently (not with the Orin), run <code>verify_wios.sh</code> on that device before starting a session. The base Wio power-cycles with the Orin on a cold boot &mdash; verify it when the Orin was cold-booted without power to the base Wio&rsquo;s battery.</p>
+          <h3>Power matters</h3>
+          <p>The base Wio now has a battery installed. Let it acquire its fix on battery power with clear sky, then connect USB data to the Orin. Keep it off the Orin&rsquo;s USB rail during acquisition — host USB noise can drive the L76K to 0 sats.</p>
         </div>
       </div>
 
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Setting</th><th>Remote (on you)</th><th>Base (on Orin)</th><th>Why it matters</th></tr></thead>
+          <thead><tr><th>What to check</th><th>How</th><th>Good state</th></tr></thead>
           <tbody>
-            <tr><td><code>gps_update_interval</code></td><td>2 s</td><td>5 s</td><td>How often the GPS chip polls. Remote at 2 s for fast tracking; base is USB-powered so 5 s is fine.</td></tr>
-            <tr><td><code>position_broadcast_smart_enabled</code></td><td>true</td><td>true</td><td>Without this, positions send only once per hour (firmware default). Must be on.</td></tr>
-            <tr><td><code>broadcast_smart_minimum_interval_secs</code></td><td>2 s</td><td>2 s</td><td>Floor between sends when moving. 2 s at 10 m/s = 20 m max position error per packet.</td></tr>
-            <tr><td><code>broadcast_smart_minimum_distance</code></td><td>5 m</td><td>5 m</td><td>Triggers a send on any 5 m movement.</td></tr>
-            <tr><td><code>position_broadcast_secs</code></td><td>3600 s (smart handles it)</td><td><b>30 s</b></td><td>The base is stationary on a tripod &mdash; smart broadcast never triggers on movement. The 30 s timed floor ensures the base always broadcasts its position even while still.</td></tr>
-            <tr><td><code>lora.modem_preset</code></td><td colspan="2" style="text-align:center"><b>SHORT_FAST on both</b></td><td>Mismatch = silent mesh failure. GPS age climbs with no errors. Verify both after any power event.</td></tr>
-            <tr><td><code>position.gps_mode</code></td><td>ENABLED</td><td>ENABLED</td><td>If this reads anything else, the GPS chip is off &mdash; no fix is possible regardless of other settings.</td></tr>
-            <tr><td><code>power.ls_secs</code></td><td>disabled (4294967295)</td><td>N/A (nRF ignores it)</td><td>Light sleep after 5 min would kill GPS polling on the remote. Disabled. The &ldquo;300 readback&rdquo; on the base is cosmetic &mdash; the nRF52840 ignores this setting entirely.</td></tr>
+            <tr><td>Base serial output</td><td><code>ssh orin</code> &rarr; <code>journalctl -u wavecam.service | grep DirectRadioGps</code></td><td><code>connected</code>, then periodic <code>{"seq":...}</code> and <code>{"base":1,...}</code> lines.</td></tr>
+            <tr><td>Live GPS status</td><td><code>curl http://&lt;orin&gt;:8088/api/v1/status</code></td><td><code>gps.source</code> = <code>direct_lora</code>, <code>reader_alive</code> = <code>true</code>, <code>target_sats</code> &gt; 0.</td></tr>
+            <tr><td>Base fix settled</td><td>Wait outdoors with clear sky</td><td><code>base_stable</code> true in status (running-mean HDOP &le; 2.5 for 20 s+).</td></tr>
+            <tr><td>Tracker battery</td><td>Status field <code>target_battery_mv</code></td><td>Above 3500 mV for a 1S LiPo; lower voltages shorten range and may brown-out the radio.</td></tr>
+            <tr><td>LED language</td><td>Watch the tracker/base LEDs at power-up</td><td>Fast flash = no fix yet; short blink = fix valid; solid/slow patterns = charging or error. See <code>firmware/direct-lora/README.md</code> for the full map.</td></tr>
           </tbody>
         </table>
       </div>
 
-      <div class="callout teal" style="margin-top:0.9rem">
-        <h3>The app&rsquo;s 15-second minimum is a UI limit, not firmware</h3>
-        <p>The Meshtastic app dropdown bottoms out at 15 seconds, but the nRF52840 firmware accepts any positive integer. Always use the CLI (<code>meshtastic --set</code> or <code>--configure</code>) &mdash; not the app &mdash; to apply these settings. On Mac: <code>meshtastic</code> via pipx.</p>
-      </div>
-
       <div class="callout" style="margin-top:0.9rem">
-        <h3>LoRa preset mismatch is the silent killer</h3>
-        <p>If one Wio drifts to a different preset (e.g. after a settings revert), the mesh link breaks with no errors. You will see <code>target_age_sec</code> climbing while the GPS chip shows the remote is &ldquo;not heard.&rdquo; Always verify both with <code>meshtastic --get lora</code> before assuming a hardware failure.</p>
+        <h3>No mesh, no preset, no reconfigure</h3>
+        <p>The custom firmware is compiled with matching radio constants (US915, SF7, BW250). If you change one Wio&rsquo;s firmware, flash the same radio config to the other. Mismatched firmware/radio settings show up as packet loss or no <code>seq</code> lines at all.</p>
       </div>
     </section>
 
@@ -1039,10 +1032,10 @@ sudo systemctl start wavecam.service   # NEVER leave the service stopped</code>
             <tr><td>Lock chip shows CLR LOCK (amber) instead of LOCKED (green)</td><td>Color blob locked but YOLO not confirming a person</td><td>Lower <code>detector.conf</code>; check <code>detector.person_class</code> = 0; turn off Require-person if far offshore.</td></tr>
             <tr><td>GPS not pointing (age not climbing, but camera doesn&rsquo;t slew)</td><td>Base not locked, calibration incomplete, or GPS owner not active</td><td>Confirm Calibrate Steps 2&ndash;3 are done this session. Check GPS chip: distance + bearing must both show. AUTO must be armed.</td></tr>
             <tr><td>GPS points way off bearing</td><td>Heading capture was sloppy or remote was too close</td><td>Re-run Calibrate Step 3 &mdash; stand at least 50 m away and wait for a stable bearing before capturing.</td></tr>
-            <tr><td>GPS age climbing / stale</td><td>LoRa preset mismatch between the two Wios</td><td>Run <code>meshtastic --get lora</code> on both. Both must show <code>SHORT_FAST</code>. Re-apply if one reverted.</td></tr>
+            <tr><td>GPS age climbing / stale</td><td>Tracker has no fresh fix, base lost the LoRa link, or tracker out of range</td><td>Check tracker LED (fast flash = no fix). Verify base serial shows <code>{"seq":...}</code> packets. Re-power both Wios if one was cold-booted independently.</td></tr>
             <tr><td>Won&rsquo;t lock at long range even with GPS pointing</td><td>gps_boost too low, or lock_threshold too high for the small far blob</td><td>Raise <code>fusion.gps_boost</code> in GPS Cueing (0.20 &rarr; 0.30); lower <code>fusion.lock_threshold</code> (0.60 &rarr; 0.50).</td></tr>
             <tr><td>pointing_miss events in the log</td><td>GPS absolute slew overshot &mdash; normal for large slews</td><td>One retry is automatic. If it recurs, lower <code>gps.max_pan_speed</code> to reduce overshoot.</td></tr>
-            <tr><td>Base fix missing / base age null</td><td>Base Wio has no GPS fix, or settings reverted</td><td>Give the base Wio clear sky. Run <code>verify_wios.sh</code>; check <code>gps_mode = ENABLED</code> and <code>position_broadcast_secs = 30</code>.</td></tr>
+            <tr><td>Base fix missing / base age null</td><td>Base Wio has no GPS fix, is USB-powered during acquisition, or has no sky view</td><td>Ensure the installed battery is powering the Wio, give it clear sky, and wait for <code>base_stable</code> in status. Restart <code>wavecam.service</code> if the serial port was lost.</td></tr>
             <tr><td>GPS Ingest shows DOWN</td><td>Orin&rsquo;s serial reader died (wavecam.service lost the port)</td><td><code>sudo systemctl restart wavecam.service</code> on the Orin. Do <em>not</em> touch or replug the Wios &mdash; it&rsquo;s an Orin-side issue.</td></tr>
             <tr><td>Zoom stuck / too tight</td><td>Cinematic Zoom holding from a prior lock</td><td>Send Home (house icon) to reset to wide. Disable Cinematic Zoom and retest pan/tilt.</td></tr>
             <tr><td>Can&rsquo;t connect</td><td>Wrong route or Orin not up</td><td>Check the route label in Connect. Re-plug USB. Confirm Wi-Fi static IP (192.168.1.155). If neither route works, ping the gateway first.</td></tr>

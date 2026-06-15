@@ -23,6 +23,8 @@ reuse, but they are not the active field runtime.
 | Camera LAN | Orin `192.168.100.10/24` to camera `192.168.100.88` |
 | Detector model | `/data/projects/gimbal/models/yolov8n.engine` |
 | Target loop FPS | `35`; live validation has shown 30+ FPS |
+| GPS source | `direct_lora` via base Wio USB serial (`/dev/ttyACM0`) |
+| Tracking mode | `auto` (default), `gps_only`, `vision_only` via hot key |
 
 ## Data Flow
 
@@ -77,10 +79,11 @@ Important current values:
 Hot config is exposed through `POST /api/v1/config/hot`. Structural keys need a
 service restart through `POST /api/v1/system/restart`.
 
-Current hot controls include PTZ deadzone/speeds/inversion/feed-forward,
-cinematic zoom, fusion thresholds, color preset/areas, detector confidence and
-cadence, JPEG quality, and HUD visibility. Query `GET /api/v1/config` for the
-authoritative `supported`, `hot_keys`, and `restart_required_keys` sets.
+Current hot controls include `tracking.mode` (`auto`/`gps_only`/`vision_only`),
+PTZ deadzone/speeds/inversion/feed-forward, cinematic zoom, fusion thresholds,
+color preset/areas, detector confidence and cadence, JPEG quality, and HUD
+visibility. Query `GET /api/v1/config` for the authoritative `supported`,
+`hot_keys`, and `restart_required_keys` sets.
 
 ## API Checks
 
@@ -150,7 +153,7 @@ short recording and delete only the generated validation clip.
 
 - `yolo26n.pt` is not the live production model. The live Orin uses
   `yolov8n.engine`.
-- `gps_server.py`, Watch/iPhone relay, Cloudflare GPS, STM32/Nucleo stepper
-  firmware, and the retired `:8080` dashboard are archived under
+- `gps_server.py`, Watch/iPhone GPS relay, Cloudflare GPS, STM32/Nucleo
+  stepper firmware, and the retired `:8080` dashboard are archived under
   `archive/legacy-20260606/`.
 - Current movement is the Prisual PTZ through RAW VISCA UDP.

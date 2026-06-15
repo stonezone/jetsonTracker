@@ -1,10 +1,10 @@
 # WaveCam
 
 WaveCam is a Jetson Orin + Prisual PTZ camera stack for filming foil surfing.
-The live system is vision-first today: YOLOv8n TensorRT detects a person, an
+The live system is vision-first: YOLOv8n TensorRT detects a person, an
 orange/red HSV cue identifies the subject, fusion locks the target, and the
-Orin drives pan/tilt/zoom over RAW VISCA. LoRa/Meshtastic GPS cueing is a future
-phase for long-range coarse pointing.
+Orin drives pan/tilt/zoom over RAW VISCA. A custom direct-LoRa Wio GPS link
+provides long-range coarse pointing and helps vision reacquire the subject.
 
 The old Apple Watch/iPhone/Cloudflare GPS relay and STM32/Nucleo stepper gimbal
 design is superseded. Retired code and docs are preserved under
@@ -17,9 +17,11 @@ design is superseded. Retired code and docs are preserved under
 | Orin host | `ssh orin`, Wi-Fi `192.168.1.155` |
 | iPhone tether default | `172.20.10.8` |
 | WaveCam API/Web | `http://<orin>:8088` |
+| Remote web UI (Cloudflare) | `https://wavecam.freddieland.com` |
 | Live service | `wavecam.service` |
 | Live service tree | `/data/projects/gimbal/wavecam` |
-| Live config | `config.orin.servo.yaml` |
+| Base config | `config.orin.servo.yaml` |
+| Runtime overlay | `config.local.yaml` (rig-owned, survives deploys) |
 | PTZ camera | Prisual NDI PTZ at `192.168.100.88` |
 | Orin camera LAN | `192.168.100.10/24` |
 | PTZ control | RAW VISCA UDP `192.168.100.88:1259` |
@@ -31,12 +33,14 @@ design is superseded. Retired code and docs are preserved under
 ## Architecture
 
 ```text
-iOS WaveCam app / browser
+iOS WaveCam app / WaveCamWatch / browser
         |
         v
-Jetson Orin :8088 FastAPI + web
+Jetson Orin :8088 FastAPI + web  (also exposed via Cloudflare tunnel)
         |
         +-- RTSP /2 -> YOLOv8n TensorRT + orange/red color cue -> fusion lock
+        |
+        +-- direct-LoRa Wio GPS -> coarse absolute PTZ pointing
         |
         +-- visual servo + cinematic zoom -> RAW VISCA UDP -> Prisual PTZ
         |
@@ -49,13 +53,15 @@ model instead of side-channel camera commands.
 
 ## Active Features
 
-- FastAPI control API on `:8088`.
-- Native iOS operator app and browser/web operator surface.
+- FastAPI control API on `:8088` (and via Cloudflare at `wavecam.freddieland.com`).
+- Native iOS operator app + bundled watchOS companion (WaveCamWatch).
 - YOLOv8n TensorRT person detection.
 - HSV orange/red color cue and person/color fusion.
+- Direct-LoRa Wio GPS for coarse pointing and vision reacquisition.
 - PTZ pan/tilt/zoom over RAW VISCA UDP.
+- `tracking.mode` selector: `auto`, `gps_only`, `vision_only`.
 - Cinematic Zoom feature-detected through `GET /api/v1/config`.
-- Hot config patching for tuning controls.
+- Hot config patching for tuning controls (persisted to `config.local.yaml`).
 - Presets, logs, guide, guide assets, media list/download/delete.
 - FFmpeg segmented recording from the camera main RTSP stream.
 - Persistent journald enabled on the Orin for post-reboot diagnostics.
@@ -64,9 +70,8 @@ model instead of side-channel camera commands.
 
 | Item | Status |
 |---|---|
-| LoRa/Meshtastic GPS cueing | Design-only until hardware lands |
-| Long field soak under sustained tracking + recording | Not yet a full-session proof |
 | Full bare-metal Orin restore image | Not done; critical restore bundle exists in iCloud |
+| Long field soak under sustained tracking + recording | Not yet a full-session proof |
 | Legacy docs/assets cleanup | Archived under `archive/legacy-20260606/` |
 
 ## Quick Checks
@@ -108,10 +113,13 @@ jetsonTracker/
 │   │   ├── config.orin.servo.yaml
 │   │   ├── wavecam/
 │   │   └── tests/
-│   ├── gps_fusion/           # Legacy/reusable GPS math for future LoRa cueing
+│   ├── gps_fusion/           # Legacy GPS math (superseded by wavecam/gps_*.py)
 │   ├── vision/               # Earlier standalone vision experiments
 │   └── camera_control/       # Reusable VISCA/PTZ adapter experiments
-├── ios/WaveCam/              # Native iOS operator app
+├── firmware/direct-lora/     # Active Wio Tracker L1 tracker/base firmware
+├── ios/WaveCam/              # Native iOS operator app + watchOS companion
+│   ├── Sources/              # iOS app
+│   └── Sources-Watch/        # WaveCamWatch
 ├── docs/
 │   ├── WaveCam_Guide.html
 │   ├── ORIN_MAINTENANCE_RUNBOOK.md
@@ -186,12 +194,19 @@ only the generated validation clip.
 
 ## Current Production Config
 
-`orin/wavecam/config.orin.servo.yaml` is the production-style servo config:
+`orin/wavecam/config.orin.servo.yaml` is the production-style servo config.
+The live Orin also loads `/data/projects/gimbal/wavecam/config.local.yaml` as an
+overlay on top of the base YAML; hot-config changes and the active GPS source
+selection live there and survive deploys.
+
+Key live values:
 
 - `camera.source`: `rtsp://192.168.100.88:554/2`
 - `ptz.ip`: `192.168.100.88`
 - `ptz.port`: `1259`
 - `detector.model`: `/data/projects/gimbal/models/yolov8n.engine`
+- `gps.source`: `direct_lora` (set in `config.local.yaml` overlay)
+- `gps.direct_dev_path`: `/dev/ttyACM0`
 - `web.port`: `8088`
 - `web.show_hud`: `true`
 - `loop.target_fps`: `35`
@@ -204,7 +219,7 @@ only the generated validation clip.
 - [Orin maintenance runbook](docs/ORIN_MAINTENANCE_RUNBOOK.md)
 - [Orin field reliability](docs/ORIN_FIELD_RELIABILITY.md)
 - [Field power wiring](docs/hardware/WAVECAM_POWER_WIRING.md)
-- [GPS/LoRa cueing design](docs/superpowers/specs/2026-06-05-gps-lora-cueing-design.md)
+- [Direct-LoRa tracker spec](docs/superpowers/specs/2026-06-12-direct-lora-tracker.md)
 
 ## Archived Legacy Areas
 
