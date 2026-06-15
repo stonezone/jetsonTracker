@@ -30,9 +30,10 @@ owner / state / locked / conf; the Phase 0–4 fields (`base_drift_state`, `trac
    heading. *Driveway caveat:* a heading aimed at anything < 50 m will be coarse — that
    is expected; the goal is the flow plus `authority.calibration_valid` flipping **true**
    only after validate → confirm.
-4. **Vision lock** — stand in the orange rashguard ~10–30 m out. Expect
-   `tracking.locked: true`, `tracking.state: TRACKING`, `authority.owner: vision_follow`,
-   camera follows. Walk laterally → it tracks.
+4. **Vision lock** — set `tracking.mode: vision_only` (iOS Tune tab) first so GPS can't
+   false-lock the camera at close range, then stand in the orange rashguard ~10–30 m out.
+   Expect `tracking.locked: true`, `tracking.state: TRACKING`,
+   `authority.owner: vision_follow`, camera follows. Walk laterally → it tracks.
 5. **KILL** — Emergency Stop → camera stops immediately; `safety.killed: true`;
    `authority.owner: idle`; manual + auto both blocked. Release → it re-searches. (Note
    whether auto-resume after release is the behavior you want — the re-arm decision.)
@@ -49,6 +50,12 @@ Vision tracks + holds; KILL stops + latches; manual releases cleanly; CALIBRATE 
 the `authority` JSON at each step as the record carried into the water test.
 
 ## What is intentionally OFF for this test
-`detector.tracker` (tracker IDs), `fusion.gps_bearing_cue_enabled`, `gps.drive_zoom` —
-all default-off; base-drift is on but fail-safe (only *confirmed* drift withholds GPS).
-Enable individually only after the basics pass.
+`detector.tracker` (tracker IDs) and `fusion.gps_bearing_cue_enabled` are off by default.
+Base-drift is on but fail-safe (only *confirmed* drift withholds GPS).
+
+> ⚠️ **`gps.drive_zoom` is currently ON in the rig overlay** (verified live in `/config`).
+> It only acts while `gps_tracker` owns, so under `tracking.mode: vision_only` it stays
+> dormant. Before any GPS or `auto`-mode test at driveway range, turn **Drive Zoom OFF in
+> the iOS Tune tab** — at close range it would drive zoom from a meaningless GPS distance.
+
+Enable features individually only after the basics pass.
