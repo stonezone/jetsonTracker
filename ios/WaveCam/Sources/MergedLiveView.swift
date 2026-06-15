@@ -38,7 +38,16 @@ struct MergedLiveView: View {
         }
         .background(WC.bg.ignoresSafeArea())
         .task { await client.refresh() }
-        .task { config = await client.config() }
+        .task {
+            // Feature-detect /config with retry. A single early/transient nil (e.g. the
+            // fetch racing the connection, or a backend restart window) must NOT disable
+            // home + every other feature-detected control for the whole session.
+            for attempt in 0..<8 {
+                config = await client.config()
+                if config != nil { break }
+                try? await Task.sleep(for: .seconds(attempt < 3 ? 1 : 3))
+            }
+        }
         .onDisappear { controller.cleanup(client: client) }
         .onChange(of: client.status?.revision) { _, _ in
             controller.syncCommandState(with: client)
@@ -232,11 +241,17 @@ struct MergedLiveView: View {
     }
 
     private func handleHome() {
-        guard homeSupported else {
-            showToast("Home unavailable — /ptz/home not yet supported by the backend")
-            return
+        Task {
+            // The cached feature flags can be stale or never have loaded (e.g. fetched
+            // during a backend restart before pipeline.ptz was ready). Re-read live before
+            // giving up so a press self-heals instead of wrongly reporting "not supported".
+            if config?.supported?.ptzHome != true { config = await client.config() }
+            guard config?.supported?.ptzHome == true else {
+                showToast("Home unavailable — /ptz/home not supported by the backend")
+                return
+            }
+            controller.ptzHome(client: client)
         }
-        controller.ptzHome(client: client)
     }
 
     /// Fullscreen enter/exit toggle — lives on the feed's top-right corner so it's always
