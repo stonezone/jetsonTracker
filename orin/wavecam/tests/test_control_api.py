@@ -228,6 +228,17 @@ def test_root_web_ui_exposes_live_ptz_gps_and_ios_parity_controls():
     assert "target_battery_mv" in body
 
 
+def test_config_snapshot_exposes_v3_gps_keys():
+    # H6: iOS feature-detects controls from /config; the v3 GPS/fusion knobs must
+    # be visible there, not just settable.
+    body = make_client().get("/api/v1/config").text
+    for key in (
+        "base_drift_enabled", "drive_zoom_near_m", "drive_zoom_far_m",
+        "drive_zoom_max_enc", "drive_zoom_max_frac", "gps_bearing_cue_enabled",
+    ):
+        assert key in body, f"{key} missing from /api/v1/config snapshot"
+
+
 def wait_until(predicate, timeout_sec=0.5):
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
