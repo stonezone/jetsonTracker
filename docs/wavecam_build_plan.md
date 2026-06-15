@@ -70,24 +70,21 @@ is the shared source of truth for phase order and current status.
 4. **YOLO26** is `Unvalidated` from my knowledge (post-cutoff); **YOLOv8n is the working baseline** and
    is what the yard MVP runs. YOLO26-vs-YOLO11 is a benchmarked decision later.
 
-## GPS lane — now LoRa/Meshtastic (Watch deprecated)
+## GPS lane — direct-LoRa (Watch deprecated as GPS source)
 
-- **Watch/iPhone LTE relay path is deprecated.** The #1 blocker (Watch LTE stability) is removed; so is
-  the tunnel dependency for GPS. Net de-risk.
-- **Ordered hardware:** 2x Seeed Studio **Wio Tracker L1 Lite**. Current vendor docs describe it as a
-  Meshtastic node with LoRa 862-930 MHz, Nordic nRF52840, L76K GNSS, Bluetooth 5.0, USB Type-C, solar
-  input, Li-ion battery support, Grove/PTH expansion, and no built-in screen.
-- **Planned physical split:** one tracker rides with Zack in a waterproof pouch; one tracker stays with
-  the Orin/camera as the base mesh node over USB serial, ideally with an elevated external antenna.
-- **New ingest:** Orin-side Meshtastic serial → normalized DTO `{lat, lon, course, speed, age_sec,
-  src:"lora"}`. Course/speed **derived from position deltas** (0.2–2 Hz is plenty for cueing + state).
-- **Unvalidated until hardware arrives:** actual GNSS fix rate, waterproofing/antenna placement,
-  shore-to-water link budget, Meshtastic position packet cadence, and Python packet shape from the
-  current firmware.
-- **Coordination note:** overnight iOS/watch GPS work is deprecated for this path. LoRa ingest is
-  Python-on-Orin, not iOS.
-- Added when hardware arrives; until then the gps-ingest interface is **stubbed** so the wave-state
-  phase can develop against replayed/synthetic tracks.
+- **Watch/iPhone LTE relay path is deprecated.** The Apple Watch now records offline sessions only and
+  provides safety/record remote controls; it does **not** feed GPS to the Orin.
+- **Hardware:** 2x Seeed Studio **Wio Tracker L1 Lite**. Nordic nRF52840 + SX1262 LoRa + L76K GNSS.
+- **Physical split:** one tracker rides with Zack in a waterproof case; one tracker stays with the
+  Orin/camera as the base node over USB serial, ideally with an elevated external antenna. The base Wio
+  now has a battery installed; acquire the fix on battery power, then connect USB data to avoid host USB RF noise.
+- **New ingest:** custom direct-LoRa firmware on the Wios; base emits JSONL over USB serial →
+  `DirectRadioGps` → normalized fix. Tracker sends 32-byte LoRa packets; base emits its own position at
+  1 Hz plus relayed tracker packets.
+- **Validated:** outdoor fixes, base→remote distance/bearing, coarse-pointing arbiter, and tracking.mode
+  (`auto`/`gps_only`/`vision_only`).
+- **Still unvalidated:** long-range over-water link budget, on-body antenna orientation, wet-case
+  packet loss, and external 10 Hz GNSS (future option if L76K becomes the binding constraint).
 
 ## PTZ primary protocol — RESOLVED (backend-agnostic + P0 bake-off)
 

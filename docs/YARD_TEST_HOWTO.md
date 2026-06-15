@@ -1,10 +1,12 @@
 # Yard Test How-To
 
+
 ## Purpose
 
-Validate the vision-only follow loop before GPS is added. This test uses the Prisual PTZ camera,
-YOLO person detection, and the orange/red HSV color cue. It does not use Watch, iPhone, LoRa, or
-Meshtastic GPS.
+Validate the vision-only follow loop. This test uses the Prisual PTZ camera,
+YOLO person detection, and the orange/red HSV color cue. GPS is left off or set to
+`tracking.mode: vision_only` so the test is purely vision-driven. The Apple Watch
+and direct-LoRa GPS are not involved in this test.
 
 ## Preflight
 
@@ -20,31 +22,30 @@ Meshtastic GPS.
    - camera `192.168.100.88` is reachable
    - internet/uplink is on Wi-Fi or USB tether, not on camera LAN
 5. Wear the orange rashguard or another large orange/red target.
-6. Stop GPS Tracker before starting Vision Follow. Stop Vision Follow before manual PTZ tuning.
+6. Set `tracking.mode: vision_only` (Tune tab or web UI) so GPS cannot claim the camera. Stop Auto before manual PTZ tuning.
 
 ## Basic Run
 
 1. Open the WaveCam web control page or the iOS Live tab.
 2. Confirm the `/2` live preview is updating.
 3. Use manual PTZ to put yourself near frame center.
-4. Press **Start Follow** in the Vision Follow card.
+4. Press **Start Auto** on the PTZ control rail.
 5. Watch the status line:
    - `src=both`: YOLO person and color cue agree. Best state.
    - `src=yolo`: person detected, color cue not useful.
    - `src=color`: orange cue found, no YOLO person box. Useful for rough lock, zoom should hold.
    - `src=none`: no usable target; camera should stop and hold.
 6. Walk left/right and toward/away from the camera.
-7. Press **Stop Follow**. The camera should stop, return pan/tilt to its starting pose, and widen
-   zoom by timed velocity.
+7. Press **Stop PTZ**. The camera should stop and hold. Press **Home** to return to a wide starting pose.
 
 ## Expected Behavior
 
 - Camera pans in the direction that reduces horizontal offset.
 - Camera tilts in the direction that reduces vertical offset.
 - Zoom changes only when YOLO has a person box (`src=yolo` or `src=both`), not on color-only lock.
-- Manual PTZ commands are rejected while Vision Follow or GPS Tracker owns the camera.
-- Starting GPS Tracker while Vision Follow runs is rejected.
-- Starting Vision Follow while GPS Tracker runs is rejected.
+- Manual PTZ joystick commands temporarily take over from autonomous tracking.
+- `tracking.mode: vision_only` prevents GPS from claiming the camera.
+- `tracking.mode: gps_only` can be used for a parallel GPS-only test, but not mixed with vision-only on the same run.
 
 ## Failure Checks
 

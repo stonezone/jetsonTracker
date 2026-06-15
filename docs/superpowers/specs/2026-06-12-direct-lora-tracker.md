@@ -1,12 +1,11 @@
-# Direct LoRa tracker — custom Wio firmware (secondary GPS solution)
+# Direct LoRa tracker — custom Wio firmware (active GPS source)
 
-**Status: PREPARED, NOT ACTIVE.** The Meshtastic/Wio setup remains the
-solution until driveway shadow scoring proves otherwise. This spec + the
-firmware under `firmware/direct-lora/` exist so that, if the data says we
-need more rate/freshness, we start from a running prototype instead of a
-blank page. Scope and feasibility incorporate GPT's review (2026-06-12),
-which we adopt: phased bring-up, measure-the-GNSS-first, regulatory as an
-engineering requirement.
+**Status: ACTIVE / DEPLOYED (2026-06-14).** The custom direct-LoRa firmware
+has replaced the earlier Meshtastic path and is the live GPS source for
+WaveCam. The rig's `config.local.yaml` overlay sets `gps.source: direct_lora`,
+and `DirectRadioGps` reads the base Wio's JSONL output over USB serial.
+This spec + the firmware under `firmware/direct-lora/` are the authoritative
+description. Older Meshtastic-related docs are archived or superseded.
 
 ## Architecture (UDP-style, one-way, stateless)
 
@@ -22,9 +21,9 @@ with a sequence number and timestamp; loss is measured, not corrected.
 
 ## Verified facts (2026-06-12)
 
-- **L76K max nav rate: 5 Hz** (PMTK220-settable; 1 Hz default) — so the
-  stock-hardware ceiling is 5 Hz; 10 Hz REQUIRES external GNSS.
-  Source: Quectel L76K docs via Seeed/Waveshare wikis.
+- **L76K max nav rate: 5 Hz** — so the stock-hardware ceiling is 5 Hz;
+  10 Hz REQUIRES external GNSS. Source: Quectel L76K docs via Seeed/Waveshare
+  wikis.
 - **Wio Tracker L1 pin map** (from Meshtastic
   `variants/nrf52840/seeed_wio_tracker_L1/variant.h`, fetched by
   `fetch_variant.sh` PINNED to commit `88137c6` + `variants.lock` sha256s —
@@ -80,26 +79,31 @@ At SF7/BW250 a 32-byte LoRa payload ≈ 35 ms airtime → 5 Hz ≈ 17% duty:
 legal in US915 (100% duty allowed) with margin; the firmware still
 carries an airtime guard so a config error cannot flood the band.
 
-## GNSS bring-up (PMTK, verified against the Quectel protocol spec)
+## GNSS bring-up (CASIC/PCAS, fixed 9600 baud)
 
-Implemented in `src/common/gps_l76k.h`; re-runs on EVERY boot because
-PMTK251/PMTK220 revert on cold restart/standby.
+Implemented in `src/common/gps_l76k.h`; re-runs on EVERY boot because the
+L76K reverts to its power-on defaults after standby/cold restart.
 
-1. Open at 9600 (module default) → `$PMTK251,57600` (NO ACK by design —
-   the port speed changes underneath) → reopen at 57600. Even at 2 Hz,
-   57600 keeps NMEA buffer pressure at zero; 5 Hz REQUIRES ≥57600.
-2. `$PMTK314,0,1,0,1,...` — RMC+GGA only, every fix (lat/lon/speed/
-   course + quality/sats/HDOP is everything the packet needs).
-3. `$PMTK220,<ms>` — beacon-matched, clamped to 200 ms (the L76K module
-   max is 5 Hz per Seeed, even though generic PMTK can express 100 ms —
-   do NOT assume 10 Hz from this module).
-4. ACKs (`$PMTK001,<cmd>,3` = success) are logged for 1.5 s, never
-   blocking: measured outdoor NMEA cadence is the real verification.
+The firmware uses **CASIC/PCAS** commands at the module's default **9600 baud**.
+An earlier PMTK/57600 path caused a baud mismatch / zero-fix bug and was
+removed.
+
+1. Open `Serial1` at 9600 baud.
+2. Send `PCAS04,7` to enable multi-GNSS.
+3. Send `PCAS03,<rate>` to select the NMEA sentence mix (RMC+GGA required
+   for lat/lon/speed/course/quality/sats/HDOP).
+4. Send `PCAS11,3` to set the navigation rate (e.g., 5 Hz when beacon
+   interval supports it).
+5. Verify by measuring the real outdoor NMEA cadence from the tracker's USB
+   serial (`[gps] update dt=...`), not by command ACKs.
+
+> **Do not copy the old PMTK/57600 bring-up from earlier revisions of this
+> spec.** The live firmware uses PCAS at 9600 baud.
 
 ## Radio plan (test in this order)
 
 1. LoRa SF7 / BW250 / CR4:5 / US915 @ 2 Hz  ← bring-up target
-2. Same @ 5 Hz (after L76K PMTK220 5 Hz verified outdoors)
+2. Same @ 5 Hz (after L76K PCAS 5 Hz verified outdoors)
 3. SF7/BW500 or GFSK only if airtime/jitter demands it (still legal US)
 
 **Regulatory is an engineering requirement, not a checkbox** (GPT
@@ -136,10 +140,8 @@ not fixed. Round 2 closes it:
   than it is — which would have poisoned the exact 5 Hz measurement Phase 3
   exists to make. `last_tx_ms` is stamped at TX start; the boot-computed
   airtime guard guarantees the radio is always idle before the next beacon.
-- **Cadence logger fixed**: `isUpdated()` is NOT self-clearing (it clears when
-  `lat()`/`lng()` are read — only at the beacon interval), so the old logger
-  re-fired every loop between beacons. Now keyed on commit identity
-  (`millis()-age()`), logging once per real fix without touching `lat()`.
+- **Cadence logger fixed**: keyed on commit identity (`millis()-age()`),
+  logging once per real fix without touching `lat()`.
 - **hacc/sats zeroed unless the fix is fresh** — the JSON can't imply quality
   for a position we won't vouch for.
 RadioLib 7.1.2 TX API verified against source before writing. Both envs green.
@@ -151,11 +153,12 @@ RadioLib 7.1.2 TX API verified against source before writing. Both envs green.
 2. **Radio proof** — fixed packet @5 Hz A→B, seq/RSSI/SNR/loss printed.
    No GPS.
 3. **GPS beacon** — tracker parses own L76K (measure real cadence
-   outdoors FIRST; PMTK220 to 2 Hz then 5 Hz), base emits JSONL.
+   outdoors FIRST; PCAS to 2 Hz then 5 Hz), base emits JSONL. ✅ Done.
 4. **Orin integration** — `DirectRadioGps` reader behind the existing
-   NormalizedFix seam (same non-blocking snapshot contract as
-   MeshtasticGps); `gps.source: meshtastic|direct_lora` config switch,
-   default meshtastic. Events carry packet age + loss.
+   NormalizedFix seam (same non-blocking snapshot contract as the prior
+   GPS ingest). `gps.source: meshtastic|direct_lora` config switch,
+   overridden to `direct_lora` on the live rig via `config.local.yaml`.
+   Events carry packet age + loss. ✅ Done.
 5. **External M10 GNSS** — ONLY if measured L76K rate/quality is the
    binding constraint. Same packet, same radio, new UART source.
 6. **Field hardening** — 100/300/800 m over water, on-body antenna
@@ -166,7 +169,7 @@ RadioLib 7.1.2 TX API verified against source before writing. Both envs green.
 ## Hurdles ledger
 
 - L76K cadence above 1 Hz must be MEASURED outdoors before any 5 Hz
-  promise (PMTK220 accepted ≠ fresh fixes delivered).
+  promise (PCAS command accepted ≠ fresh fixes delivered).
 - Variant pin aliases (D0..D16) resolve only with Seeed's variant.cpp —
   vendored at build time by `fetch_variant.sh` (pinned commit), not
   committed (GPL provenance kept out of this repo).
@@ -204,20 +207,19 @@ how direct-LoRa feeds the same path so calibration/pointing are unchanged.
   `/sensors/phone` feeds the SensorHub drift/bump monitor (anchor-suspect:
   "did the tripod get knocked?"). It does not set the camera location/heading.
 
-**What direct-LoRa adds (this firmware):** the base now reads its own L76K and
-emits a `{"base":1,fix,lat_e7,lon_e7,alt_m,sats,hdop_x10,stable,hold_s}` line
-at 1 Hz, alongside the relayed `{"seq":...}` tracker packets. It runs a
-running-mean over each continuous good-fix run (HDOP ≤ 2.5) and sets
-`stable:1` after `BASE_SETTLE_MS` (20 s) — the Orin's cue that a settled
-camera position is ready to latch.
+**What direct-LoRa provides:** the base reads its own L76K and emits a
+`{"base":1,fix,lat_e7,lon_e7,alt_m,sats,hdop_x10,stable,hold_s}` line at 1 Hz,
+alongside the relayed `{"seq":...}` tracker packets. It runs a running-mean
+over each continuous good-fix run (HDOP ≤ 2.5) and sets `stable:1` after
+`BASE_SETTLE_MS` (20 s) — the Orin's cue that a settled camera position is
+ready to latch.
 
-**Orin side (Codex's lane, Phase 4, not yet built):** `DirectRadioGps` must
-mirror the `MeshtasticGps` contract — `get_fix()` from `{"seq":...}` lines
-(the subject), `get_camera_position()` from `{"base":1,...}` lines (the
-camera, only when `stable:1`). Same `NormalizedFix` seam, `gps.source:
-meshtastic|direct_lora`. With that, `base_lock` AND the heading solve work
-**unchanged** — both just need base + remote fixes, which direct-LoRa now
-provides.
+**Orin side:** `DirectRadioGps` mirrors the prior GPS ingest contract —
+`get_fix()` from `{"seq":...}` lines (the subject), `get_camera_position()`
+from `{"base":1,...}` lines (the camera, only when `stable:1`). Same
+`NormalizedFix` seam, `gps.source: meshtastic|direct_lora`. With that,
+`base_lock` AND the heading solve work **unchanged** — both just need base +
+remote fixes, which direct-LoRa provides.
 
 **Wio vs iPhone — decision:**
 - **Camera POSITION: base Wio L76K** (primary, self-contained, matches the

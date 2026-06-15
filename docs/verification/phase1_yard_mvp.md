@@ -2,7 +2,11 @@
 
 Built + deployed to `/data/projects/gimbal`. Vision-only PTZ follow — orange
 rashguard (color) as the primary cue, YOLO confirming it's a person — controllable
-from the WaveCam web UI on `:8088`. No GPS (LoRa comes later).
+from the WaveCam web UI on `:8088`.
+
+> **Current stack note (2026-06-14):** direct-LoRa GPS is now live and integrated.
+> This document remains a valid record of the vision-only MVP; subsequent phases
+> added GPS coarse-pointing via `firmware/direct-lora/` and `DirectRadioGps`.
 
 ## What was built
 

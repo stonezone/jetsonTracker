@@ -1,5 +1,14 @@
 # Operator App / UX + System Roadmap — overnight brainstorm (2026-05-31)
 
+> **Historical design doc (2026-06-14 note):** This spec predates the custom
+> direct-LoRa firmware and bundled WaveCamWatch. The live stack uses
+> `firmware/direct-lora/` + `DirectRadioGps` for GPS, `:8088` for the web UI/API,
+> and the Apple Watch as an offline-recorder / safety-control companion (not a GPS
+> source). The architecture and UI flows below remain useful context, but any
+> mention of Meshtastic, Cloudflare GPS relay, Apple Watch/iPhone GPS relay, or
+> `:8080`/`:8765` services is superseded.
+
+
 Context: autonomous overnight session (Zack asleep, authorized execution). Watch app installed + streaming (low rate ~0.08 Hz). Dashboard MVP live on Orin :8080. This captures Zack's late-night idea dump + the gaps I brainstormed, with answers and a prioritized roadmap. Risky items are planned, not executed unsupervised.
 
 ## Zack's idea dump (verbatim intent)

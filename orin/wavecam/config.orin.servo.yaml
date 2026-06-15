@@ -83,6 +83,9 @@ loop:
 
 gps:
   enabled: true
+  # Live rig overlay (/data/projects/gimbal/wavecam/config.local.yaml) sets
+  # `source: direct_lora` so the base Wio's JSONL output is the active GPS
+  # feed. If the overlay is absent this file defaults to the legacy module.
   dev_path: /dev/ttyACM0
   remote_id: "!9f5802d5"
   stale_threshold_sec: 45

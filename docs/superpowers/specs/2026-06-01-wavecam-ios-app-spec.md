@@ -1,5 +1,14 @@
 # WaveCam iOS / iPadOS App — Spec (overnight, 2026-06-01)
 
+> **Historical design doc (2026-06-14 note):** This spec predates the custom
+> direct-LoRa firmware and bundled WaveCamWatch. The live stack uses
+> `firmware/direct-lora/` + `DirectRadioGps` for GPS, `:8088` for the web UI/API,
+> and the Apple Watch as an offline-recorder / safety-control companion (not a GPS
+> source). The architecture and UI flows below remain useful context, but any
+> mention of Meshtastic, Cloudflare GPS relay, Apple Watch/iPhone GPS relay, or
+> `:8080`/`:8765` services is superseded.
+
+
 Context: autonomous overnight session (Zack asleep; back in AM). Zack wants **the phone app to display the
 feed and control the whole system**. This is the app-layer spec; the control-system layering is in
 [`2026-06-01-wavecam-control-system-architecture.md`](2026-06-01-wavecam-control-system-architecture.md)

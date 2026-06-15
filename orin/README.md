@@ -23,6 +23,7 @@ not the active WaveCam runtime.
 | Recording stream | RTSP main stream `rtsp://192.168.100.88:554/1` |
 | Production model | `/data/projects/gimbal/models/yolov8n.engine` |
 | Loop target | `35` FPS; live validation has shown 30+ FPS |
+| GPS source | Direct-LoRa base Wio → `DirectRadioGps` (`/dev/ttyACM0`) |
 
 ## Canonical Backend
 
@@ -47,7 +48,7 @@ These are not the active field runtime:
 | Path | Status |
 |---|---|
 | `vision/` | Earlier standalone vision-follow experiments |
-| `gps_fusion/` | Reusable GPS math/pointing pieces; future LoRa work should port the useful parts into `wavecam/` |
+| `gps_fusion/` | Reusable GPS math/pointing pieces consumed by `wavecam/` via the direct-LoRa path |
 | `scripts/phone_webcam.sh` | Old DroidCam/scrcpy helper; not used by the Prisual PTZ stack |
 
 Archived retired paths:

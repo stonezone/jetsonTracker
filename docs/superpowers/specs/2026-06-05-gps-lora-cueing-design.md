@@ -1,5 +1,12 @@
 # GPS / LoRa Coarse-Cueing — Design Spec
 
+> **Current stack note (2026-06-14):** The implementation uses the custom
+> direct-LoRa firmware in `firmware/direct-lora/` and `DirectRadioGps`, not a
+> Meshtastic serial reader. The design decisions below (camera position = base Wio
+> GPS, no phone relay, LoRa-only 2× Wio) remain correct; replace "Meshtastic"
+> mentally with "direct-LoRa".
+
+
 - **Status:** Decisions **LOCKED (2026-06-06)** — camera position = base Wio GPS (§6.1); remote IMU for prediction (§6.6); LoRa-only / **2× Wio Tracker L1 Lite**. **Hardware on the bench (2026-06-06)** — ready to build the Meshtastic ingest. Backend lands as PR-only while Codex is out (Zack deploys).
 - **Date:** 2026-06-05
 - **Owners:** Backend/Orin = Codex · iOS + this spec = Claude

@@ -1,5 +1,14 @@
 # WaveCam Supervisor Layer Design
 
+> **Historical design doc (2026-06-14 note):** This spec predates the custom
+> direct-LoRa firmware and bundled WaveCamWatch. The live stack uses
+> `firmware/direct-lora/` + `DirectRadioGps` for GPS, `:8088` for the web UI/API,
+> and the Apple Watch as an offline-recorder / safety-control companion (not a GPS
+> source). The architecture and UI flows below remain useful context, but any
+> mention of Meshtastic, Cloudflare GPS relay, Apple Watch/iPhone GPS relay, or
+> `:8080`/`:8765` services is superseded.
+
+
 Date: 2026-06-01
 
 Status: draft/recon only. No live cutover, no service install, no Orin mutation.

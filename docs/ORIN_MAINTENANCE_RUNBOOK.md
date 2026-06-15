@@ -1,5 +1,6 @@
 # Orin Maintenance Runbook
 
+
 ## Current Validated State
 
 Validated read-only on 2026-06-01.
@@ -42,15 +43,16 @@ Historical service state during 2026-06-01 recon:
 
 - `gps-server.service`: was active on `:8765`; now archived legacy Watch/iPhone/Cloudflare GPS path
 - `dashboard.service`: retired legacy `:8080` dashboard; should remain stopped/disabled
-- `cloudflared.service`: was active during recon; not required for current WaveCam runtime
+- `cloudflared.service`: was active during recon; now serves only `wavecam.freddieland.com` → `:8088`
 - `wavecam.service`: active on `:8088`
 
 Current WaveCam runtime expectation:
 
 - `wavecam.service`: active on `:8088`
 - `dashboard.service`: stopped/disabled legacy `:8080` dashboard
-- `gps-server.service`: stopped/disabled unless deliberately testing archived legacy GPS relay code
-- `cloudflared.service`: not required for current vision-first WaveCam runtime
+- `gps-server.service`: stopped/disabled legacy `:8765` Watch/iPhone/Cloudflare GPS relay
+- `cloudflared.service`: optional; only needed for remote access via `wavecam.freddieland.com`
+- `wavecam` reads GPS from the base Wio over USB serial (`DirectRadioGps`) using the custom `firmware/direct-lora/` firmware
 
 Current package state:
 
@@ -188,7 +190,7 @@ Feasibility:
 | Orin USB-C device-port iPhone tether | 2/10 | Wrong path | This only toggles the Jetson gadget bridge (`l4tbr0`/`usb0`/`usb1`); no Apple host enumeration. |
 | Wi-Fi hotspot from iPhone to Orin | 8/10 | Common fallback | Simpler routing; consumes Wi-Fi radio and may be less physically reliable than wired power/data. |
 | Dedicated LTE router/modem for Orin uplink | 8/10 | Recommended fallback | More field-grade than iPhone tethering; simpler to make persistent. |
-| Use iPhone USB only for charging/control, not uplink | 9/10 | Low risk | Keeps network topology simple if LoRa/Meshtastic or Wi-Fi provides the data path. |
+| Use iPhone USB only for charging/control, not uplink | 9/10 | Low risk | Keeps network topology simple if direct-LoRa or Wi-Fi provides the data path. |
 
 ## Feasibility Scores
 
@@ -223,7 +225,7 @@ Do this when the system is not actively tracking or recording.
    ```bash
    mkdir -p /data/backups
    tar -C /data/projects -czf /data/backups/gimbal-$(date +%Y%m%d-%H%M%S).tgz gimbal
-   systemctl list-unit-files 'gps-server*' 'wavecam*' 'cloudflared*' > /data/backups/systemd-units-$(date +%Y%m%d-%H%M%S).txt
+   systemctl list-unit-files 'wavecam*' 'cloudflared*' > /data/backups/systemd-units-$(date +%Y%m%d-%H%M%S).txt
    ```
 4. Refresh package metadata and review before upgrading:
    ```bash
@@ -254,7 +256,7 @@ Do this when the system is not actively tracking or recording.
 10. Verify after reboot:
    ```bash
    systemctl is-active wavecam
-   systemctl is-active dashboard gps-server 2>/dev/null || true
+   systemctl is-active dashboard 2>/dev/null || true
    ip -brief addr show enP8p1s0
    ip route get 192.168.100.88
    curl -s http://localhost:8088/api/v1/status
