@@ -590,6 +590,7 @@ class Pipeline(threading.Thread):
                     "base_locked": base_locked,
                     "calibration_valid": calibration_valid,
                     "gps_age_sec": round(gps_fix.age_sec, 2) if gps_fix is not None else None,
+                    "ts": time.time(),
                 }
                 # Stash search_roi for next frame's YOLO crop (gps_roi_enabled flag gates use)
                 self._prev_search_roi = decision.search_roi

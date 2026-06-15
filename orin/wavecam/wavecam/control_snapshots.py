@@ -194,6 +194,11 @@ def build_authority(pipeline) -> dict:
     auth = getattr(pipeline, "_last_authority", None) or {}
     owner = getattr(pipeline, "owner", None)
     owner_state = owner.state() if owner is not None else {}
+    ts = auth.get("ts")
+    # Age of the cached GPS-gate inputs. They are recomputed every frame the arbiter
+    # runs (including under manual ownership) and only go stale while KILLED or
+    # restarting — a climbing gate_age_sec makes that explicit (Kimi PR #95 note).
+    gate_age_sec = round(time.time() - ts, 2) if ts else None
     return {
         "owner": owner_state.get("owner", auth.get("owner")),
         "killed": bool(owner_state.get("killed", False)),
@@ -203,6 +208,7 @@ def build_authority(pipeline) -> dict:
         "base_locked": auth.get("base_locked"),
         "calibration_valid": auth.get("calibration_valid"),
         "gps_age_sec": auth.get("gps_age_sec"),
+        "gate_age_sec": gate_age_sec,
     }
 
 

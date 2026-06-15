@@ -49,9 +49,26 @@ def test_authority_safe_before_first_decision():
     assert auth["gps_fresh"] is None
 
 
+def test_authority_reports_gate_age_when_timestamped():
+    import time
+    auth = build_authority(_pipe(owner="gps_tracker", last_authority={
+        "owner": "gps_tracker", "ts": time.time() - 5.0, "gps_fresh": True,
+    }))
+    # gate inputs are ~5s old (e.g. owner went manual/killed since) — surfaced, not hidden
+    assert auth["gate_age_sec"] is not None
+    assert auth["gate_age_sec"] >= 4.0
+
+
+def test_authority_gate_age_none_before_first_decision():
+    auth = build_authority(_pipe(last_authority=None))
+    assert auth["gate_age_sec"] is None
+
+
 if __name__ == "__main__":
     test_authority_reports_live_owner()
     test_authority_reflects_kill_latch()
     test_authority_exposes_gps_gate_inputs()
     test_authority_safe_before_first_decision()
+    test_authority_reports_gate_age_when_timestamped()
+    test_authority_gate_age_none_before_first_decision()
     print("STATUS AUTHORITY OBSERVABILITY TESTS PASSED")
