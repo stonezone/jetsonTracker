@@ -132,6 +132,13 @@ class FusionCfg:
     # YOLO runs on a cropped ROI centered at the GPS-pointed frame center.
     # Flag OFF preserves byte-identical behavior. (review 2026-06-12)
     gps_roi_enabled: bool = False
+    # Phase-3 (v3): GPS-bearing fusion cue. When enabled + gps_tracker owns, the
+    # cue is projected from the base->target bearing onto the frame (FOV-aware) so
+    # the confidence boost tracks where the subject actually is, not just center.
+    # Default off → the legacy frame-center cue (byte-identical). Advisory only.
+    gps_bearing_cue_enabled: bool = False
+    gps_bearing_cue_uncertainty_deg: float = 5.0   # scales the cue radius
+    gps_bearing_cue_max_offscreen_deg: float = 10.0  # omit cue past frame edge + this
 
 
 @dataclass
