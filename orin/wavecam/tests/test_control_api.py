@@ -980,6 +980,41 @@ def test_legacy_resume_does_not_autostart_tracking_owner():
     assert pipe.owner.owner == "idle"
 
 
+def test_legacy_kill_runs_full_safety_sequence():
+    # H3: legacy /kill must run the SAME safety sequence as /api/v1/safety/kill —
+    # cancel the active CALIBRATE session, not just latch the kill and leave the
+    # session (and its recording/deadmen) running. pipeline.kill() alone releases
+    # the owner but does NOT mark the session inactive.
+    client = make_client()
+    api = client.app.state.control_api
+    pipe = client.app.state.pipeline
+    started = client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True, "source": "test"},
+    )
+    assert started.status_code == 200
+    assert started.json()["calibration"]["active"] is True
+    assert pipe.owner.owner == "calibrate"
+
+    client.post("/kill", json={})
+
+    assert pipe.owner.killed is True
+    assert api._calibration._session["active"] is False  # session cancelled (v1 parity)
+
+
+def test_legacy_ptz_stop_preserves_calibrate_session():
+    # H3: legacy /ptz/stop must not silently drop a CALIBRATE session. It used to
+    # release whatever owner held the camera (including calibrate).
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("calibrate")
+
+    response = client.post("/ptz/stop", json={})
+
+    assert response.status_code == 200
+    assert pipe.owner.owner == "calibrate"
+
+
 def test_legacy_zoom_routes_use_owner_gate_and_deadman():
     client = make_client()
     pipe = client.app.state.pipeline

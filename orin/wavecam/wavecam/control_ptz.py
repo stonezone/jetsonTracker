@@ -56,6 +56,30 @@ class PtzDispatcher:
                 self.pipeline.owner.request(current_owner)
             return False
 
+    def claim_manual_from_calibrate(self) -> bool:
+        """Take over from an active CALIBRATE session for a standalone capture.
+
+        Runs the whole release-calibrate → claim-manual transition under the
+        dispatcher lock (the restore-owner field must never be poked from outside)
+        and stops PTZ before the capture samples encoders, mirroring claim_manual.
+        On success owner=manual and the session is staged for restore by
+        release_manual_owner; on failure the calibrate session is restored."""
+        with self._lock:
+            if self.pipeline.owner.owner != CALIBRATE:
+                return False
+            self.pipeline.ptz.stop()
+            self.pipeline.ptz.zoom("stop")
+            if not self.pipeline.owner.release(CALIBRATE):
+                return False
+            self._restore_owner_after_manual = CALIBRATE
+            if self.pipeline.owner.request("manual"):
+                return True
+            # Could not claim manual after releasing calibrate — restore the session.
+            self._restore_owner_after_manual = None
+            if not self.pipeline.owner.killed:
+                self.pipeline.owner.request(CALIBRATE)
+            return False
+
     def release_manual_owner(self, restore_autonomous: bool = True) -> None:
         with self._lock:
             released = self.pipeline.owner.release("manual")

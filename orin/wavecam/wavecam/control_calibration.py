@@ -725,11 +725,9 @@ class CalibrationManager:
         # an active calibration session). Save it so release_manual_owner can restore
         # the session when the capture is done.
         if current == "calibrate" and req.takeover:
-            if not self.pipeline.owner.release("calibrate"):
-                return self._api.refusal("owner_busy", "Cannot release calibrate owner.")
-            self._api._ptz._restore_owner_after_manual = "calibrate"
-            if not self.pipeline.owner.request("manual"):
-                self.pipeline.owner.request("calibrate")  # restore
+            # Lock-guarded takeover (stops PTZ first, stages calibrate restore under
+            # the dispatcher lock) — no external poke of _restore_owner_after_manual.
+            if not self._api.claim_manual_from_calibrate():
                 return self._api.refusal("owner_busy", "Cannot claim manual for capture.")
             return None
         if not self._api.claim_manual(takeover=req.takeover):

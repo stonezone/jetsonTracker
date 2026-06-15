@@ -489,7 +489,12 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/kill", dependencies=[Depends(require(SAFETY))])
     def kill():
-        pipeline.kill(True)
+        # Route through the same safety sequence as /api/v1/safety/kill so the
+        # legacy button also cancels calibration, stops recording, and clears
+        # deadmen — not just latch the kill.
+        api = app.state.control_api
+        api.kill_for_safety()
+        api.bump_revision()
         return {"killed": True}
 
     @app.post("/resume", dependencies=[Depends(require(SAFETY))])
@@ -500,14 +505,12 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/ptz/stop", dependencies=[Depends(require(PTZ))])
     def ptz_stop():
-        # STOP: halt pan/tilt AND zoom, cancel stale deadman timers, and
-        # release the current owner WITHOUT clearing the kill latch.
+        # STOP via the same calibrate-safe path as /api/v1/ptz/stop: halt pan/tilt
+        # + zoom, cancel stale deadman timers, release a manual owner — but do NOT
+        # blindly drop a CALIBRATE session, and do not clear the kill latch.
         api = app.state.control_api
-        api.cancel_manual_deadman()
-        api.cancel_zoom_deadman()
-        pipeline.ptz.stop()
-        pipeline.ptz.zoom("stop")
-        pipeline.owner.release(pipeline.owner.owner)
+        api.stop_ptz(hold=False)
+        api.bump_revision()
         return {"ok": True, "owner": pipeline.owner.owner}
 
     @app.post("/ptz/zin", dependencies=[Depends(require(PTZ))])

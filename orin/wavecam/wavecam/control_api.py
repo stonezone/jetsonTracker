@@ -330,11 +330,7 @@ def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/safety/kill", dependencies=[Depends(require(SAFETY))])
     def safety_kill(_: SafetyKillRequest | None = None):
-        api.cancel_calibration_session("killed")
-        api.pipeline.kill(True)
-        api.media.stop_for_safety()
-        api.cancel_manual_deadman()
-        api.cancel_zoom_deadman()
+        api.kill_for_safety()
         api.bump_revision()
         return api.ok()
 
@@ -857,6 +853,18 @@ class ControlApiAdapter:
 
     def cancel_calibration_session(self, reason: str = "cancelled") -> None:
         self._calibration.cancel_session(reason)
+
+    def kill_for_safety(self) -> None:
+        """Full safety-kill sequence shared by the v1 and legacy kill routes:
+        cancel any CALIBRATE session, latch KILL, stop recording, clear deadmen."""
+        self.cancel_calibration_session("killed")
+        self.pipeline.kill(True)
+        self.media.stop_for_safety()
+        self.cancel_manual_deadman()
+        self.cancel_zoom_deadman()
+
+    def claim_manual_from_calibrate(self) -> bool:
+        return self._ptz.claim_manual_from_calibrate()
 
     def lock_calibration_location(self, req: CalibrationLocationRequest) -> JSONResponse:
         return self._calibration.lock_location(req)
