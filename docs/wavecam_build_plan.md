@@ -1,5 +1,19 @@
 # WAVECAM v2 — Reconciled Build Plan (Yard-MVP first, LoRa GPS)
 
+> **SUPERSEDED by Backend Plan v3 (2026-06-15).** This document is retained for historical reference.
+> The canonical current plan is `docs/WaveCam_Backend_Enhancement_Plan_v2.md` (control architecture)
+> and `docs/WaveCam_Readiness_Plan.md` (field readiness). 
+>
+> **Current deployed state (2026-06-15):** Phases 0+1 merged + live on the Orin (`e7dad4b`, fps 31).
+>   - Phase 0: control-path regression tests + /status authority section
+>   - Phase 1: base drift monitor (5-state, GPS authority gating)
+>   - Phase 2 (PR 99): persistent track ID + fusion identity layer (in review)
+>   - Phase 4 (PR 98): GPS-driven zoom curve (in review)
+>   - New config keys: `gps.base_drift_*`, `detector.tracker`, `gps.drive_zoom_*`
+>   - New status fields: authority section (`base_drift_state`, `base_drift_distance_m`, `gate_age_sec`), tracking (`track_id`)
+>   - Direct-LoRa GPS is the live transport; Meshtastic is legacy fallback.
+>   - iOS + watchOS builds match the live backend.
+
 ## Context
 
 The engineering spec from the planning pass is sound and reconciled against the overnight build.
