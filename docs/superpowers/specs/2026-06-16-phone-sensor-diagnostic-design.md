@@ -159,7 +159,10 @@ phone CoreLocation/CoreMotion/CMAltimeter
 - **Stage 2 — phone-fed calibration:** phone `true_heading` pre-fills the CALIBRATE heading
   step (pan); phone altitude **+ a per-location measured camera-height** drives tilt
   geometry (`tilt = atan2(height_above_water, distance)`); gravity/attitude informs level.
-  Keeps the fail-closed confirm. Gated on Stage 1 evidence.
+  Keeps the fail-closed confirm. Gated on Stage 1 evidence. **Requires a "docked"
+  confirmation stronger than `at_rig`** — GPS proximity proves co-located but not mounted
+  (a handheld phone at the tripod also passes), so trusting the heading needs
+  motion-stillness (`CMDeviceMotion` ≈ 0 + heading stable for N s) before it pre-fills.
 - **Stage 3 — redundancy & profiles:** base-source arbiter (phone GPS primary/failover vs
   Wio; Wio stays the LoRa relay for the remote tracker); **named per-location calibration
   profiles** (recall heading/location/tilt/height for yard / 2nd-floor / 3rd-floor).
