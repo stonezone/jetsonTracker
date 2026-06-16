@@ -71,7 +71,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 ### Hardware Stack
 
-- **Camera**: Prisual **NDI PTZ** — RAW VISCA over UDP `192.168.100.88:1259` (no auth; NOT Sony 8-byte framed). Video = RTSP (`/1` 1080p60, `/2` 640x360); ONVIF `:81` backup.
+- **Camera**: Prisual **NDI PTZ** — **20x optical zoom** (subject is well-resolved at 300m; the range challenge is narrow-FOV *acquisition*, NOT pixel count — don't treat distant subjects as a small-object detection problem). RAW VISCA over UDP `192.168.100.88:1259` (no auth; NOT Sony 8-byte framed). Video = RTSP (`/1` 1080p60, `/2` 640x360); ONVIF `:81` backup.
 - **Compute**: Jetson Orin Nano (YOLOv8n TensorRT). Wired LAN `192.168.100.10`.
 - **GPS**: LoRa — SeeedStudio **Wio Tracker L1 Lite** (nRF52840, SX1262, L76K multi-constellation) running the custom `firmware/direct-lora/` firmware. The remote tracker sends GPS over LoRa; the base Wio emits JSONL over USB; `DirectRadioGps` feeds WaveCam. Meshtastic is no longer used.
 - **Legacy gimbal**: STM32 Nucleo **F401RE** + 2x NEMA17 (the old DIY pan/tilt; firmware archived under `archive/legacy-20260606/stm32-nucleo-stepper/`).

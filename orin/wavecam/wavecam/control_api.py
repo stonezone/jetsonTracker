@@ -37,6 +37,7 @@ from .control_media import (
 from .control_snapshots import (
     build_config_snapshot,
     build_gps,
+    build_sensors_snapshot,
     build_status_snapshot,
     gps_fix_snapshot,
     map_axis,
@@ -241,6 +242,10 @@ class PhoneSampleRequest(BaseModel):
     lon: float | None = Field(default=None, ge=-180.0, le=180.0)
     h_acc: float | None = Field(default=None, ge=0.0)
     bump: bool = False
+    true_heading_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+    alt_m: float | None = Field(default=None)
+    alt_acc: float | None = Field(default=None)
+    baro_rel_m: float | None = Field(default=None)
 
 
 def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
@@ -715,6 +720,10 @@ def register_sensors_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             h_acc=req.h_acc,
             bump=req.bump,
             received_at=time.time(),
+            true_heading_deg=req.true_heading_deg,
+            alt_m=req.alt_m,
+            alt_acc=req.alt_acc,
+            baro_rel_m=req.baro_rel_m,
         )
         api.sensor_hub.ingest(sample)
         return {"ok": True, "request_id": make_request_id()}
@@ -790,6 +799,8 @@ class ControlApiAdapter:
         self.sensor_hub = SensorHub(
             events=getattr(pipeline, "events", None),
             cfg=getattr(pipeline, "cfg", None),
+            base_pos=(lambda: pipeline.gps.get_camera_position()
+                      if getattr(pipeline, "gps", None) is not None else None),
         )
 
     @property
@@ -802,7 +813,15 @@ class ControlApiAdapter:
             self._revision += 1
 
     def status_snapshot(self) -> dict:
-        return build_status_snapshot(self.pipeline, self.revision, self.media.status())
+        snap = build_status_snapshot(self.pipeline, self.revision, self.media.status())
+        # Base position for the read-only sensors snapshot. Not redundant with
+        # SensorHub's own base_pos lambda — that feeds the ingest-time at-rig gate;
+        # this feeds the /status diagnostic block.
+        base_pos = (self.pipeline.gps.get_camera_position()
+                    if getattr(self.pipeline, "gps", None) is not None else None)
+        ref = getattr(getattr(self.pipeline, "_store", None), "reference_heading", None)
+        snap["sensors"] = build_sensors_snapshot(self.sensor_hub.latest(), base_pos, ref)
+        return snap
 
     def config_snapshot(self) -> dict:
         snapshot = build_config_snapshot(self.pipeline, self.revision, self.calibration_state())

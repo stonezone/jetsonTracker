@@ -64,6 +64,8 @@ struct WCStatus: Codable, Sendable {
     /// True when the TargetEstimator is running in shadow mode (never commands).
     /// Absent on older backends — UI hides shadow indicator when nil.
     var shadowMode: Bool?
+    /// Phone-on-tripod sensor diagnostic block. Absent on older backends.
+    var sensors: Sensors?
 
     struct Session: Codable, Sendable {
         var state: String
@@ -113,6 +115,48 @@ struct WCStatus: Codable, Sendable {
         var cameraLan: Bool?
         var uplink: Bool?
     }
+    struct Sensors: Codable, Sendable {
+        struct Phone: Codable, Sendable {
+            var headingDeg: Double?
+            var trueHeadingDeg: Double?
+            var headingAcc: Double?
+            var lat: Double?
+            var lon: Double?
+            var hAcc: Double?
+            var altM: Double?
+            var altAcc: Double?
+            var baroRelM: Double?
+            var ageSec: Double?
+            var tripodReference: Bool?
+            enum CodingKeys: String, CodingKey {
+                case headingDeg = "heading_deg", trueHeadingDeg = "true_heading_deg"
+                case headingAcc = "heading_acc", lat, lon, hAcc = "h_acc"
+                case altM = "alt_m", altAcc = "alt_acc", baroRelM = "baro_rel_m"
+                case ageSec = "age_sec", tripodReference = "tripod_reference"
+            }
+        }
+        struct Base: Codable, Sendable {
+            var lat: Double?
+            var lon: Double?
+            var altM: Double?
+            enum CodingKeys: String, CodingKey { case lat, lon, altM = "alt_m" }
+        }
+        struct CoLocation: Codable, Sendable {
+            var phoneBaseDistM: Double?
+            var atRig: Bool?
+            var basis: String?
+            enum CodingKeys: String, CodingKey {
+                case phoneBaseDistM = "phone_base_dist_m", atRig = "at_rig", basis
+            }
+        }
+        var phone: Phone?
+        var base: Base?
+        var coLocation: CoLocation?
+        var headingBiasDeg: Double?
+        enum CodingKeys: String, CodingKey {
+            case phone, base, coLocation = "co_location", headingBiasDeg = "heading_bias_deg"
+        }
+    }
 }
 
 // H4: tolerant decoding — a renamed/missing backend field must degrade one HUD
@@ -137,6 +181,7 @@ extension WCStatus {
         services = try c.decodeIfPresent([String: String].self, forKey: .services)
         network = try c.decodeIfPresent(Network.self, forKey: .network)
         shadowMode = try c.decodeIfPresent(Bool.self, forKey: .shadowMode)
+        sensors = try c.decodeIfPresent(Sensors.self, forKey: .sensors)
     }
 }
 
