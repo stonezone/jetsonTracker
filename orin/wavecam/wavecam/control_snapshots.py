@@ -19,6 +19,8 @@ from .control_utils import (
 from .ptz_owner import IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
 from .supervisor import read_health, snapshot_services
+from .sensor_hub import compute_at_rig
+from .gps_geo import normalize_180
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +404,49 @@ def build_calibration(pipeline) -> dict:
     if callable(getter):
         return getter()
     return empty_calibration_state()
+
+
+# ---------------------------------------------------------------------------
+# Phone-sensor diagnostic snapshot
+# ---------------------------------------------------------------------------
+
+def build_sensors_snapshot(sample, base_pos, reference_heading=None,
+                           now: float | None = None) -> dict:
+    """Phone-on-tripod diagnostic block: phone (as the rig received it), the Wio
+    base position, the co-location/at-rig gate, and the measured heading bias vs the
+    calibrated reference. Read-only; no corrective use."""
+    now = time.time() if now is None else now
+    at_rig, dist_m, basis = compute_at_rig(
+        getattr(sample, "lat", None), getattr(sample, "lon", None), base_pos
+    )
+    phone = None
+    if sample is not None:
+        phone = {
+            "heading_deg": sample.heading_deg,
+            "true_heading_deg": sample.true_heading_deg,
+            "heading_acc": sample.heading_acc,
+            "lat": sample.lat, "lon": sample.lon, "h_acc": sample.h_acc,
+            "alt_m": sample.alt_m, "alt_acc": sample.alt_acc,
+            "baro_rel_m": sample.baro_rel_m,
+            "age_sec": round(now - sample.received_at, 1),
+            "tripod_reference": (at_rig is True),
+        }
+    base = None
+    if base_pos is not None:
+        base = {"lat": base_pos[0], "lon": base_pos[1],
+                "alt_m": base_pos[2] if len(base_pos) > 2 else None}
+    # Measured fixed offset (steel-plate hard-iron + mount alignment) — only meaningful
+    # when the phone is confirmed at the rig and a manual heading lock exists.
+    heading_bias_deg = None
+    th = getattr(sample, "true_heading_deg", None) if sample is not None else None
+    if at_rig is True and th is not None and reference_heading is not None:
+        heading_bias_deg = round(normalize_180(th - reference_heading), 1)
+    return {
+        "phone": phone,
+        "base": base,
+        "co_location": {"phone_base_dist_m": dist_m, "at_rig": at_rig, "basis": basis},
+        "heading_bias_deg": heading_bias_deg,
+    }
 
 
 # ---------------------------------------------------------------------------

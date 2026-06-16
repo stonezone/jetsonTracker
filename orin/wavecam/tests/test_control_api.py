@@ -1751,3 +1751,34 @@ def test_build_gps_includes_live_reader_target_telemetry():
     assert gps["target_battery_mv"] == 3910
     assert gps["target_sats"] == 14
     assert gps["reader_alive"] is True
+
+
+def test_status_exposes_sensors_block():
+    # Base position present + an ingested phone sample near it → at_rig true.
+    pipe = DummyPipeline()
+    pipe.cfg.sensors.enabled = True
+    pipe.gps = types.SimpleNamespace(
+        get_camera_position=lambda: (21.0, -157.0, 5.0),
+        get_camera_age=lambda: 1.0,
+        reader_alive=lambda: True, last_poll_age_sec=lambda: 0.5,
+        get_target_telemetry=lambda: {},
+    )
+    app = build_app(pipe)
+    # build_app → ControlApiAdapter.__init__ sets pipeline._store = CalibrationStore; set
+    # reference_heading on the live store object so status_snapshot picks it up.
+    pipe._store.reference_heading = 100.0
+    client = TestClient(app)
+    client.post("/api/v1/sensors/phone", json={
+        "heading_deg": 100.0, "heading_acc": 3.0, "true_heading_deg": 101.0,
+        "lat": 21.00001, "lon": -157.00001, "h_acc": 4.0,
+        "alt_m": 12.0, "alt_acc": 6.0, "bump": False,
+    })
+    body = client.get("/api/v1/status").json()
+    s = body["sensors"]
+    assert s["phone"]["true_heading_deg"] == 101.0
+    assert s["phone"]["alt_m"] == 12.0
+    assert s["base"]["lat"] == 21.0
+    assert s["co_location"]["at_rig"] is True
+    assert s["co_location"]["basis"] == "gps_proximity"
+    assert s["phone"]["tripod_reference"] is True
+    assert s["heading_bias_deg"] == 1.0   # phone true 101.0 − reference 100.0

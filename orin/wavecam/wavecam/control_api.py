@@ -37,6 +37,7 @@ from .control_media import (
 from .control_snapshots import (
     build_config_snapshot,
     build_gps,
+    build_sensors_snapshot,
     build_status_snapshot,
     gps_fix_snapshot,
     map_axis,
@@ -807,7 +808,12 @@ class ControlApiAdapter:
             self._revision += 1
 
     def status_snapshot(self) -> dict:
-        return build_status_snapshot(self.pipeline, self.revision, self.media.status())
+        snap = build_status_snapshot(self.pipeline, self.revision, self.media.status())
+        base_pos = (self.pipeline.gps.get_camera_position()
+                    if getattr(self.pipeline, "gps", None) is not None else None)
+        ref = getattr(getattr(self.pipeline, "_store", None), "reference_heading", None)
+        snap["sensors"] = build_sensors_snapshot(self.sensor_hub.latest(), base_pos, ref)
+        return snap
 
     def config_snapshot(self) -> dict:
         snapshot = build_config_snapshot(self.pipeline, self.revision, self.calibration_state())
