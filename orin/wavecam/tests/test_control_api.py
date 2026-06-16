@@ -239,6 +239,17 @@ def test_config_snapshot_exposes_v3_gps_keys():
         assert key in body, f"{key} missing from /api/v1/config snapshot"
 
 
+def test_health_emits_disk_component_when_recorder_missing():
+    # M5: with no recorder, the disk check previously raised AttributeError and the
+    # disk component was silently dropped from /health, hiding the low-disk guard.
+    # It must still be reported (ok:false + reason) so field/post-deploy checks see it.
+    pipe = DummyPipeline()
+    pipe.recorder = None
+    body = TestClient(build_app(pipe)).get("/api/v1/health").json()
+    assert "disk" in body["components"], "disk component must be present without a recorder"
+    assert body["components"]["disk"]["ok"] is False
+
+
 def wait_until(predicate, timeout_sec=0.5):
     deadline = time.time() + timeout_sec
     while time.time() < deadline:

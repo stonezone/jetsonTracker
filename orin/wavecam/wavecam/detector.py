@@ -4,6 +4,7 @@ Returns person boxes as (x1, y1, x2, y2, conf). Lazy import so the rest of the
 testbed (and the offline self-test) doesn't require torch/ultralytics.
 """
 from __future__ import annotations
+import os
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -41,9 +42,25 @@ class PersonBox:
         return (int(self.x1), int(self.y1), int(self.x2 - self.x1), int(self.y2 - self.y1))
 
 
+def _check_model_path(model) -> None:
+    """Fail fast if an explicit engine/weights file is missing. A TensorRT .engine
+    is never auto-downloaded, and any path with a separator is explicit, so both must
+    exist; a bare weights name (e.g. "yolov8n.pt") is left to Ultralytics' auto-
+    download. Without this, a missing model surfaces as an opaque Ultralytics crash
+    during pipeline construction — i.e. a zombie rig (API up, vision loop dead)."""
+    model_str = str(model)
+    needs_local_file = model_str.endswith(".engine") or os.sep in model_str
+    if needs_local_file and not os.path.exists(model):
+        raise FileNotFoundError(
+            f"detector model not found: {model_str!r}. Check detector.model in config "
+            f"(field rollback: yolov8n.engine)."
+        )
+
+
 class PersonDetector:
     def __init__(self, cfg):
         self.cfg = cfg
+        _check_model_path(cfg.model)
         from ultralytics import YOLO  # lazy
         self.model = YOLO(cfg.model)
 

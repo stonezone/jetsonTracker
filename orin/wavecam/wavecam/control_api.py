@@ -468,7 +468,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         if refusal is not None:
             return refusal
         try:
-            api.capture_calibration(
+            persisted = api.capture_calibration(
                 "heading",
                 {
                     "heading_deg": req.heading_deg,
@@ -479,7 +479,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         finally:
             api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
-        return api.calibration_ok()
+        return api.calibration_persisted_response(persisted)
 
     @app.post("/api/v1/calibration/tilt", dependencies=[Depends(require(PTZ))])
     def calibration_tilt(req: TiltCalibrationRequest):
@@ -487,7 +487,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         if refusal is not None:
             return refusal
         try:
-            api.capture_calibration(
+            persisted = api.capture_calibration(
                 "tilt",
                 {
                     "tilt_deg": req.tilt_deg,
@@ -498,7 +498,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         finally:
             api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
-        return api.calibration_ok()
+        return api.calibration_persisted_response(persisted)
 
     @app.post("/api/v1/calibration/zoom", dependencies=[Depends(require(PTZ))])
     def calibration_zoom(req: ZoomCalibrationRequest):
@@ -506,7 +506,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         if refusal is not None:
             return refusal
         try:
-            api.capture_calibration(
+            persisted = api.capture_calibration(
                 "zoom",
                 {
                     "zoom_fov_deg": req.zoom_fov_deg,
@@ -517,7 +517,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         finally:
             api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
-        return api.calibration_ok()
+        return api.calibration_persisted_response(persisted)
 
     @app.post("/api/v1/calibration/base-lock", dependencies=[Depends(require(PTZ))])
     def calibration_base_lock(req: CalibrationBaseRequest):
@@ -528,14 +528,14 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             api.release_manual_owner(restore_autonomous=True)
             return api.refusal("gps_unavailable", "Base GPS has no fix yet.", 503)
         try:
-            api.capture_calibration("base_lock", {
+            persisted = api.capture_calibration("base_lock", {
                 "source": normalized_text(req.source, "unknown", 64),
                 "note": normalized_optional_text(req.note, 256),
             })
         finally:
             api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
-        return api.calibration_ok()
+        return api.calibration_persisted_response(persisted)
 
     @app.get("/api/v1/calibration/fov", dependencies=[Depends(require(READ))])
     def calibration_fov_get():
@@ -736,13 +736,22 @@ def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             age = gps.last_poll_age_sec() if callable(getattr(gps, "last_poll_age_sec", None)) else None
             snap["components"]["gps_reader"] = {"ok": bool(alive), "age_sec": age, "detail": {}}
             snap["ok"] = snap["ok"] and bool(alive)
-        try:
-            import shutil
-            free_gb = shutil.disk_usage(str(api.pipeline.recorder.config.rec_dir)).free / 1e9
-            snap["components"]["disk"] = {"ok": free_gb > 5.0, "age_sec": 0,
-                                          "detail": {"free_gb": round(free_gb, 1)}}
-        except Exception:
-            pass
+        recorder = getattr(api.pipeline, "recorder", None)
+        rec_dir = getattr(getattr(recorder, "config", None), "rec_dir", None)
+        if rec_dir is None:
+            # Don't silently drop the disk component when there's no recorder —
+            # report it unknown so the low-disk guard stays visible to /health.
+            snap["components"]["disk"] = {"ok": False, "age_sec": 0,
+                                          "detail": {"reason": "recorder_unavailable"}}
+        else:
+            try:
+                import shutil
+                free_gb = shutil.disk_usage(str(rec_dir)).free / 1e9
+                snap["components"]["disk"] = {"ok": free_gb > 5.0, "age_sec": 0,
+                                              "detail": {"free_gb": round(free_gb, 1)}}
+            except Exception as e:
+                snap["components"]["disk"] = {"ok": False, "age_sec": 0,
+                                              "detail": {"reason": f"disk_check_failed: {type(e).__name__}"}}
         return snap
 
 
@@ -842,8 +851,20 @@ class ControlApiAdapter:
     def validate_calibration_capture(self, req: CalibrationBaseRequest) -> JSONResponse | None:
         return self._calibration.validate_calibration_capture(req)
 
-    def capture_calibration(self, step: str, values: dict) -> None:
-        self._calibration.capture_calibration(step, values)
+    def capture_calibration(self, step: str, values: dict) -> bool:
+        return self._calibration.capture_calibration(step, values)
+
+    def calibration_persisted_response(self, persisted: bool):
+        """200 calibration_ok when the pose persisted, else a 503 so the operator
+        knows the lock is volatile (M2 — a save failure must not read as success)."""
+        if persisted:
+            return self.calibration_ok()
+        return self.refusal(
+            "persist_failed",
+            "Calibration applied in memory but failed to persist to disk; it will "
+            "NOT survive a restart. Check the rig pose-store path/disk.",
+            503,
+        )
 
     def start_calibration_session(self, req: CalibrationSessionStartRequest) -> JSONResponse:
         return self._calibration.start_session(req)

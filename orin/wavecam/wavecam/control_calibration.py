@@ -734,7 +734,7 @@ class CalibrationManager:
             return self._api.refusal("owner_busy", "Another PTZ owner holds the camera.")
         return None
 
-    def capture_calibration(self, step: str, values: dict) -> None:
+    def capture_calibration(self, step: str, values: dict) -> bool:
         # Encoder source: the PtzState poller cache (fresh to ~0.1s at 10Hz and
         # plausibility-gated), NOT a direct inquiry — a request-thread inquiry
         # races the poller on the shared UDP socket (reply theft), and the
@@ -793,5 +793,7 @@ class CalibrationManager:
             self._store.set_step(step, values)
             try:
                 self._store.save()
+                return True
             except Exception as e:
                 print(f"[control_api] calibration save failed: {e}")
+                return False
