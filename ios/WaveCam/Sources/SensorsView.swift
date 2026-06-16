@@ -60,7 +60,8 @@ struct SensorsView: View {
 
     private func fmtHeading(_ d: Double?, acc: Double?) -> String {
         guard let d else { return "—" }
-        let a = (acc ?? -1) >= 0 ? String(format: " ±%.0f°", acc!) : " (invalid)"
+        let a: String
+        if let acc, acc >= 0 { a = String(format: " ±%.0f°", acc) } else { a = " (invalid)" }
         return String(format: "%.1f°%@", d, a)
     }
     private func fmtBias(_ d: Double?) -> String {
