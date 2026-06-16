@@ -130,6 +130,9 @@ final class PhoneSensorPublisher: NSObject {
         guard CLLocationManager.headingAvailable() else { return }
         // The phone mounts landscape on the rig; without this the heading is off by 90°.
         locationManager.headingOrientation = .landscapeRight
+        // Clean restart: a bare startUpdatingHeading() is a no-op if CoreLocation already
+        // considers heading "updating" but stopped delivering; stop→start forces a fresh start.
+        locationManager.stopUpdatingHeading()
         locationManager.startUpdatingHeading()
     }
 
@@ -304,6 +307,10 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
                 if self.running {
                     manager.desiredAccuracy = kCLLocationAccuracyBest
                     manager.startUpdatingLocation()
+                    // Heading must be (re)started AFTER auth is granted — if startSensors() ran
+                    // first (auth still .notDetermined) the initial startUpdatingHeading never
+                    // delivered. Re-run it on the grant edge (the proposal's §6.1 fix).
+                    self.startHeading()
                 }
             default:
                 // Denied or restricted — clear any stale position data.

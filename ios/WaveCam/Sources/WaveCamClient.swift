@@ -115,6 +115,12 @@ struct WCStatus: Codable, Sendable {
         var cameraLan: Bool?
         var uplink: Bool?
     }
+    // NO explicit CodingKeys here. The shared `decoder` uses .convertFromSnakeCase, which
+    // maps snake_case JSON (heading_deg, alt_m, age_sec, co_location, …) to these camelCase
+    // properties automatically. Declaring snake_case CodingKeys would CONFLICT: the decoder
+    // first converts "heading_deg"→"headingDeg", then can't match a key whose raw value is
+    // literally "heading_deg", so every multi-word field silently decodes to nil while lat/lon
+    // (single-word) survive — which is exactly the "GPS shows but no heading/altitude" bug.
     struct Sensors: Codable, Sendable {
         struct Phone: Codable, Sendable {
             var headingDeg: Double?
@@ -128,34 +134,21 @@ struct WCStatus: Codable, Sendable {
             var baroRelM: Double?
             var ageSec: Double?
             var tripodReference: Bool?
-            enum CodingKeys: String, CodingKey {
-                case headingDeg = "heading_deg", trueHeadingDeg = "true_heading_deg"
-                case headingAcc = "heading_acc", lat, lon, hAcc = "h_acc"
-                case altM = "alt_m", altAcc = "alt_acc", baroRelM = "baro_rel_m"
-                case ageSec = "age_sec", tripodReference = "tripod_reference"
-            }
         }
         struct Base: Codable, Sendable {
             var lat: Double?
             var lon: Double?
             var altM: Double?
-            enum CodingKeys: String, CodingKey { case lat, lon, altM = "alt_m" }
         }
         struct CoLocation: Codable, Sendable {
             var phoneBaseDistM: Double?
             var atRig: Bool?
             var basis: String?
-            enum CodingKeys: String, CodingKey {
-                case phoneBaseDistM = "phone_base_dist_m", atRig = "at_rig", basis
-            }
         }
         var phone: Phone?
         var base: Base?
         var coLocation: CoLocation?
         var headingBiasDeg: Double?
-        enum CodingKeys: String, CodingKey {
-            case phone, base, coLocation = "co_location", headingBiasDeg = "heading_bias_deg"
-        }
     }
 }
 
