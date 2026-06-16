@@ -793,6 +793,8 @@ class ControlApiAdapter:
         self.sensor_hub = SensorHub(
             events=getattr(pipeline, "events", None),
             cfg=getattr(pipeline, "cfg", None),
+            base_pos=(lambda: pipeline.gps.get_camera_position()
+                      if getattr(pipeline, "gps", None) is not None else None),
         )
 
     @property
