@@ -60,6 +60,11 @@ final class PhoneSensorPublisher: NSObject {
     private var latestLat: Double? = nil
     private var latestLon: Double? = nil
     private var latestHAcc: Double? = nil
+    private var latestTrueHeadingDeg: Double? = nil
+    private var latestAltM: Double? = nil
+    private var latestAltAcc: Double? = nil
+    private let altimeter = CMAltimeter()
+    private var latestBaroRelM: Double? = nil
 
     // Bump detection state.
     private var bumpPending = false
@@ -97,6 +102,7 @@ final class PhoneSensorPublisher: NSObject {
         startHeading()
         startLocation()
         startAccelerometer()
+        startAltimeter()
     }
 
     private func stopSensors() {
@@ -105,13 +111,26 @@ final class PhoneSensorPublisher: NSObject {
         locationManager.stopUpdatingHeading()
         locationManager.stopUpdatingLocation()
         motionManager.stopDeviceMotionUpdates()
+        altimeter.stopRelativeAltitudeUpdates()
     }
 
     // MARK: - Heading
 
     private func startHeading() {
         guard CLLocationManager.headingAvailable() else { return }
+        // The phone mounts landscape on the rig; without this the heading is off by 90°.
+        locationManager.headingOrientation = .landscapeRight
         locationManager.startUpdatingHeading()
+    }
+
+    // MARK: - Altimeter
+
+    private func startAltimeter() {
+        guard CMAltimeter.isRelativeAltitudeAvailable() else { return }
+        altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, _ in
+            guard let data else { return }
+            self?.latestBaroRelM = data.relativeAltitude.doubleValue
+        }
     }
 
     // MARK: - Location
@@ -190,6 +209,10 @@ final class PhoneSensorPublisher: NSObject {
         if let lat = latestLat { body["lat"] = lat }
         if let lon = latestLon { body["lon"] = lon }
         if let hAcc = latestHAcc { body["h_acc"] = hAcc }
+        if let th = latestTrueHeadingDeg { body["true_heading_deg"] = th }
+        if let alt = latestAltM { body["alt_m"] = alt }
+        if let altAcc = latestAltAcc { body["alt_acc"] = altAcc }
+        if let baro = latestBaroRelM { body["baro_rel_m"] = baro }
 
         await client.postPhoneSensor(body)
     }
@@ -206,6 +229,8 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
         Task { @MainActor [weak self] in
             self?.latestHeadingDeg = newHeading.magneticHeading
             self?.latestHeadingAcc = newHeading.headingAccuracy
+            // trueHeading < 0 means no magnetic calibration yet — treat as absent.
+            self?.latestTrueHeadingDeg = newHeading.trueHeading >= 0 ? newHeading.trueHeading : nil
         }
     }
 
@@ -216,6 +241,8 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
             self?.latestLat = loc.coordinate.latitude
             self?.latestLon = loc.coordinate.longitude
             self?.latestHAcc = loc.horizontalAccuracy
+            self?.latestAltM = loc.altitude
+            self?.latestAltAcc = loc.verticalAccuracy
         }
     }
 
