@@ -238,11 +238,28 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
                                      didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
         Task { @MainActor [weak self] in
-            self?.latestLat = loc.coordinate.latitude
-            self?.latestLon = loc.coordinate.longitude
-            self?.latestHAcc = loc.horizontalAccuracy
-            self?.latestAltM = loc.altitude
-            self?.latestAltAcc = loc.verticalAccuracy
+            guard let self else { return }
+            // iOS sets horizontalAccuracy < 0 to flag an invalid fix, where lat/lon are
+            // meaningless. A negative h_acc also violates the backend's ge=0 bound and 422s
+            // the ENTIRE sample (dropping a valid heading with it), so drop the location
+            // fields until the fix is valid rather than poison the whole POST.
+            if loc.horizontalAccuracy >= 0 {
+                self.latestLat = loc.coordinate.latitude
+                self.latestLon = loc.coordinate.longitude
+                self.latestHAcc = loc.horizontalAccuracy
+            } else {
+                self.latestLat = nil
+                self.latestLon = nil
+                self.latestHAcc = nil
+            }
+            // verticalAccuracy < 0 flags an invalid altitude.
+            if loc.verticalAccuracy >= 0 {
+                self.latestAltM = loc.altitude
+                self.latestAltAcc = loc.verticalAccuracy
+            } else {
+                self.latestAltM = nil
+                self.latestAltAcc = nil
+            }
         }
     }
 

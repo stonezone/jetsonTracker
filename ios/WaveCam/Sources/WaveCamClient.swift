@@ -931,6 +931,13 @@ final class WaveCamClient {
     /// failure can't paint a false "PTZ failed" banner on the PTZ screen (review #P1-C).
     private(set) var lastControlError: String?
 
+    /// Result + time of the most recent phone-sensor POST (T3.1 diagnostic). The backend's
+    /// sensors.age_sec alone can't distinguish "app stopped posting" from "app posting but
+    /// backend dropping the sample" — this surfaces the client side of that. nil until the
+    /// first attempt.
+    private(set) var lastPhoneSensorPostOk: Bool?
+    private(set) var lastPhoneSensorPostAt: Date?
+
     /// Optimistic local KILL latch: set the instant the operator hits Emergency Stop so the
     /// latch overlay appears immediately, before the ~1Hz poll round-trips (review: optimistic KILL).
     private(set) var optimisticKilled = false
@@ -1660,7 +1667,13 @@ final class WaveCamClient {
     /// Only posts in live mode; no-ops in mock/offline so the publisher never needs to know.
     func postPhoneSensor(_ body: [String: Any]) async {
         guard mode == .live else { return }
-        _ = try? await post("sensors/phone", body: body)
+        do {
+            _ = try await post("sensors/phone", body: body)
+            lastPhoneSensorPostOk = true
+        } catch {
+            lastPhoneSensorPostOk = false
+        }
+        lastPhoneSensorPostAt = Date()
     }
 
     /// POST /api/v1/agent/summon — requests an on-demand diagnostic pass from the supervisor.

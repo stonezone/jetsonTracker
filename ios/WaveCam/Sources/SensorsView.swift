@@ -12,6 +12,13 @@ struct SensorsView: View {
             VStack(spacing: 12) {
                 mountBadge
                 OperatorCard(title: "HEADING") {
+                    // Magnetic heading is present on every sample once the magnetometer
+                    // reports; true heading needs a location fix + calibration and is
+                    // frequently absent. Show magnetic as the primary row so the card is
+                    // never blank when valid compass data exists. heading_acc describes the
+                    // magnetic reading and is the key viability number on a magnetic mount.
+                    row("Phone (magnetic)", fmtHeading(sensors?.phone?.headingDeg,
+                                                       acc: sensors?.phone?.headingAcc))
                     row("Phone (true)", fmtHeading(sensors?.phone?.trueHeadingDeg,
                                                    acc: sensors?.phone?.headingAcc))
                     row("Base", "— (no compass)")
@@ -31,7 +38,9 @@ struct SensorsView: View {
                     row("Base", fmtMeters(sensors?.base?.altM))
                 }
                 OperatorCard(title: "FRESHNESS") {
-                    row("Phone age", fmtSec(sensors?.phone?.ageSec))
+                    row("Rig age (received)", fmtSec(sensors?.phone?.ageSec))
+                    row("Phone POST", fmtPostStatus(client.lastPhoneSensorPostOk,
+                                                    at: client.lastPhoneSensorPostAt))
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
@@ -79,6 +88,12 @@ struct SensorsView: View {
         return String(format: "%.1f m%@", m, a)
     }
     private func fmtSec(_ s: Double?) -> String { s.map { String(format: "%.1f s", $0) } ?? "—" }
+    private func fmtPostStatus(_ ok: Bool?, at: Date?) -> String {
+        guard let ok, let at else { return "— (no attempt yet)" }
+        let age = max(0, Date().timeIntervalSince(at))
+        return ok ? String(format: "ok · %.0fs ago", age)
+                  : String(format: "FAILED · %.0fs ago", age)
+    }
 }
 
 #Preview {
