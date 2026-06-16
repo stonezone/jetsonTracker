@@ -7,6 +7,7 @@ struct ToolsView: View {
         case tune = "Tune"
         case agent = "Agent"
         case log = "Log"
+        case sensors = "Sensors"
     }
 
     @State private var selectedTool = Tool.tune
@@ -30,6 +31,8 @@ struct ToolsView: View {
                 AgentView()
             case .log:
                 SessionLogView()
+            case .sensors:
+                SensorsView()
             }
         }
         .background(WC.bg.ignoresSafeArea())
