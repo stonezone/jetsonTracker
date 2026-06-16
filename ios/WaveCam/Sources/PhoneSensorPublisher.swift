@@ -108,8 +108,9 @@ final class PhoneSensorPublisher: NSObject {
     private func startSensors() {
         guard !sensorsActive else { return }
         sensorsActive = true
-        startHeading()
+        // Location first: trueHeading needs an active location fix (gps-relay-framework order).
         startLocation()
+        startHeading()
         startAccelerometer()
         startAltimeter()
     }
@@ -204,6 +205,16 @@ final class PhoneSensorPublisher: NSObject {
         // POST. Sent whenever foreground + live; the socket no-ops while disconnected and
         // reconnects on its own, so a flaky link recovers instead of silently dropping fixes.
         guard client.mode == .live else { return }
+
+        // Heading can silently STOP delivering after a magnetometer disturbance or a
+        // background cycle while the location stream keeps flowing (observed: GPS keeps
+        // updating, compass goes stale). Re-assert it each tick — idempotent if already
+        // running, a restart if it dropped. This is the robustness the proven
+        // gps-relay-framework relies on (it re-calls startUpdatingHeading continuously).
+        if sensorsActive, CLLocationManager.headingAvailable() {
+            locationManager.startUpdatingHeading()
+        }
+
         var body: [String: Any] = ["bump": bumpPending]
         bumpPending = false
 
@@ -245,10 +256,14 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
         // headingAccuracy < 0 means invalid — pass it through as-is so the backend
         // can distinguish "no calibration" from a valid low-accuracy reading.
         Task { @MainActor [weak self] in
-            self?.latestHeadingDeg = newHeading.magneticHeading
-            self?.latestHeadingAcc = newHeading.headingAccuracy
+            guard let self else { return }
+            // magneticHeading can be NaN on a bad read; NaN would fail JSON serialization and
+            // drop the WHOLE fix, so treat it as absent (gps-relay-framework resolveHeading).
+            let mag = newHeading.magneticHeading
+            self.latestHeadingDeg = mag.isNaN ? nil : mag
+            self.latestHeadingAcc = newHeading.headingAccuracy
             // trueHeading < 0 means no magnetic calibration yet — treat as absent.
-            self?.latestTrueHeadingDeg = newHeading.trueHeading >= 0 ? newHeading.trueHeading : nil
+            self.latestTrueHeadingDeg = newHeading.trueHeading >= 0 ? newHeading.trueHeading : nil
         }
     }
 
