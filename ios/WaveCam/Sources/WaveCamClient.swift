@@ -1668,11 +1668,31 @@ final class WaveCamClient {
     func postPhoneSensor(_ body: [String: Any]) async {
         guard mode == .live else { return }
         do {
-            _ = try await post("sensors/phone", body: body)
+            _ = try await post("sensors/phone", body: body, idempotent: true)
             lastPhoneSensorPostOk = true
         } catch {
             lastPhoneSensorPostOk = false
         }
+        lastPhoneSensorPostAt = Date()
+    }
+
+    /// Current websocket endpoint for the phone-sensor stream (ws/wss derived from the
+    /// active route + token), or nil in mock mode. Re-read by PhoneSensorSocket on each
+    /// (re)connect so route failover and token changes are picked up automatically.
+    var phoneSensorWSEndpoint: (url: URL, token: String?)? {
+        guard mode == .live,
+              var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        comps.scheme = (baseURL.scheme?.lowercased() == "https") ? "wss" : "ws"
+        comps.path = "/api/v1/sensors/phone/ws"
+        comps.query = nil
+        guard let url = comps.url else { return nil }
+        return (url, token)
+    }
+
+    /// Surface the phone-sensor stream's live connection state to the diagnostic panel
+    /// (reuses the existing POST-status fields: ok == connected).
+    func notePhoneSensorStream(connected: Bool) {
+        lastPhoneSensorPostOk = connected
         lastPhoneSensorPostAt = Date()
     }
 
@@ -1958,12 +1978,13 @@ final class WaveCamClient {
     }
 
     @discardableResult
-    private func post(_ path: String, body: [String: Any]) async throws -> Data {
+    private func post(_ path: String, body: [String: Any], idempotent: Bool = false) async throws -> Data {
         let payload = try JSONSerialization.data(withJSONObject: body)
         var failoverError: Error?
-        // Mutating POSTs fail over only on *connection* errors. A reached server that
-        // returns an HTTP error propagates immediately -- never re-send to another host
-        // (would risk double-applying a command). Same candidates as getWithFallback.
+        // Mutating POSTs fail over only on *connection* errors (server provably never
+        // received it) so a command is never double-applied. Idempotent telemetry
+        // (sensors/phone — latest-sample-wins) opts into read-style failover so a dead
+        // tether candidate that times out still retries the Wi-Fi route this tick.
         for candidate in apiCandidates() {
             do {
                 var req = URLRequest(url: candidate.appending(path: path))

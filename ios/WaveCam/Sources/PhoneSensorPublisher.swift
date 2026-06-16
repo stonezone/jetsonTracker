@@ -43,14 +43,17 @@ final class PhoneSensorPublisher: NSObject {
     private let client: WaveCamClient
     private let locationManager = CLLocationManager()
     private let motionManager = CMMotionManager()
+    private let socket: PhoneSensorSocket
 
     private var publishTimer: Task<Void, Never>?
     private var running = false
     private var sensorsActive = false
-    private var disconnectedSince: Date?
+    private var postFailingSince: Date?
 
-    /// Disconnected this long -> sensors stop (GPS Best + 20Hz motion are the
-    /// battery cost; the 1Hz timer itself is negligible). Review 2026-06-12.
+    /// POSTs failing this long -> stop sensors (GPS Best + 20Hz motion are the
+    /// battery cost; the 1Hz timer itself is negligible). Battery guard is now
+    /// driven by actual POST outcome, not the status-poll `connected` flag, which
+    /// could wedge the feed when a transient /status read failed (2026-06-16).
     private static let sensorIdleGrace: TimeInterval = 30
 
     // Latest sensor snapshots (written from callbacks, read on publish timer).
@@ -74,6 +77,7 @@ final class PhoneSensorPublisher: NSObject {
 
     init(client: WaveCamClient) {
         self.client = client
+        self.socket = PhoneSensorSocket(endpoint: { [client] in client.phoneSensorWSEndpoint })
         super.init()
         locationManager.delegate = self
     }
@@ -83,8 +87,12 @@ final class PhoneSensorPublisher: NSObject {
     func start() {
         guard !running else { return }
         running = true
-        // Sensors start on the first connected tick and stop after a
-        // disconnected grace period — no rig, no GPS/IMU battery burn.
+        // Gather immediately while foregrounded. The POST is NOT gated on the
+        // status-poll's `connected` flag — a transient /status failure must not
+        // wedge the independent, idempotent sensor feed. Battery is protected by
+        // stopping sensors after sustained POST failures (publish) + on background.
+        if client.mode == .live { startSensors() }
+        socket.open()
         startPublishTimer()
     }
 
@@ -93,6 +101,7 @@ final class PhoneSensorPublisher: NSObject {
         running = false
         publishTimer?.cancel()
         publishTimer = nil
+        socket.close()
         stopSensors()
     }
 
@@ -191,20 +200,14 @@ final class PhoneSensorPublisher: NSObject {
     }
 
     private func publish() async {
-        guard client.connected else {
-            if disconnectedSince == nil {
-                disconnectedSince = Date()
-            } else if Date().timeIntervalSince(disconnectedSince!) > Self.sensorIdleGrace {
-                stopSensors()
-            }
-            return
-        }
-        disconnectedSince = nil
-        startSensors()
+        // Stream over the persistent, self-healing websocket rather than a fire-and-forget
+        // POST. Sent whenever foreground + live; the socket no-ops while disconnected and
+        // reconnects on its own, so a flaky link recovers instead of silently dropping fixes.
+        guard client.mode == .live else { return }
         var body: [String: Any] = ["bump": bumpPending]
         bumpPending = false
 
-        body["heading_deg"] = latestHeadingDeg
+        if let h = latestHeadingDeg { body["heading_deg"] = h }
         body["heading_acc"] = latestHeadingAcc
         if let lat = latestLat { body["lat"] = lat }
         if let lon = latestLon { body["lon"] = lon }
@@ -214,7 +217,22 @@ final class PhoneSensorPublisher: NSObject {
         if let altAcc = latestAltAcc { body["alt_acc"] = altAcc }
         if let baro = latestBaroRelM { body["baro_rel_m"] = baro }
 
-        await client.postPhoneSensor(body)
+        socket.send(body)
+        client.notePhoneSensorStream(connected: socket.connected)
+
+        // Battery guard on the live stream state: after a sustained disconnect (rig
+        // unreachable) stop the high-power GPS Best + 20 Hz motion; reconnection restarts
+        // them. startSensors() is idempotent.
+        if socket.connected {
+            postFailingSince = nil
+            startSensors()
+        } else {
+            if postFailingSince == nil {
+                postFailingSince = Date()
+            } else if Date().timeIntervalSince(postFailingSince!) > Self.sensorIdleGrace {
+                stopSensors()
+            }
+        }
     }
 }
 

@@ -6,11 +6,21 @@ import SwiftUI
 struct SensorsView: View {
     @Environment(WaveCamClient.self) private var client
     private var sensors: WCStatus.Sensors? { client.status?.sensors }
+    private var appBuildString: String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "\(v) (\(b))"
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
                 mountBadge
+                OperatorCard(title: "DIAGNOSTIC") {
+                    row("App build", appBuildString)
+                    row("Link", "\(client.connected ? "connected" : "offline") · \(client.activeRoute)")
+                    row("Phone sample", sensors?.phone == nil ? "nil (rig has none)" : "present")
+                }
                 OperatorCard(title: "HEADING") {
                     // Magnetic heading is present on every sample once the magnetometer
                     // reports; true heading needs a location fix + calibration and is
