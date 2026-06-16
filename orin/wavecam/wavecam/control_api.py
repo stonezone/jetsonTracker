@@ -733,6 +733,56 @@ def register_sensors_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         api.sensor_hub.reset_baseline()
         return {"ok": True, "request_id": make_request_id()}
 
+    @app.websocket("/api/v1/sensors/phone/ws")
+    async def sensors_phone_ws(websocket: WebSocket):
+        """Persistent phone-sensor stream. The iOS publisher holds ONE connection and
+        pushes a fix per tick; a flaky link self-heals via the client's reconnect/queue
+        instead of dropping fire-and-forget POSTs (the failure mode of the HTTP route).
+        Each frame is the same shape as PhoneSampleRequest. `{"type":"ping"}` frames are
+        answered with `{"type":"pong"}` for the client's latency/heartbeat tracking."""
+        await websocket.accept()
+        if not websocket_authorized(websocket, READ):
+            await websocket.close(code=1008)
+            return
+        try:
+            while True:
+                raw = await websocket.receive_json()
+                if isinstance(raw, dict) and raw.get("type") == "ping":
+                    await websocket.send_json(
+                        {"type": "pong", "id": raw.get("id"), "ts": raw.get("ts")}
+                    )
+                    continue
+                try:
+                    req = PhoneSampleRequest(**raw)
+                except Exception:
+                    # Drop a malformed frame without tearing down the stream — one bad
+                    # sample must not cost the persistent connection (idempotent telemetry).
+                    continue
+                api.sensor_hub.ingest(
+                    PhoneSample(
+                        heading_deg=req.heading_deg,
+                        heading_acc=req.heading_acc,
+                        lat=req.lat,
+                        lon=req.lon,
+                        h_acc=req.h_acc,
+                        bump=req.bump,
+                        received_at=time.time(),
+                        true_heading_deg=req.true_heading_deg,
+                        alt_m=req.alt_m,
+                        alt_acc=req.alt_acc,
+                        baro_rel_m=req.baro_rel_m,
+                    )
+                )
+        except WebSocketDisconnect:
+            return
+        except Exception:
+            # Unexpected error: close so the client reconnects rather than wedging.
+            try:
+                await websocket.close(code=1011)
+            except Exception:
+                pass
+            return
+
 
 def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/health", dependencies=[Depends(require(READ))])

@@ -1840,3 +1840,38 @@ def test_status_exposes_sensors_block():
     assert 0 <= s["co_location"]["phone_base_dist_m"] < 15   # ~1.4 m, within AT_RIG_M
     assert s["phone"]["tripod_reference"] is True
     assert s["heading_bias_deg"] == 1.0   # phone true 101.0 − reference 100.0
+
+
+def test_sensors_phone_ws_ingests_stream():
+    # The persistent websocket stream ingests fixes identically to the HTTP route, a
+    # malformed frame does not tear down the connection, and a heartbeat ping is answered.
+    pipe = DummyPipeline()
+    pipe.cfg.sensors.enabled = True
+    client = TestClient(build_app(pipe))
+    with client.websocket_connect("/api/v1/sensors/phone/ws") as ws:
+        ws.send_json({"heading_deg": 999.0})  # out of range → dropped, stream survives
+        ws.send_json({
+            "heading_deg": 120.0, "heading_acc": 5.0, "true_heading_deg": 121.0,
+            "lat": 21.0, "lon": -157.0, "h_acc": 4.0, "bump": False,
+        })
+        # Heartbeat round-trips; frames process in order, so the fix is ingested by now.
+        ws.send_json({"type": "ping", "id": "hb1"})
+        pong = ws.receive_json()
+        assert pong["type"] == "pong" and pong["id"] == "hb1"
+    phone = client.get("/api/v1/status").json()["sensors"]["phone"]
+    assert phone is not None
+    assert phone["true_heading_deg"] == 121.0
+    assert phone["heading_deg"] == 120.0
+
+
+def test_sensors_phone_ws_noop_when_disabled():
+    # enabled=False → the stream is accepted but SensorHub records nothing.
+    pipe = DummyPipeline()
+    pipe.cfg.sensors.enabled = False
+    client = TestClient(build_app(pipe))
+    with client.websocket_connect("/api/v1/sensors/phone/ws") as ws:
+        ws.send_json({"heading_deg": 120.0, "heading_acc": 5.0,
+                      "lat": 21.0, "lon": -157.0, "h_acc": 4.0, "bump": False})
+        ws.send_json({"type": "ping", "id": "hb2"})
+        assert ws.receive_json()["type"] == "pong"
+    assert client.get("/api/v1/status").json()["sensors"]["phone"] is None
