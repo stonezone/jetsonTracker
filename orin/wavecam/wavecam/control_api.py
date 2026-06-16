@@ -241,6 +241,10 @@ class PhoneSampleRequest(BaseModel):
     lon: float | None = Field(default=None, ge=-180.0, le=180.0)
     h_acc: float | None = Field(default=None, ge=0.0)
     bump: bool = False
+    true_heading_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+    alt_m: float | None = Field(default=None)
+    alt_acc: float | None = Field(default=None)
+    baro_rel_m: float | None = Field(default=None)
 
 
 def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
@@ -719,6 +723,10 @@ def register_sensors_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             h_acc=req.h_acc,
             bump=req.bump,
             received_at=time.time(),
+            true_heading_deg=req.true_heading_deg,
+            alt_m=req.alt_m,
+            alt_acc=req.alt_acc,
+            baro_rel_m=req.baro_rel_m,
         )
         api.sensor_hub.ingest(sample)
         return {"ok": True, "request_id": make_request_id()}

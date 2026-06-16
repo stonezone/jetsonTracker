@@ -36,6 +36,10 @@ class PhoneSample:
     h_acc: Optional[float]
     bump: bool
     received_at: float                 # time.time() at ingest
+    true_heading_deg: Optional[float] = None   # GPS-corrected; None → no fix/invalid
+    alt_m: Optional[float] = None              # GPS altitude (m)
+    alt_acc: Optional[float] = None            # vertical accuracy (m); <0 → invalid
+    baro_rel_m: Optional[float] = None         # CMAltimeter relative altitude (m)
 
 
 class SensorHub:
