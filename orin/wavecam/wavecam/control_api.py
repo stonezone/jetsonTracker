@@ -809,6 +809,9 @@ class ControlApiAdapter:
 
     def status_snapshot(self) -> dict:
         snap = build_status_snapshot(self.pipeline, self.revision, self.media.status())
+        # Base position for the read-only sensors snapshot. Not redundant with
+        # SensorHub's own base_pos lambda — that feeds the ingest-time at-rig gate;
+        # this feeds the /status diagnostic block.
         base_pos = (self.pipeline.gps.get_camera_position()
                     if getattr(self.pipeline, "gps", None) is not None else None)
         ref = getattr(getattr(self.pipeline, "_store", None), "reference_heading", None)

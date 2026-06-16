@@ -1780,5 +1780,6 @@ def test_status_exposes_sensors_block():
     assert s["base"]["lat"] == 21.0
     assert s["co_location"]["at_rig"] is True
     assert s["co_location"]["basis"] == "gps_proximity"
+    assert 0 <= s["co_location"]["phone_base_dist_m"] < 15   # ~1.4 m, within AT_RIG_M
     assert s["phone"]["tripod_reference"] is True
     assert s["heading_bias_deg"] == 1.0   # phone true 101.0 − reference 100.0
