@@ -1778,7 +1778,11 @@ final class WaveCamClient {
     private func candidateOrder(now: Date = Date()) -> [URL] {
         if activeRoute == .wifi || activeRoute == .custom {
             if now < nextTetherProbeAt {
-                return [baseURL, tetherBaseURL, wifiBaseURL]
+                // Within the recheck window: stay on the known-good route and do NOT
+                // probe the (usually-absent) tether subnet — otherwise every status
+                // poll AND control POST blackholes on the tether read timeout. Tether
+                // is retried once per tetherRecheckInterval when the window elapses.
+                return [baseURL, wifiBaseURL]
             }
             nextTetherProbeAt = now.addingTimeInterval(tetherRecheckInterval)
         }

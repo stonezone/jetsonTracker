@@ -356,12 +356,20 @@ struct CalibrateView: View {
             isInFlight = true
             let result = await client.calibrateSessionExit()
             isInFlight = false
-            if case let .success(state) = result { sessionState = state }
-            wizardStep = .idle
-            headingPreviewPending = false
-            headingBearingDeg = nil
-            headingDistanceM = nil
-            refusalMessage = nil
+            switch result {
+            case let .success(state):
+                sessionState = state
+                wizardStep = .idle
+                headingPreviewPending = false
+                headingBearingDeg = nil
+                headingDistanceM = nil
+                refusalMessage = nil
+            case let .failure(error):
+                // Exit POST failed — the backend may still hold the calibrate PTZ
+                // lockout. Keep the wizard open and surface the error so the operator
+                // doesn't believe calibration exited while it is still active.
+                refusalMessage = error.localizedDescription
+            }
         }
     }
 
