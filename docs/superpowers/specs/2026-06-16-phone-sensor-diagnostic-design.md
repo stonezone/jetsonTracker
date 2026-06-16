@@ -82,28 +82,46 @@ phone CoreLocation/CoreMotion/CMAltimeter
    - `base`: `lat`, `lon`, `alt_m`, `sats`, `hdop`, `age_sec` — from
      `gps.get_camera_position()` + the gps reader (this is the "1b" base-position exposure;
      base lat/lon are computed-from but not currently emitted).
-3. `sensors.enabled` continues to gate ingest; the snapshot reports `phone: null` (with a
+3. **Co-location / "at-rig" gate (the transport≠mounted problem).** The phone sensors are
+   a tripod reference ONLY when the phone is physically on the rig — and the connection
+   transport (USB tether vs Wi-Fi) does *not* tell us that. The snapshot adds a
+   `co_location` object: `phone_base_dist_m` (great-circle phone GPS ↔ base GPS),
+   `at_rig` (bool, `dist ≤ AT_RIG_M`, default 15 m), and `basis`
+   (`gps_proximity` | `no_base_fix` | `no_phone_fix`). When `at_rig` is false (e.g. the
+   phone is in-hand on home Wi-Fi while the rig is at the beach — or both are home but
+   apart), the phone block is tagged `tripod_reference: false`.
+   - **Gate the observe-only monitors on `at_rig`** (the one intentional behavior change):
+     `SensorHub` currently fires heading-drift/bump `anchor_suspect` events whenever a
+     sample arrives, so off-rig bench testing spams false alerts. Suppress drift/bump
+     evaluation when `at_rig` is false (still record the sample). Rationale: an off-rig
+     phone is not the tripod, so its motion is not anchor drift.
+4. `sensors.enabled` continues to gate ingest; the snapshot reports `phone: null` (with a
    reason) when no sample / disabled, so the panel can say "phone telemetry off".
 
 ### iOS changes
 
-4. **`PhoneSensorPublisher`** adds to the POST: `true_heading_deg` (set
-   `locationManager.headingOrientation` for landscape so true/magnetic heading is correct),
-   `alt_m` + `alt_acc` (`CLLocation.altitude` / `verticalAccuracy`), and `baro_rel_m`
+5. **`PhoneSensorPublisher`** adds to the POST: `true_heading_deg` (set
+   `locationManager.headingOrientation` to the specific landscape variant matching the
+   mount — `.landscapeLeft` vs `.landscapeRight` flip heading 180°), `alt_m` + `alt_acc`
+   (`CLLocation.altitude` / `verticalAccuracy`), and `baro_rel_m`
    (`CMAltimeter.startRelativeAltitudeUpdates`, guarded by `isRelativeAltitudeAvailable`).
    `headingAccuracy < 0` keeps signalling invalid (existing convention).
-5. **`SensorsSection`** — a `Section` inside `ToolsView` (not a 6th tab; the app is already
-   at the 5-tab limit before iOS's "More" overflow). Two columns, Phone vs Wio base:
-   - Heading: phone `trueHeading ± acc°` (—for base; no compass).
-   - Position: lat/lon, phone `± h_acc m` vs base `sats / HDOP`; show the phone↔base
-     distance (should be ~0, both describe the tripod).
-   - Altitude: phone GPS alt `± v_acc` + barometric relative; base alt if present.
-   - Freshness: per-source age badge.
-   - Trust colouring: green/amber/red thresholds on `heading_acc` and `h_acc`/`v_acc`.
-6. **Heading-bias readout (no new truth source):** when a manual heading lock exists
-   (`reference_heading` from CALIBRATE), show `phone_true_heading − reference_heading` as
-   the measured fixed offset. This is the number Stage 2 would bake in to skip the aim
-   step; here it is display-only.
+6. **`SensorsSection`** — a `Section` inside `ToolsView` (not a 6th tab; the app is already
+   at the 5-tab limit before iOS's "More" overflow).
+   - **Top: a prominent MOUNTED / NOT-AT-RIG badge** from `co_location.at_rig`. When
+     not-at-rig (phone in hand on Wi-Fi, rig elsewhere), the phone column is greyed with a
+     "not a tripod reference" annotation — the values are shown for debugging but explicitly
+     not trustworthy as a rig reference.
+   - Two columns, Phone vs Wio base: **Heading** (phone `trueHeading ± acc°`; — for base);
+     **Position** (lat/lon, phone `± h_acc m` vs base `sats / HDOP`, plus the
+     `phone_base_dist_m` that drives the at-rig gate); **Altitude** (phone GPS alt `± v_acc`
+     + barometric relative; base alt if present); **Freshness** (per-source age badge).
+   - Trust colouring: green/amber/red on `heading_acc` and `h_acc`/`v_acc`
+     (illustrative: heading green ≤5°, amber ≤15°, red >15°; tuned on-device).
+7. **Heading-bias readout (no new truth source):** when a manual heading lock exists
+   (`reference_heading` from CALIBRATE) AND `at_rig` is true, show
+   `phone_true_heading − reference_heading` as the measured fixed offset. This is the
+   number Stage 2 would bake in to skip the aim step; here it is display-only.
 
 ### Error handling
 
@@ -111,7 +129,14 @@ phone CoreLocation/CoreMotion/CMAltimeter
 - Location permission denied → "no location permission" row; other fields still shown.
 - Altimeter unavailable → omit barometric row.
 - Phone sample stale (`age_sec` > 5 s) or absent → grey "stale"/"no telemetry" badge.
-- Base no fix → "base: no fix" (mirrors `gps_unavailable`).
+- Base no fix → "base: no fix" (mirrors `gps_unavailable`); `co_location.basis = no_base_fix`
+  and `at_rig` is treated as unknown (badge: "can't confirm mount — no base fix").
+- **Phone not at rig** (`at_rig` false) → MOUNTED→NOT-AT-RIG badge; phone column greyed
+  "not a tripod reference"; drift/bump alerts suppressed (see backend §3). This is the
+  normal state when bench-testing on home Wi-Fi with the phone in hand.
+- **Background:** "when-in-use" location stops when the app is backgrounded / screen-off.
+  Acceptable for the diagnostic (foreground). Continuous Stage-2/3 use needs the screen on
+  (USB-powered) or a background-location entitlement — out of scope here, flagged for Stage 2.
 
 ### Testing
 
@@ -145,5 +170,7 @@ phone CoreLocation/CoreMotion/CMAltimeter
   any corrective change; altitude finally captured; base position visible for the first time.
 - **Harder / to revisit:** the status payload grows a `sensors` block (additive, but a new
   contract surface iOS feature-detects); `PhoneSensorPublisher` gains CMAltimeter lifecycle.
-- **Unchanged:** all corrective behavior, the observe-only SensorHub monitors, the Wio's
-  LoRa role, and the existing calibration flow.
+- **Unchanged:** all corrective behavior, the Wio's LoRa role, and the existing calibration
+  flow. The `SensorHub` monitors stay observe-only — but now skip evaluation when the phone
+  isn't at the rig, which *removes* today's false drift/bump alerts during off-rig bench
+  testing (a net correctness gain, not a new behavior).
