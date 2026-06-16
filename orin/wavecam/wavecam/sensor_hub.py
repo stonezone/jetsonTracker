@@ -27,7 +27,9 @@ from dataclasses import dataclass
 
 
 AT_RIG_M: float = 15.0
-"""Phone within this many metres of the base Wio ⇒ treated as co-located with the rig."""
+"""Phone within this many metres of the base Wio ⇒ treated as co-located with the rig.
+15 m is ~3× a typical good consumer GPS horizontal error (HDOP≈1, ~5 m): enough buffer
+for the phone↔base offset + multipath, while still rejecting a phone left indoors."""
 
 
 def compute_at_rig(
@@ -121,7 +123,12 @@ class SensorHub:
         # Suppress monitors ONLY when the phone is CONFIRMED off-rig (at_rig is
         # False).  Unknown (None) — no base fix or no phone fix — lets monitors
         # run so drift detection is not silently dropped on a base-GPS outage.
-        base_pos = self._base_pos() if callable(self._base_pos) else None
+        # Never let a base-position read raise into the request thread (this runs in
+        # the POST handler) — treat any failure as unknown (at_rig None ⇒ monitors run).
+        try:
+            base_pos = self._base_pos() if callable(self._base_pos) else None
+        except Exception:
+            base_pos = None
         at_rig, _, _ = compute_at_rig(sample.lat, sample.lon, base_pos)
         if at_rig is False:
             with self._lock:
