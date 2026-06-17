@@ -219,6 +219,7 @@ def test_root_web_ui_exposes_live_ptz_gps_and_ios_parity_controls():
     body = make_client().get("/").text
 
     assert "id=ptzJoystick" in body
+    assert "sendCommand('home')" in body  # HOME button recenters PTZ via /api/v1/ptz/home
     assert "/api/v1/status" in body
     assert "CINEMATIC ZOOM" in body
     assert "ptz.cinematic_zoom_enabled" in body

@@ -65,6 +65,7 @@ input,select{width:100%;background:#0b1116;color:var(--text);border:1px solid va
       <button class=go id=resumeBtn onclick="sendCommand('resume')">RESUME</button>
       <button id=autoBtn onclick="sendCommand('auto')">START AUTO</button>
       <button id=stopBtn onclick="sendCommand('stop')">STOP PTZ</button>
+      <button id=homeBtn onclick="sendCommand('home')">HOME</button>
       <button onclick="sendCommand('zin')">ZOOM IN</button>
       <button onclick="sendCommand('zout')">ZOOM OUT</button>
       <button onclick="sendCommand('zstop')">ZOOM STOP</button>
@@ -239,6 +240,7 @@ async function sendCommand(kind){
  if(kind==='resume')req=fetch('/api/v1/safety/resume',body({source:'operator_ui'}));
  if(kind==='auto')req=fetch('/api/v1/ptz/auto',opts);
  if(kind==='stop')req=fetch('/api/v1/ptz/stop',body({hold:true,source:'operator_ui'}));
+ if(kind==='home')req=fetch('/api/v1/ptz/home',body({requested_owner:'manual',takeover:true,source:'operator_ui'}));
  if(kind==='zin')req=fetch('/api/v1/ptz/zoom',body({requested_owner:'manual',takeover:true,value:.5,source:'operator_ui'}));
  if(kind==='zout')req=fetch('/api/v1/ptz/zoom',body({requested_owner:'manual',takeover:true,value:-.5,source:'operator_ui'}));
  if(kind==='zstop')req=fetch('/api/v1/ptz/zoom',body({requested_owner:'manual',takeover:true,value:0,source:'operator_ui'}));
