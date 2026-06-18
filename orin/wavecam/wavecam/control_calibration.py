@@ -654,6 +654,17 @@ class CalibrationManager:
 
     def _estimate_heading_uncertainty(self, req, location: dict, distance_m: float | None) -> float:
         method = str(_field(req, "method", _field(req, "source", "")) or "").lower()
+        # Phone-compass source: the bearing comes from the phone's magnetometer, so the
+        # dominant uncertainty is its reported heading accuracy (CLHeading.headingAccuracy),
+        # NOT GPS position geometry. Use it directly. A phone heading is a COARSE acquisition
+        # cue (±15-25° in practice), not a 2° lock — the caller must pass a lenient
+        # max_uncertainty_deg to accept it, and the default budget will reject it.
+        phone_acc = _optional_float(_field(req, "heading_acc_deg"))
+        if "phone" in method or phone_acc is not None:
+            acc = phone_acc if (phone_acc is not None and phone_acc >= 0) else HEADING_DEFAULT_BUDGET_DEG
+            vision_error = _optional_float(_field(req, "vision_error_deg")) or 0.5
+            latency_error = _optional_float(_field(req, "latency_error_deg")) or 0.2
+            return _quadrature([acc, vision_error, latency_error])
         base_error = _optional_float(_field(req, "base_error_radius_m"))
         if base_error is None:
             base_error = float(location.get("error_radius_m", LOCATION_DEFAULT_RADIUS_M))

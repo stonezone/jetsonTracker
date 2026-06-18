@@ -901,6 +901,53 @@ def test_heading_lock_no_longer_requires_level():
     state = heading.json()["calibration"]["session"]
     assert state["heading_lock"]["confidence"] > 0.0
     assert state["level"] is None  # no level was ever captured
+
+
+def test_heading_lock_from_phone_compass_uses_reported_accuracy():
+    # Phone-compass source: the bearing is the phone magnetometer reading, so heading
+    # uncertainty IS the phone's heading_acc_deg (not GPS position geometry). A phone heading
+    # is a COARSE acquisition cue, so the default 2 deg budget rejects it and a lenient budget
+    # accepts it — and the recorded uncertainty tracks the phone accuracy.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+    assert client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True},
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/calibration/location",
+        json={"method": "manual_map_pin", "lat": 21.6, "lon": -158.0, "manual_error_radius_m": 3.0},
+    ).status_code == 200
+
+    refused = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={
+            "method": "phone",
+            "operator_accepted": True,
+            "bearing_deg": 207.0,
+            "heading_acc_deg": 18.0,
+            "pan_enc": 1000.0,
+        },
+    )
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "uncertainty_too_high"
+
+    accepted = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={
+            "method": "phone",
+            "operator_accepted": True,
+            "bearing_deg": 207.0,
+            "heading_acc_deg": 18.0,
+            "pan_enc": 1000.0,
+            "max_uncertainty_deg": 25.0,
+        },
+    )
+    assert accepted.status_code == 200, accepted.json()
+    hl = accepted.json()["calibration"]["session"]["heading_lock"]
+    assert 17.0 <= hl["uncertainty_deg"] <= 19.0  # ~quadrature(18, 0.5, 0.2)
+    assert abs(pipe.pose.bearing_to_pan_encoder(208.0) - 1014.4) < 0.01
     assert pipe.owner.owner == "calibrate"
 
 

@@ -181,6 +181,10 @@ class CalibrationHeadingLockRequest(CalibrationBaseRequest):
     latency_error_deg: float | None = Field(default=None, ge=0.0)
     tilt_error_deg: float | None = Field(default=None, ge=0.0)
     position_error_deg: float | None = Field(default=None, ge=0.0)
+    # Phone-compass heading source: the phone's own CLHeading.headingAccuracy in degrees.
+    # When present (method=phone), it IS the heading uncertainty (the magnetometer is the
+    # bearing instrument), so a lenient max_uncertainty_deg is required to accept it.
+    heading_acc_deg: float | None = Field(default=None, ge=0.0, le=360.0)
 
 
 class CalibrationValidationRequest(CalibrationBaseRequest):
