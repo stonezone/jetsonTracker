@@ -867,6 +867,40 @@ def test_api_v1_calibrate_heading_refuses_bad_error_budget():
     assert body["code"] == "uncertainty_too_high"
     assert body["uncertainty_deg"] > 2.0
     assert pipe.pose.calibrated is False
+
+
+def test_heading_lock_no_longer_requires_level():
+    # Level gate removed 2026-06-17: the rig-phone (the only attitude sensor) mounts OFF
+    # the camera for magnetic isolation, so it can't sense pan-axis tilt. heading-lock must
+    # succeed with NO level step — the operator levels the tripod by hand.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+    assert client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True},
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/calibration/location",
+        json={"method": "manual_map_pin", "lat": 21.6, "lon": -158.0, "manual_error_radius_m": 3.0},
+    ).status_code == 200
+
+    # Deliberately skip /api/v1/calibration/level entirely.
+    heading = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={
+            "method": "landmark",
+            "operator_accepted": True,
+            "bearing_deg": 90.0,
+            "distance_m": 250.0,
+            "pan_enc": 1000.0,
+            "source": "test",
+        },
+    )
+    assert heading.status_code == 200, heading.json()
+    state = heading.json()["calibration"]["session"]
+    assert state["heading_lock"]["confidence"] > 0.0
+    assert state["level"] is None  # no level was ever captured
     assert pipe.owner.owner == "calibrate"
 
 

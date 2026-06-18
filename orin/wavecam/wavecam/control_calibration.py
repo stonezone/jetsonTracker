@@ -496,12 +496,11 @@ class CalibrationManager:
                 "operator_accept_required",
                 "Heading capture requires explicit operator acceptance of the preview.",
             )
-        level = self._session.get("level")
-        if not level or not level.get("passed"):
-            return self._calibration_refusal(
-                "level_required",
-                "A passing level check is required before heading capture.",
-            )
+        # Level gate removed 2026-06-17: on this rig the only attitude sensor is the
+        # phone, which mounts OFF the camera (magnetic isolation) and on its side, so its
+        # roll/pitch can never represent the pan-axis tilt. The operator levels the tripod
+        # by hand; tilt_error falls back to 0 in _estimate_heading_uncertainty when no level
+        # entry exists. A level check remains available but is no longer required.
         location = self._session.get("location")
         if not location:
             return self._calibration_refusal(
