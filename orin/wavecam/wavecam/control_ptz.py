@@ -30,6 +30,10 @@ class PtzDispatcher:
         self._manual_deadman_generation = 0
         self._zoom_deadman_generation = 0
         self._manual_pan_tilt_active = False
+        # Explicit operator LOCK (STOP PTZ / hold_manual_owner). Unlike a transient velocity
+        # grab, a held manual must survive zoom and must NOT auto-release on a deadman — only an
+        # explicit release or start_autonomous clears it. Fixes: zoom dropping a STOP-PTZ lock.
+        self._manual_held = False
         self._restore_owner_after_manual: str | None = None
 
     def reset_restore_owner(self) -> None:
@@ -82,6 +86,7 @@ class PtzDispatcher:
 
     def release_manual_owner(self, restore_autonomous: bool = True) -> None:
         with self._lock:
+            self._manual_held = False
             released = self.pipeline.owner.release("manual")
             restore_owner = self._restore_owner_after_manual
             self._restore_owner_after_manual = None
@@ -107,6 +112,7 @@ class PtzDispatcher:
             self.pipeline.ptz.zoom("stop")
             self._restore_owner_after_manual = None
             self._manual_pan_tilt_active = False
+            self._manual_held = False
             current_owner = self.pipeline.owner.owner
             if current_owner == CALIBRATE:
                 return False
@@ -148,12 +154,14 @@ class PtzDispatcher:
         with self._lock:
             current_owner = self.pipeline.owner.owner
             if current_owner == "manual":
+                self._manual_held = True
                 return
             if current_owner in AUTONOMOUS:
                 self._restore_owner_after_manual = current_owner
                 if not self.pipeline.owner.release(current_owner):
                     return
-            self.pipeline.owner.request("manual")
+            if self.pipeline.owner.request("manual"):
+                self._manual_held = True
 
     def send_manual_velocity(self, req) -> None:
         with self._lock:
@@ -198,6 +206,12 @@ class PtzDispatcher:
     def manual_pan_tilt_active(self) -> bool:
         with self._lock:
             return self._manual_pan_tilt_active
+
+    @property
+    def manual_held(self) -> bool:
+        # Self-correcting: an operator lock only means something while manual actually owns PTZ.
+        with self._lock:
+            return self._manual_held and self.pipeline.owner.owner == "manual"
 
     def schedule_manual_deadman(self, deadman_ms: int) -> int:
         with self._lock:
@@ -256,6 +270,9 @@ class PtzDispatcher:
             if generation is not None and generation != self._manual_deadman_generation:
                 return
             self._manual_deadman = None
+            # A held manual (operator LOCK) never auto-releases on a deadman.
+            if self._manual_held:
+                return
             if self.pipeline.owner.owner == "manual":
                 self.pipeline.ptz.stop()
                 self.pipeline.ptz.zoom("stop")

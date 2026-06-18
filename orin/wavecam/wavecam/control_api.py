@@ -414,7 +414,15 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
         api.send_manual_zoom_velocity(req.value, req.deadman_ms)
-        if req.value == 0:
+        if api.manual_held:
+            # Operator has explicitly LOCKED manual (STOP PTZ / hold). Zoom must not drop the
+            # lock: stop only the zoom motion via the zoom deadman; never release the manual
+            # owner or arm a releasing manual deadman.
+            if req.value == 0:
+                api.cancel_zoom_deadman()
+            else:
+                api.schedule_zoom_deadman(req.deadman_ms)
+        elif req.value == 0:
             if not api.manual_pan_tilt_active:
                 api.cancel_manual_deadman()
                 api.release_manual_owner()
@@ -1031,6 +1039,10 @@ class ControlApiAdapter:
     @property
     def manual_pan_tilt_active(self) -> bool:
         return self._ptz.manual_pan_tilt_active
+
+    @property
+    def manual_held(self) -> bool:
+        return self._ptz.manual_held
 
     def schedule_manual_deadman(self, deadman_ms: int) -> int:
         return self._ptz.schedule_manual_deadman(deadman_ms)

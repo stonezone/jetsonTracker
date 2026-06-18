@@ -951,6 +951,33 @@ def test_heading_lock_from_phone_compass_uses_reported_accuracy():
     assert pipe.owner.owner == "calibrate"
 
 
+def test_zoom_does_not_drop_a_held_manual_lock():
+    # Bug fix 2026-06-17: STOP PTZ (hold) locks manual, but zooming used to release that lock
+    # (zoom-stop release when pan/tilt idle, or the manual deadman it armed), handing the
+    # camera back to the tracker mid-aim. A held manual must survive zoom.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    # STOP PTZ with hold=true grabs a sticky manual lock from the autonomous owner.
+    assert client.post("/api/v1/ptz/stop", json={"hold": True}).status_code == 200
+    assert pipe.owner.owner == "manual"
+
+    # Zoom in, then zoom-stop — the lock must persist through both.
+    assert client.post(
+        "/api/v1/ptz/zoom", json={"requested_owner": "manual", "takeover": True, "value": 0.5}
+    ).status_code == 200
+    assert pipe.owner.owner == "manual"
+    assert client.post(
+        "/api/v1/ptz/zoom", json={"requested_owner": "manual", "takeover": True, "value": 0.0}
+    ).status_code == 200
+    assert pipe.owner.owner == "manual", "zoom-stop must not drop the held manual lock"
+
+    # START AUTO is the explicit unlock — the held flag clears and the tracker takes back over.
+    assert client.post("/api/v1/ptz/auto").status_code == 200
+    assert pipe.owner.owner == "testbed"
+
+
 def test_api_v1_calibrate_kill_cancels_session():
     client = make_client()
     pipe = client.app.state.pipeline
