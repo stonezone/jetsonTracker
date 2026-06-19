@@ -41,6 +41,12 @@ button:hover{border-color:var(--cyan)}button.active{border-color:var(--amber);co
 label{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:11px;margin-bottom:6px}.value{color:var(--text);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}
 input,select{width:100%;background:#0b1116;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px}input[type=range]{padding:0;accent-color:var(--cyan)}input[type=checkbox]{width:auto}.check{display:flex;align-items:center;justify-content:space-between;gap:8px;height:100%}
 .control.pending{border-color:var(--amber)}.control.saved{border-color:var(--green)}.control.failed{border-color:var(--red)}.feature.hidden,.control.hidden{display:none}.control.dimmed{opacity:.5}.caption{color:var(--muted);font-size:11px;line-height:1.35;margin-top:6px}.full{grid-column:1/-1}#msg{min-height:18px;color:var(--muted);font:12px ui-monospace,SFMono-Regular,Menlo,monospace}.foot{color:var(--muted);font-size:11px;line-height:1.35}
+.agentlog{max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin:8px 0;padding-right:4px}
+.agentmsg{padding:6px 9px;border-radius:8px;font-size:12px;line-height:1.4;white-space:pre-wrap;max-width:92%}
+.agentmsg.you{align-self:flex-end;background:rgba(54,209,196,.12);color:var(--cyan)}
+.agentmsg.claude{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+#agentArmBtn.armed{border-color:var(--amber);color:var(--amber)}
+#agentInput{flex:1;background:#0d1217;border:1px solid var(--line);color:var(--txt,#e9eff4);border-radius:6px;padding:7px 9px;font:12px ui-monospace,Menlo,monospace}
 @media(max-width:980px){main{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){main{padding:8px}.grid{grid-template-columns:1fr}.bar button{flex:1 1 auto}}
 </style></head><body><main>
 <section class=video>
@@ -118,6 +124,12 @@ input,select{width:100%;background:#0b1116;color:var(--text);border:1px solid va
     <div class=control data-key=gps.drive_zoom><div class=check><label>GPS drives zoom <span class=value id=gpsDriveZoom_v></span></label><input id=gpsDriveZoom type=checkbox></div></div>
   </div></div>
   <div class=card><div class=title>RESTART ONLY <span class=tag id=restartCount></span></div><div class=foot id=restartKeys></div></div>
+  <div class="card feature" id=agentCard><div class=title>ASK CLAUDE <span class=tag id=agentArmTag>read-only</span></div>
+    <div class=bar><button id=agentArmBtn onclick="agentArm()">Arm: can act</button></div>
+    <div class=caption>Read-only Q&amp;A. Arm to let Claude act on the rig via the control API. KILL disarms instantly.</div>
+    <div class=agentlog id=agentLog></div>
+    <div class=bar><input id=agentInput type=text placeholder="Ask about status, calibration, setup..."><button id=agentSendBtn onclick="agentSend()">Send</button></div>
+  </div>
 </section></main>
 <script>
 const $=id=>document.getElementById(id);
@@ -216,6 +228,7 @@ async function loadConfig(){
  const supported=cfg.supported||{};
  setHidden('cinematicCard',supported.cinematic_zoom!==true);
  setHidden('trackingModeCard',supported.tracking_mode!==true);
+ setHidden('agentCard',supported.agent!==true);
  const hasGps=!!cfg.current?.gps||supported.gps===true;
  setHidden('gpsTuneCard',!hasGps);
  $('colorPreset').innerHTML=(supported.color_presets||[]).map(x=>`<option value="${x}">${x}</option>`).join('');
@@ -345,6 +358,7 @@ function normalizeStatus(raw){
    cmd:raw.ptz.pan_tilt_cmd,
    connected:raw.network?.camera_lan??raw.ptz.enabled,
    killed:raw.safety?.killed,
+   agent:raw.agent,
    gps
   };
  }
@@ -392,9 +406,36 @@ async function poll(){
   $('killBtn').classList.toggle('active',!!s.killed);
   $('autoBtn').classList.toggle('active',s.owner==='testbed'||s.owner==='vision_follow'||s.owner==='gps_tracker');
   $('stopBtn').classList.toggle('active',s.owner==='manual');
+  if(s.agent&&s.agent.enabled)agentSetArmUI(s.agent.armed,s.agent.killed||s.killed);
  }catch(e){}
  setTimeout(poll,500);
 }
+let agentArmed=false;
+function agentAppend(role,text){
+ const log=$('agentLog'); if(!log)return;
+ const d=document.createElement('div'); d.className='agentmsg '+role; d.textContent=text;
+ log.appendChild(d); log.scrollTop=log.scrollHeight;
+}
+function agentSetArmUI(armed,killed){
+ agentArmed=!!armed&&!killed;
+ const btn=$('agentArmBtn'),tag=$('agentArmTag');
+ if(btn){btn.classList.toggle('armed',agentArmed);btn.textContent=agentArmed?'Disarm':'Arm: can act';btn.disabled=!!killed;}
+ if(tag)tag.textContent=killed?'killed':(agentArmed?'ARMED':'read-only');
+}
+async function agentArm(){
+ const btn=$('agentArmBtn'); if(!btn||btn.disabled)return;
+ try{const r=await postJson('/api/v1/agent/arm',{armed:!agentArmed}); agentSetArmUI(r.armed,false);}
+ catch(e){agentAppend('claude','warning: arm failed: '+e.message);}
+}
+async function agentSend(){
+ const inp=$('agentInput'); if(!inp)return;
+ const msg=inp.value.trim(); if(!msg)return;
+ inp.value=''; agentAppend('you',msg); $('agentSendBtn').disabled=true;
+ try{const r=await postJson('/api/v1/agent/chat',{message:msg}); agentAppend('claude',r.reply||'(no reply)'); agentSetArmUI(r.armed,false);}
+ catch(e){agentAppend('claude','warning: '+e.message);}
+ finally{$('agentSendBtn').disabled=false;}
+}
+$('agentInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')agentSend();});
 initJoystick(); loadConfig().catch(e=>$('msg').textContent=e.message); poll();
 </script></body></html>"""
 
