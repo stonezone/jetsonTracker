@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from .control_utils import make_request_id, normalized_text
 from .ptz_owner import IDLE
 from .advisor import AdvisorService, KEYS_PATH
-from .agent_session import AgentSession, ArmState
+from .agent_session import REQUEST_TIMEOUT_SEC, AgentSession, ArmState
 from .supervisor import restart_systemd_unit
 
 
@@ -39,9 +39,15 @@ class SystemManager:
         # unaffected. The arm gate is the supervise-only floor acting tiers read.
         acfg = getattr(getattr(pipeline, "cfg", None), "agent", None)
         self._agent_enabled = bool(getattr(acfg, "enabled", False))
+        # arm_ttl_sec must outlast a single chat turn, or the arm window could expire
+        # mid-subprocess while claude still holds Bash. Clamp to a safe floor.
+        ttl = float(getattr(acfg, "arm_ttl_sec", 600.0))
+        min_ttl = REQUEST_TIMEOUT_SEC + 60.0
+        if self._agent_enabled and ttl < min_ttl:
+            print(f"[agent] arm_ttl_sec {ttl:g}s < safe minimum {min_ttl:g}s — clamping")
+            ttl = min_ttl
         self._agent_arm: ArmState | None = (
-            ArmState(ttl_sec=float(getattr(acfg, "arm_ttl_sec", 600.0)))
-            if self._agent_enabled else None
+            ArmState(ttl_sec=ttl) if self._agent_enabled else None
         )
         self._agent_session: AgentSession | None = (
             AgentSession(keys_path=KEYS_PATH) if self._agent_enabled else None
@@ -135,9 +141,12 @@ class SystemManager:
                 {"ok": False, "code": "agent_error", "message": str(exc)[:200]}
             )
         self._audit_agent_turn(armed)
+        # Re-read arm state AFTER the (long) turn — a KILL mid-request must not be
+        # masked by the pre-turn 'armed' capture, or the client would re-arm itself.
+        current_armed = self._agent_arm.can_act() if self._agent_arm else False
         return JSONResponse(
             {"ok": True, "request_id": make_request_id(),
-             "reply": result["reply"], "armed": armed}
+             "reply": result["reply"], "armed": current_armed}
         )
 
     def _audit_agent_turn(self, armed: bool) -> None:
@@ -145,8 +154,8 @@ class SystemManager:
         if ring is not None:
             try:
                 ring.record("agent_chat", {"armed": armed})
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[agent] audit failed: {exc}")
 
     def request_agent_arm(self, armed: bool) -> JSONResponse:
         if not self._agent_enabled or self._agent_arm is None:

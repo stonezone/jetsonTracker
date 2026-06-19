@@ -268,6 +268,15 @@ def test_agent_resume_clears_kill_allows_rearm(monkeypatch):
     assert client.post("/api/v1/agent/arm", json={"armed": True}).json()["armed"] is True
 
 
+def test_arm_ttl_clamped_to_safe_minimum():
+    # An operator-set arm_ttl shorter than a chat turn would let the window expire
+    # mid-subprocess while claude still holds Bash. It must be clamped up.
+    pipe = DummyPipeline()
+    pipe.cfg.agent = types.SimpleNamespace(enabled=True, model="", arm_ttl_sec=1.0, mcp_config_path="")
+    client = TestClient(build_app(pipe))
+    assert client.get("/api/v1/status").json()["agent"]["ttl_sec"] >= 180.0
+
+
 def test_supported_agent_reflects_enabled():
     on = TestClient(build_app(_agent_pipe(True))).get("/api/v1/config").json()
     off = TestClient(build_app(_agent_pipe(False))).get("/api/v1/config").json()

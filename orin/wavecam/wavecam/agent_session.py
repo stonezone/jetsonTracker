@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -48,46 +49,69 @@ class ArmState:
         self._now = now
         self._armed_at: Optional[float] = None
         self._killed = False
+        # The control API serves arm/kill/resume/status on a thread pool, so kill()
+        # can race arm()/snapshot(). The lock keeps correlated fields consistent —
+        # snapshot() can never report armed=True together with killed=True.
+        self._lock = threading.Lock()
 
-    def arm(self) -> None:
-        if self._killed:
-            return
-        self._armed_at = self._now()
-
-    def disarm(self) -> None:
-        self._armed_at = None
-
-    def kill(self) -> None:
-        self._killed = True
-        self._armed_at = None
-
-    def clear_kill(self) -> None:
-        self._killed = False
-
-    @property
-    def killed(self) -> bool:
-        return self._killed
-
-    @property
-    def armed(self) -> bool:
+    def _armed_unlocked(self) -> bool:
         if self._killed or self._armed_at is None:
             return False
         return (self._now() - self._armed_at) < self._ttl
 
+    def arm(self) -> None:
+        """Arm the agent. Silent no-op while killed (KILL is supreme until
+        clear_kill()); callers read can_act()/the /agent/arm response for the truth."""
+        with self._lock:
+            if self._killed:
+                return
+            self._armed_at = self._now()
+
+    def disarm(self) -> None:
+        with self._lock:
+            self._armed_at = None
+
+    def kill(self) -> None:
+        with self._lock:
+            self._killed = True
+            self._armed_at = None
+
+    def clear_kill(self) -> None:
+        with self._lock:
+            self._killed = False
+
+    @property
+    def killed(self) -> bool:
+        with self._lock:
+            return self._killed
+
+    @property
+    def armed(self) -> bool:
+        with self._lock:
+            return self._armed_unlocked()
+
     def can_act(self) -> bool:
-        return self.armed and not self._killed
+        with self._lock:
+            return self._armed_unlocked() and not self._killed
 
     def snapshot(self) -> dict:
-        return {"armed": self.armed, "killed": self._killed, "ttl_sec": self._ttl}
+        with self._lock:
+            return {"armed": self._armed_unlocked(), "killed": self._killed, "ttl_sec": self._ttl}
 
 
 def _run_claude_cli(argv: list[str], env: dict, stdin_text: str, timeout: float) -> str:
     """Run the claude CLI with the prompt on stdin. Module-level so tests inject a fake."""
-    proc = subprocess.run(argv, env=env, input=stdin_text,
-                          capture_output=True, text=True, timeout=timeout)
+    try:
+        proc = subprocess.run(argv, env=env, input=stdin_text,
+                              capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"claude CLI timed out after {int(timeout)}s")
     if proc.returncode != 0:
-        raise RuntimeError(f"claude exited {proc.returncode}: "
-                           f"{(proc.stderr or proc.stdout or '').strip()[:200]}")
+        msg = (proc.stderr or proc.stdout or "").strip()[:300]
+        token = env.get("CLAUDE_CODE_OAUTH_TOKEN")
+        if token and token in msg:   # never surface the OAuth token, even on a crash dump
+            msg = msg.replace(token, "<redacted>")
+        raise RuntimeError(f"claude exited {proc.returncode}: {msg[:200]}")
     return proc.stdout
 
 
@@ -130,6 +154,10 @@ class AgentSession:
         prompt = f"Live system status:\n{status_text}\n\nOperator: {message}"
         runner = self.run if self.run is not None else _run_claude_cli
         out = runner(argv, env, prompt, REQUEST_TIMEOUT_SEC)
-        data = json.loads(out)
+        try:
+            data = json.loads(out)
+        except (json.JSONDecodeError, ValueError):
+            self.session_id = None   # corrupted/partial turn — start a fresh session next time
+            raise RuntimeError("claude returned non-JSON output")
         self.session_id = data.get("session_id") or self.session_id
         return {"reply": data.get("result", ""), "session_id": self.session_id or ""}

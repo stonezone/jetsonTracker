@@ -14,6 +14,7 @@ struct AgentView: View {
     @State private var chatInput = ""
     @State private var chatSending = false
     @State private var agentArmed = false
+    @State private var chatTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -57,6 +58,7 @@ struct AgentView: View {
         .onChange(of: logLevel) {
             Task { await loadLogs() }
         }
+        .onDisappear { chatTask?.cancel() }
     }
 
     private var filteredLines: [WCLogLine] {
@@ -120,12 +122,15 @@ struct AgentView: View {
         chatInput = ""
         chatLog.append(AgentChatLine(role: .you, text: msg))
         chatSending = true
-        Task {
+        chatTask?.cancel()
+        chatTask = Task {
             let resp = await client.sendAgentChat(msg)
+            if Task.isCancelled { return }
             await MainActor.run {
                 if let r = resp, r.ok {
                     chatLog.append(AgentChatLine(role: .claude, text: r.reply))
-                    agentArmed = r.armed
+                    // A delayed response must not re-arm the UI after a KILL landed mid-request.
+                    if !client.killed { agentArmed = r.armed }
                 } else {
                     chatLog.append(AgentChatLine(
                         role: .claude, text: "⚠️ " + (client.lastCommandError ?? "No response.")))

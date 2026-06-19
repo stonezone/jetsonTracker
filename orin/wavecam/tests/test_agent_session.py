@@ -100,3 +100,38 @@ def test_chat_disarmed_blocks_shell(tmp_path):
     argv = _argv_for(tmp_path, armed=False)
     assert "--disallowedTools" in argv and "Bash" in argv
     assert "bypassPermissions" not in argv
+
+
+def test_run_claude_cli_redacts_token_on_error(monkeypatch):
+    import wavecam.agent_session as ags
+
+    class FakeProc:
+        returncode = 1
+        stdout = ""
+        stderr = "traceback leaked SEKRET_TOKEN_VALUE in env"
+
+    monkeypatch.setattr(ags.subprocess, "run", lambda *a, **k: FakeProc())
+    with pytest.raises(RuntimeError) as ei:
+        ags._run_claude_cli(["claude"], {"CLAUDE_CODE_OAUTH_TOKEN": "SEKRET_TOKEN_VALUE"}, "p", 1.0)
+    assert "SEKRET_TOKEN_VALUE" not in str(ei.value)   # token never surfaced
+    assert "<redacted>" in str(ei.value)
+
+
+def test_run_claude_cli_timeout_is_clean(monkeypatch):
+    import wavecam.agent_session as ags
+
+    def boom(*a, **k):
+        raise ags.subprocess.TimeoutExpired(cmd="claude", timeout=1)
+
+    monkeypatch.setattr(ags.subprocess, "run", boom)
+    with pytest.raises(RuntimeError, match="timed out"):
+        ags._run_claude_cli(["claude"], {}, "p", 1.0)
+
+
+def test_chat_non_json_output_clears_session(tmp_path):
+    keys = tmp_path / "k.json"
+    keys.write_text(json.dumps({"claude_code_oauth_token": "t"}))
+    sess = AgentSession(keys_path=str(keys), run=lambda *a: "this is not json", session_id="OLD-SID")
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        sess.chat("hi", status_text="")
+    assert sess.session_id is None   # corrupted turn → fresh session next time, no stale resume
