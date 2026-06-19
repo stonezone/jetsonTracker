@@ -618,6 +618,13 @@ def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             result = api.media.start(req.segment_seconds if req else None)
         except MediaUnavailable as exc:
             return api.refusal("media_unavailable", exc.message, 503)
+        # ffmpeg can die instantly (missing binary, bad RTSP, full disk); the recorder
+        # reports that as started:False. Surface it as 503 instead of 200/ok:true so the
+        # operator isn't told recording started when it didn't (REC-1). The already-running
+        # case has no "started" key, so `is False` matches only the failure.
+        if result.get("started") is False:
+            return api.refusal("recording_failed",
+                               result.get("error", "Recording did not start."), 503)
         api.bump_revision()
         return media_ok(api, result)
 
@@ -823,6 +830,20 @@ def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             except Exception as e:
                 snap["components"]["disk"] = {"ok": False, "age_sec": 0,
                                               "detail": {"reason": f"disk_check_failed: {type(e).__name__}"}}
+        # Detector health — a missing engine makes Pipeline.__init__ swallow the load error
+        # and leave detector=None: API stays up, vision is dead (zombie rig). Surface it so
+        # post-deploy /health checks catch it instead of flying blind (DET-1).
+        detector = getattr(api.pipeline, "detector", None)
+        det_cfg = getattr(getattr(api.pipeline, "cfg", None), "detector", None)
+        det_enabled = bool(getattr(det_cfg, "enabled", True))
+        if det_enabled and detector is None:
+            snap["components"]["detector"] = {"ok": False, "age_sec": 0,
+                                              "detail": {"reason": "engine_load_failed"}}
+            snap["ok"] = False
+        else:
+            snap["components"]["detector"] = {"ok": True, "age_sec": 0,
+                                              "detail": {"loaded": detector is not None,
+                                                         "enabled": det_enabled}}
         return snap
 
 

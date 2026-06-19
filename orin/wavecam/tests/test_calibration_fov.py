@@ -58,3 +58,18 @@ def test_calibration_state_includes_fov_entries():
     body = client.get("/api/v1/calibration").json()
     # fov_entries lives in body["calibration"], which is the iOS feature-detection path
     assert "fov_entries" in body.get("calibration", {})
+
+
+def test_fov_endpoint_returns_503_on_save_failure():
+    # CAL-1: a persist failure must surface as 503, not ok:true — otherwise the entry is
+    # lost on restart while the operator saw success (the M2 pattern on the FOV path).
+    pipeline = DummyPipeline()
+    client = TestClient(build_app(pipeline))
+
+    def boom():
+        raise OSError("disk full")
+
+    pipeline._store.save = boom
+    r = client.post("/api/v1/calibration/fov", json={"zoom_enc": 8192, "fov_deg": 12.0})
+    assert r.status_code == 503
+    assert r.json()["ok"] is False

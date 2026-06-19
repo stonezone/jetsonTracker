@@ -113,8 +113,12 @@ class TrackingArbiter:
 
         # --- GPS→STOP on data loss (MUST run before state mutation) ---
         # If we were GPS-tracking and GPS became unviable, release to idle
-        # (camera holds position, doesn't coast on stale bearing).
-        if mode == "auto" and not gps_viable and self._last_owner == "gps_tracker":
+        # (camera holds position, doesn't coast on stale bearing). But NOT if vision is
+        # locked this frame: this short-circuit runs before the lock counting below, so a
+        # single stale-GPS frame would otherwise block the GPS→vision handoff exactly when
+        # vision just acquired — a visible tracking stutter (ARB-1).
+        if (mode == "auto" and not gps_viable and self._last_owner == "gps_tracker"
+                and not vision.locked):
             self._last_owner = "idle"
             self._vision_owns = False
             self._consecutive_locked = 0

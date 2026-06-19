@@ -722,7 +722,12 @@ class CalibrationManager:
             try:
                 self._store.save()
             except Exception as e:
+                # Don't report success when the entry didn't persist — it would be lost on
+                # restart while the operator saw ok:true (CAL-1, the M2 pattern on the FOV
+                # path). Mirror calibration_persisted_response: 503.
                 print(f"[control_calibration] fov_curve save failed: {e}")
+                return JSONResponse(
+                    {"ok": False, "error": f"FOV entry not persisted: {e}"}, 503)
         return JSONResponse({"ok": True, "fov_entries": [list(e) for e in curve]})
 
     def validate_calibration_capture(self, req) -> JSONResponse | None:

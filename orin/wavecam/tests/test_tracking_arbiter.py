@@ -193,4 +193,18 @@ def test_vision_only_mode_allows_vision_after_lock_hysteresis():
     assert d.search_roi is None
 
 
+def test_just_locked_vision_survives_a_stale_gps_frame():
+    # ARB-1: the GPS->idle short-circuit ran before vision-lock counting, so a single
+    # stale-GPS frame blocked the GPS->vision handoff exactly when vision just locked.
+    a = TrackingArbiter(lock_frames=1)
+    # Frame 1: GPS viable, no vision -> gps_tracker (sets _last_owner=gps_tracker)
+    d = a.decide(_vision(False), gps_fresh=True, gps_calibrated=True,
+                 base_locked=True, now_sec=0.0, calibration_valid=True)
+    assert d.owner == "gps_tracker"
+    # Frame 2: GPS goes stale AND vision locks the same frame -> hand off, don't idle.
+    d = a.decide(_vision(True, 0.9), gps_fresh=False, gps_calibrated=True,
+                 base_locked=True, now_sec=0.1, calibration_valid=True)
+    assert d.owner == "vision_follow"
+
+
 print("ARBITER TESTS PASSED")

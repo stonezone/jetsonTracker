@@ -1984,3 +1984,41 @@ def test_sensors_phone_ws_noop_when_disabled():
         ws.send_json({"type": "ping", "id": "hb2"})
         assert ws.receive_json()["type"] == "pong"
     assert client.get("/api/v1/status").json()["sensors"]["phone"] is None
+
+
+def test_status_reports_detector_loaded_flag():
+    # DET-1: /status surfaces whether the detector engine is loaded, so a zombie rig
+    # (API up, vision dead) is visible rather than silently green.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.detector = object()
+    assert client.get("/api/v1/status").json()["tracking"]["detector_loaded"] is True
+    pipe.detector = None
+    assert client.get("/api/v1/status").json()["tracking"]["detector_loaded"] is False
+
+
+def test_health_flags_missing_detector_engine():
+    # DET-1: detector enabled but not loaded (engine missing) → /health marks the detector
+    # component unhealthy with a clear reason, instead of reporting green.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.detector = None
+    det = client.get("/api/v1/health").json()["components"]["detector"]
+    assert det["ok"] is False
+    assert det["detail"]["reason"] == "engine_load_failed"
+    pipe.detector = object()
+    det = client.get("/api/v1/health").json()["components"]["detector"]
+    assert det["ok"] is True
+    assert det["detail"]["loaded"] is True
+
+
+def test_record_start_returns_503_when_ffmpeg_dies_immediately():
+    # REC-1: recorder.start() reports started:False when ffmpeg exits instantly; the API
+    # must surface 503, not 200/ok:true (operator must not believe recording started).
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.recorder.start = lambda segment_seconds=None: {
+        "ok": True, "started": False, "error": "ffmpeg exited immediately"}
+    r = client.post("/api/v1/media/record/start", json={})
+    assert r.status_code == 503
+    assert r.json()["ok"] is False
