@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WaveCam — Deep Read-Only Project Review (2026-06-19)</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121b24; --panel2:#16212c; --line:#1f2d3a;
+    --txt:#e9eff4; --muted:#8a99a6; --faint:#5b6873;
+    --crit:#ff3b30; --high:#ff8a3d; --med:#ffc83d; --low:#7ad6c4;
+    --ok:#37d6c2; --reject:#9aa4ad;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:32px 24px 80px}
+  h1{font-size:28px;margin:0 0 4px;letter-spacing:-.5px}
+  h2{font-size:21px;margin:38px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:16px;margin:24px 0 6px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+  .meta{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:18px 0;font-size:13.5px}
+  .meta b{color:var(--ok)}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin:20px 0}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}
+  .stat .n{font-size:26px;font-weight:800}
+  .stat .l{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .finding{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);
+    border-radius:10px;padding:16px 18px;margin:14px 0}
+  .finding.crit{border-left-color:var(--crit)}
+  .finding.high{border-left-color:var(--high)}
+  .finding.med{border-left-color:var(--med)}
+  .finding.low{border-left-color:var(--low)}
+  .finding.rejected{border-left-color:var(--reject);opacity:.82}
+  .fhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}
+  .fhead .id{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--faint)}
+  .fhead .t{font-weight:700;font-size:15.5px;flex:1;min-width:200px}
+  .tag{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;
+    padding:3px 8px;border-radius:5px;border:1px solid currentColor}
+  .crit .tag.sev,.sev-crit{color:var(--crit)}
+  .high .tag.sev,.sev-high{color:var(--high)}
+  .med .tag.sev,.sev-med{color:var(--med)}
+  .low .tag.sev,.sev-low{color:var(--low)}
+  .tag.val{color:var(--ok)} .tag.rr{color:var(--med)} .tag.rej{color:var(--reject)}
+  .tag.subsys{color:var(--muted)}
+  p{margin:8px 0}
+  code,.mono{font-family:ui-monospace,Menlo,monospace;font-size:13px;
+    background:#0d141b;padding:1px 5px;border-radius:4px;color:#cfe9e4}
+  pre{background:#0d141b;border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+    overflow-x:auto;font-size:12.5px;line-height:1.5}
+  .where{color:var(--muted);font-size:12.5px;margin:6px 0}
+  .where code{color:var(--low)}
+  .fix{background:#102019;border:1px solid #1f3a2e;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13.5px}
+  .fix::before{content:"Suggested fix — ";color:var(--ok);font-weight:700}
+  ul{margin:6px 0;padding-left:22px} li{margin:3px 0}
+  .legend{font-size:12.5px;color:var(--muted);margin:10px 0}
+  .toc{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px 18px;font-size:13.5px}
+  .toc a{color:var(--ok);text-decoration:none} .toc a:hover{text-decoration:underline}
+  .callout{border-left:3px solid var(--high);background:rgba(255,138,61,.08);padding:10px 14px;border-radius:6px;margin:14px 0;font-size:13.5px}
+  details{margin:10px 0} summary{cursor:pointer;color:var(--muted);font-size:13px}
+  hr{border:none;border-top:1px solid var(--line);margin:28px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>WaveCam — Deep Read-Only Project Review</h1>
+<div class="sub">Generated 2026-06-19 · Scope: full repo (orin/wavecam backend + ios/WaveCam + web + config/deploy/tests) · Read-only — no code changed</div>
+
+<div class="meta">
+<b>Method.</b> Six parallel read-only reviewers covered the subsystems (vision/tracking core, PTZ ownership &amp; safety,
+control API, calibration &amp; GPS, iOS, config/deploy/web/tests). <b>Every Critical/High finding was then independently
+re-validated against the actual source</b> before inclusion. Findings carry a status badge:
+<span class="tag val">Validated</span> = confirmed in source by the reviewer-of-record (me),
+<span class="tag rr">Reviewer-reported</span> = cited with file:line but not independently re-derived (mainly Kalman math / paths not re-read),
+<span class="tag rej">Rejected</span> = a reviewer claim that validation overturned (included for rigor).
+The agent/acting-agent code was deep-reviewed separately last session; this pass spot-checks its integration only.
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="n" style="color:var(--crit)">2</div><div class="l">Critical</div></div>
+  <div class="stat"><div class="n" style="color:var(--high)">9</div><div class="l">High</div></div>
+  <div class="stat"><div class="n" style="color:var(--med)">9</div><div class="l">Medium</div></div>
+  <div class="stat"><div class="n" style="color:var(--low)">5</div><div class="l">Low</div></div>
+  <div class="stat"><div class="n" style="color:var(--reject)">2</div><div class="l">False positives</div></div>
+</div>
+
+<div class="callout">
+<b>The two to fix before the next water test:</b>
+(1) the new iOS <b>Calibration wizard never persists to disk</b> — a full confirmed calibration is lost on restart
+(<a href="#f-calib-persist">CAL-1</a>); and (2) <b>agent_chat is a synchronous route</b> that can block the shared API
+threadpool for up to 120&nbsp;s, potentially delaying <code>/safety/kill</code> under load (<a href="#f-threadpool">API-1</a>).
+Everything else is real but lower-blast-radius.
+</div>
+
+<div class="toc">
+<b>Contents</b>
+<ul style="margin:6px 0">
+  <li><a href="#crit">Critical</a></li>
+  <li><a href="#high">High</a></li>
+  <li><a href="#med">Medium</a></li>
+  <li><a href="#low">Low</a></li>
+  <li><a href="#rejected">Rejected false positives (validation overturned)</a></li>
+  <li><a href="#solid">What is solid (confirmed correct)</a></li>
+  <li><a href="#gaps">Top test-coverage gaps</a></li>
+</ul>
+</div>
+
+<h2 id="crit">Critical</h2>
+
+<!-- ===================== CAL-1 ===================== -->
+<div class="finding crit" id="f-calib-persist">
+  <div class="fhead">
+    <span class="id">CAL-1</span>
+    <span class="t">New calibration wizard never persists to disk — confirmed calibration lost on restart</span>
+    <span class="tag sev">Critical</span><span class="tag val">Validated</span><span class="tag subsys">calibration</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/control_calibration.py — <code>_commit_location:445</code>, <code>check_level:477</code>, <code>validate_heading:604</code>, <code>confirm_validation:632</code></div>
+  <p>The entire session-based wizard (<code>/calibration/session/*</code>, <code>/location</code>, <code>/level</code>,
+  <code>/heading-lock</code>, <code>/validation</code>, <code>/validation/confirm</code>) mutates <code>self.pipeline.pose</code>
+  (which <em>is</em> the store's pose object in memory) and <code>self._session</code>, but <b>none of these methods call
+  <code>self._store.set_step()</code> or <code>self._store.save()</code></b>. A repo-wide grep for <code>save()</code>/<code>set_step</code>
+  in this file returns only the FOV path (<code>:723</code>) and the <em>legacy</em> <code>capture_calibration</code> (<code>:808</code>).
+  The final <code>confirm_validation</code> only flips in-memory flags (<code>valid=True</code>, <code>banner="VALID"</code>).</p>
+  <p>Consequence: an operator runs the full wizard, sees "VALID", restarts the box — and <code>CalibrationStore.load()</code>
+  reads the old file: <code>reference_heading=None</code>, banner INVALID. This silently re-introduces the exact
+  "gps_calibrated true but reference_heading null" class <code>CalibrationStore</code> was created to prevent. (The live rig
+  currently shows <code>reference_heading=40.5</code> only because that was set via the <em>legacy</em> route, which does persist.)</p>
+  <div class="fix">Each wizard commit step should call <code>self._store.set_step(&lt;step&gt;, entry)</code> then <code>self._store.save()</code>
+  under the lock — exactly as <code>capture_calibration</code> does. Map <code>heading</code>→<code>reference_heading</code> (the store already does this).
+  Return a 503 on <code>save()</code> failure (mirror the FOV path at <code>:723</code>) so the operator never sees <code>ok:true</code> for an unsaved calibration.</div>
+</div>
+
+<!-- ===================== IOS-1 ===================== -->
+<div class="finding crit" id="f-shadow-codingkeys">
+  <div class="fhead">
+    <span class="id">IOS-1</span>
+    <span class="t">ShadowDetail fields silently decode to nil — snake_case CodingKeys vs global convertFromSnakeCase</span>
+    <span class="tag sev">Critical</span><span class="tag val">Validated</span><span class="tag subsys">iOS</span>
+  </div>
+  <div class="where">ios/WaveCam/Sources/WaveCamClient.swift:748-755 (decoder at :1843)</div>
+  <p>The shared decoder uses <code>.convertFromSnakeCase</code>, which converts <code>bearing_deg → bearingDeg</code> and then
+  looks up a <code>CodingKey</code> whose rawValue is <code>"bearingDeg"</code>. <code>ShadowDetail</code> declares explicit
+  CodingKeys with literal snake_case raw values (<code>case bearingDeg = "bearing_deg"</code>) — so the converted key never matches
+  and <b>every shadow-event field decodes to nil</b>. This is the precise gotcha the file's own comments (lines 118-123) warn about,
+  re-introduced in this one struct. Result: the iOS shadow/estimator readout is silently blank.</p>
+  <div class="fix">Delete the <code>CodingKeys</code> enum from <code>ShadowDetail</code>. The camelCase property names
+  (<code>bearingDeg</code>, <code>distM</code>, …) then auto-match the converted keys — no other changes needed.</div>
+</div>
+
+<h2 id="high">High</h2>
+
+<!-- ===================== API-1 ===================== -->
+<div class="finding high" id="f-threadpool">
+  <div class="fhead">
+    <span class="id">API-1</span>
+    <span class="t">agent_chat runs a ≤120s subprocess on the shared Starlette threadpool — can starve /safety/kill</span>
+    <span class="tag sev">High</span><span class="tag val">Validated</span><span class="tag subsys">control API / agent</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/control_api.py:718 (<code>def agent_chat</code> — synchronous) · control_system.py:128-150 · agent_session.py REQUEST_TIMEOUT_SEC=120</div>
+  <p><code>agent_chat</code> is a plain <code>def</code>, so FastAPI runs it on the shared threadpool (default 40 workers), each call
+  blocking a worker for up to 120&nbsp;s (the <code>claude -p</code> timeout). Enough concurrent/retried chat turns can exhaust the pool
+  and stall <b>every</b> <code>/api/v1</code> route — including <code>/safety/kill</code>. The arm-TTL clamp protects the subprocess
+  duration, not threadpool occupancy. This is the highest-blast-radius finding: a degraded agent turn can indirectly delay a safety command.</p>
+  <div class="fix">Make <code>agent_chat</code> <code>async def</code> and run the blocking <code>chat()</code> via
+  <code>await asyncio.to_thread(...)</code> behind a bounded <code>Semaphore</code> (e.g. 2), so safety/control routes keep their capacity.
+  At minimum, document that the threadpool size must exceed expected concurrent agent turns.</div>
+</div>
+
+<!-- ===================== SAFE-1 ===================== -->
+<div class="finding high" id="f-stop-dedupe">
+  <div class="fhead">
+    <span class="id">SAFE-1</span>
+    <span class="t">STOP command can be de-dupe-suppressed for up to 0.25s on the killed path</span>
+    <span class="tag sev">High</span><span class="tag val">Validated</span><span class="tag subsys">PTZ / safety</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/pipeline.py:234-253 (<code>_send_cmd</code>) · killed loop routes STOP at :656</div>
+  <p>Send condition is <code>changed or (due and not cmd.is_stop) or stop_due</code>. Once a STOP has sent and re-asserts within
+  <code>stop_resend_interval</code> (0.25s) with <code>changed=False</code>, it is silently dropped. The killed-loop re-issues STOP every
+  frame, so a PTZ that creeps/drifts after the first stop isn't re-stopped for up to 250&nbsp;ms — uncommanded motion on a safety path.</p>
+  <div class="fix">On the kill-latched branch, bypass de-dupe and call <code>self.ptz.stop()</code> directly (as <code>kill()</code> already does),
+  or force-send any <code>cmd.is_stop</code> while killed.</div>
+</div>
+
+<!-- ===================== SAFE-2 ===================== -->
+<div class="finding high" id="f-claim-manual-race">
+  <div class="fhead">
+    <span class="id">SAFE-2</span>
+    <span class="t">claim_manual takeover still uses release-then-request (the race transition() was built to close)</span>
+    <span class="tag sev">High</span><span class="tag val">Validated</span><span class="tag subsys">PTZ / safety</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/control_ptz.py:51-62 (<code>claim_manual</code> takeover branch), and :159-164 (<code>hold_manual_owner</code>)</div>
+  <p>The takeover path does <code>release(current_owner)</code> → stop/zoom-stop → <code>request("manual")</code> as separate steps.
+  The whole block holds the <em>dispatcher</em> lock, but the arbiter runs on the <em>pipeline</em> thread and reaches
+  <code>owner.transition()</code> through the owner lock only — so in the window after <code>release</code> (owner=IDLE) and before
+  <code>request("manual")</code>, the arbiter can <code>transition(IDLE, vision_follow)</code> and seize the PTZ. There <em>is</em> a
+  restore-on-failure fallback (:60-62), but it restores a stale <code>current_owner</code>. This is the one place still doing
+  release-then-request instead of the atomic <code>transition()</code>.</p>
+  <div class="fix">Replace the release→request pair with a single <code>self.pipeline.owner.transition(current_owner, "manual")</code>
+  (guarded by <code>current_owner in AUTONOMOUS</code>); on failure the owner is unchanged, so no restore is needed. Do the same in
+  <code>hold_manual_owner</code>.</div>
+</div>
+
+<!-- ===================== SAFE-3 ===================== -->
+<div class="finding high" id="f-velocity-no-killcheck">
+  <div class="fhead">
+    <span class="id">SAFE-3</span>
+    <span class="t">send_manual_velocity does not re-check killed before issuing VISCA → one frame of motion after KILL</span>
+    <span class="tag sev">High</span><span class="tag val">Validated</span><span class="tag subsys">PTZ / safety</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/control_ptz.py:166 (<code>send_manual_velocity</code>)</div>
+  <p>The route checks <code>killed</code>, then calls <code>claim_manual</code> (which itself re-checks under the owner lock — good),
+  but <code>send_manual_velocity</code> does <b>not</b> re-check <code>killed</code> before <code>self.pipeline.ptz.pan_tilt(...)</code>.
+  A KILL arriving after <code>claim_manual</code> succeeds but before the VISCA bytes go out still moves the camera for one frame.</p>
+  <div class="fix">Re-check <code>self.pipeline.owner.killed</code> at the top of <code>send_manual_velocity</code>/<code>send_manual_zoom_velocity</code>;
+  short-circuit to <code>ptz.stop()</code> if killed.</div>
+</div>
+
+<!-- ===================== GPS-1 ===================== -->
+<div class="finding high" id="f-gps-erase">
+  <div class="fhead">
+    <span class="id">GPS-1</span>
+    <span class="t">DirectRadioGps erases the last good target fix on any no-fix packet</span>
+    <span class="tag sev">High</span><span class="tag val">Validated</span><span class="tag subsys">GPS</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/gps_direct_lora.py:194-220 (<code>_handle_remote_line</code>)</div>
+  <p>When a line arrives without the <code>fix</code> flag (surfer indoors, cold start, LoRa drop), <code>fix</code> stays <code>None</code>
+  and line 219 runs <code>self._latest = fix</code> → <code>self._latest = None</code>. The next <code>get_fix()</code> returns <code>None</code>
+  instantly, so the <code>drive_stale_sec</code> age-gate never gets to age out a stale-but-usable fix — the track drops on a single
+  no-fix packet. This contradicts the carefully documented "keep last-known-good" comment at :197-205 (which only guards the
+  corrupt-coords-<em>with</em>-fix case). Legacy/Meshtastic sources hold the last fix and let the age gate decide.</p>
+  <div class="fix">Only overwrite <code>self._latest</code> when <code>fix is not None</code>. Still update
+  <code>_target_telemetry</code> and <code>_last_poll_ts</code> (battery/sats are valid without a fix); let <code>get_fix()</code>
+  re-age the retained fix so the existing age gate drops it cleanly once truly stale.</div>
+</div>
+
+<!-- ===================== GPS-2 ===================== -->
+<div class="finding high" id="f-lockloc-stale">
+  <div class="fhead">
+    <span class="id">GPS-2</span>
+    <span class="t">lock_location live-base fallback has no freshness gate — can lock a stale (rebooted-Wio) position</span>
+    <span class="tag sev">High</span><span class="tag val">Validated</span><span class="tag subsys">calibration / GPS</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/control_calibration.py:335-346 (live-base fallback) · gps_direct_lora.py:242-244</div>
+  <p>When the client sends no samples, the wizard falls back to <code>gps.get_camera_position()</code>, which returns the last cached
+  <code>(_cam)</code> tuple <b>unconditionally — no timestamp, no age</b>. <code>get_camera_age()</code> and <code>reader_alive()</code>
+  exist but aren't consulted. Per the known gotcha (base Wio reboot silently staleifies the serial), a rebooted Wio leaves a stale
+  <code>_cam</code> cached; this path would lock it as the camera location with a 15&nbsp;m radius, silently corrupting every subsequent
+  bearing. The sample-based path above it has a <code>max_fix_age_sec</code> gate; the fallback bypasses all of them.</p>
+  <div class="fix">Require <code>gps.reader_alive()</code> and <code>gps.get_camera_age()</code> below a tight bound (2-3&nbsp;s) before
+  accepting the live base; else return <code>location_unavailable</code>/<code>gps_stale</code>. Pass <code>fix_age_sec</code> into the
+  synthesized sample so the existing age gate applies.</div>
+</div>
+
+<!-- ===================== VIS-1 ===================== -->
+<div class="finding high" id="f-color-selflock">
+  <div class="fhead">
+    <span class="id">VIS-1</span>
+    <span class="t">Color-only blob can acquire full lock while GPS owns (gps_boost crosses lock_threshold)</span>
+    <span class="tag sev">High</span><span class="tag rr">Reviewer-reported</span><span class="tag subsys">vision / fusion</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/fusion.py:179-193 (<code>_select</code>) + pipeline.py:643-649 (<code>_gps_cue</code>)</div>
+  <p>With defaults (<code>require_person=False</code>), a color-only blob yields <code>CONF_SUSTAIN≈0.45</code>, below
+  <code>lock_threshold=0.60</code> — so it does <b>not</b> self-lock when vision owns. But while GPS owns, the legacy frame-center cue
+  still fires and <code>+gps_boost</code> (0.2) is added → 0.65 ≥ 0.60 → an orange object near frame center (buoy, sun glint, trash)
+  can self-lock and steal the camera to <code>vision_follow</code>. The fusion docstring's "a random orange object cannot self-lock"
+  claim holds only when GPS is <em>not</em> directing.</p>
+  <div class="fix">Require a confirmed person (<code>matched=True</code>) for the GPS boost to cross <code>lock_threshold</code>, OR cap the
+  boosted color-only path strictly below <code>lock_threshold</code> (e.g. <code>min(CONF_SUSTAIN + boost, lock_threshold - ε)</code>) so
+  GPS can sustain an existing lock but never <em>acquire</em> on color alone.</p>
+  <p><small>Status note: the logic is traced through the code; not live-confirmed against a real buoy. Worth a bench test before the next water run.</small></p>
+</div>
+
+<!-- ===================== ZOMBIE-1 ===================== -->
+<div class="finding high" id="f-zombie">
+  <div class="fhead">
+    <span class="id">ZOMBIE-1</span>
+    <span class="t">Zombie-rig defense is observe-only — a dead vision loop keeps reporting TRACKING with fps=0</span>
+    <span class="tag sev">High</span><span class="tag val">Validated</span><span class="tag subsys">vision / safety</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/tracking_arbiter.py:99-104 (decide) · health.py:20-29 · control_api.py /health</div>
+  <p><code>HealthRegistry</code> turns heartbeat silence into <code>ok:false</code> in <code>/health</code> — but <b>nothing acts on it</b>.
+  <code>decide()</code> only checks <code>self.enabled</code> (the DISABLE-PTZ latch); it does not check capture/detector liveness (confirmed:
+  grep for <code>health/beat/capture/detector</code> in tracking_arbiter.py returns nothing relevant). So when the vision thread dies but the
+  API stays up, <code>/status</code> keeps reporting <code>state:TRACKING</code> with <code>fps:0</code> and the PTZ keeps being driven by
+  stale fusion. This is exactly the two-rig incident class. <code>/health</code> alarms; the operator HUD and supervisor do not.</p>
+  <div class="fix">In <code>tracking_arbiter.decide()</code> (or the pipeline frame loop), gate vision ownership on
+  <code>health.snapshot()["components"]["capture"]["ok"]</code> (and <code>detector</code>). When stale while <code>mode != gps_only</code>,
+  force <code>owner="idle"</code> and emit a <code>vision_stale</code> event — same pattern as the existing <code>base_drift</code> revalidation gate.</div>
+</div>
+
+<!-- ===================== KILL-1 ===================== -->
+<div class="finding high" id="f-kill-no-reset">
+  <div class="fhead">
+    <span class="id">KILL-1</span>
+    <span class="t">kill() does not reset arbiter vision hysteresis — RESUME can instantly restore a stale false lock</span>
+    <span class="tag sev">High</span><span class="tag rr">Reviewer-reported</span><span class="tag subsys">vision / safety</span>
+  </div>
+  <div class="where">orin/wavecam/wavecam/pipeline.py:215-232 (<code>kill</code>) · tracking_arbiter.py (hysteresis state)</div>
+  <p><code>kill(on=True)</code> latches PTZ + <code>state.killed</code>; <code>kill(on=False)</code> resumes and leaves owner idle "for the
+  arbiter to re-decide." But the arbiter's <code>_consecutive_locked</code>/<code>_last_locked_time</code>/<code>_vision_owns</code> are
+  <b>not</b> reset on kill. If kill happened mid-lock, the first post-resume frame with <code>locked=True</code> re-grants
+  <code>vision_follow</code> instantly — even if the operator killed precisely because the lock was wrong. (Manual release correctly resets
+  via <code>reset_vision_state</code> at control_ptz.py:98 — see <a href="#fp-reset">rejected FP-1</a>; KILL does not.)</p>
+  <div class="fix">In <code>kill(on=True)</code>, call <code>self.arbiter.reset_vision_state()</code> so post-resume acquisition follows the full K-frame hysteresis.</div>
+</div>
+
+<h2 id="med">Medium</h2>
+
+<!-- CAL-2 base_locked -->
+<div class="finding med">
+  <div class="fhead"><span class="id">CAL-2</span><span class="t">/status reports base_locked as has_base (drift can revoke authority but the dashboard still says "locked")</span><span class="tag sev">Med</span><span class="tag val">Validated</span><span class="tag subsys">calibration</span></div>
+  <div class="where">control_calibration.py:146-148</div>
+  <p><code>"base_locked": (self.pipeline.pose.lat != 0.0 or lon != 0.0)</code> is <code>has_base</code>, not the runtime drift-monitored
+  <code>pose.base_locked</code> that the authority gate actually uses (<code>pipeline.py:675</code>: <code>has_base and base_locked</code>).
+  After the BaseDriftMonitor confirms tripod movement and revokes GPS authority, the API still reports <code>base_locked=true</code>.</p>
+  <div class="fix">Report <code>self.pipeline.pose.base_locked and self.pipeline.pose.has_base</code>, or rename the JSON key to <code>has_base</code> to match what it computes.</div>
+</div>
+
+<!-- SAFE-4 restore clobber -->
+<div class="finding med">
+  <div class="fhead"><span class="id">SAFE-4</span><span class="t">_restore_owner_after_manual overwritten by a second manual claim → CALIBRATE session dropped</span><span class="tag sev">Med</span><span class="tag val">Validated</span><span class="tag subsys">PTZ</span></div>
+  <div class="where">control_ptz.py:55, 78</div>
+  <p><code>claim_manual</code> and <code>claim_manual_from_calibrate</code> both set <code>_restore_owner_after_manual</code> unconditionally.
+  A velocity takeover (sets it to <code>vision_follow</code>) followed by a calibrate takeover overwrites it; on release the original owner is
+  forgotten. Self-healing for vision/gps (arbiter re-decides), but for <code>CALIBRATE</code> (session-scoped, must survive) the session is dropped.</p>
+  <div class="fix">Only set <code>_restore_owner_after_manual</code> if it is currently <code>None</code> (don't overwrite an in-flight restore target).</div>
+</div>
+
+<!-- SEND rate limit resume -->
+<div class="finding med">
+  <div class="fhead"><span class="id">VIS-2</span><span class="t">_send_cmd can drop a resume-after-STOP within the 50ms command interval</span><span class="tag sev">Med</span><span class="tag rr">Reviewer-reported</span><span class="tag subsys">vision</span></div>
+  <div class="where">pipeline.py:234-253</div>
+  <p>A momentary STOP followed immediately by a non-stop resume inside the <code>command_min_interval</code> (50&nbsp;ms) window can have the
+  resume dropped by <code>(due and not cmd.is_stop)</code> being False — the camera stays stopped while fusion thinks it's tracking. ~1.7 frames
+  at 35&nbsp;fps; rare but real.</p>
+  <div class="fix">Key the rate-limit on the last <em>non-stop</em> send time so a resume is never throttled by a just-sent stop.</div>
+</div>
+
+<!-- EST-1 covariance -->
+<div class="finding med">
+  <div class="fhead"><span class="id">EST-1</span><span class="t">Estimator scalar covariance update is non-symmetric (can break PSD over time)</span><span class="tag sev">Med</span><span class="tag rr">Reviewer-reported</span><span class="tag subsys">estimator</span></div>
+  <div class="where">orin/wavecam/wavecam/estimator.py:414-432 (<code>_scalar_update</code>)</div>
+  <p>The update does <code>P[i][j] -= KhP[i][j] * P[j][j]</code> — only the diagonal in the right factor. The docstring admits "approximate but
+  stable," and there is a <code>max(0.0, ...)</code> guard at :462 (a tell that negative variance was contemplated). At 35&nbsp;fps with GPS+vision+
+  bearing+range all hitting <code>_scalar_update</code>, asymmetry accumulates; first symptom is a negative <code>var_brg_rad</code> or NaN.</p>
+  <div class="fix">Replace with the full <code>(I-KH)P</code> form (4×4, cheap — helpers exist), or assert <code>P[i][i] &gt;= 0</code> after each update and reset on violation. <small>(Math not independently re-derived — flagged for a numerics pass.)</small></div>
+</div>
+
+<!-- EST-2 bearing jacobian -->
+<div class="finding med">
+  <div class="fhead"><span class="id">EST-2</span><span class="t">Vision bearing innovation uses a linear small-angle approximation across the full FOV</span><span class="tag sev">Med</span><span class="tag rr">Reviewer-reported</span><span class="tag subsys">estimator</span></div>
+  <div class="where">estimator.py:338-348 + the <code>pixel_offset_deg = (cx-w/2)/w * fov</code> term</div>
+  <p>The pixel→bearing offset is linear <code>(cx-w/2)/w*fov</code>, but the true angular offset is <code>atan</code>-shaped. At the current narrow
+  FOV the error is ~1° (negligible), but with <code>r_vis_deg=1.0</code> (tight) it can bias the filter, and it's a latent trap if the FOV widens or
+  the aim point crops off-center.</p>
+  <div class="fix">Use the pinhole form: <code>degrees(atan((cx-w/2)/(w/2) * tan(radians(fov/2))))</code>.</div>
+</div>
+
+<!-- IOS-2 WCConfig not tolerant -->
+<div class="finding med">
+  <div class="fhead"><span class="id">IOS-2</span><span class="t">WCConfig is not tolerantly decoded — one missing field kills the whole Tune panel</span><span class="tag sev">Med</span><span class="tag rr">Reviewer-reported</span><span class="tag subsys">iOS</span></div>
+  <div class="where">ios/WaveCam/Sources/WaveCamClient.swift:261-337</div>
+  <p>Unlike <code>WCStatus</code> (tolerant <code>init(from:)</code> in extensions), <code>WCConfig</code>/<code>WCConfig.Current</code> and nested
+  structs have non-optional fields with no tolerant decode. A backend response missing any field (or a renamed key) throws the whole decode →
+  <code>config()</code> returns nil → every feature-detected control (home, presets, cinematic, tracking, agent, logs) stays hidden all session.</p>
+  <div class="fix">Add tolerant <code>init(from:)</code> in extensions for <code>WCConfig</code>/<code>Current</code>/nested structs, mirroring WCStatus.</div>
+</div>
+
+<!-- API-2 sensors phone READ -->
+<div class="finding med">
+  <div class="fhead"><span class="id">API-2</span><span class="t">/sensors/phone uses READ role but mutates shared SensorHub state</span><span class="tag sev">Med</span><span class="tag val">Validated</span><span class="tag subsys">control API / auth</span></div>
+  <div class="where">control_api.py:748</div>
+  <p>The ingest route is <code>require(READ)</code> but <code>sensor_hub.ingest()</code> writes shared state that drives drift-alert + at-rig logic
+  other safety/calibration code reads. A <code>viewer</code>-role token (READ-only) could inject arbitrary phone telemetry. Defensible if the phone is a
+  trusted publisher and viewer tokens are never handed to phones — but undocumented. (Sibling reset at :766 correctly requires CONFIG.)</p>
+  <div class="fix">Add a comment documenting READ is intentional and why, or introduce a dedicated INGEST/SENSORS action class so viewer can't post telemetry.</div>
+</div>
+
+<!-- DEPLOY-1 -->
+<div class="finding med">
+  <div class="fhead"><span class="id">DEPLOY-1</span><span class="t">deploy.sh has no rollback path + a fixed sleep 12 window</span><span class="tag sev">Med</span><span class="tag val">Validated</span><span class="tag subsys">deploy</span></div>
+  <div class="where">orin/wavecam/deploy.sh:28-37</div>
+  <p>On <code>DEPLOY MISMATCH</code> it <code>exit 1</code> but leaves the broken deploy in place — the <code>${DEST}.bak-&lt;ts&gt;</code> backup
+  exists but nothing restores it (operator must manually <code>mv</code>). <code>sleep 12</code> is a magic number; on a slow cold boot
+  <code>is-active</code> may run before the service is listening, and the <code>curl | python3</code> version-fetch can raise
+  <code>JSONDecodeError</code> under <code>set -e</code> instead of a clean "rig not responding".</p>
+  <div class="fix">(a) On mismatch/fetch-failure, auto-restore the <code>.bak</code> and restart. (b) Replace <code>sleep 12</code> with a polling loop
+  (<code>for i in 1..30; do curl -sf … &amp;&amp; break; sleep 1; done</code>). (c) Guard the curl exit before parsing.</div>
+</div>
+
+<!-- CONFIG-1 type coercion -->
+<div class="finding med">
+  <div class="fhead"><span class="id">CONFIG-1</span><span class="t">YAML/overlay load does not coerce types (hot-config path does) — quoted bools/ints silently misbehave</span><span class="tag sev">Med</span><span class="tag val">Validated</span><span class="tag subsys">config</span></div>
+  <div class="where">config.py:317-319 (<code>setattr(target,k,v)</code> no coercion), :340-351</div>
+  <p>The hot-config path routes every value through <code>set_int/set_float/set_bool</code> with bounds; the file/overlay path does not. A hand-edited
+  <code>tracking.enabled: "false"</code> (quoted) is truthy → DISABLE-PTZ silently fails to engage. <code>jpeg_quality: "70"</code> lands as str →
+  OpenCV ignores it. Same class of gap for <code>ptz.enabled</code>, <code>gps.enabled</code>, <code>fusion.require_person</code>.</p>
+  <div class="fix">Coerce bool/int/float at end of <code>load_config</code> against dataclass field types (mirror the <code>set_*</code> helpers), or coerce in
+  <code>_apply_overlay</code>. Add a test loading <code>tracking.enabled: "false"</code> → assert <code>isinstance(..., bool) and not ...</code>.</div>
+</div>
+
+<h2 id="low">Low</h2>
+
+<div class="finding low">
+  <div class="fhead"><span class="id">CAL-3</span><span class="t">CalibrationStore.load can crash boot on an unknown pose key</span><span class="tag sev">Low</span><span class="tag rr">Reviewer-reported</span></div>
+  <div class="where">calibration_store.py:62 (<code>CameraPose(**doc.get("pose", {}))</code> outside try/except)</div>
+  <p>An unexpected key in the persisted pose dict (future rename, hand-edit) raises <code>TypeError</code> and takes the whole backend down at boot instead of falling back.</p>
+  <div class="fix">Wrap in try/except, filter to <code>_POSE_FIELDS</code> on failure, or return a fresh store like the JSON-decode fallback.</div>
+</div>
+
+<div class="finding low">
+  <div class="fhead"><span class="id">VIS-3</span><span class="t">compute_roi_crop can yield an empty crop on a zero-size frame</span><span class="tag sev">Low</span><span class="tag rr">Reviewer-reported</span></div>
+  <div class="where">pipeline.py:37-68, :602</div>
+  <p>A corrupt decode that is non-None but <code>shape</code> w/h==0 passes the <code>frame is None</code> guard → empty crop → YOLO gets an empty array.</p>
+  <div class="fix">Guard <code>if w == 0 or h == 0: continue</code> after <code>h, w = frame.shape[:2]</code>.</div>
+</div>
+
+<div class="finding low">
+  <div class="fhead"><span class="id">WEB-1</span><span class="t">web.py renders color_presets/yolo_classes &lt;option&gt; without escapeHtml (not exploitable today)</span><span class="tag sev">Low</span><span class="tag rr">Reviewer-reported</span></div>
+  <div class="where">web.py:234-235</div>
+  <p>Option values interpolate <code>x</code>/<code>x.id</code>/<code>x.label</code> unescaped. Today these come from server constants (not injectable);
+  every other path is clean (<code>chip()</code> escapes; the ASK CLAUDE reply uses <code>textContent</code> — safe). Stored-XSS only if either list becomes config-driven.</p>
+  <div class="fix">Wrap in <code>escapeHtml(...)</code>; one-line, closes the gap permanently.</div>
+</div>
+
+<div class="finding low">
+  <div class="fhead"><span class="id">IOS-3</span><span class="t">sensor-publisher battery gate trusts socket.connected (lags connect; never flips false on silent send failure)</span><span class="tag sev">Low</span><span class="tag rr">Reviewer-reported</span></div>
+  <div class="where">PhoneSensorPublisher.swift:248-262, PhoneSensorSocket.swift:54-62</div>
+  <p><code>connected</code> becomes true only on the WS delegate's <code>didOpenWithProtocol</code> (lags ~0-100&nbsp;ms) and isn't flipped false when a send
+  succeeds locally but the backend silently drops (half-open TCP). Sensors can stay off briefly, or burn GPS-Best/20&nbsp;Hz motion on a dead link.</p>
+  <div class="fix">Gate the battery on recent successful <em>delivery</em> (e.g. a watchdog: no successful send in N&nbsp;s while "connected" → force drop).</div>
+</div>
+
+<div class="finding low">
+  <div class="fhead"><span class="id">DOC-1</span><span class="t">CLAUDE.md references .claude/{ARCHITECTURE,CODING_STANDARDS,DEVELOPMENT_PRACTICES}.md — none exist</span><span class="tag sev">Low</span><span class="tag val">Validated</span></div>
+  <div class="where">CLAUDE.md "Architecture/Coding Standards/Development Practices" sections</div>
+  <p>Three "See .claude/X.md" pointers in CLAUDE.md point at files that don't exist — dangling references that waste a session's time.</p>
+  <div class="fix">Either create the referenced docs (extract from CLAUDE.md/ARCHITECTURE notes) or remove the pointers.</div>
+</div>
+
+<h2 id="rejected">Rejected false positives (validation overturned these)</h2>
+<p class="legend">Included to show the validation step did real work — these reviewer claims were checked against source and found wrong.</p>
+
+<div class="finding rejected" id="fp-reset">
+  <div class="fhead"><span class="id">FP-1</span><span class="t">"arbiter.reset_vision_state() is dead code (defined, never called)"</span><span class="tag rej">Rejected</span></div>
+  <p>Overturned: it <b>is</b> called at <code>control_ptz.py:98</code> from <code>release_manual_owner</code> (with a comment: "Reset arbiter
+  hysteresis so vision/gps must re-earn lock from scratch after manual intervention"). The function is live. (The related KILL-1 above is a
+  different, real gap — KILL doesn't reset, only manual-release does.)</p>
+</div>
+
+<div class="finding rejected">
+  <div class="fhead"><span class="id">FP-2</span><span class="t">"iOS panAxisNotLevel reads the wrong field (uncertainty_deg) → shows tilt 0.0°"</span><span class="tag rej">Rejected</span></div>
+  <p>Overturned: <code>check_level</code> (control_calibration.py:482-487) sends the refusal with <code>uncertainty_deg=round(tilt_mag, 3)</code> —
+  so <code>uncertainty_deg</code> <b>is</b> the field carrying the tilt magnitude, and iOS reads it correctly. The field <em>name</em> is misleading
+  (it's a tilt magnitude, not an uncertainty), but there's no functional bug. Rename for clarity if desired.</p>
+</div>
+
+<h2 id="solid">What is solid (confirmed correct)</h2>
+<ul>
+  <li><b>KILL supremacy</b> — <code>PtzOwner.kill()</code> is sticky, fail-closed, re-checked under lock in every mutating call; nothing re-arms/re-owns after kill without <code>resume()</code>. The agent's separate KILL latch clears only via <code>agent_resume()</code>.</li>
+  <li><b>Auth roles per route</b> — all correct: <code>/safety/*</code>=SAFETY, <code>/agent/chat|summon</code>=SERVICE, <code>/agent/arm</code>=CONFIG, PTZ moves=PTZ, calibration captures=PTZ, <code>calibration/fov</code> POST=CONFIG/GET=READ, media read/download=READ, record/delete=CONFIG, restart=CONFIG. No route has a wrong role.</li>
+  <li><b>No silent-200 refusals</b> — <code>api.refusal()</code> defaults to HTTP 409; every caller passes an explicit non-200 for non-conflict cases. <code>ok:false</code> always carries a non-2xx status.</li>
+  <li><b>Refusal checks</b> — callers that branch on refusal (<code>apply_hot_config</code>, preset apply, calibration captures) all check correctly.</li>
+  <li><b>Hot-config persist</b> — writes post-coercion values to <code>config.local.yaml</code> (atomic <code>os.replace</code>, under a lock), never the main YAML; round-trips; <code>rsync</code> excludes it.</li>
+  <li><b>_KNOWN_SECTIONS complete</b> — all 13 sections present (incl. <code>agent</code>); the silent-vanish gotcha is closed and tested.</li>
+  <li><b>Fusion hysteresis guard</b> — refuses <code>unlock &gt;= lock</code> at load (after overlay) and in hot-config; the 2026-06-11 permanent-lock failure is defended.</li>
+  <li><b>Geometry</b> — haversine/bearing/elevation/normalize_180 textbook-correct, units consistent (deg on the pose seam; e7/centi conversions correct at the radio boundary); the <code>pan_encoder_to_bearing</code> inverse is algebraically exact (the prior zombie-bug inverse is genuinely fixed).</li>
+  <li><b>Deadman timers</b> — cancel-and-bump-then-start under lock; generation-token checked before acting; held manual lock survives deadman expiry.</li>
+  <li><b>OAuth token handling (agent)</b> — never on argv (stdin), never logged, redacted from error messages; KILL re-reads <code>can_act()</code> after the turn; arm TTL clamped ≥ timeout+60.</li>
+  <li><b>iOS Codable discipline</b> — all 23 <code>init(from:)</code> live in <code>extension</code>s (memberwise inits survive); every GET goes through <code>getWithFallback</code>; the 1&nbsp;Hz poll never wipes a failed-KILL message (<code>lastCommandError</code> separate from <code>lastError</code>). (The one exception is IOS-1 / ShadowDetail.)</li>
+  <li><b>mypy gate scope</b> — intentionally the 6 pointing-math files (the 2026-06-11 zombie-bug class); CI matches.</li>
+  <li><b>Tests</b> — no test asserts on the live rig; every <code>rtsp://</code>/<code>127.0.0.1</code> hit is a string to a stub; <code>conftest.py</code> isolates <code>camera_pose.json</code>.</li>
+</ul>
+
+<h2 id="gaps">Top test-coverage gaps</h2>
+<ol>
+  <li><b>Calibration wizard persistence</b> (CAL-1) — no test restarts and reads the pose file back through the wizard path. <code>test_calibration_persist.py</code> only covers legacy <code>capture_calibration</code>.</li>
+  <li><b>Zombie → KILL/downgrade gate</b> (ZOMBIE-1) — no test that a stale capture heartbeat while <code>state==TRACKING</code> forces <code>owner=idle</code>.</li>
+  <li><b><code>supervisor.restart_systemd_unit</code> + allowlist guard</b> — zero tests; the one restart path in the system and the safety fence (<code>unit != "wavecam.service" → ValueError</code>) is unasserted.</li>
+  <li><b>START AUTO vs DISABLE-PTZ latch interaction</b> — no test for <code>/ptz/auto</code> while <code>tracking.enabled=False</code> (code: <code>start_autonomous</code> succeeds, owner rolls back next frame → a flashing AUTO indicator with no tracking).</li>
+  <li><b>YAML/overlay type coercion</b> (CONFIG-1) — no test that quoted <code>"false"</code>/<code>"10"</code> load as the right type.</li>
+  <li><b><code>deploy.sh</code></b> — no shellcheck/bats/smoke; the rollback + version-fetch-failure paths are entirely manual.</li>
+</ol>
+
+<hr>
+<div class="sub">
+<b>Validation ledger.</b> Validated directly in source: CAL-1, IOS-1, API-1, SAFE-1, SAFE-2, SAFE-3, GPS-1, GPS-2, ZOMBIE-1, CAL-2, SAFE-4,
+API-2, DEPLOY-1, CONFIG-1, DOC-1, and both rejections (FP-1, FP-2). Reviewer-reported (cited, not independently re-derived): VIS-1, VIS-2,
+KILL-1, EST-1, EST-2, IOS-2, IOS-3, CAL-3, WEB-1 — each points at a concrete file:line and is worth a 10-minute confirm before fixing.
+<br><br>
+<i>This is a read-only review — no code was changed. Findings are ordered to prioritize the next session: CAL-1 and API-1 first (data loss + safety-threadpool), then the SAFE-* cluster (motion-after-kill / takeover race), then GPS-1/GPS-2 (track drop + stale-base lock).</i>
+</div>
+
+</div>
+</body>
+</html>
