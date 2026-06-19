@@ -287,44 +287,50 @@ struct TuneView: View {
     @ViewBuilder private func presetChip(_ preset: WCPreset) -> some View {
         let isActive = preset.name == activePresetName
         let isModified = isActive && isPresetModified
-        Button {
-            applyPreset(named: preset.name)
-        } label: {
-            HStack(spacing: 4) {
-                Text(preset.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                if isModified {
-                    Circle()
-                        .fill(WC.warn)
-                        .frame(width: 5, height: 5)
-                }
-                if !preset.builtin {
-                    Button {
-                        presetDeleteTarget = preset
-                        showPresetDeleteConfirm = true
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(isActive ? Color.black.opacity(0.5) : WC.muted)
+        // Apply and delete are SIBLING buttons in the chip's HStack — not nested. A delete
+        // Button inside the apply Button's label had no distinct hit target, so tapping the
+        // ✕ fired applyPreset and deleting a custom preset was impossible.
+        HStack(spacing: 4) {
+            Button {
+                applyPreset(named: preset.name)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(preset.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    if isModified {
+                        Circle()
+                            .fill(WC.warn)
+                            .frame(width: 5, height: 5)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 1)
                 }
             }
-            .foregroundStyle(isActive ? Color.black : WC.txt)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(
-                isActive ? WC.accent : WC.accent.opacity(0.12),
-                in: .rect(cornerRadius: 10)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isActive ? WC.accent : WC.accent.opacity(0.30))
-            )
+            .buttonStyle(.plain)
+
+            if !preset.builtin {
+                Button {
+                    presetDeleteTarget = preset
+                    showPresetDeleteConfirm = true
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(isActive ? Color.black.opacity(0.5) : WC.muted)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 1)
+            }
         }
-        .buttonStyle(.plain)
+        .foregroundStyle(isActive ? Color.black : WC.txt)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(
+            isActive ? WC.accent : WC.accent.opacity(0.12),
+            in: .rect(cornerRadius: 10)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isActive ? WC.accent : WC.accent.opacity(0.30))
+        )
         .disabled(client.mode != .live)
     }
 

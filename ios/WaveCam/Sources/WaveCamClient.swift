@@ -1995,7 +1995,11 @@ final class WaveCamClient {
             } catch let error as WaveCamAPIError {
                 throw error
             } catch let error as URLError {
-                guard error.isWriteRouteFailoverAllowed else { throw error }
+                // Idempotent posts (phone-sensor telemetry, latest-sample-wins) opt into
+                // read-style failover so a blackholed tether candidate that times out still
+                // retries the Wi-Fi route this tick; mutating posts keep the strict
+                // connection-only rule so a command is never double-applied (the default).
+                guard idempotent ? error.isReadRouteFailoverAllowed : error.isWriteRouteFailoverAllowed else { throw error }
                 failoverError = error
             }
         }

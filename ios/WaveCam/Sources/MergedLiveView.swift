@@ -142,6 +142,11 @@ struct MergedLiveView: View {
                         .padding(WCSpace.md)
                 }
             }
+
+            // Error/refusal toast — fullscreen rebuilt the HUD without this, so PTZ
+            // refusals / "Home unavailable" set toastMessage but never rendered while
+            // fullscreen. Mirror feedLayer so safety feedback is visible here too.
+            GlassToast(message: $toastMessage)
         }
     }
 
