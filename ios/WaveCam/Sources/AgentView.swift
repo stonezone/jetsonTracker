@@ -10,6 +10,10 @@ struct AgentView: View {
     @State private var logLines: [WCLogLine] = []
     @State private var logLevel: LogLevelFilter = .all
     @State private var logsLoading = false
+    @State private var chatLog: [AgentChatLine] = []
+    @State private var chatInput = ""
+    @State private var chatSending = false
+    @State private var agentArmed = false
 
     var body: some View {
         ScrollView {
@@ -19,6 +23,12 @@ struct AgentView: View {
                 AgentAuthorityCard()
                 AgentRequestCard(state: requestState, provider: $provider,
                                  onSummon: summonDiagnostics)
+                if config?.supported?.agent == true || client.mode == .mock {
+                    AgentChatCard(
+                        log: chatLog, input: $chatInput, sending: chatSending,
+                        armed: agentArmed, killed: client.killed,
+                        onSend: sendChat, onArm: setArm)
+                }
                 if let r = report {
                     AgentReportCard(report: r)
                 }
@@ -102,6 +112,144 @@ struct AgentView: View {
             }
         }
         requestState = .failed("Timed out waiting for the consultation.")
+    }
+
+    private func sendChat() {
+        let msg = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !msg.isEmpty, !chatSending else { return }
+        chatInput = ""
+        chatLog.append(AgentChatLine(role: .you, text: msg))
+        chatSending = true
+        Task {
+            let resp = await client.sendAgentChat(msg)
+            await MainActor.run {
+                if let r = resp, r.ok {
+                    chatLog.append(AgentChatLine(role: .claude, text: r.reply))
+                    agentArmed = r.armed
+                } else {
+                    chatLog.append(AgentChatLine(
+                        role: .claude, text: "⚠️ " + (client.lastCommandError ?? "No response.")))
+                }
+                chatSending = false
+            }
+        }
+    }
+
+    private func setArm(_ on: Bool) {
+        Task {
+            let ok = await client.setAgentArm(on)
+            await MainActor.run { if ok { agentArmed = on } }
+        }
+    }
+}
+
+// MARK: - Conversational agent (Phase 1a)
+
+private struct AgentChatLine: Identifiable {
+    enum Role { case you, claude }
+    let id = UUID()
+    let role: Role
+    let text: String
+}
+
+private struct AgentChatCard: View {
+    let log: [AgentChatLine]
+    @Binding var input: String
+    let sending: Bool
+    let armed: Bool
+    let killed: Bool
+    let onSend: () -> Void
+    let onArm: (Bool) -> Void
+
+    var body: some View {
+        OperatorCard {
+            HStack {
+                OperatorSectionLabel("Ask Claude")
+                Spacer()
+                Toggle(isOn: Binding(get: { armed && !killed }, set: { onArm($0) })) {
+                    Text(armed && !killed ? "ARMED" : "Can act")
+                        .font(.system(size: 11, weight: .black, design: .monospaced))
+                        .tracking(1.0)
+                }
+                .labelsHidden()
+                .disabled(killed)
+                .tint(WC.accent)
+            }
+            Text(killed
+                 ? "KILLED — agent disarmed. Resume to re-enable."
+                 : (armed ? "Armed: Claude can act on the rig until you disarm or hit KILL."
+                          : "Read-only Q&A. Arm to let Claude make changes."))
+                .font(.system(size: 11))
+                .foregroundStyle(killed ? WC.warn : WC.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            OperatorDivider()
+
+            if log.isEmpty {
+                Text("Ask about status, calibration, or setup.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(WC.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(log) { line in
+                                AgentChatBubble(line: line).id(line.id)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .frame(maxHeight: 280)
+                    .onChange(of: log.count) {
+                        if let last = log.last {
+                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("Message Claude…", text: $input, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...4)
+                    .font(.system(size: 14))
+                    .foregroundStyle(WC.txt)
+                    .padding(10)
+                    .background(WC.ink, in: .rect(cornerRadius: 10))
+                    .onSubmit(onSend)
+                Button(action: onSend) {
+                    Image(systemName: sending ? "hourglass" : "paperplane.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(WC.accent)
+                        .frame(width: 44, height: 44)
+                        .background(WC.accent.opacity(0.1), in: .rect(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .disabled(sending || input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("Send message to Claude")
+            }
+        }
+    }
+}
+
+private struct AgentChatBubble: View {
+    let line: AgentChatLine
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if line.role == .you { Spacer(minLength: 32) }
+            Text(line.text)
+                .font(.system(size: 13))
+                .foregroundStyle(line.role == .you ? WC.accent : WC.txt)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    (line.role == .you ? WC.accent.opacity(0.12) : WC.muted.opacity(0.12)),
+                    in: .rect(cornerRadius: 12))
+            if line.role == .claude { Spacer(minLength: 32) }
+        }
     }
 }
 

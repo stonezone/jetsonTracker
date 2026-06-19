@@ -273,6 +273,7 @@ struct WCConfig: Codable, Sendable {
         var cinematicZoom: Bool?
         var mediaDelete: Bool?
         var trackingMode: Bool?
+        var agent: Bool?   // interactive acting-agent (Phase 1a) — absent on older backends
     }
 
     struct Current: Codable, Sendable {
@@ -822,6 +823,23 @@ struct WCAgentReport: Decodable {
     init(status: String?, provider: String?, text: String?, error: String?, durationSec: Double?) {
         self.status = status; self.provider = provider; self.text = text
         self.error = error; self.durationSec = durationSec
+    }
+}
+
+struct WCAgentChat: Codable, Sendable {
+    var ok: Bool = false
+    var reply: String = ""
+    var armed: Bool = false
+}
+
+// Tolerant decode in an extension (keeps the memberwise init; no snake_case
+// CodingKeys — the shared decoder is .convertFromSnakeCase).
+extension WCAgentChat {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try c.decodeIfPresent(Bool.self, forKey: .ok) ?? false
+        reply = try c.decodeIfPresent(String.self, forKey: .reply) ?? ""
+        armed = try c.decodeIfPresent(Bool.self, forKey: .armed) ?? false
     }
 }
 
@@ -1716,6 +1734,28 @@ final class WaveCamClient {
         struct Envelope: Decodable { let report: WCAgentReport? }
         guard let data = try? await getWithFallback("agent/report") else { return nil }
         return (try? Self.decoder.decode(Envelope.self, from: data))?.report
+    }
+
+    func sendAgentChat(_ message: String) async -> WCAgentChat? {
+        if mode == .mock {
+            return WCAgentChat(ok: true, reply: "Mock: status looks healthy — 30 FPS, subject locked.", armed: false)
+        }
+        guard let data = try? await post("agent/chat", body: ["message": message]) else {
+            lastCommandError = "Agent chat failed."
+            return nil
+        }
+        return try? Self.decoder.decode(WCAgentChat.self, from: data)
+    }
+
+    func setAgentArm(_ armed: Bool) async -> Bool {
+        if mode == .mock { return armed }
+        do {
+            _ = try await post("agent/arm", body: ["armed": armed])
+            return true
+        } catch {
+            lastCommandError = "Arm toggle failed: \(error.localizedDescription)"
+            return false
+        }
     }
 
     // 12 canned log lines across all levels for mock/offline demos.
