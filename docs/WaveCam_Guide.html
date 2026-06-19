@@ -185,7 +185,7 @@
     </div>
     <div class="summary">
       <div class="summary-row"><b>iPhone</b><span>The WaveCam app is your console: Live feed, PTZ joystick, Calibrate, Tune, Connect, Media. It auto-picks USB&nbsp;tether or Wi-Fi and labels the active route.</span></div>
-      <div class="summary-row"><b>Orin</b><span>Jetson Orin Nano runs the backend (<code>:8088</code>): vision tracking (YOLO26n TensorRT + color), camera link, safety, tuning, and the MJPEG preview.</span></div>
+      <div class="summary-row"><b>Orin</b><span>Jetson Orin Nano runs the backend (<code>:8088</code>): vision tracking (YOLO11n TensorRT + color), camera link, safety, tuning, and the MJPEG preview.</span></div>
       <div class="summary-row"><b>Camera</b><span>Prisual NDI PTZ does the pan / tilt / zoom. Only the Orin talks to it &mdash; the phone never commands the camera directly.</span></div>
       <div class="summary-row"><b>You</b><span>Wear orange, hit <span style="color:var(--accent)">AUTO</span>, keep <span style="color:var(--kill)">KILL</span> within reach. Vision keeps you framed; LoRa GPS coarse-points the camera at long range once calibrated.</span></div>
     </div>
@@ -198,7 +198,7 @@
       <div class="sec-head">
         <div class="kicker">How it works</div>
         <h2>One subject, one camera, one safe path</h2>
-        <p class="sub">WaveCam finds you two ways at once and fuses them: a neural net (YOLO26n) spots a <em>person</em>, and a color detector spots your <em>orange rashguard</em>. When both agree, it <b>locks</b> and the camera follows. Everything routes through the Orin so there is exactly one authority for movement and safety.</p>
+        <p class="sub">WaveCam finds you two ways at once and fuses them: a neural net (YOLO11n) spots a <em>person</em>, and a color detector spots your <em>orange rashguard</em>. When both agree, it <b>locks</b> and the camera follows. Everything routes through the Orin so there is exactly one authority for movement and safety.</p>
       </div>
       <div class="grid g3">
         <div class="card"><span class="pill subj">Cue</span><h3>Color + person fusion</h3><p>Your orange rashguard is the standout cue on a blue ocean. YOLO confirms it&rsquo;s a person, not a buoy. Agreement within a pixel distance = a confirmed target. Score = 0.5 + 0.5&times;YOLO_conf.</p></div>
@@ -1167,7 +1167,7 @@ python3 firmware/direct-lora/tools/read_base.py</code>
 
   <footer class="footer">
     <span>WaveCam &mdash; Operator Guide v3</span>
-    <span>Tracking: YOLO26n TensorRT + color fusion &middot; LoRa GPS coarse-point &middot; shadow Kalman estimator &middot; Orin :8088 &middot; KILL always reachable</span>
+    <span>Tracking: YOLO11n TensorRT + color fusion &middot; LoRa GPS coarse-point &middot; shadow Kalman estimator &middot; Orin :8088 &middot; KILL always reachable</span>
   </footer>
 </body>
 </html>

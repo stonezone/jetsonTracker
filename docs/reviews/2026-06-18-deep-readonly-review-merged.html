@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveCam — Deep Read-Only Review (Merged &amp; Validated) · 2026-06-18</title>
+<style>
+  :root{--bg:#0f1115;--panel:#161a21;--panel2:#1c212b;--ink:#e6e9ef;--mut:#8b93a3;
+  --crit:#ff5c5c;--high:#ff9f43;--med:#ffd166;--low:#7fb3ff;--good:#46d677;--inv:#9aa3b2;
+  --sec:#c084fc;--line:#2a303b;--accent:#5cc8ff;}
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0}
+  .wrap{max-width:1120px;margin:0 auto;padding:32px 22px 140px}
+  h1{font-size:27px;margin:0 0 4px;letter-spacing:-.01em}
+  h2{font-size:21px;margin:34px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--accent)}
+  .sub{color:var(--mut);font-size:13.5px;margin-bottom:6px}
+  a{color:var(--accent)}
+  code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:#00000055;padding:1px 5px;border-radius:4px;color:#ffd479}
+  .loc{color:#9ad1ff;font-family:"SF Mono",ui-monospace,monospace;font-size:12px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  td,th{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--mut);font-weight:600}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+  .s-crit{background:#3a1414;color:var(--crit)} .s-high{background:#3a2a0f;color:var(--high)}
+  .s-med{background:#3a3413;color:var(--med)} .s-low{background:#13243a;color:var(--low)}
+  .s-good{background:#0f3a22;color:var(--good)} .s-inv{background:#262b35;color:var(--inv)}
+  .s-sec{background:#2a1c3a;color:var(--sec)} .src{background:#1a2330;color:#9ad1ff}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 16px;margin:11px 0}
+  .card.head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .card .title{font-weight:600;font-size:14.5px}
+  .card .where{font-family:"SF Mono",ui-monospace,monospace;font-size:11.5px;color:var(--loc);margin-left:auto}
+  .row{display:grid;grid-template-columns:96px 1fr;gap:5px 13px;font-size:13px;margin-top:6px}
+  .row .k{color:var(--mut);font-weight:600}
+  .verified{color:var(--good);font-weight:700;font-size:10.5px}
+  .callout{border-left:4px solid var(--accent);background:#0e1c27;padding:11px 15px;border-radius:0 8px 8px 0;margin:13px 0}
+  .risk{border-left:4px solid var(--crit)}
+  .counter{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 13px;min-width:88px;display:inline-block;margin:0 8px 8px 0}
+  .counter b{font-size:21px;display:block}.counter span{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .json{white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:380px;overflow:auto;background:#0a0c10;border:1px solid var(--line);border-radius:8px;padding:12px;font-family:ui-monospace,monospace}
+  hr{border:0;border-top:1px solid var(--line);margin:24px 0}.small{font-size:12.5px;color:var(--mut)}
+  details summary{cursor:pointer;color:var(--accent);font-size:13px;margin:6px 0}
+  .conflict{background:#2a1c1c;border-left:4px solid var(--crit)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>WaveCam — Deep Read-Only Review <span style="color:var(--good);font-size:16px">(merged &amp; validated)</span></h1>
+<div class="sub"><b>Single consolidated report.</b> Date: 2026-06-18 &nbsp;·&nbsp; Scope: backend (<code>orin/wavecam</code>), iOS + watch (<code>ios/WaveCam</code>), firmware (<code>firmware/direct-lora</code>), web UI, docs &nbsp;·&nbsp; Branch <code>test/yard-combined-20260616</code> @ <code>4d52a07</code> + uncommitted <code>PhoneSensorPublisher.swift</code></div>
+
+<div class="callout">
+<b>Sources merged:</b> two independent read-only reviews produced 2026-06-18 — <span class="src">C</span> = Claude (6 parallel reviewers, source-only, 36 findings) and <span class="src">K</span> = Kimi Code CLI (9 parallel reviewers, ran <b>509 backend tests + <code>pio</code> + <code>xcodebuild</code></b>, 76 cards / claims 63). Every finding below was deduped, cross-attributed, and re-validated against current source; conflicts were resolved with evidence. The 8 highest-impact items were re-verified line-by-line (<span class="verified">✓ VERIFIED</span>). No files were modified to produce this report.
+</div>
+
+<div style="margin:16px 0">
+  <div class="counter"><b style="color:var(--crit)">2</b><span>Critical</span></div>
+  <div class="counter"><b style="color:var(--high)">17</b><span>High</span></div>
+  <div class="counter"><b style="color:var(--med)">21</b><span>Medium</span></div>
+  <div class="counter"><b style="color:var(--low)">13</b><span>Low</span></div>
+  <div class="counter"><b style="color:var(--good)">10</b><span>Fixed ✓</span></div>
+  <div class="counter"><b style="color:var(--inv)">4</b><span>Invalid</span></div>
+  <div class="counter"><b style="color:#fff">53</b><span>Unique open</span></div>
+</div>
+
+<div class="callout" style="border-left:4px solid var(--good);background:rgba(60,200,120,.07)">
+<b style="color:var(--good)">STATUS UPDATE — 2026-06-19 (post-execution).</b> This report was written <code>@4d52a07</code>; the branch is now <code>@5ee95c9</code>, deployed live (<code>/version</code> = <code>5ee95c9</code>, <code>health.ok=true</code>) and pushed as <a href="https://github.com/stonezone/jetsonTracker/pull/113">PR&nbsp;#113</a> (<b>held unmerged</b> pending the Phase&nbsp;5 water test + an on-device check of the ARB-1 handoff and the DISABLE-PTZ toggle in the locked state).
+<ul style="margin:8px 0 0 16px;padding:0">
+<li><b style="color:var(--good)">SHIPPED + deployed:</b> <a href="#DET-1">DET-1</a> (detector <code>/health</code> component, <code>cb23d45</code>) + a <code>detector_failed</code> event (DET-1b, <code>5ee95c9</code>) · <a href="#REC-1">REC-1</a> (route returns 503, <code>cb23d45</code>) · <a href="#CAL-1">CAL-1</a> (FOV save → 503) · <a href="#ARB-1">ARB-1</a> (lock survives a stale-GPS frame) · <a href="#CAP-1">CAP-1</a> (RTSP drop → NO_VIDEO) · <a href="#TUNE-1">TUNE-1</a>/<a href="#LIVE-3">LIVE-3</a>/WC-1 (iOS, build 498) · <a href="#OWN-1">OWN-1</a> (atomic <code>PtzOwner.transition()</code>, <code>c2ffb10</code>) · GPS-2 (<code>base_silent</code> health) · <a href="#AUTH-1">AUTH-1</a> (legacy read-route gate) · docs (READMEs → <code>yolo11n</code>). <b>NEW FEATURE:</b> operator <b>DISABLE-PTZ latch</b> (<code>tracking.enabled</code> hot key) — autonomy off holds a manual aim until re-enabled; web + iOS toggles.</li>
+<li><b style="color:var(--inv)">REJECTED (do not re-raise):</b> <a href="#GPS-1">GPS-1</a> — the <code>fix:false</code> clear is <i>by-design and tested</i> (<code>test_remote_no_fix_clears_subject_snapshot</code>); GPS-1b non-issue; the 4 invalids confirmed.</li>
+<li><b>DEFERRED:</b> <a href="#EST-1">EST-1</a> stays a closed-loop guard (estimator shadow-only — covariance fix gated before any control). Phase 4 (≈30 Mediums + ≈15 Lows + firmware FW-H7/H17/H18) is a tracked backlog, planned in batches, not yet executed.</li>
+</ul>
+</div>
+
+<h2>Top risks (fix first)</h2>
+<div class="callout risk"><ol style="margin:6px 0 0 16px;padding:0">
+<li><b>Estimator covariance math is wrong</b> (<a href="#EST-1">EST-1</a>) — drops all off-diagonal terms of <code>(K⊗h)P</code>; non-PSD risk. Shadow-only today; <b>blocker before any closed-loop use</b>. <span class="verified">✓</span></li>
+<li><b>Missing YOLO engine → zombie rig</b> (<a href="#DET-1">DET-1</a>) — preflight exists but <code>pipeline.py:127-131</code> swallows it into a <code>print</code>; API green, vision dead, no health flag.</li>
+<li><b>Preset delete broken on iOS</b> (<a href="#TUNE-1">TUNE-1</a>) — <code>Button</code> nested in <code>Button</code>; tapping ✕ applies the preset. <span class="verified">✓</span></li>
+<li><b>Fullscreen swallows safety toasts</b> (<a href="#LIVE-3">LIVE-3</a>) — PTZ refusals invisible in fullscreen.</li>
+<li><b>PTZ ownership transitions not atomic vs. vision loop</b> (<a href="#OWN-1">OWN-1</a>) — systemic TOCTOU; transient steal refuses operator commands.</li>
+<li><b>GPS <code>fix:false</code> still drops last-known-good</b> (<a href="#GPS-1">GPS-1</a>) — D-H8 only half-fixed.</li>
+<li><b>Recorder returns <code>ok:true</code> when ffmpeg dies immediately</b> (<a href="#REC-1">REC-1</a>) — operator thinks recording started; it didn't.</li>
+<li><b>FrameGrabber serves a stale frame after RTSP disconnect</b> (<a href="#CAP-1">CAP-1</a>) — silent stale preview.</li>
+</ol></div>
+
+<h2>Resolved conflicts (read these first)</h2>
+<div class="card conflict"><b>N5 / missing-engine detection — Kimi "Closed" vs Claude "Open" → PARTIAL.</b> Kimi is right that <code>detector.py</code> now preflights the model path and raises a clear <code>FileNotFoundError</code>. Claude is right that <code>Pipeline.__init__</code> catches it as broad <code>Exception</code>, prints <code>[pipeline] YOLO disabled (load failed)</code>, sets <code>detector=None</code>, and surfaces <b>no</b> <code>/status</code>/<code>/health</code> flag. Net: the operator-facing zombie-rig failure mode is unchanged. Kept open as <a href="#DET-1">DET-1</a>.</div>
+<div class="card conflict"><b>Web auth — Kimi "Critical/Security" → downgraded to Medium.</b> The asymmetry is real (<code>/stream.mjpg</code>+<code>/status</code> at <code>web.py:481-490</code> have no <code>Depends(require)</code> while v1 equivalents do). But <code>auth.py:63-77</code> has auth <b>disabled by default</b>, and the deployed <code>orin/deploy/wavecam.service</code> does <b>not</b> set <code>WAVECAM_AUTH_FILE</code> — so today every route (v1 included) is open, LAN-only, no tunnel. The fix-worthy bug is the asymmetry (legacy routes lack the gate), not a live breach. See <a href="#AUTH-1">AUTH-1</a>.</div>
+<div class="card conflict"><b>AppIcon build — Kimi "Critical/Build" → INVALID.</b> Both AppIcon sets are populated and target-scoped: iOS <code>Assets.xcassets/AppIcon.appiconset</code> has 19 real PNGs (966 B–234 KB); watch <code>Sources-Watch/.../AppIcon.appiconset</code> has <code>icon1024.png</code> (12 KB) with correct <code>platform: watchos</code> <code>Contents.json</code>. <code>project.yml</code> sources per-target — no cross-target membership. The "no content for opposite target's thinning" premise does not hold. Retired (see Invalid).</div>
+<div class="card conflict"><b>CalibrateView level math — Kimi flags <code>gravity.x*90</code> at :386; Claude says level gate removed → DISPUTED.</b> The wizard's level <i>gate</i> was removed (<code>0c0118d</code>), but a <code>gravity.x*90</code> small-angle approximation is reportedly still present in a legacy/display path. Listed as low-severity, verify-before-acting (<a href="#CAL-MISC">CAL-LEVEL</a>).</div>
+
+<hr>
+
+<h2>A. Fixed / Invalidated (confirmed by both reviews where overlapping)</h2>
+<table>
+<tr><th>ID</th><th>Was</th><th>Status</th><th>Evidence</th></tr>
+<tr><td>H1/H2/H3</td><td>Calibration capture bypassed dispatcher lock / didn't stop PTZ / legacy <code>/kill</code> bypass</td><td class="s-good">FIXED</td><td><span class="loc">control_ptz.py:59-81</span>, <span class="loc">web.py:492-516</span>; <code>claim_manual_from_calibrate()</code> under lock; legacy routes → <code>kill_for_safety()</code>/<code>stop_ptz()</code> [C+K]</td></tr>
+<tr><td>D-H16</td><td>KILL-in-flight latch deadlock</td><td class="s-good">FIXED</td><td><span class="loc">WaveCamClient.swift:1062-1081,1014-1018</span> — clears on confirm <i>and</i> POST failure [C]</td></tr>
+<tr><td>H5/N2</td><td>Tether probe stalls reads/writes 3s per poll</td><td class="s-good">FIXED</td><td><span class="loc">WaveCamClient.swift:1849-1861</span> — <code>candidateOrder()</code> skips tether during recheck window [C+K]</td></tr>
+<tr><td>"blank compass"</td><td><code>.convertFromSnakeCase</code> + snake_case CodingKeys nulled multi-word fields</td><td class="s-good">FIXED</td><td><span class="loc">WaveCamClient.swift:118-152,1802-1806</span> — no CodingKeys on <code>Sensors</code>; 6-line guard comment documents the trap [C+K, re-verified]</td></tr>
+<tr><td>M2</td><td>Calibration capture save-failure → HTTP 200</td><td class="s-good">FIXED</td><td><span class="loc">control_api.py:926-936</span> — <code>calibration_persisted_response</code> returns 503 [C+K]. <span class="small">Pattern re-emerged on FOV path — see <a href="#CAL-1">CAL-1</a>.</span></td></tr>
+<tr><td>M5</td><td><code>/health</code> swallowed all exceptions</td><td class="s-good">FIXED</td><td><span class="loc">control_api.py:799-826</span> — no blanket except [C]</td></tr>
+<tr><td>H6</td><td>v3 GPS/fusion keys not hot-configurable</td><td class="s-good">FIXED</td><td><span class="loc">control_utils.py:44-83</span>, <span class="loc">control_snapshots.py:64-80</span> [K]</td></tr>
+<tr><td>D-C2</td><td><code>compute_roi_crop</code> one-sided edge clamp</td><td class="s-good">FIXED</td><td><span class="loc">pipeline.py:50-57</span> [prior]</td></tr>
+<tr><td>D-C3</td><td><code>kill()</code> races run-loop zoom</td><td class="s-good">PARTIAL</td><td>zoom-stop added; narrow tick-level TOCTOU remains → <a href="#KILL-1">KILL-1</a> (Low) [C]</td></tr>
+<tr><td>AppIcon build (K I2)</td><td>Cross-target AppIcon thinning failure</td><td class="s-inv">INVALID</td><td>Both sets populated + target-scoped; premise doesn't hold [validated]</td></tr>
+<tr><td>C2 (Kimi)</td><td><code>GlassEffectContainer</code> undefined</td><td class="s-inv">INVALID</td><td>Real iOS 26 symbol, availability-gated at <span class="loc">MergedLiveView.swift:296-303</span> [C+K agree]</td></tr>
+<tr><td>M12</td><td>Level uses <code>gravity.x*90</code></td><td class="s-inv">DISPUTED</td><td>Wizard gate removed; legacy gravity math reportedly remains → <a href="#CAL-MISC">CAL-LEVEL</a> (Low)</td></tr>
+<tr><td>H12 / fusion 40px floor</td><td><code>match_dist_scale</code> clamps to 40px floor</td><td class="s-inv">INVALID</td><td>Floor only when <code>match_dist_scale=True</code> (<b>off by default</b>); documented clamp, not inverted threshold [C ruled; K lists as Medium — retired]</td></tr>
+<tr><td>K I5 PTZ flood</td><td>PTZManualController floods per-drag velocity POSTs</td><td class="s-inv">INVALID</td><td>Controller uses fire-once + 300ms repeat timers (deadman cadence); no per-gesture flood [validated]</td></tr>
+</table>
+
+<hr>
+
+<h2>B. Open findings</h2>
+
+<h3 id="critical">Critical</h3>
+<div class="card" id="EST-1"><div class="card head"><span class="pill s-crit">Critical</span><span class="src">C</span><span class="src">K·B2</span><span class="title">Estimator covariance update drops all off-diagonal P terms (non-PSD)</span><span class="where">estimator.py:414-432</span><span class="verified">✓ VERIFIED</span></div>
+<div class="row"><div class="k">Why</div><div>Update must be <code>P ← P − (K⊗h)P</code>; element [i][j] = <code>Σ_k K[i]h[k]P[k][j]</code>. Line 432 does <code>P[i][j] −= K[i]*h[j]*P[j][j]</code> — only the k=j diagonal term, discarding all cross terms. Asymmetric; can lose PSD under repeated updates. <b>Kimi adds:</b> the GPS branch (<span class="loc">:301-305</span>) uses the full/correct update — only the vision scalar path is broken.</div></div>
+<div class="row"><div class="k">Impact</div><div>Shadow-only today (never commands). <b>Blocker before closed-loop/COMMAND mode.</b></div></div>
+<div class="row"><div class="k">Fix</div><div>Full product then symmetrize, or Joseph form <code>(I−KH)P(I−KH)ᵀ+KRKᵀ</code>; add a PSD-under-large-innovation unit test.</div></div></div>
+
+<div class="card" id="DET-1"><div class="card head"><span class="pill s-crit">Critical</span><span class="src">C</span><span class="src">K·N5(closed→reopened)</span><span class="title">Missing TensorRT engine → zombie rig (preflight swallowed, no health flag)</span><span class="where">detector.py:45-57 · pipeline.py:127-131</span></div>
+<div class="row"><div class="k">Why</div><div>Preflight raises <code>FileNotFoundError</code>, but <code>Pipeline.__init__</code> catches broad <code>Exception</code>, prints <code>[pipeline] YOLO disabled</code>, sets <code>detector=None</code>. API stays up; vision dead; no <code>/events</code>, no <code>detector_loaded</code> flag, no <code>.pt</code> fallback.</div></div>
+<div class="row"><div class="k">Fix</div><div>Record a <code>detector_failed</code> event; surface <code>detector_loaded:false</code> on <code>/status</code>+<code>/health</code>; optionally fall back to bundled <code>.pt</code>.</div></div></div>
+
+<h3 id="high">High</h3>
+
+<div class="card" id="ARB-1"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="src">K·B7</span><span class="title">GPS-stale returns idle before counting a just-acquired vision lock</span><span class="where">tracking_arbiter.py:117-121</span><span class="verified">✓</span></div>
+<div class="row"><div class="k">Why</div><div>The GPS→idle block runs before vision-lock counting (124-128) and <code>_decide_owner</code> (131). A single stale-GPS frame blocks the GPS→vision handoff exactly when vision just locked → stutter.</div></div>
+<div class="row"><div class="k">Fix</div><div>Count vision lock / decide owner before the GPS-release short-circuit, or guard with <code>if not vision.locked</code>.</div></div></div>
+
+<div class="card" id="OWN-1"><div class="card head"><span class="pill s-high">High</span><span class="src">C(H7+H8)</span><span class="src">K·B6</span><span class="title">PTZ ownership transitions not atomic vs. vision run-loop (systemic TOCTOU)</span><span class="where">control_ptz.py:44-61 · pipeline.py:717-746</span></div>
+<div class="row"><div class="k">Why</div><div>Every API transition (and the arbiter thread) does <code>release(old)</code> then <code>request(new)</code> as two unlocked <code>ptz_owner</code> calls. Between them the vision loop can observe IDLE and steal the owner; operator's manual claim fails <code>owner_busy</code>. <code>4d52a07</code> fixed only the separate zoom-drops-STOP bug.</div></div>
+<div class="row"><div class="k">Fix</div><div>Single shared transition lock; atomic <code>PtzOwner.transition(from,to)</code>; guard the pipeline's release→request pair.</div></div></div>
+
+<div class="card" id="GPS-1"><div class="card head"><span class="pill s-high">High</span><span class="src">C(D-H8)</span><span class="title"><code>fix:false</code> packet still clobbers last-known-good GPS fix</span><span class="where">gps_direct_lora.py:194-221</span></div>
+<div class="row"><div class="k">Why</div><div>D-H8's fix patched only the corrupt-coords branch. The <code>fix:false</code> branch still falls through to <code>self._latest = None</code>. A base reboot / sky-loss emits <code>{"seq":N,"fix":0}</code>; each erases the track.</div></div>
+<div class="row"><div class="k">Fix</div><div>In the no-fix branch don't overwrite <code>self._latest</code>; let <code>get_fix()</code> age it + <code>drive_stale_sec</code> drop it.</div></div></div>
+
+<div class="card" id="GPS-1b"><div class="card head"><span class="pill s-high">High</span><span class="src">K·B11</span><span class="title">Corrupt base line doesn't refresh camera-fix timestamp (stale <code>_cam_ts</code>)</span><span class="where">gps_direct_lora.py:171-186</span></div>
+<div class="row"><div class="k">Why</div><div>A corrupt base line with <code>fix/stable=true</code> but unparseable coords updates <code>_last_poll_ts</code> but leaves <code>_cam_ts</code> stale → camera position reported fresh when it isn't. (Remote path was fixed; base path wasn't.)</div></div>
+<div class="row"><div class="k">Fix</div><td></td><div>Refresh <code>self._cam_ts = now</code> on corrupt base lines, or retain <code>self._cam</code> + mark age.</div></div></div>
+
+<div class="card" id="GPS-2"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="title">No base-reboot / stale-serial detection — wedged base reports healthy</span><span class="where">gps_direct_lora.py:115-153,223-225</span></div>
+<div class="row"><div class="k">Why</div><div>A base reboot makes the serial line go quiet; the reader parks on <code>readline()</code>, <code>enabled</code> stays True, <code>reader_alive()</code> returns True → <code>/health</code> says <code>gps_reader: ok</code> while nothing's been ingested for minutes.</div></div>
+<div class="row"><div class="k">Fix</div><div>Gate <code>reader_alive()</code> on <code>last_poll_age_sec()</code> &lt; <code>base_silent_sec</code>; surface a <code>base_silent</code> health component.</div></div></div>
+
+<div class="card" id="CAL-1"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="title">FOV-curve save failure caught+printed but HTTP 200 <code>ok:true</code> (M2 regression)</span><span class="where">control_calibration.py:708-726</span></div>
+<div class="row"><div class="k">Why</div><div><code>post_fov_entry</code> mutates <code>fov_curve</code> in memory, swallows <code>save()</code> exceptions, returns <code>ok:true</code> regardless. Disk fails → entry lost on restart; operator sees success.</div></div>
+<div class="row"><div class="k">Fix</div><div>Return <code>ok:false</code>/503 on save failure (mirror <code>calibration_persisted_response</code>), or roll back the in-memory curve.</div></div></div>
+
+<div class="card" id="CAL-BUDGET"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="title">GPS-bearing heading capture impossible at default budget; ≥50 m invariant not enforced</span><span class="where">control_calibration.py:655-688,527-537</span></div>
+<div class="row"><div class="k">Why</div><div>Default position error (~15 m base + 3 m remote + 0.5 m lever) ≈ 20° at 50 m, 62° at 10 m; default budget 2.0° rejects every GPS-bearing capture. Operators widen <code>max_uncertainty_deg</code>, at which point a 10 m target (~62°) can latch.</div></div>
+<div class="row"><div class="k">Fix</div><div>Add a structural <code>min_distance_m</code> gate (refuse &lt;50 m) for <code>method!=phone</code>; recalibrate default budget vs error radius.</div></div></div>
+
+<div class="card" id="REC-1"><div class="card head"><span class="pill s-high">High</span><span class="src">K·B9</span><span class="title">Recorder reports HTTP 200 / <code>ok:true</code> when ffmpeg dies immediately</span><span class="where">recorder.py:78-80 · control_media.py:48</span></div>
+<div class="row"><div class="k">Why</div><div><code>Recorder.start()</code> returns <code>ok:True</code> on immediate process death; control_api wraps as 200. Operator believes recording started; it didn't.</div></div>
+<div class="row"><div class="k">Fix</div><div>Raise <code>MediaUnavailable</code> / return <code>ok:false</code> → API 503.</div></div></div>
+
+<div class="card" id="CAP-1"><div class="card head"><span class="pill s-high">High</span><span class="src">K·B10</span><span class="title">FrameGrabber keeps serving the last cached frame after RTSP disconnect</span><span class="where">capture.py:60-75</span></div>
+<div class="row"><div class="k">Why</div><div>On <code>cap.read()</code> failure it sets <code>_connected=False</code> but leaves <code>_latest</code> untouched; <code>read()</code> returns a stale frame with no signal that the feed is dead.</div></div>
+<div class="row"><div class="k">Fix</div><div>Set <code>_latest=None</code> on disconnect, or return None when not connected.</div></div></div>
+
+<div class="card" id="TUNE-1"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="src">K·I13</span><span class="title">Preset delete broken — <code>Button</code> nested inside <code>Button</code></span><span class="where">TuneView.swift:287-329</span><span class="verified">✓</span></div>
+<div class="row"><div class="k">Why</div><div>The delete <code>xmark</code> <code>Button</code> (303-312) is a child of the outer apply <code>Button</code> (290). SwiftUI gives the inner button no distinct hit target; tapping ✕ fires <code>applyPreset</code>. Deleting a custom preset is impossible; operator silently applies it instead.</div></div>
+<div class="row"><div class="k">Fix</div><div>Make the chip an <code>HStack</code>: apply <code>Button</code> + delete <code>Button</code> as siblings (or <code>.contextMenu</code>).</div></div></div>
+
+<div class="card" id="LIVE-3"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="title">Fullscreen layout omits GlassToast — refusals/errors silently invisible</span><span class="where">MergedLiveView.swift:106-146</span></div>
+<div class="row"><div class="k">Why</div><div><code>feedLayer</code> includes <code>GlassToast</code> (173); <code>fullscreenLayout</code> rebuilds the HUD without it. <code>showToast</code> sets <code>toastMessage</code> regardless of layout; <code>onChange</code> still fires — so in fullscreen a PTZ refusal / "Home unavailable" is set but never rendered.</div></div>
+<div class="row"><div class="k">Fix</div><div>Add <code>GlassToast(message: $toastMessage)</code> to <code>fullscreenLayout</code>'s <code>ZStack</code>.</div></div></div>
+
+<div class="card" id="WC-1"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="title">Dead <code>post(idempotent:)</code> parameter — phone-sensor POSTs blackhole on tether timeout</span><span class="where">WaveCamClient.swift:1974-2003</span><span class="verified">✓</span></div>
+<div class="row"><div class="k">Why</div><div>Doc comment promises idempotent posts get read-style failover; the loop uses only <code>isWriteRouteFailoverAllowed</code> and never reads <code>idempotent</code>. A blackholed tether makes every sensor POST take 5s then throw instead of failing over.</div></div>
+<div class="row"><div class="k">Fix</div><div><code>guard idempotent ? isReadRouteFailoverAllowed : isWriteRouteFailoverAllowed</code>.</div></div></div>
+
+<div class="card" id="SEC-1"><div class="card head"><span class="pill s-high">High</span><span class="pill s-sec">Security</span><span class="src">C(C5/N3/H14)</span><span class="src">K·I1/W1</span><span class="title">Bearer token to watch in plaintext + default Orin URLs are HTTP</span><span class="where">WaveCamApp.swift:82-86 · ConnectionView.swift:135-140 · WaveCamClient.swift:5-7 · WatchConnectionStore.swift:12</span></div>
+<div class="row"><div class="k">Why</div><div>Token pushed to watch via <code>updateApplicationContext</code> (plaintext WCSession), held only in memory (lost on watch restart); default URLs <code>http://</code>. Token lives in iOS Keychain (good) but transits to watch in clear.</div></div>
+<div class="row"><div class="k">Context</div><div>Threat model today = private camera LAN (auth off by default; no tunnel auth). Still: move watch token to Keychain; document HTTP risk or add a TLS option.</div></div></div>
+
+<div class="card" id="WATCH-2"><div class="card head"><span class="pill s-high">High</span><span class="src">K·W2</span><span class="title">Watch POST commands don't failover on tether timeout (GET does)</span><span class="where">WatchClient.swift:192-193</span></div>
+<div class="row"><div class="k">Why</div><div>POST failover allowlist omits <code>.timedOut</code>; a blackholed tether makes every watch control POST time out at 5s and return false without trying Wi-Fi. GET path was fixed; POST wasn't.</div></div>
+<div class="row"><div class="k">Fix</div><div>Add <code>.timedOut</code> + <code>.networkConnectionLost</code> to the POST allowlist, matching <code>get()</code>.</div></div></div>
+
+<div class="card" id="WATCH-3"><div class="card head"><span class="pill s-high">High</span><span class="src">K·W3</span><span class="title">Watch masks 401/403 as OFFLINE — token mismatch looks like "no signal"</span><span class="where">WatchClient.swift:147-148,187-189</span></div>
+<div class="row"><div class="k">Why</div><div>Any non-2xx → <code>URLError(.badServerResponse)</code>; <code>poll()</code> catches all and sets <code>online=false</code>. A bad/expired token shows as offline with no auth-specific feedback.</div></div>
+<div class="row"><div class="k">Fix</div><td></td><div>Distinguish 401/403 from transport errors; expose <code>authError</code> in <code>WatchStatusView</code>.</div></div></div>
+
+<div class="card" id="WATCH-5"><div class="card head"><span class="pill s-high">High</span><span class="src">C(M14)</span><span class="src">K·W5</span><span class="title">Watch recorder writes JSONL synchronously on <code>@MainActor</code></span><span class="where">WatchSessionRecorder.swift:155-161,179-184</span></div>
+<div class="row"><div class="k">Why</div><div><code>appendLine</code> does <code>fh.write</code> + <code>JSONEncoder.encode</code> on the main actor, called ~5×/s (4 Hz motion + ~1 Hz GPS). Main-actor contention stutters the watch UI. <span class="verified">✓ validated</span></div></div>
+<div class="row"><div class="k">Fix</div><div>Move writes to a dedicated serial <code>DispatchQueue</code>; use <code>write(contentsOf:)</code>; surface errors.</div></div></div>
+
+<div class="card" id="FW-H7"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="src">K(firmware)</span><span class="title">L76K rate never configured — 2 Hz beacon outruns ~1 Hz GNSS</span><span class="where">gps_l76k.h:60-66 · tracker/main.cpp:70</span></div>
+<div class="row"><div class="k">Fix</div><div>Send <code>PCAS02,&lt;ms&gt;</code> in <code>l76k_init</code>; validate cadence; until then lower <code>BEACON_INTERVAL_MS</code> to 1000.</div></div></div>
+
+<div class="card" id="FW-H17"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="title"><code>battery_mv()</code> reconfigures ADC reference + resolution every beacon cycle</span><span class="where">tracker/main.cpp:50-58</span></div>
+<div class="row"><div class="k">Fix</div><div>Move <code>analogReference</code>/<code>analogReadResolution</code> into <code>setup()</code>.</div></div></div>
+
+<div class="card" id="FW-H18"><div class="card head"><span class="pill s-high">High</span><span class="src">C</span><span class="title">Reboot detector false-positives on <code>millis()</code> wrap (unsigned compare)</span><span class="where">base/main.cpp:158</span></div>
+<div class="row"><div class="k">Fix</div><div><code>int32_t delta=(int32_t)(last-pkt); if(delta&gt;1000)</code> — wrap-safe, jitter-immune.</div></div></div>
+
+<h3 id="medium">Medium</h3>
+
+<div class="card" id="AUTH-1"><div class="card head"><span class="pill s-med">Medium</span><span class="pill s-sec">Security</span><span class="src">K·B1/B4/U1</span><span class="title">Legacy <code>/stream.mjpg</code>+<code>/status</code> ungated + web console bare-fetch (auth asymmetry)</span><span class="where">web.py:481-490,194-247</span></div>
+<div class="row"><div class="k">Why</div><div>Legacy routes register no <code>Depends(require)</code>; v1 equivalents are gated. The embedded console uses bare <code>fetch()</code> with no <code>Authorization</code> header → all controls 401 when auth is enabled. <b>Downgraded from Critical:</b> auth is off by default and not enabled on the deployed rig (<code>auth.py:63-77</code>, <code>wavecam.service</code> sets no <code>WAVECAM_AUTH_FILE</code>); today every route is open, LAN-only.</div></div>
+<div class="row"><div class="k">Fix</div><div>Add <code>Depends(require(READ, allow_query_token=True))</code> to legacy routes; have the JS attach a token. Close the asymmetry so enabling auth later doesn't half-break the console.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B5</span><span class="title">Legacy <code>/tune</code> advertises controls it cannot apply</span><span class="where">web.py:74-119 vs 400-456</span></div>
+<div class="row"><div class="k">Fix</div><div>Remove unsupported toggles or extend <code>Tune</code>+<code>TUNE_FIELDS</code>; prefer deprecating <code>/tune</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B13</span><span class="title"><code>/safety/kill</code> ignores <code>reason</code>/<code>source</code> fields</span><span class="where">control_api.py:336-340,947-954</span></div>
+<div class="row"><div class="k">Fix</div><div>Forward <code>req.reason</code> through <code>kill_for_safety()</code> → <code>pipeline.kill(True, reason=…)</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="pill s-sec">Security</span><span class="src">K·B14</span><span class="title">Phone-sensor ingest requires only READ role (viewer can mutate sensor state)</span><span class="where">control_api.py:713</span></div>
+<div class="row"><div class="k">Fix</div><div>Introduce a <code>SENSORS</code> action or reuse <code>CONFIG</code> for ingest endpoints.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C(M3)</span><span class="src">K·B15</span><span class="title">Hot-config revision check + apply not under one lock</span><span class="where">control_api.py:651-676 · control_config.py:34-46</span></div>
+<div class="row"><div class="k">Fix</div><div>Hold the adapter lock across validate→apply→persist→bump_revision; re-check revision under the lock.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B16 / C(L-RES1)</span><span class="title"><code>resume_without_autostart</code> race (deadman cancel vs owner release)</span><span class="where">control_api.py:980-996</span></div>
+<div class="row"><div class="k">Why</div><div>Deadman cancel + <code>reset_restore_owner</code> run outside the adapter lock; a concurrent velocity request can claim <code>manual</code> and be silently released. Calling <code>/safety/resume</code> when not killed also drops a live owner.</div></div>
+<div class="row"><div class="k">Fix</div><div>Acquire the adapter lock before touching dispatcher state (atomic <code>prepare_for_resume()</code>); gate on <code>killed==True</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C(M1/M21)</span><span class="src">K·B17</span><span class="title"><code>config.local.yaml</code> overlay applies raw values, no type/range coercion</span><span class="where">config.py:258-300</span></div>
+<div class="row"><div class="k">Fix</div><div>Route overlay through the typed <code>set_float/set_int/set_bool</code> validators; warn on unknown keys.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C(M4)</span><span class="src">K·B18</span><span class="title"><code>PtzOwner.owner</code> public setter bypasses all ownership rules</span><span class="where">ptz_owner.py:30-33</span></div>
+<div class="row"><div class="k">Fix</div><div>Delete the public setter (keep private <code>_set_owner</code> for tests).</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B19</span><span class="title">Pipeline <code>_shutdown</code> doesn't cancel dispatcher deadman timers</span><span class="where">pipeline.py:843-849</span></div>
+<div class="row"><div class="k">Fix</div><div>Release all owners / <code>owner.kill()</code> + cancel dispatcher timers in <code>_shutdown</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B20</span><span class="title">Service restart reports 202 without verifying <code>systemctl</code> success</span><span class="where">control_system.py:143-152 · supervisor.py:122-127</span></div>
+<div class="row"><div class="k">Fix</div><div>Capture exit code; surface failure in <code>restart_pending</code>/<code>status</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B21</span><span class="title"><code>PtzState</code> uses wall-clock <code>time.time()</code> for encoder age</span><span class="where">ptz_state.py:91-160</span></div>
+<div class="row"><div class="k">Fix</div><div>Use <code>time.monotonic()</code> for internal age/dt (NTP-adjust immune).</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B22</span><span class="title"><code>release_manual_owner</code> resets vision hysteresis even when release failed</span><span class="where">control_ptz.py:83-100</span></div>
+<div class="row"><div class="k">Fix</div><div>Guard <code>arbiter.reset_vision_state()</code> with <code>if released &amp;&amp; owner=="manual"</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B23</span><span class="title"><code>CalibrationStore.load()</code> silently resets to empty on any error</span><span class="where">calibration_store.py:45-49</span></div>
+<div class="row"><div class="k">Fix</div><div>Log a warning before returning an empty store; expose a parse-error indicator.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C</span><span class="src">K·B24/B12</span><span class="title">Duplicated <code>haversine/bearing</code> + <code>_fov_at_zoom</code>; live snapshot imports legacy module</span><span class="where">gps_meshtastic.py:34-52 · gps_geo.py:27-42 · control_snapshots.py:317 · estimator.py:126-138 · gps_bearing_cue.py:27-39</span></div>
+<div class="row"><div class="k">Fix</div><div>Delete duplicates; import from <code>gps_geo</code>; hoist <code>_fov_at_zoom</code> into shared module. Fixes <code>control_snapshots.py:317</code> importing the legacy module on the live path.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B25</span><span class="title">Snapshot advertises <code>estimator.enabled:true</code> when config defaults false</span><span class="where">control_snapshots.py:106 · config.py:211</span></div>
+<div class="row"><div class="k">Fix</div><div>Change <code>getattr(cfg.estimator,"enabled",True)</code> default to <code>False</code> to match <code>EstimatorCfg</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C(V-BLOCK-1)</span><span class="title">Synchronous <code>inquire_pan_tilt</code> (blocking UDP) on request thread in fallbacks</span><span class="where">control_api.py:544,864-866 · control_calibration.py:698,763-764</span></div>
+<div class="row"><div class="k">Fix</div><div>Drop the fallback (503 <code>encoder_unavailable</code>) or run on a worker with a 200 ms deadline. Related (K·B-VISCA): capture fallback races the poller on the shared UDP socket.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="pill s-sec">Security</span><span class="src">K·B31</span><span class="title"><code>EventRing.record()</code> logs raw event detail without redaction</span><span class="where">events.py:27</span></div>
+<div class="row"><div class="k">Fix</div><div>Pass detail through <code>redact_log_message()</code> before logging.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C</span><span class="title"><code>base_drift_min_sats</code> structurally dead (pipeline never passes base sats)</span><span class="where">pipeline.py:498-501 · base_drift.py:101-127</span></div>
+<div class="row"><div class="k">Fix</div><div>Thread base sats through, or delete the knob + gate.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C</span><span class="title">Inconsistent GPS <code>source</code> default — log lies, dev-path diverges</span><span class="where">run.py:66 vs 131</span></div>
+<div class="row"><div class="k">Fix</div><div>Compute <code>source</code> once in <code>start_gps_reader</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·B29</span><span class="title">Sensor-hub heading-drift monitor has no unit tests</span><span class="where">sensor_hub.py:173-214</span></div>
+<div class="row"><div class="k">Fix</div><div>Add tests for baseline capture, sustained excursion, re-arm, invalid-heading expiry, off-rig suppression.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·I3/I4</span><span class="title">ConnectionView / SessionLogView health poll timers keep running in background</span><span class="where">ConnectionView.swift:57-67 · SessionLogView.swift:27-36</span></div>
+<div class="row"><div class="k">Why</div><div>5s <code>Timer</code> in <code>.task</code>, invalidated only in <code>.onDisappear</code>; TabView doesn't call <code>onDisappear</code> on background.</div></div>
+<div class="row"><div class="k">Fix</div><div>Observe <code>scenePhase</code> / background notification; pause timer.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·I6</span><span class="title">TuneView <code>applyPreset</code> can leave panel permanently disabled</span><span class="where">TuneView.swift:370-392,189</span></div>
+<div class="row"><div class="k">Fix</div><div>Restore <code>loaded=true</code> after <code>load()</code> (<code>defer { loaded = true }</code>).</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C(WC-CAL-1)</span><span class="title">Wizard exit-failure sets <code>refusalMessage</code> but <code>DoneCard</code> never renders it</span><span class="where">CalibrateView.swift:313-334,690-733</span></div>
+<div class="row"><div class="k">Fix</div><div>Pass <code>refusalMessage</code> into <code>DoneCard</code>; render <code>calRefusalRow</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·I10/I11</span><span class="title">MediaView recomputes <code>groupedDays</code> + <code>selectedBytes</code> on every render</span><span class="where">MediaView.swift:223-233,247-249</span><span class="verified">✓ validated</span></div>
+<div class="row"><div class="k">Fix</div><div>Compute once when inputs change; store in <code>@State</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C(WC-LIVE-2)</span><span class="title">Raw engine owner string in HUD vs <code>AUTO</code> label elsewhere</span><span class="where">MergedLiveView.swift:541</span></div>
+<div class="row"><div class="k">Fix</div><div>Use <code>s.ptz.owner.ptzOwnerLabel</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C(WC-LOG-2)</span><span class="src">K·I7</span><span class="title"><code>sinceCursor</code> collapses to 0 on null-<code>t</code> events → re-fetches whole log forever</span><span class="where">SessionLogView.swift:46,51-56</span></div>
+<div class="row"><div class="k">Fix</div><div>Guard <code>lastT &gt; sinceCursor</code>; dedup by <code>event.id</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">C(WC-FEED-1)</span><span class="title">MJPEG auth header never refreshed on token-only change (same URL)</span><span class="where">FeedComponents.swift:56-70</span></div>
+<div class="row"><div class="k">Fix</div><div>Track <code>loadedToken</code>; reconnect when URL <i>or</i> token differs.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·I15</span><span class="title">CalibrateView heading preview doesn't parse preview state on <code>operator_accept_required</code></span><span class="where">CalibrateView.swift:252-281 · WaveCamClient.swift:1460</span></div>
+<div class="row"><div class="k">Fix</div><div>Decode the <code>calibration</code> field even on <code>operator_accept_required</code>; assign to sessionState.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·I16</span><span class="title">PhoneSensorSocket leaks URLSession delegate (no <code>invalidateAndCancel</code>)</span><span class="where">PhoneSensorSocket.swift:23-50</span></div>
+<div class="row"><div class="k">Fix</div><div>In <code>close()</code>, call <code>session.invalidateAndCancel()</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·I12/I21</span><span class="title">MediaView bulk-download + AgentView <code>summonDiagnostics</code> Tasks outlive their views</span><span class="where">MediaView.swift:306-313 · AgentView.swift:78-105</span></div>
+<div class="row"><div class="k">Fix</div><div>Hold the <code>Task</code> in <code>@State</code>; cancel in <code>.onDisappear</code>; add <code>checkCancellation()</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="src">K·U3/U4</span><span class="title">Legacy zoom routes can't takeover; no CSP on web console</span><span class="where">web.py:518-552 · web.py:22-396</span></div>
+<div class="row"><div class="k">Fix</div><div>Forward <code>takeover</code> in legacy zoom routes; emit a restrictive CSP (or move JS/CSS to static files).</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-med">Medium</span><span class="pill s-sec">Security</span><span class="src">K·B14-related</span><span class="title">Broad-exception swallowing masks errors: detector, recorder stop, phone-sensor WS</span><span class="where">detector.py:73-77 · recorder.py:100-105 · control_api.py:755-783</span></div>
+<div class="row"><div class="k">Fix</div><div>Catch specific exceptions; rate-limit/log instead of silent <code>except Exception</code>.</div></div></div>
+
+<h3 id="low">Low</h3>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">C(C4)</span><span class="src">K·B3</span><span class="title">Estimator init gated on <code>_frame_i % 120</code> → ~4 s shadow delay</span><span class="where">pipeline.py:597</span></div><div class="row"><div class="k">Fix</div><div>Drop the modulo gate; call every tick (helper self-guards).</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">C(H13)</span><span class="src">K·B8</span><span class="title">GPS owner with transiently-invalid calibration issues STOP → aim stutter</span><span class="where">pipeline.py:735-739</span></div><div class="row"><div class="k">Fix</div><div>Coast one tick instead of STOP when <code>calibration_valid</code> flips; reserve STOP for owner release.</div></div></div>
+
+<div class="card" id="KILL-1"><div class="card head"><span class="pill s-low">Low</span><span class="src">C(D-C3 residual)</span><span class="title">KILL-vs-run-loop tick-level TOCTOU (no re-check before sends)</span><span class="where">pipeline.py:642,727-737</span></div><div class="row"><div class="k">Fix</div><div>Re-check <code>killed</code> before each send, or route through one <code>_safe_send</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">K·B5-related</span><span class="title">Legacy <code>/tune</code> has no revision check</span><span class="where">web.py:554-563</span></div><div class="row"><div class="k">Fix</div><div>Add <code>revision</code> to <code>Tune</code>, or deprecate <code>/tune</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="pill s-sec">Security</span><span class="src">K·B34</span><span class="title">Log-redaction regex misses compact <code>Authorization:Bearer</code> (no space)</span><span class="where">control_utils.py:166-169</span></div><div class="row"><div class="k">Fix</div><div>Change <code>\s+</code> → <code>\s*</code> in the redaction pattern.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">K·B35</span><span class="title">Supervisor loop sleeps full interval regardless of poll duration</span><span class="where">supervisor.py:156-163</span></div><div class="row"><div class="k">Fix</div><div>Sleep <code>max(0, interval_sec - elapsed)</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">K·B30</span><span class="title"><code>HealthRegistry.snapshot()</code> returns unhealthy when no components registered</span><span class="where">health.py:28</span></div><div class="row"><div class="k">Fix</div><div>Define empty-state contract (treat empty as healthy) + test.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">K·B36/B37</span><span class="title">Web UI <code>testbed</code> active-owner highlight + magic deadzone/radius numbers</span><span class="where">web.py:391,257,286</span></div><div class="row"><div class="k">Fix</div><div>Drop <code>testbed</code> from the frontend check; name + document the joystick constants.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">C(L35)</span><span class="src">K·I8</span><span class="title"><code>#Preview</code> renders <code>ToolsView()</code> instead of <code>SessionLogView()</code></span><span class="where">SessionLogView.swift:174</span></div><div class="row"><div class="k">Fix</div><div>Replace with <code>SessionLogView()</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">C(N4)</span><span class="src">K·I9</span><span class="title">Unstructured <code>Task</code> in <code>handleHome()</code> outlives view</span><span class="where">MergedLiveView.swift:243-255</span></div><div class="row"><div class="k">Fix</div><div>Store in <code>@State</code>; cancel in <code>onDisappear</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">C(L33)</span><span class="src">K·I19</span><span class="title">Default URLs force-unwrap <code>URL(string:)</code></span><span class="where">WaveCamClient.swift:21-27</span></div><div class="row"><div class="k">Fix</div><div>Guarded construction / precondition with message.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">K·I18</span><span class="title"><code>postPhoneSensor(_:)</code> is dead code (live path uses WebSocket)</span><span class="where">WaveCamClient.swift:1658-1670</span></div><div class="row"><div class="k">Fix</div><div>Remove or mark deprecated.</div></div></div>
+
+<div class="card" id="CAL-MISC"><div class="card head"><span class="pill s-low">Low</span><span class="src">C(M12)</span><span class="src">K·I14</span><span class="title">DISPUTED — <code>gravity.x*90</code> small-angle level math may still exist in a legacy path</span><span class="where">CalibrateView.swift:~386 (Kimi)</span></div><div class="row"><div class="k">Note</div><div>Wizard level-gate removed (<code>0c0118d</code>); Claude's reviewer found legacy tilt sends <code>0.0</code>, but Kimi reports <code>gravity.x*90</code> still present. <b>Verify on disk before acting.</b> If present: use <code>asin(clamp(x,-1,1))*180/π</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">K·W6/W7/W8</span><span class="title">Watch: no haptics on STOP/Resume; commands silently fail; GPS throttle race</span><span class="where">WatchStatusView.swift · WatchClient.swift:97-111 · WatchSessionRecorder.swift:233-251</span></div><div class="row"><div class="k">Fix</div><div>Add <code>WKInterfaceDevice.play()</code> haptics; surface <code>lastCommandError</code>; serialize GPS writes / capture <code>Date()</code> inside <code>@MainActor</code>.</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill s-low">Low</span><span class="src">C(FW M8/L7/L9/L36)</span><span class="src">K(firmware)</span><span class="title">Firmware: RadioLib unpinned; stale PMTK comment; <code>_Static_assert</code> in C++; battery ADC unbounded; RX re-arm window</span><span class="where">platformio.ini:20 · tracker/main.cpp:64-66 · packet.h:40 · tracker/main.cpp:50-58 · base/main.cpp:142-145</span></div><div class="row"><div class="k">Fix</div><div>Pin RadioLib exact version; rewrite GNSS comment to CASIC/9600; <code>static_assert</code>; clamp <code>battery_mv</code>. <span class="small">F-L37 downgraded by Claude: RSSI/SNR-before-arm ordering is actually correct; only the inherent single-channel re-arm window remains.</span></div></div></div>
+
+<h2>C. Documentation drift (Kimi, all real)</h2>
+<table>
+<tr><th>Loc</th><th>Issue</th><th>Fix</th></tr>
+<tr><td><span class="loc">README.md:243</span></td><td>Says "LoRa GPS is future work" — direct-LoRa is the live source</td><td>Update to "direct-LoRa live; external 10 Hz GNSS future"</td></tr>
+<tr><td><span class="loc">PROJECT_STATUS.md:35,67,80,93; WaveCam_Guide.html</span></td><td>Docs list <code>yolov8n</code> / "YOLO26n"; live detector is <code>yolo11n.engine</code>; "YOLO26n" is a typo</td><td>Update to <code>yolo11n.engine</code>; fix typo</td></tr>
+<tr><td><span class="loc">docs/api/openapi.snapshot.json</span></td><td>Snapshot omits <code>/api/v1/sensors/phone/ws</code></td><td>Add WS route or regenerate</td></tr>
+<tr><td><span class="loc">docs/reviews/2026-06-16-*.md, docs/superpowers/{plans,specs}/2026-06-16-phone-sensor-*</span></td><td>Describe POST-only phone-sensor pipeline; code streams over WebSocket</td><td>Mark superseded; reference WS impl</td></tr>
+<tr><td><span class="loc">docs/reviews/2026-06-16-merged-technical-debt-review.md</span></td><td>Still lists H5/N2, C2 as open (now fixed/invalid)</td><td>Mark closed/invalid</td></tr>
+</table>
+
+<h2>D. Suggested fix order</h2>
+<ol>
+<li><b>TUNE-1 + LIVE-3</b> — pure iOS, user-facing/safety, ~10 lines each.</li>
+<li><b>GPS-1, REC-1, CAP-1, CAL-1</b> — small backend "returns success on failure" fixes; high value.</li>
+<li><b>DET-1</b> — surface <code>detector_loaded</code> health flag (kills zombie-rig class).</li>
+<li><b>ARB-1</b> — reorder the GPS-stale check below vision-lock counting.</li>
+<li><b>WC-1, WATCH-2, WATCH-3</b> — failover + error-surfacing (iOS + watch).</li>
+<li><b>WATCH-5</b> — move JSONL writes off the main actor.</li>
+<li><b>OWN-1</b> — atomic ownership-transition lock (design first).</li>
+<li><b>EST-1</b> — fix covariance <b>before</b> any estimator-driven control.</li>
+<li><b>AUTH-1</b> — close the legacy-route auth asymmetry (one-liner per route).</li>
+<li>Firmware H7/H17/H18 (next Wio flash).</li>
+<li>Docs drift + remaining Mediums/Lows as debt.</li>
+</ol>
+
+<h2>E. Validation &amp; confidence</h2>
+<div class="small">
+<b>Independently re-verified line-by-line this session (✓):</b> EST-1, ARB-1, TUNE-1, WC-1 (Claude); EST-1 also by Kimi; covariance algebra confirmed (GPS branch uses the full form, only the vision path is broken).<br>
+<b>Validated on re-check:</b> AppIcon build = false positive (asset contents read); web auth = LAN-only/off-by-default (downgraded); convertFromSnakeCase fix live; MediaView per-render recompute real; watch JSONL main-actor real; PTZ-manual flood = not a bug.<br>
+<b>Reconciled conflicts:</b> N5 (partial fix, kept open), web auth (downgraded), AppIcon (invalid), level-math (disputed).<br>
+<b>Not executed this session:</b> no tests/builds run (Bash/MCP file tools sandbox-blocked); backend test/build/xcodebuild results are carried over from Kimi's run. Watch sources were readable for Kimi (Sources-Watch/) — its watch findings (WATCH-2/3/5, W6-8) are taken at Kimi's stated validation. No hardware-in-the-loop.<br>
+<b>Author note:</b> this merged report supersedes both source reviews. The two originals were deleted at the user's request after this file was written.
+</div>
+
+<details><summary>Show machine-readable findings (JSON for LLM consumption)</summary>
+<pre class="json" id="findings-pre">loading…</pre>
+</details>
+
+</div>
+<script>
+const FINDINGS=[
+{id:"EST-1",severity:"critical",sources:["C","K"],where:"estimator.py:414-432",verified:true,title:"Estimator covariance update drops off-diagonal P terms (non-PSD)",fix:"full (K⊗h)P + symmetrize, or Joseph form + PSD test"},
+{id:"DET-1",severity:"critical",sources:["C","K"],where:"detector.py:45-57; pipeline.py:127-131",verified:false,title:"Missing engine -> zombie rig (preflight swallowed, no health flag)",fix:"record detector_failed; surface detector_loaded; optional .pt fallback"},
+{id:"ARB-1",severity:"high",sources:["C","K"],where:"tracking_arbiter.py:117-121",verified:true,title:"GPS-stale returns idle before counting vision lock",fix:"count vision lock before GPS-release short-circuit"},
+{id:"OWN-1",severity:"high",sources:["C","K"],where:"control_ptz.py:44-61; pipeline.py:717-746",verified:false,title:"PTZ ownership transitions not atomic vs vision run-loop",fix:"shared transition lock; atomic PtzOwner.transition"},
+{id:"GPS-1",severity:"high",sources:["C"],where:"gps_direct_lora.py:194-221",verified:false,title:"fix:false packet clobbers last-known-good (D-H8 half-fixed)",fix:"don't overwrite self._latest in no-fix branch"},
+{id:"GPS-1b",severity:"high",sources:["K"],where:"gps_direct_lora.py:171-186",verified:false,title:"Corrupt base line doesn't refresh camera-fix timestamp",fix:"refresh self._cam_ts on corrupt base lines"},
+{id:"GPS-2",severity:"high",sources:["C"],where:"gps_direct_lora.py:115-153,223-225",verified:false,title:"No base-reboot/stale-serial detection",fix:"gate reader_alive on last_poll_age; surface base_silent"},
+{id:"CAL-1",severity:"high",sources:["C"],where:"control_calibration.py:708-726",verified:false,title:"FOV save failure -> HTTP 200 ok:true (M2 regression)",fix:"return ok:false/503 or roll back in-memory curve"},
+{id:"CAL-BUDGET",severity:"high",sources:["C"],where:"control_calibration.py:655-688,527-537",verified:false,title:"GPS-bearing heading impossible at default budget; >=50m not enforced",fix:"add min_distance_m gate; recalibrate default budget"},
+{id:"REC-1",severity:"high",sources:["K"],where:"recorder.py:78-80; control_media.py:48",verified:false,title:"Recorder returns 200/ok:true when ffmpeg dies immediately",fix:"raise MediaUnavailable / ok:false -> 503"},
+{id:"CAP-1",severity:"high",sources:["K"],where:"capture.py:60-75",verified:false,title:"FrameGrabber serves stale frame after RTSP disconnect",fix:"set _latest=None on disconnect"},
+{id:"TUNE-1",severity:"high",sources:["C","K"],where:"TuneView.swift:287-329",verified:true,title:"Preset delete broken: Button nested in Button",fix:"delete Button as sibling, not child"},
+{id:"LIVE-3",severity:"high",sources:["C"],where:"MergedLiveView.swift:106-146",verified:false,title:"Fullscreen omits GlassToast -> refusals invisible",fix:"add GlassToast to fullscreenLayout ZStack"},
+{id:"WC-1",severity:"high",sources:["C"],where:"WaveCamClient.swift:1974-2003",verified:true,title:"Dead post(idempotent:) param; sensor POSTs blackhole on tether timeout",fix:"honor flag: use isReadRouteFailoverAllowed when idempotent"},
+{id:"SEC-1",severity:"high",tag:"security",sources:["C","K"],where:"WaveCamApp.swift:82-86; ConnectionView.swift:135-140; WaveCamClient.swift:5-7; WatchConnectionStore.swift:12",verified:false,title:"Token to watch in plaintext + default URLs HTTP",fix:"watch token -> Keychain; document HTTP risk or add TLS"},
+{id:"WATCH-2",severity:"high",sources:["K"],where:"WatchClient.swift:192-193",verified:false,title:"Watch POST no failover on tether timeout",fix:"add .timedOut+.networkConnectionLost to POST allowlist"},
+{id:"WATCH-3",severity:"high",sources:["K"],where:"WatchClient.swift:147-148,187-189",verified:false,title:"Watch masks 401/403 as OFFLINE",fix:"distinguish 401/403; expose authError"},
+{id:"WATCH-5",severity:"high",sources:["C","K"],where:"WatchSessionRecorder.swift:155-161,179-184",verified:true,title:"Watch JSONL written synchronously on @MainActor",fix:"move writes to serial queue; write(contentsOf:)"},
+{id:"FW-H7",severity:"high",sources:["C","K"],where:"gps_l76k.h:60-66; tracker/main.cpp:70",verified:false,title:"L76K rate never configured; 2Hz beacon outruns ~1Hz GNSS",fix:"send PCAS02,<ms> in l76k_init"},
+{id:"FW-H17",severity:"high",sources:["C"],where:"tracker/main.cpp:50-58",verified:false,title:"battery_mv() reconfigures ADC every beacon",fix:"move analogReference/Resolution to setup()"},
+{id:"FW-H18",severity:"high",sources:["C"],where:"base/main.cpp:158",verified:false,title:"Reboot detector false-positives on millis() wrap",fix:"int32_t delta=(int32_t)(last-pkt); if(delta>1000)"},
+{id:"AUTH-1",severity:"medium",tag:"security",sources:["K"],where:"web.py:481-490,194-247",verified:true,title:"Legacy stream/status ungated + web console bare-fetch (auth asymmetry; off by default, LAN-only)",fix:"add Depends(require(READ,allow_query_token=True)); JS attaches token"},
+{id:"B5",severity:"medium",sources:["K"],where:"web.py:74-119 vs 400-456",verified:false,title:"Legacy /tune advertises controls it cannot apply",fix:"remove or extend Tune+TUNE_FIELDS; prefer deprecate"},
+{id:"B13",severity:"medium",sources:["K"],where:"control_api.py:336-340,947-954",verified:false,title:"/safety/kill ignores reason/source fields",fix:"forward req.reason to kill_for_safety"},
+{id:"B14",severity:"medium",tag:"security",sources:["K"],where:"control_api.py:713",verified:false,title:"Phone-sensor ingest requires only READ role",fix:"SENSORS or CONFIG role for ingest"},
+{id:"M3",severity:"medium",sources:["C","K"],where:"control_api.py:651-676; control_config.py:34-46",verified:false,title:"Hot-config revision check + apply not atomic",fix:"hold adapter lock across validate->apply->bump"},
+{id:"RES-1",severity:"medium",sources:["C","K"],where:"control_api.py:980-996",verified:false,title:"resume_without_autostart race; drops live owner if not killed",fix:"atomic prepare_for_resume; gate on killed"},
+{id:"M1",severity:"medium",sources:["C","K"],where:"config.py:258-300",verified:false,title:"config.local.yaml overlay no type/range coercion",fix:"route overlay through typed setters"},
+{id:"M4",severity:"medium",sources:["C","K"],where:"ptz_owner.py:30-33",verified:false,title:"PtzOwner.owner public setter bypasses rules",fix:"delete public setter"},
+{id:"B19",severity:"medium",sources:["K"],where:"pipeline.py:843-849",verified:false,title:"Pipeline _shutdown doesn't cancel dispatcher deadman timers",fix:"release all owners + cancel timers in _shutdown"},
+{id:"B20",severity:"medium",sources:["K"],where:"control_system.py:143-152; supervisor.py:122-127",verified:false,title:"Service restart reports 202 without verifying systemctl success",fix:"capture exit code; surface failure"},
+{id:"B21",severity:"medium",sources:["K"],where:"ptz_state.py:91-160",verified:false,title:"PtzState uses wall-clock time.time() for encoder age",fix:"use time.monotonic()"},
+{id:"B22",severity:"medium",sources:["K"],where:"control_ptz.py:83-100",verified:false,title:"release_manual_owner resets vision hysteresis even when release failed",fix:"guard reset_vision_state with if released"},
+{id:"B23",severity:"medium",sources:["K"],where:"calibration_store.py:45-49",verified:false,title:"CalibrationStore.load() silently resets to empty on any error",fix:"log warning; expose parse-error indicator"},
+{id:"DUP-1",severity:"medium",sources:["C","K"],where:"gps_meshtastic.py:34-52; control_snapshots.py:317; estimator.py:126-138; gps_bearing_cue.py:27-39",verified:false,title:"Duplicated haversine/bearing + _fov_at_zoom; live path imports legacy",fix:"import from gps_geo; hoist _fov_at_zoom"},
+{id:"B25",severity:"medium",sources:["K"],where:"control_snapshots.py:106; config.py:211",verified:false,title:"Snapshot advertises estimator.enabled:true when config defaults false",fix:"default getattr to False"},
+{id:"BLOCK-1",severity:"medium",sources:["C","K"],where:"control_api.py:544,864-866; control_calibration.py:698,763-764",verified:false,title:"Blocking UDP inquire_pan_tilt on request thread; shared-socket race",fix:"drop fallback (503) or worker+deadline; serialize inquiries"},
+{id:"B31",severity:"medium",tag:"security",sources:["K"],where:"events.py:27",verified:false,title:"EventRing logs raw detail without redaction",fix:"pass through redact_log_message()"},
+{id:"BDRF-1",severity:"medium",sources:["C"],where:"pipeline.py:498-501; base_drift.py:101-127",verified:false,title:"base_drift_min_sats structurally dead",fix:"thread base sats or delete knob"},
+{id:"RUN-1",severity:"medium",sources:["C"],where:"run.py:66 vs 131",verified:false,title:"Inconsistent GPS source default; log lies",fix:"compute source once"},
+{id:"B29",severity:"medium",sources:["K"],where:"sensor_hub.py:173-214",verified:false,title:"Sensor-hub heading-drift monitor untested",fix:"add unit tests"},
+{id:"I3I4",severity:"medium",sources:["K"],where:"ConnectionView.swift:57-67; SessionLogView.swift:27-36",verified:false,title:"Health poll timers run in background",fix:"observe scenePhase; pause timer"},
+{id:"I6",severity:"medium",sources:["K"],where:"TuneView.swift:370-392,189",verified:false,title:"applyPreset can leave panel permanently disabled",fix:"defer { loaded = true }"},
+{id:"CAL-EXIT",severity:"medium",sources:["C"],where:"CalibrateView.swift:313-334,690-733",verified:false,title:"Wizard exit-failure refusalMessage not rendered by DoneCard",fix:"pass refusalMessage into DoneCard"},
+{id:"I10I11",severity:"medium",sources:["K"],where:"MediaView.swift:223-233,247-249",verified:true,title:"MediaView recomputes groupedDays/selectedBytes every render",fix:"cache in @State"},
+{id:"LIVE-2",severity:"medium",sources:["C"],where:"MergedLiveView.swift:541",verified:false,title:"Raw owner string in HUD vs AUTO label",fix:"use .ptzOwnerLabel"},
+{id:"LOG-2",severity:"medium",sources:["C","K"],where:"SessionLogView.swift:46,51-56",verified:false,title:"sinceCursor collapses to 0 on null-t events",fix:"guard lastT>sinceCursor; dedup by id"},
+{id:"FEED-1",severity:"medium",sources:["C"],where:"FeedComponents.swift:56-70",verified:false,title:"MJPEG auth header not refreshed on token-only change",fix:"track loadedToken; reconnect on change"},
+{id:"I15",severity:"medium",sources:["K"],where:"CalibrateView.swift:252-281; WaveCamClient.swift:1460",verified:false,title:"Heading preview not parsed on operator_accept_required",fix:"decode calibration field on that status"},
+{id:"I16",severity:"medium",sources:["K"],where:"PhoneSensorSocket.swift:23-50",verified:false,title:"PhoneSensorSocket leaks URLSession delegate",fix:"invalidateAndCancel in close()"},
+{id:"I12I21",severity:"medium",sources:["K"],where:"MediaView.swift:306-313; AgentView.swift:78-105",verified:false,title:"MediaView bulk-download + AgentView summonDiagnostics Tasks outlive views",fix:"@State task; cancel onDisappear; checkCancellation"},
+{id:"U3U4",severity:"medium",sources:["K"],where:"web.py:518-552,22-396",verified:false,title:"Legacy zoom no takeover; no CSP on console",fix:"forward takeover; emit CSP"},
+{id:"BROAD",severity:"medium",tag:"security",sources:["K"],where:"detector.py:73-77; recorder.py:100-105; control_api.py:755-783",verified:false,title:"Broad-exception swallowing masks errors",fix:"catch specific; rate-limit/log"},
+{id:"C4",severity:"low",sources:["C","K"],where:"pipeline.py:597",verified:false,title:"Estimator init gated on _frame_i % 120 -> ~4s delay",fix:"drop modulo gate"},
+{id:"H13",severity:"low",sources:["C","K"],where:"pipeline.py:735-739",verified:false,title:"Transient invalid calibration -> STOP -> stutter",fix:"coast one tick instead of STOP"},
+{id:"KILL-1",severity:"low",sources:["C"],where:"pipeline.py:642,727-737",verified:false,title:"KILL-vs-run-loop tick-level TOCTOU",fix:"re-check killed before each send"},
+{id:"B33",severity:"low",sources:["K"],where:"web.py:554-563",verified:false,title:"Legacy /tune has no revision check",fix:"add revision or deprecate"},
+{id:"B34",severity:"low",tag:"security",sources:["K"],where:"control_utils.py:166-169",verified:false,title:"Log-redaction regex misses compact Authorization:Bearer",fix:"\\s+ -> \\s*"},
+{id:"B35",severity:"low",sources:["K"],where:"supervisor.py:156-163",verified:false,title:"Supervisor sleeps full interval regardless of poll duration",fix:"sleep max(0,interval-elapsed)"},
+{id:"B30",severity:"low",sources:["K"],where:"health.py:28",verified:false,title:"HealthRegistry.snapshot() unhealthy when empty",fix:"define empty-state contract"},
+{id:"B36B37",severity:"low",sources:["K"],where:"web.py:391,257,286",verified:false,title:"Web UI testbed highlight + magic deadzone/radius",fix:"drop testbed; name constants"},
+{id:"L35",severity:"low",sources:["C","K"],where:"SessionLogView.swift:174",verified:false,title:"#Preview shows ToolsView()",fix:"SessionLogView()"},
+{id:"N4",severity:"low",sources:["C","K"],where:"MergedLiveView.swift:243-255",verified:false,title:"Unstructured Task in handleHome() outlives view",fix:"@State task; cancel onDisappear"},
+{id:"L33",severity:"low",sources:["C","K"],where:"WaveCamClient.swift:21-27",verified:false,title:"Default URLs force-unwrap",fix:"guarded construction"},
+{id:"I18",severity:"low",sources:["K"],where:"WaveCamClient.swift:1658-1670",verified:false,title:"postPhoneSensor(_:) dead code",fix:"remove"},
+{id:"CAL-LEVEL",severity:"low",sources:["C","K"],where:"CalibrateView.swift:~386",verified:false,title:"DISPUTED: gravity.x*90 small-angle level math may remain in legacy path",fix:"verify; if present use asin(clamp)*180/pi"},
+{id:"WMISC",severity:"low",sources:["K"],where:"WatchStatusView.swift; WatchClient.swift:97-111; WatchSessionRecorder.swift:233-251",verified:false,title:"Watch: no haptics; commands silent-fail; GPS throttle race",fix:"haptics; lastCommandError; serialize GPS writes"},
+{id:"FWMISC",severity:"low",sources:["C","K"],where:"platformio.ini:20; tracker/main.cpp:64-66; packet.h:40; tracker/main.cpp:50-58",verified:false,title:"Firmware: RadioLib unpinned; stale PMTK comment; _Static_assert; battery ADC unbounded",fix:"pin RadioLib; fix comment; static_assert; clamp battery_mv"},
+{id:"DOCS",severity:"docs",sources:["K"],where:"README.md:243; PROJECT_STATUS.md; WaveCam_Guide.html; openapi.snapshot.json; 2026-06-16 review/plan/spec docs",verified:false,title:"Docs drift: LoRa future-work, yolov8n/YOLO26n, missing WS route, POST-only phone-sensor",fix:"update docs to match live code"},
+{id:"INVALID-AppIcon",severity:"invalid",sources:["K"],where:"AppIcon.appiconset (iOS+watch)",verified:true,title:"AppIcon cross-target thinning failure",why:"both sets populated + target-scoped"},
+{id:"INVALID-Glass",severity:"invalid",sources:["C","K"],where:"MergedLiveView.swift:296-303",verified:true,title:"GlassEffectContainer undefined",why:"real iOS 26 symbol, availability-gated"},
+{id:"INVALID-Fusion40",severity:"invalid",sources:["C"],where:"fusion.py:46,50,60-61",verified:false,title:"fusion 40px match floor",why:"off by default; documented clamp"},
+{id:"INVALID-PTZflood",severity:"invalid",sources:["K"],where:"PTZManualController.swift",verified:true,title:"PTZManualController floods per-drag",why:"uses fire-once + 300ms repeat timers"},
+{id:"FIXED-H1H2H3",severity:"fixed",sources:["C","K"],where:"control_ptz.py:59-81; web.py:492-516",verified:false,title:"calibration capture + legacy kill safety",note:"FIXED"},
+{id:"FIXED-DH16",severity:"fixed",sources:["C"],where:"WaveCamClient.swift:1062-1081",verified:false,title:"KILL-in-flight latch",note:"FIXED"},
+{id:"FIXED-H5N2",severity:"fixed",sources:["C","K"],where:"WaveCamClient.swift:1849-1861",verified:false,title:"tether probe stalls",note:"FIXED"},
+{id:"FIXED-compass",severity:"fixed",sources:["C","K"],where:"WaveCamClient.swift:118-152,1802-1806",verified:true,title:"convertFromSnakeCase blank compass",note:"FIXED"},
+{id:"FIXED-M2",severity:"fixed",sources:["C","K"],where:"control_api.py:926-936",verified:false,title:"cal capture save -> 200",note:"FIXED (re-emerged on FOV as CAL-1)"},
+{id:"FIXED-M5",severity:"fixed",sources:["C"],where:"control_api.py:799-826",verified:false,title:"/health broad except",note:"FIXED"},
+{id:"FIXED-H6",severity:"fixed",sources:["K"],where:"control_utils.py:44-83; control_snapshots.py:64-80",verified:false,title:"v3 GPS/fusion keys hot-config",note:"FIXED"}
+];
+document.getElementById('findings-pre').textContent = JSON.stringify(FINDINGS, null, 1);
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveCam — Review-Fix Verification &amp; Followup · 2026-06-18</title>
+<style>
+  :root{--bg:#0f1115;--panel:#161a21;--panel2:#1c212b;--ink:#e6e9ef;--mut:#8b93a3;
+  --crit:#ff5c5c;--high:#ff9f43;--med:#ffd166;--low:#7fb3ff;--good:#46d677;--inv:#9aa3b2;--line:#2a303b;--accent:#5cc8ff;}
+  *{box-sizing:border-box} body{background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 22px 130px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em} h2{font-size:20px;margin:32px 0 11px;padding-bottom:7px;border-bottom:1px solid var(--line)} h3{font-size:15.5px;margin:20px 0 8px;color:var(--accent)}
+  .sub{color:var(--mut);font-size:13.5px;margin-bottom:6px} a{color:var(--accent)}
+  code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:#00000055;padding:1px 5px;border-radius:4px;color:#ffd479}
+  .loc{color:#9ad1ff;font-family:"SF Mono",ui-monospace,monospace;font-size:12px}
+  table{width:100%;border-collapse:collapse;margin:11px 0;font-size:13px} td,th{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top} th{background:var(--panel2);color:var(--mut);font-weight:600}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;white-space:nowrap}
+  .done{background:#0f3a22;color:var(--good)} .partial{background:#3a2a0f;color:var(--high)} .notdone{background:#3a1414;color:var(--crit)} .bydes{background:#1a2330;color:#9ad1ff} .inv{background:#262b35;color:var(--inv)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 16px;margin:11px 0}
+  .card.head{display:flex;align-items:center;gap:9px;flex-wrap:wrap} .card .title{font-weight:600;font-size:14.5px} .card .where{font-family:"SF Mono",ui-monospace,monospace;font-size:11.5px;color:var(--loc);margin-left:auto}
+  .row{display:grid;grid-template-columns:96px 1fr;gap:5px 13px;font-size:13px;margin-top:6px} .row .k{color:var(--mut);font-weight:600}
+  .callout{border-left:4px solid var(--accent);background:#0e1c27;padding:11px 15px;border-radius:0 8px 8px 0;margin:13px 0} .risk{border-left:4px solid var(--crit)}
+  .json{white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:360px;overflow:auto;background:#0a0c10;border:1px solid var(--line);border-radius:8px;padding:12px;font-family:ui-monospace,monospace}
+  hr{border:0;border-top:1px solid var(--line);margin:22px 0} .small{font-size:12.5px;color:var(--mut)}
+  details summary{cursor:pointer;color:var(--accent);font-size:13px;margin:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>WaveCam — Review-Fix Verification &amp; Followup</h1>
+<div class="sub"><b>What actually shipped vs. what was claimed.</b> Date: 2026-06-18 &nbsp;·&nbsp; Verifies the merged-review fix batch (commits <code>bb462b7</code> + <code>cb23d45</code> + <code>c2ffb10</code> on <code>test/yard-combined-20260616</code>) against current source. Every item below was re-read from the actual files this session; the 2 gaps were re-confirmed by line. No files edited.</div>
+
+<div class="callout" style="border-left-color:var(--good)"><b>CORRECTION (post-verification):</b> an earlier draft of this report listed DET-1 as PARTIAL and REC-1 as NOT-DONE. Both were wrong — re-reading the actual boundary code confirmed <b>both are DONE</b>: REC-1 returns 503 at the route (<code>control_api.py:625-627</code>), and DET-1 alarms on <code>/health</code> (<code>control_api.py:848-854</code>, flips <code>snap["ok"]=False</code> on a missing engine). The error came from reading the wrong layer (internal <code>recorder.py</code> method; <code>health.py</code> instead of <code>control_api.py</code>), not a stale checkout. <b>The only genuine residual is the optional <code>detector_failed</code> event</b> (observability enhancement; the alarm already fires). GPS-1 stays correctly rejected (by-design + tested).</div>
+
+<div class="callout" style="border-left-color:var(--good)"><b style="color:var(--good)">2026-06-19 — all suggested actions COMPLETE.</b> The section-D follow-ups shipped on <code>test/yard-combined-20260616</code> @ <code>5ee95c9</code> (deployed live, <code>health.ok=true</code>): the <code>detector_failed</code> event (DET-1b), the docs-drift fix (READMEs → <code>yolo11n</code>; Meshtastic was already gone; <code>/sensors/phone/ws</code> is correctly absent from the OpenAPI snapshot, so the contract test is untouched), and the AUTH-1 legacy read-route gate. Branch pushed and opened as <a href="https://github.com/stonezone/jetsonTracker/pull/113">PR&nbsp;#113</a>, <b>held unmerged</b> for the Phase-5 water test + the on-device locked-state check.</div>
+
+<h2>A. Claimed fixes — verification vs. current source</h2>
+<table>
+<tr><th>Finding</th><th>Claimed</th><th>Verified status</th><th>Evidence (current source)</th></tr>
+<tr><td><b>ARB-1</b> GPS→vision handoff stutter</td><td>done</td><td><span class="pill done">DONE</span></td><td><span class="loc">tracking_arbiter.py:128-149</span> — GPS-loss block now has <code>and not vision.locked</code> guard (134-135); runs before lock counting (141) + <code>_decide_owner</code> (149). Comment names ARB-1.</td></tr>
+<tr><td><b>CAL-1</b> FOV save→ok:true</td><td>done</td><td><span class="pill done">DONE</span></td><td><span class="loc">control_calibration.py:722-731</span> — save-fail now returns <code>{"ok":false,"error":...}</code>, HTTP 503.</td></tr>
+<tr><td><b>CAP-1</b> stale frame after RTSP drop</td><td>done</td><td><span class="pill done">DONE</span> + live-relevant</td><td><span class="loc">capture.py:60-71</span> nulls <code>_latest</code> on disconnect; <code>read()</code> returns None. <b>Frame source confirmed = <code>FrameGrabber</code> (RTSP) at <span class="loc">pipeline.py:591</span> — NOT <code>/snapshot.jpg</code></b>, so this was a real tracking-freeze risk, now fixed.</td></tr>
+<tr><td><b>TUNE-1</b> preset delete (nested Button)</td><td>done</td><td><span class="pill done">DONE</span></td><td><span class="loc">TuneView.swift:291-326</span> — delete is now a <b>sibling</b> <code>Button</code> in an <code>HStack</code>, not nested in the apply <code>Button</code>. Comment explains the original bug.</td></tr>
+<tr><td><b>LIVE-3</b> fullscreen swallows toasts</td><td>done</td><td><span class="pill done">DONE</span></td><td><span class="loc">MergedLiveView.swift:149</span> — <code>fullscreenLayout</code> ZStack now includes <code>GlassToast(message:$toastMessage)</code>, matching <code>feedLayer</code> (178).</td></tr>
+<tr><td><b>WC-1</b> dead <code>idempotent</code> param</td><td>done</td><td><span class="pill done">DONE</span></td><td><span class="loc">WaveCamClient.swift:2003</span> — guard now branches: <code>idempotent ? isReadRouteFailoverAllowed : isWriteRouteFailoverAllowed</code>. Flag honored.</td></tr>
+<tr><td><b>Autonomous-tracking / DISABLE-PTZ toggle</b></td><td>done</td><td><span class="pill done">DONE</span></td><td>Full stack: <span class="loc">config.py:205-210</span> <code>TrackingCfg.enabled</code> → <span class="loc">tracking_arbiter.py:96-104</span> short-circuits to idle when off → <span class="loc">control_config.py:264,281</span> live-applies <code>arbiter.enabled</code> → <span class="loc">TuneView.swift:148-158</span> UI card "Autonomous tracking" (caption: Off = DISABLE PTZ).</td></tr>
+<tr><td><b>snake_case decoder fix</b> (blank compass)</td><td>intact</td><td><span class="pill done">DONE</span></td><td><span class="loc">WaveCamClient.swift:118-152</span> — no CodingKeys on <code>Sensors</code>; load-bearing comment intact; tolerant <code>init(from:)</code>.</td></tr>
+<tr><td><b>GPS-1</b> <code>fix:false</code> clears fix</td><td>rejected (FP)</td><td><span class="pill bydes">BY-DESIGN</span></td><td><span class="loc">gps_direct_lora.py:219</span> clears on <code>fix:false</code>; <b>test <code>test_remote_no_fix_clears_subject_snapshot</code></b> (tests/test_gps_direct_lora.py:37-51) asserts it. Corrupt-coords case retains last-good (carve-out 197-205). <b>Rejection correct; merged review was wrong here.</b></td></tr>
+<tr><td><b>DET-1</b> missing-engine zombie</td><td>done</td><td><span class="pill done">DONE</span></td><td><b>Alarms on <code>/health</code></b>: <span class="loc">control_api.py:848-854</span> sets <code>snap["components"]["detector"]={"ok":False,"reason":"engine_load_failed"}</code> and flips <code>snap["ok"]=False</code> when the engine is missing (verified by direct read + Claude's live rig check). <span class="small">Optional follow-on: a <code>detector_failed</code> event for the event-stream (<code>events</code> is built at <span class="loc">pipeline.py:151</span>, after the load block) — observability enhancement, not a silent-gap fix.</span></td></tr>
+<tr><td><b>REC-1</b> recorder ok on ffmpeg death</td><td>done</td><td><span class="pill done">DONE</span></td><td>503 at the route — <span class="loc">control_api.py:625-627</span>: <code>if result.get("started") is False: return refusal("recording_failed", ..., 503)</code>. <code>recorder.py:80</code>'s <code>{ok:true,started:false}</code> is the internal signal the route converts; the HTTP boundary is correct. Test <code>test_record_start_returns_503_when_ffmpeg_dies_immediately</code> passes.</td></tr>
+</table>
+
+<h2>B. Still needs attention (with proposed solutions)</h2>
+
+<h3>The one residual enhancement (both DET-1 and REC-1 are DONE — see correction above)</h3>
+
+<div class="card"><div class="card head"><span class="pill done">ENHANCEMENT</span><span class="title">Optional: add a <code>detector_failed</code> event for the event-stream</span><span class="where">pipeline.py:126-151 · events</span></div>
+<div class="row"><div class="k">Context</div><div>The zombie-rig alarm <b>already fires on <code>/health</code></b> (DET-1 done). The only missing piece is a <code>detector_failed</code> entry in the <code>/events</code> ring — useful for the event-log/UI stream, not a silent-gap fix. <code>self.events</code> is constructed at <span class="loc">pipeline.py:151</span>, after the load block at 126-131, so the init-time print can't record directly.</div></div>
+<div class="row"><div class="k">Fix</div><div>Stash the load failure (e.g. <code>self._detector_load_error = str(e)</code>) in the <code>except</code>, then record it once after <code>self.events</code> exists: <code>self.events.record("detector_failed", {"model": cfg.detector.model, "error": self._detector_load_error})</code>. ~10 lines, TDD.</div></div></div>
+
+<h3>Verify-then-decide (low effort, may already be fine)</h3>
+<div class="card"><div class="card head"><span class="pill" style="background:#1a2330;color:#9ad1ff">VERIFY</span><span class="title">GPS-1b: corrupt <i>base</i> line &amp; <code>_cam_ts</code></span><span class="where">gps_direct_lora.py:171-186</span></div>
+<div class="row"><div class="k">Problem</div><div>The remote corrupt-coords path retains last-good (tested). The claim is the <i>base</i> corrupt-coords path updates <code>_last_poll_ts</code> but leaves <code>_cam_ts</code> stale → camera position reported fresh when it isn't.</div></div>
+<div class="row"><div class="k">Fix</div><div>Check whether the base-line path has the analogous retain/refresh. If it does → drop GPS-1b. If not → refresh <code>self._cam_ts = now</code> on corrupt base lines (or retain <code>self._cam</code> + mark age). ~1 line once decided.</div></div></div>
+
+<h3>Behavioral verification on the rig (Zack — can't be code-verified)</h3>
+<div class="callout">
+Two changes in this batch alter runtime <b>behavior</b>, so per the project's <i>verify-in-locked-state</i> rule they need a locked-state bench/field check before declaring done:
+<ol style="margin:6px 0 0 16px">
+<li><b>ARB-1</b> — the handoff reorder changes when GPS→vision handoff fires; confirm a smooth handoff (no idle stutter) with vision locked + GPS dipping, on the bench.</li>
+<li><b>DISABLE-PTZ toggle</b> — with "Autonomous tracking" OFF, confirm the camera holds manual aim and the arbiter does not take over (and that turning it back on resumes tracking).</li>
+</ol>
+And the three <b>on-device</b> eyeballs (next installed build): Tune › TRACKING "Autonomous tracking" toggle; a PTZ refusal rendering in <b>fullscreen</b> (LIVE-3); preset ✕ actually deleting (TUNE-1). None of these can be confirmed from source alone.
+</div>
+
+<h3>Phase 4 — recommended now (low-risk batch)</h3>
+<div class="card"><div class="card head"><span class="pill done">DO NOW</span><span class="title">Docs drift (trivial, ~9/10 feasibility)</span></div>
+<div class="row"><div class="k">Items</div><div>
+• <span class="loc">README.md:243</span> — "LoRa GPS is future work" → direct-LoRa is the live source.<br>
+• <span class="loc">PROJECT_STATUS.md / WaveCam_Guide.html</span> — <code>yolov8n</code>→<code>yolo11n.engine</code>; fix the "YOLO26n" typo.<br>
+• <span class="loc">docs/api/openapi.snapshot.json</span> — add the <code>/api/v1/sensors/phone/ws</code> route (snapshot is REST-only).<br>
+• Mark the 2026-06-16 phone-sensor plan/spec docs superseded (WS, not POST).</div></div></div>
+
+<div class="card"><div class="card head"><span class="pill done">DO NOW</span><span class="title">AUTH-1: close the legacy auth-gate asymmetry (~7/10)</span><span class="where">web.py:481-490,194-247</span></div>
+<div class="row"><div class="k">Problem</div><div>Legacy <code>/stream.mjpg</code> + <code>/status</code> register no <code>Depends(require)</code>; embedded console uses bare <code>fetch()</code>. Today it's LAN-only / auth-off-by-default (not a live breach), but enabling auth later would half-break the console.</div></div>
+<div class="row"><div class="k">Fix</div><div>Add <code>Depends(require(READ, allow_query_token=True))</code> to both legacy routes; have the console JS attach the bearer token (or accept <code>?token=</code>). Cleanup, not a fire.</div></div></div>
+
+<h3>Phase 4 — batch later (explicitly deferred, not critical-path)</h3>
+<div class="small">
+<b>~20 Mediums</b> (feasibility ~8/10, mechanical): hot-config + resume write atomicity (M3/RES-1), <code>time.monotonic</code> for encoder age (B21), dedup <code>haversine/bearing</code> + <code>_fov_at_zoom</code> + fix <code>control_snapshots.py:317</code> legacy import (DUP-1), narrow the broad-<code>except</code> swallows (B26/B27/B32), iOS timer/Task lifecycle + MediaView per-render recompute (I3/I4/I10/I11/I12/I21), <code>PhoneSensorSocket.invalidateAndCancel</code> (I16), watch POST failover + 401-masking (WATCH-2/3), <code>sinceCursor</code> dedup (LOG-2).<br>
+<b>Firmware H7/H17/H18</b> — L76K rate config (<code>PCAS02</code>), ADC setup-once, signed reboot-delta — fold into the next Wio flash (needs hardware).<br>
+<b>OWN-1</b> (atomic ownership-transition lock) and <b>BLOCK-1</b> (VISCA shared-socket serialization) — design-heavy; do deliberately with concurrent-steal tests, not in the cleanup batch.
+</div>
+
+<h3>Explicitly leave alone (correctly deferred)</h3>
+<div class="card"><div class="card head"><span class="pill inv">DEFER</span><span class="title">EST-1 — keep estimator shadow-only</span><span class="where">estimator.py:414-432</span></div>
+<div class="row"><div class="k">Guard</div><div>Covariance is still diagonal-only (confirmed at <span class="loc">:432</span>) and the estimator never commands. <b>Do not enable estimator-driven control</b> until it's rewritten to full/Joseph form + has a PSD-under-large-innovation unit test. Fixing the line now is low-value; <i>enabling</i> it now is the actual hazard.</div></div></div>
+
+<h2>C. Caveats (what this verification could not close)</h2>
+<div class="small">
+• <b>Deploy state not independently verified.</b> No <code>curl</code>/<code>ssh</code> in this sandbox; "backend <code>cb23d45</code> deployed" is taken from the bus/memory. Confirm on the rig via <code>GET /api/v1/version</code> + grep of the live source per deploy-hygiene.<br>
+• <b>Build-number reference mismatch.</b> Cited "build 497/498," but static <code>project.yml</code> <code>CURRENT_PROJECT_VERSION</code> is <code>27</code>. If <code>build-device.sh</code> git-stamps the installed build, 498 may be the real installed number — confirm in Settings and pin the on-device check to that build so source and binary agree.<br>
+• <b>Behavioral items</b> (ARB-1 handoff, DISABLE-PTZ toggle, fullscreen toast, preset delete) are code-correct but <b>not runtime-verified</b> — they need the locked-state + on-device checks above.<br>
+• <b>Watch lane</b> (WATCH-2/3/5, W6-8) carried from Kimi's review; not re-read this session — re-confirm before fixing.
+</div>
+
+<h2>D. Suggested next action</h2>
+<ol>
+<li><b>Claude:</b> finish DET-1 (event + <code>/health</code> component) and REC-1 (ok:false/503); do the docs-drift + AUTH-1 batch; push + PR the branch (hold merge).</li>
+<li><b>Zack:</b> on-device eyeballs on the next installed build; then the Phase 5 water test (Backend Plan v3) before merging to main.</li>
+<li><b>Defer</b> EST-1 (guard), OWN-1/BLOCK-1 (design), the ~20 Mediums + firmware (batch / next flash).</li>
+</ol>
+
+<details><summary>Show machine-readable status (JSON)</summary>
+<pre class="json" id="pre">loading…</pre></details>
+
+</div>
+<script>
+const S=[
+{id:"ARB-1",claimed:"done",status:"DONE",where:"tracking_arbiter.py:128-149"},
+{id:"CAL-1",claimed:"done",status:"DONE",where:"control_calibration.py:722-731"},
+{id:"CAP-1",claimed:"done",status:"DONE",where:"capture.py:60-71; pipeline.py:591 (frame source = FrameGrabber/RTSP, live-relevant)"},
+{id:"TUNE-1",claimed:"done",status:"DONE",where:"TuneView.swift:291-326"},
+{id:"LIVE-3",claimed:"done",status:"DONE",where:"MergedLiveView.swift:149"},
+{id:"WC-1",claimed:"done",status:"DONE",where:"WaveCamClient.swift:2003"},
+{id:"DISABLE-PTZ",claimed:"done",status:"DONE",where:"config.py:205-210; tracking_arbiter.py:96-104; control_config.py:264,281; TuneView.swift:148-158"},
+{id:"snake_case",claimed:"intact",status:"DONE",where:"WaveCamClient.swift:118-152"},
+{id:"GPS-1",claimed:"rejected",status:"BY-DESIGN",where:"gps_direct_lora.py:219 + test_remote_no_fix_clears_subject_snapshot"},
+{id:"DET-1",claimed:"done",status:"DONE",where:"control_api.py:848-854 (alarms /health, flips snap.ok=False on missing engine)",note:"earlier PARTIAL verdict was wrong — read wrong layer (health.py not control_api.py). Optional: detector_failed event for event-stream."},
+{id:"REC-1",claimed:"done",status:"DONE",where:"control_api.py:625-627 (503 at route on started:false)",note:"earlier NOT-DONE verdict was wrong — read internal recorder.py method, not the route boundary."},
+{id:"GPS-1b",claimed:"not-doing",status:"VERIFY",where:"gps_direct_lora.py:171-186",fix:"confirm base corrupt-line has retain/refresh like remote; if not, refresh _cam_ts"},
+{id:"ARB-1-field",claimed:"-",status:"VERIFY-ON-RIG",where:"tracking_arbiter handoff reorder",fix:"locked-state bench check: smooth GPS->vision handoff, no idle stutter"},
+{id:"DISABLE-PTZ-field",claimed:"-",status:"VERIFY-ON-RIG",where:"tracking.enabled=false behavior",fix:"confirm camera holds manual aim, arbiter does not take over"},
+{id:"on-device",claimed:"-",status:"ZACK-EYEBALL",where:"Tune TRACKING toggle / fullscreen toast / preset delete",fix:"confirm on next installed build"},
+{id:"DOCS",claimed:"phase4",status:"DO-NOW",where:"README.md:243; PROJECT_STATUS.md; WaveCam_Guide.html; openapi.snapshot.json",fix:"LoRa live; yolo11n; +/sensors/phone/ws; mark plan/spec superseded"},
+{id:"AUTH-1",claimed:"phase4",status:"DO-NOW",where:"web.py:481-490,194-247",fix:"Depends(require(READ,allow_query_token=True)) on legacy routes; JS attaches token"},
+{id:"MEDIUMS",claimed:"phase4",status:"BATCH-LATER",where:"~20 items",fix:"atomicity, time.monotonic, dedup helpers, narrow excepts, iOS lifecycle, watch failover/401"},
+{id:"FIRMWARE",claimed:"phase4",status:"NEXT-FLASH",where:"FW-H7/H17/H18",fix:"PCAS02 rate; ADC setup-once; signed reboot-delta"},
+{id:"OWN-1/BLOCK-1",claimed:"tier3",status:"DESIGN",where:"control_ptz/pipeline; VISCA socket",fix:"atomic transition lock; serialize inquiries; concurrent-steal tests"},
+{id:"EST-1",claimed:"defer",status:"DEFER-GUARD",where:"estimator.py:414-432",fix:"keep shadow-only; do not enable closed-loop until full/Joseph form + PSD test"}
+];
+document.getElementById('pre').textContent=JSON.stringify(S,null,1);
+</script>
+</body>
+</html>
