@@ -58,3 +58,28 @@ def test_ptz_state_not_started_when_ptz_disabled():
     p = Pipeline(_null_cfg(), _null_ptz(), lambda: None)
     # disabled PTZ — poller exists but its thread must NOT auto-start
     assert not p.ptz_state.is_alive()
+
+
+def test_detector_load_failure_records_event():
+    # DET-1b: a missing/broken engine makes __init__ swallow the load error and leave
+    # detector=None (zombie rig). Beyond the /health alarm, record a detector_failed
+    # event so the failure lands in the /events stream for field diagnosis.
+    cfg = _null_cfg()
+    cfg.detector.enabled = True  # force the load path
+
+    def boom():
+        raise RuntimeError("engine missing")
+
+    p = Pipeline(cfg, _null_ptz(), boom)
+    assert p.detector is None
+    kinds = [e["kind"] for e in p.events.since(0.0)]
+    assert "detector_failed" in kinds
+
+
+def test_detector_load_success_records_no_failure_event():
+    cfg = _null_cfg()
+    cfg.detector.enabled = True
+    p = Pipeline(cfg, _null_ptz(), lambda: object())  # factory returns a "detector"
+    assert p.detector is not None
+    kinds = [e["kind"] for e in p.events.since(0.0)]
+    assert "detector_failed" not in kinds

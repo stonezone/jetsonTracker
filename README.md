@@ -1,7 +1,7 @@
 # WaveCam
 
 WaveCam is a Jetson Orin + Prisual PTZ camera stack for filming foil surfing.
-The live system is vision-first: YOLOv8n TensorRT detects a person, an
+The live system is vision-first: YOLO11n TensorRT detects a person, an
 orange/red HSV cue identifies the subject, fusion locks the target, and the
 Orin drives pan/tilt/zoom over RAW VISCA. A custom direct-LoRa Wio GPS link
 provides long-range coarse pointing and helps vision reacquire the subject.
@@ -27,7 +27,7 @@ design is superseded. Retired code and docs are preserved under
 | PTZ control | RAW VISCA UDP `192.168.100.88:1259` |
 | Tracking video | RTSP sub-stream `rtsp://192.168.100.88:554/2` |
 | Recording video | RTSP main stream `rtsp://192.168.100.88:554/1` |
-| Detector model | `/data/projects/gimbal/models/yolov8n.engine` |
+| Detector model | `/data/projects/gimbal/models/yolo11n.engine` |
 | Loop target | `35` FPS; live validation has shown 30+ FPS |
 
 ## Architecture
@@ -38,7 +38,7 @@ iOS WaveCam app / WaveCamWatch / browser
         v
 Jetson Orin :8088 FastAPI + web  (also exposed via Cloudflare tunnel)
         |
-        +-- RTSP /2 -> YOLOv8n TensorRT + orange/red color cue -> fusion lock
+        +-- RTSP /2 -> YOLO11n TensorRT + orange/red color cue -> fusion lock
         |
         +-- direct-LoRa Wio GPS -> coarse absolute PTZ pointing
         |
@@ -55,7 +55,7 @@ model instead of side-channel camera commands.
 
 - FastAPI control API on `:8088` (and via Cloudflare at `wavecam.freddieland.com`).
 - Native iOS operator app + bundled watchOS companion (WaveCamWatch).
-- YOLOv8n TensorRT person detection.
+- YOLO11n TensorRT person detection.
 - HSV orange/red color cue and person/color fusion.
 - Direct-LoRa Wio GPS for coarse pointing and vision reacquisition.
 - PTZ pan/tilt/zoom over RAW VISCA UDP.
@@ -204,7 +204,7 @@ Key live values:
 - `camera.source`: `rtsp://192.168.100.88:554/2`
 - `ptz.ip`: `192.168.100.88`
 - `ptz.port`: `1259`
-- `detector.model`: `/data/projects/gimbal/models/yolov8n.engine`
+- `detector.model`: `/data/projects/gimbal/models/yolo11n.engine`
 - `gps.source`: `direct_lora` (set in `config.local.yaml` overlay)
 - `gps.direct_dev_path`: `/dev/ttyACM0`
 - `web.port`: `8088`

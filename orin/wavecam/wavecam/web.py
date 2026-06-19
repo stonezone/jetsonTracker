@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
-from .auth import CONFIG, PTZ, SAFETY, require
+from .auth import CONFIG, PTZ, READ, SAFETY, require
 from .control_api import register_control_api
 from .ptz_owner import AUTONOMOUS
 
@@ -480,12 +480,15 @@ def build_app(pipeline) -> FastAPI:
             yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
             time.sleep(0.03)
 
-    @app.get("/stream.mjpg")
+    # AUTH-1: gate the legacy read routes like the /api/v1 reads, so enabling auth is
+    # all-or-nothing instead of leaving the console's data routes open. No-op while auth
+    # is off (live default). The MJPEG stream can't set a header, so it accepts ?token=.
+    @app.get("/stream.mjpg", dependencies=[Depends(require(READ, allow_query_token=True))])
     def stream():
         return StreamingResponse(_frames(),
                                  media_type="multipart/x-mixed-replace; boundary=frame")
 
-    @app.get("/status")
+    @app.get("/status", dependencies=[Depends(require(READ))])
     def status():
         s = pipeline.state.get_status()
         s.update(pipeline.owner.state())      # expose owner + sticky kill latch

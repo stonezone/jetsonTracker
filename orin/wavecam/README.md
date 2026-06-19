@@ -21,7 +21,7 @@ reuse, but they are not the active field runtime.
 | iPhone tether default | `172.20.10.8` |
 | PTZ camera | `192.168.100.88` |
 | Camera LAN | Orin `192.168.100.10/24` to camera `192.168.100.88` |
-| Detector model | `/data/projects/gimbal/models/yolov8n.engine` |
+| Detector model | `/data/projects/gimbal/models/yolo11n.engine` |
 | Target loop FPS | `35`; live validation has shown 30+ FPS |
 | GPS source | `direct_lora` via base Wio USB serial (`/dev/ttyACM0`) |
 | Tracking mode | `auto` (default), `gps_only`, `vision_only` via hot key |
@@ -31,7 +31,7 @@ reuse, but they are not the active field runtime.
 ```text
 RTSP /2 sub-stream
     -> capture
-    -> YOLOv8n TensorRT person detector
+    -> YOLO11n TensorRT person detector
     -> HSV orange/red color cue
     -> fusion lock state
     -> visual servo + cinematic zoom
@@ -72,7 +72,7 @@ Important current values:
 - `camera.source`: `rtsp://192.168.100.88:554/2`
 - `ptz.ip`: `192.168.100.88`
 - `ptz.port`: `1259`
-- `detector.model`: `/data/projects/gimbal/models/yolov8n.engine`
+- `detector.model`: `/data/projects/gimbal/models/yolo11n.engine`
 - `web.port`: `8088`
 - `loop.target_fps`: `35`
 
@@ -151,8 +151,9 @@ short recording and delete only the generated validation clip.
 
 ## Legacy Notes
 
-- `yolo26n.pt` is not the live production model. The live Orin uses
-  `yolov8n.engine`.
+- The live Orin runs `yolo11n.engine` (swapped from `yolov8n` 2026-06-15).
+  `yolo26n.pt` is not production — the yolo26n family isn't supported by the
+  rig's ultralytics build.
 - `gps_server.py`, Watch/iPhone GPS relay, Cloudflare GPS, STM32/Nucleo
   stepper firmware, and the retired `:8080` dashboard are archived under
   `archive/legacy-20260606/`.

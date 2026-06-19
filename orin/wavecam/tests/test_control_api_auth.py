@@ -66,6 +66,22 @@ def test_legacy_mutation_routes_require_token_when_auth_enabled():
         assert response.json()["code"] == "unauthorized"
 
 
+def test_legacy_read_routes_require_token_when_auth_enabled():
+    # AUTH-1: the legacy console reads /status + /stream.mjpg. They were ungated while
+    # the /api/v1 reads required a token — so enabling auth half-broke the console
+    # (data routes wide open). Both must demand a token like /api/v1/status does.
+    client = client_with_auth(True, {"op": "operator"})
+    assert client.get("/status").status_code == 401
+    assert client.get("/stream.mjpg").status_code == 401
+
+
+def test_legacy_status_readable_with_token_and_open_when_auth_disabled():
+    # With a valid token it reads; with auth off (live default) it stays open (no-op).
+    authed = client_with_auth(True, {"op": "operator"})
+    assert authed.get("/status", headers=hdr("op")).status_code == 200
+    assert client_with_auth(enabled=False).get("/status").status_code == 200
+
+
 def test_operator_can_use_legacy_mutation_routes_when_auth_enabled():
     client = client_with_auth(True, {"op": "operator"})
     cases = [

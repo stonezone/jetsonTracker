@@ -124,11 +124,16 @@ class Pipeline(threading.Thread):
 
         # YOLO is optional + lazily built (so missing torch doesn't kill the rig)
         self.detector = None
+        self._detector_load_error: str | None = None
         if cfg.detector.enabled:
             try:
                 self.detector = detector_factory()
-            except Exception as e:  # pragma: no cover - depends on torch/ultralytics
+            except Exception as e:
+                # Don't crash the rig, but don't fail silently either: stash the reason
+                # and record a detector_failed event once self.events exists (DET-1b),
+                # so a zombie rig (engine dead, API up) is in the event stream too.
                 print(f"[pipeline] YOLO disabled (load failed): {e}")
+                self._detector_load_error = str(e)
 
         # P1: GPS coarse-pointing handoff
         self.arbiter = TrackingArbiter(
@@ -149,6 +154,11 @@ class Pipeline(threading.Thread):
         # Event ring — records lock/owner/gps/kill transitions for /events
         from .events import EventRing
         self.events = EventRing(maxlen=500)
+        # Surface a swallowed detector-load failure now that the ring exists (DET-1b).
+        if self._detector_load_error is not None:
+            self.events.record("detector_failed",
+                               {"reason": "engine_load_failed",
+                                "error": self._detector_load_error})
         # PtzState — background encoder poller. Started in run() only when
         # ptz.enabled is True. Additive telemetry; does not affect the servo.
         from .ptz_state import PtzState
