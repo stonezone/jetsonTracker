@@ -127,17 +127,26 @@ class SystemManager:
             )
         msg = normalized_text(message, "", 4000)
         status_text = json.dumps(self._api.status_snapshot())
+        armed = self._agent_arm.can_act() if self._agent_arm else False
         try:
-            result = self._agent_session.chat(msg, status_text)
+            result = self._agent_session.chat(msg, status_text, armed=armed)
         except Exception as exc:  # surface as a failed turn; the session is preserved
             return JSONResponse(
                 {"ok": False, "code": "agent_error", "message": str(exc)[:200]}
             )
+        self._audit_agent_turn(armed)
         return JSONResponse(
             {"ok": True, "request_id": make_request_id(),
-             "reply": result["reply"],
-             "armed": self._agent_arm.can_act() if self._agent_arm else False}
+             "reply": result["reply"], "armed": armed}
         )
+
+    def _audit_agent_turn(self, armed: bool) -> None:
+        ring = getattr(self.pipeline, "events", None)
+        if ring is not None:
+            try:
+                ring.record("agent_chat", {"armed": armed})
+            except Exception:
+                pass
 
     def request_agent_arm(self, armed: bool) -> JSONResponse:
         if not self._agent_enabled or self._agent_arm is None:
