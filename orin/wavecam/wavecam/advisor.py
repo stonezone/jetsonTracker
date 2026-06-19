@@ -54,6 +54,14 @@ CODEX_BACKEND_URL = "https://chatgpt.com/backend-api/codex/responses"
 CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
 CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"  # the Codex CLI public client
 
+# Claude (Anthropic) OAuth refresh — mirrors the Codex flow. VERIFY LIVE before
+# deploy: confirm the token endpoint + public client_id against a real Claude Code /
+# `ant auth login` session and prove one refresh round-trip on the rig (the same
+# discipline that verified the Codex flow on 2026-06-12). The offline test exercises
+# the refresh LOGIC via an injected post, independent of these exact values.
+CLAUDE_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code public client — VERIFY LIVE
+
 SYSTEM_PROMPT = (
     "You are the WaveCam supervisor: a diagnostics advisor for an "
     "autonomous PTZ camera that films a foil surfer 50-300m offshore "
@@ -128,12 +136,11 @@ def _default_post(url: str, headers: dict, body: dict,
 
 # ── providers: each is consult(keys_path, prompt, post) -> reply text ───────
 
-def _consult_claude(keys_path: str, prompt: str, post: Callable) -> str:
-    token = _require(_load_keys(keys_path), "claude_oauth_token", keys_path)
+def _claude_call(keys: dict, prompt: str, post: Callable) -> str:
     raw = post(
         "https://api.anthropic.com/v1/messages",
         {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {keys['claude_oauth_token']}",
             "anthropic-version": "2023-06-01",
             # OAuth bearer tokens are rejected on /v1/messages without this.
             "anthropic-beta": "oauth-2025-04-20",
@@ -150,6 +157,40 @@ def _consult_claude(keys_path: str, prompt: str, post: Callable) -> str:
         b.get("text", "") for b in resp.get("content", [])
         if b.get("type") == "text"
     )
+
+
+def _claude_refresh(keys_path: str, keys: dict, post: Callable) -> dict:
+    """Exchange the Claude refresh token; persist rotated tokens (mirrors
+    _codex_refresh). The access token stays under the existing
+    ``claude_oauth_token`` key so the request shape is unchanged."""
+    raw = post(
+        CLAUDE_TOKEN_URL, {},
+        {
+            "client_id": CLAUDE_CLIENT_ID,
+            "grant_type": "refresh_token",
+            "refresh_token": _require(keys, "claude_refresh_token", keys_path),
+        },
+    )
+    fresh = json.loads(raw)
+    keys["claude_oauth_token"] = fresh["access_token"]
+    if fresh.get("refresh_token"):
+        keys["claude_refresh_token"] = fresh["refresh_token"]
+    _save_keys(keys_path, keys)
+    return keys
+
+
+def _consult_claude(keys_path: str, prompt: str, post: Callable) -> str:
+    """OAuth bearer on /v1/messages; refresh the access token on expiry and retry
+    once — mirrors _consult_codex so Summon survives token rotation."""
+    keys = _load_keys(keys_path)
+    _require(keys, "claude_oauth_token", keys_path)
+    try:
+        return _claude_call(keys, prompt, post)
+    except ProviderHTTPError as e:
+        if e.code not in (401, 403):
+            raise
+        keys = _claude_refresh(keys_path, keys, post)
+        return _claude_call(keys, prompt, post)
 
 
 def _consult_deepseek(keys_path: str, prompt: str, post: Callable) -> str:

@@ -17,6 +17,7 @@ import time
 from wavecam.advisor import (
     AdvisorService, PROVIDERS, SYSTEM_PROMPT, ProviderHTTPError,
     CODEX_BACKEND_URL, CODEX_TOKEN_URL, CODEX_CLIENT_ID,
+    CLAUDE_TOKEN_URL, CLAUDE_CLIENT_ID,
 )
 
 
@@ -158,6 +159,54 @@ def test_codex_non_auth_error_not_retried(tmp_path):
     svc = AdvisorService(_context, keys_path=_write_keys(tmp_path),
                          post_fn=fake_post)
     svc.summon("codex")
+    report = _wait_done(svc)
+    assert report["status"] == "error"
+    assert "500" in report["error"]
+
+
+# ── claude OAuth refresh flow (Part A — mirrors the codex flow) ──────────
+
+def test_claude_refreshes_on_401_and_persists_rotated_tokens(tmp_path):
+    keys_path = _write_keys(tmp_path, claude_refresh_token="crt-old")
+    calls = []
+    messages_url = "https://api.anthropic.com/v1/messages"
+
+    def fake_post(url, headers, body, timeout=0):
+        calls.append((url, headers, body))
+        if url == messages_url and headers["Authorization"].endswith("test"):
+            raise ProviderHTTPError(401, "token expired")
+        if url == CLAUDE_TOKEN_URL:
+            return REFRESH_REPLY
+        return CLAUDE_REPLY
+
+    svc = AdvisorService(_context, keys_path=keys_path, post_fn=fake_post)
+    svc.summon("claude")
+    report = _wait_done(svc)
+    assert report["status"] == "done"
+    assert report["text"] == "HEALTHY — all good."
+
+    # 1) expired call, 2) refresh, 3) retried with the rotated access token
+    assert [c[0] for c in calls] == [messages_url, CLAUDE_TOKEN_URL, messages_url]
+    refresh_body = calls[1][2]
+    assert refresh_body["client_id"] == CLAUDE_CLIENT_ID
+    assert refresh_body["grant_type"] == "refresh_token"
+    assert refresh_body["refresh_token"] == "crt-old"
+    assert calls[2][1]["Authorization"] == "Bearer eyJ-access-new"
+
+    # rotated tokens persisted under the existing claude_oauth_token key
+    saved = json.loads(open(keys_path).read())
+    assert saved["claude_oauth_token"] == "eyJ-access-new"
+    assert saved["claude_refresh_token"] == "rt-new"
+
+
+def test_claude_non_auth_error_not_retried(tmp_path):
+    def fake_post(url, headers, body, timeout=0):
+        raise ProviderHTTPError(500, "anthropic down")
+
+    svc = AdvisorService(_context,
+                         keys_path=_write_keys(tmp_path, claude_refresh_token="crt-old"),
+                         post_fn=fake_post)
+    svc.summon("claude")
     report = _wait_done(svc)
     assert report["status"] == "error"
     assert "500" in report["error"]
