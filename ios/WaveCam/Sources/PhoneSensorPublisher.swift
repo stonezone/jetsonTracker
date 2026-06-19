@@ -128,7 +128,10 @@ final class PhoneSensorPublisher: NSObject {
 
     private func startHeading() {
         guard CLLocationManager.headingAvailable() else { return }
-        // The phone mounts landscape on the rig; without this the heading is off by 90°.
+        // The phone mounts landscape on the rig; this sets the heading reference frame. The
+        // correct variant (.landscapeRight vs .landscapeLeft) depends on the physical mounting
+        // and must be verified with the phone PROPERLY SEATED — a fallen/leaning phone reads
+        // ~180° off and masquerades as the wrong variant (2026-06-16 field note).
         locationManager.headingOrientation = .landscapeRight
         // Clean restart: a bare startUpdatingHeading() is a no-op if CoreLocation already
         // considers heading "updating" but stopped delivering; stop→start forces a fresh start.

@@ -313,6 +313,7 @@ struct WCConfig: Codable, Sendable {
         }
         struct Tracking: Codable, Sendable {
             var mode: String?   // "auto" | "gps_only" | "vision_only"
+            var enabled: Bool?  // DISABLE-PTZ latch: false = autonomous tracking off
         }
         struct ColorCfg: Codable, Sendable {
             var preset: String

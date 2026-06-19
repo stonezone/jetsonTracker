@@ -51,6 +51,7 @@ struct TuneView: View {
     // TRACKING MODE (feature-detected; appears once the GPS-only-mode backend is deployed)
     @State private var trackingModeAvailable = false
     @State private var trackingMode: String = "auto"
+    @State private var trackingEnabled = true
 
     // PRESETS feature state
     @State private var presetsSupported = false
@@ -145,7 +146,10 @@ struct TuneView: View {
                 }
 
                 if trackingModeAvailable {
-                    OperatorCard(title: "TRACKING MODE") {
+                    OperatorCard(title: "TRACKING") {
+                        toggleRow("Autonomous tracking", isOn: $trackingEnabled, key: "tracking.enabled")
+                        tuneCaption("Off = DISABLE PTZ: the camera holds your manual aim and tracking won't take over until you turn this back on.")
+                        OperatorDivider()
                         pickerRow("Source", selection: $trackingMode,
                                   options: [("auto", "Auto (vision + GPS)"), ("gps_only", "GPS-only"), ("vision_only", "Vision-only")],
                                   key: "tracking.mode")
@@ -416,7 +420,10 @@ struct TuneView: View {
             d["ptz.cinematic_zoom_enabled"] = .bool(cinematicEnabled)
             d["ptz.zoom_target_frac"]       = .double(subjectSize)
         }
-        if trackingModeAvailable { d["tracking.mode"] = .string(trackingMode) }
+        if trackingModeAvailable {
+            d["tracking.mode"] = .string(trackingMode)
+            d["tracking.enabled"] = .bool(trackingEnabled)
+        }
         if let v = everyN              { d["detector.every_n"]          = .int(v) }
         if let v = lockThreshold       { d["fusion.lock_threshold"]     = .double(v) }
         if let v = unlockThreshold     { d["fusion.unlock_threshold"]   = .double(v) }
@@ -682,6 +689,7 @@ struct TuneView: View {
         if client.mode == .mock || cfg.supported?.trackingMode == true {
             trackingModeAvailable = true
             trackingMode = cfg.current.tracking?.mode ?? "auto"
+            trackingEnabled = cfg.current.tracking?.enabled ?? true
         }
         // Feature-detected advanced keys — remain nil when backend doesn't expose them
         everyN = cfg.current.detector.everyN
