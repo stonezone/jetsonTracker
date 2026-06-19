@@ -92,7 +92,7 @@ class AgentSession:
 
     keys_path: str
     cli_path: str = CLAUDE_CLI_PATH
-    run: Callable[..., str] = _run_claude_cli
+    run: Optional[Callable[..., str]] = None   # defaults to module _run_claude_cli, resolved at call time
     session_id: Optional[str] = None
 
     def chat(self, message: str, status_text: str) -> dict:
@@ -104,7 +104,8 @@ class AgentSession:
         argv += ["-p"]   # -p terminates any variadic flag; the prompt arrives on stdin
         prompt = (f"You are the WaveCam onboard assistant. Live system status:\n"
                   f"{status_text}\n\nOperator: {message}")
-        out = self.run(argv, env, prompt, REQUEST_TIMEOUT_SEC)
+        runner = self.run if self.run is not None else _run_claude_cli
+        out = runner(argv, env, prompt, REQUEST_TIMEOUT_SEC)
         data = json.loads(out)
         self.session_id = data.get("session_id") or self.session_id
         return {"reply": data.get("result", ""), "session_id": self.session_id or ""}

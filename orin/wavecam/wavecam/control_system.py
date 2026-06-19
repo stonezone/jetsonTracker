@@ -10,13 +10,15 @@ prepare_for_restart as a convenience so callers don't reach into _ptz directly.
 """
 from __future__ import annotations
 
+import json
 import threading
 
 from fastapi.responses import JSONResponse
 
 from .control_utils import make_request_id, normalized_text
 from .ptz_owner import IDLE
-from .advisor import AdvisorService
+from .advisor import AdvisorService, KEYS_PATH
+from .agent_session import AgentSession, ArmState
 from .supervisor import restart_systemd_unit
 
 
@@ -32,6 +34,18 @@ class SystemManager:
         self._restart_timer: threading.Timer | None = None
         self._restart_pending = False
         self.advisor = AdvisorService(self._advisor_context)
+        # Interactive acting-agent (Phase 1a): the conversation + arm/KILL bridge.
+        # Built only when enabled, so a disabled agent costs nothing and core boots
+        # unaffected. The arm gate is the supervise-only floor acting tiers read.
+        acfg = getattr(getattr(pipeline, "cfg", None), "agent", None)
+        self._agent_enabled = bool(getattr(acfg, "enabled", False))
+        self._agent_arm: ArmState | None = (
+            ArmState(ttl_sec=float(getattr(acfg, "arm_ttl_sec", 600.0)))
+            if self._agent_enabled else None
+        )
+        self._agent_session: AgentSession | None = (
+            AgentSession(keys_path=KEYS_PATH) if self._agent_enabled else None
+        )
 
     def _advisor_context(self) -> dict:
         """Read-only snapshot for the advisor: status + recent events.
@@ -104,6 +118,47 @@ class SystemManager:
             {"ok": True, "request_id": make_request_id(),
              "report": self.advisor.report()}
         )
+
+    def request_agent_chat(self, message: str) -> JSONResponse:
+        if not self._agent_enabled or self._agent_session is None:
+            return JSONResponse(
+                {"ok": False, "code": "agent_disabled",
+                 "message": "Interactive agent is not enabled on this rig."}
+            )
+        msg = normalized_text(message, "", 4000)
+        status_text = json.dumps(self._api.status_snapshot())
+        try:
+            result = self._agent_session.chat(msg, status_text)
+        except Exception as exc:  # surface as a failed turn; the session is preserved
+            return JSONResponse(
+                {"ok": False, "code": "agent_error", "message": str(exc)[:200]}
+            )
+        return JSONResponse(
+            {"ok": True, "request_id": make_request_id(),
+             "reply": result["reply"],
+             "armed": self._agent_arm.can_act() if self._agent_arm else False}
+        )
+
+    def request_agent_arm(self, armed: bool) -> JSONResponse:
+        if not self._agent_enabled or self._agent_arm is None:
+            return JSONResponse({"ok": False, "code": "agent_disabled"})
+        if armed:
+            self._agent_arm.arm()
+        else:
+            self._agent_arm.disarm()
+        return JSONResponse({"ok": True, "armed": self._agent_arm.can_act()})
+
+    def agent_kill(self) -> None:
+        """KILL path hook — supervise-only floor: KILL disarms the agent."""
+        if self._agent_arm is not None:
+            self._agent_arm.kill()
+
+    def agent_arm_snapshot(self) -> dict:
+        if self._agent_arm is None:
+            return {"armed": False, "killed": False, "enabled": False}
+        snap = self._agent_arm.snapshot()
+        snap["enabled"] = True
+        return snap
 
     # ------------------------------------------------------------------
     # Restart state

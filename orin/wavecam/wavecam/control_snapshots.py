@@ -128,6 +128,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
             "show_hud": True,
             "gps": getattr(pipeline, "gps", None) is not None,
             "tracking_mode": True,
+            "agent": bool(getattr(getattr(cfg, "agent", None), "enabled", False)),
             "yolo_classes": list(YOLO_CLASSES),
             "person_aim_y": {
                 "0.20": "head/upper face",

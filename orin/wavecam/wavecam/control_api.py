@@ -234,6 +234,14 @@ class AgentSummonRequest(BaseModel):
     provider: str = Field(default="claude", max_length=16)
 
 
+class AgentChatRequest(BaseModel):
+    message: str = Field(default="", max_length=4000)
+
+
+class AgentArmRequest(BaseModel):
+    armed: bool = False
+
+
 class PhoneSampleRequest(BaseModel):
     """POST /api/v1/sensors/phone — phone-on-tripod telemetry (Phase-3 T3.2).
 
@@ -706,6 +714,14 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def agent_summon(req: AgentSummonRequest | None = None):
         return api.request_agent_summon(req or AgentSummonRequest())
 
+    @app.post("/api/v1/agent/chat", dependencies=[Depends(require(SERVICE))])
+    def agent_chat(req: AgentChatRequest):
+        return api.request_agent_chat(req.message)
+
+    @app.post("/api/v1/agent/arm", dependencies=[Depends(require(CONFIG))])
+    def agent_arm(req: AgentArmRequest):
+        return api.request_agent_arm(req.armed)
+
     @app.get("/api/v1/agent/report", dependencies=[Depends(require(READ))])
     def agent_report():
         return api.agent_report()
@@ -916,6 +932,7 @@ class ControlApiAdapter:
                     if getattr(self.pipeline, "gps", None) is not None else None)
         ref = getattr(getattr(self.pipeline, "_store", None), "reference_heading", None)
         snap["sensors"] = build_sensors_snapshot(self.sensor_hub.latest(), base_pos, ref)
+        snap["agent"] = self._system.agent_arm_snapshot()
         return snap
 
     def config_snapshot(self) -> dict:
@@ -997,6 +1014,7 @@ class ControlApiAdapter:
         self.media.stop_for_safety()
         self.cancel_manual_deadman()
         self.cancel_zoom_deadman()
+        self._system.agent_kill()   # supervise-only floor: KILL disarms the agent
 
     def claim_manual_from_calibrate(self) -> bool:
         return self._ptz.claim_manual_from_calibrate()
@@ -1133,6 +1151,12 @@ class ControlApiAdapter:
 
     def request_agent_summon(self, req: AgentSummonRequest) -> JSONResponse:
         return self._system.request_agent_summon(req)
+
+    def request_agent_chat(self, message: str) -> JSONResponse:
+        return self._system.request_agent_chat(message)
+
+    def request_agent_arm(self, armed: bool) -> JSONResponse:
+        return self._system.request_agent_arm(armed)
 
     def agent_report(self) -> JSONResponse:
         return self._system.agent_report()

@@ -215,6 +215,54 @@ def make_client():
     return TestClient(build_app(DummyPipeline()))
 
 
+# ---------------------------------------------------------------------------
+# Interactive acting-agent — Phase 1a (chat + arm/KILL bridge)
+# ---------------------------------------------------------------------------
+
+def _agent_pipe(enabled: bool):
+    pipe = DummyPipeline()
+    pipe.cfg.agent = types.SimpleNamespace(
+        enabled=enabled, model="", arm_ttl_sec=600.0, mcp_config_path="")
+    return pipe
+
+
+def _stub_claude(monkeypatch, reply="ok", sid="S1"):
+    import wavecam.agent_session as ags
+    monkeypatch.setattr(ags, "_load_token", lambda p: "tok")
+    monkeypatch.setattr(
+        ags, "_run_claude_cli",
+        lambda argv, env, stdin_text, timeout: '{"result":"%s","session_id":"%s"}' % (reply, sid))
+
+
+def test_agent_chat_disabled_returns_code():
+    client = TestClient(build_app(_agent_pipe(False)))
+    body = client.post("/api/v1/agent/chat", json={"message": "hi"}).json()
+    assert body["ok"] is False and body["code"] == "agent_disabled"
+
+
+def test_agent_chat_round_trip(monkeypatch):
+    _stub_claude(monkeypatch, reply="all good")
+    client = TestClient(build_app(_agent_pipe(True)))
+    body = client.post("/api/v1/agent/chat", json={"message": "status?"}).json()
+    assert body["ok"] is True and body["reply"] == "all good"
+
+
+def test_agent_arm_then_kill_clears(monkeypatch):
+    _stub_claude(monkeypatch)
+    client = TestClient(build_app(_agent_pipe(True)))
+    assert client.post("/api/v1/agent/arm", json={"armed": True}).json() == {"ok": True, "armed": True}
+    assert client.get("/api/v1/status").json()["agent"]["armed"] is True
+    client.post("/api/v1/safety/kill")
+    assert client.get("/api/v1/status").json()["agent"]["armed"] is False  # KILL disarmed
+
+
+def test_supported_agent_reflects_enabled():
+    on = TestClient(build_app(_agent_pipe(True))).get("/api/v1/config").json()
+    off = TestClient(build_app(_agent_pipe(False))).get("/api/v1/config").json()
+    assert on["supported"]["agent"] is True
+    assert off["supported"]["agent"] is False
+
+
 def test_root_web_ui_exposes_live_ptz_gps_and_ios_parity_controls():
     body = make_client().get("/").text
 
