@@ -9,6 +9,17 @@ tool-dispatcher over the Messages API. This spec replaces that with **Claude Cod
 that only a real coding agent with Bash/Edit/git can serve. Phase A (OAuth auto-refresh for the
 legacy `claude` Messages provider) already shipped (`498bc8e`) and is unaffected.
 
+## 0 · As-built note (2026-06-19)
+
+Phase 1a (conversational + arm/KILL bridge), Phase 1b (arm-aware tool-use), iOS chat+arm, and the
+Phase-4 web terminal are **built, deployed, and live-verified** on the rig. **Key deviation from §4:**
+the MCP tool-server was **not needed** — in the `claude -p` subprocess model, ARMED simply grants Claude
+the **Bash tool + `bypassPermissions`** and it operates the rig by calling the control API
+(`curl localhost:8088`); the control API's existing role/KILL/ownership gates are the camera safety
+boundary, and the arm gate + KILL + audit are the agent boundary. DISARMED = read-only advice (no shell).
+**Remaining (Zack-gated):** the live arm-and-move-the-camera water test, and the code-edit/deploy tier
+(needs a git checkout on the rig). See `.claude` memory `acting-agent-autonomous-build`.
+
 ## 1 · Goal
 
 Turn the read-only "Summon Claude" advisor into an **interactive agent that can fix things** on the
