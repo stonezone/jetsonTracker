@@ -246,6 +246,18 @@ class SensorsCfg:
 
 
 @dataclass
+class AgentCfg:
+    # Interactive acting-agent (Claude Code `claude -p`). enabled=False ⇒ the
+    # /agent/chat and /agent/arm routes report agent_disabled and core boots
+    # unaffected. arm_ttl_sec auto-disarms an idle armed session (supervise-only
+    # floor). model/mcp_config_path reserved for the acting-tools phase (1b+).
+    enabled: bool = False
+    model: str = ""
+    arm_ttl_sec: float = 600.0
+    mcp_config_path: str = ""
+
+
+@dataclass
 class Config:
     camera: CameraCfg
     ptz: PtzCfg
@@ -259,6 +271,7 @@ class Config:
     tracking: TrackingCfg = field(default_factory=TrackingCfg)
     estimator: EstimatorCfg = field(default_factory=EstimatorCfg)
     sensors: SensorsCfg = field(default_factory=SensorsCfg)
+    agent: AgentCfg = field(default_factory=AgentCfg)
     source_path: str = ""   # set by load_config; the rig yaml; empty in unit tests
 
 
@@ -289,6 +302,7 @@ def _apply_overlay(cfg: "Config", overlay_path: str) -> None:
         "tracking": "tracking",
         "estimator": "estimator",
         "sensors": "sensors",
+        "agent": "agent",
     }
     for section, kv in ov.items():
         if section not in _KNOWN_SECTIONS:
@@ -334,6 +348,7 @@ def load_config(path: str) -> Config:
         tracking=TrackingCfg(**{**TrackingCfg().__dict__, **_d(raw, "tracking", {})}),
         estimator=EstimatorCfg(**{**EstimatorCfg().__dict__, **_d(raw, "estimator", {})}),
         sensors=SensorsCfg(**{**SensorsCfg().__dict__, **_d(raw, "sensors", {})}),
+        agent=AgentCfg(**{**AgentCfg().__dict__, **_d(raw, "agent", {})}),
     )
 
     # Apply overlay (config.local.yaml) over the base config — rig-owned, deploy-safe.
