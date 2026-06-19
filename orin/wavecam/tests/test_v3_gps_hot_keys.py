@@ -6,7 +6,7 @@ HOT_CONFIG_KEYS / apply_hot_key. These lock that wiring in.
 """
 from types import SimpleNamespace
 
-from wavecam.config import GpsCfg, FusionCfg
+from wavecam.config import GpsCfg, FusionCfg, TrackingCfg
 from wavecam.control_config import ConfigManager
 from wavecam.control_utils import HOT_CONFIG_KEYS
 from wavecam.tracking_arbiter import TrackingArbiter
@@ -29,6 +29,7 @@ def _mgr():
     class FakeCfg:
         gps = gps_cfg
         fusion = fusion_cfg
+        tracking = TrackingCfg()
         ptz = SimpleNamespace()
         color = SimpleNamespace()
         detector = SimpleNamespace()
@@ -87,3 +88,26 @@ def test_drive_zoom_max_frac_range_rejected():
     mgr, _, _ = _mgr()
     assert mgr.apply_hot_key("gps.drive_zoom_max_frac", 1.5) is not None
     assert mgr.apply_hot_key("gps.drive_zoom_max_frac", -0.1) is not None
+
+
+def test_tracking_enabled_registered_in_hot_config_keys():
+    assert "tracking.enabled" in HOT_CONFIG_KEYS
+
+
+def test_tracking_enabled_hot_toggle_syncs_arbiter():
+    """DISABLE-PTZ latch: flipping tracking.enabled live must reach the running
+    arbiter so autonomous tracking stops/resumes without a restart."""
+    mgr, _, _ = _mgr()
+    cfg_tracking = mgr.pipeline.cfg.tracking
+    arbiter = mgr.pipeline.arbiter
+    assert cfg_tracking.enabled is True and arbiter.enabled is True
+    assert mgr.apply_hot_key("tracking.enabled", False) is None
+    assert cfg_tracking.enabled is False
+    assert arbiter.enabled is False  # synced to the live arbiter
+    assert mgr.apply_hot_key("tracking.enabled", True) is None
+    assert arbiter.enabled is True
+
+
+def test_tracking_enabled_rejects_non_bool():
+    mgr, _, _ = _mgr()
+    assert mgr.apply_hot_key("tracking.enabled", "yes") is not None

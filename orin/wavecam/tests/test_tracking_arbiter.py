@@ -193,6 +193,46 @@ def test_vision_only_mode_allows_vision_after_lock_hysteresis():
     assert d.search_roi is None
 
 
+# --- DISABLE-PTZ latch (tracking.enabled) ---
+
+def test_disabled_arbiter_idles_even_with_vision_lock_and_gps():
+    # tracking.enabled=False is the operator "DISABLE PTZ" latch: autonomous
+    # tracking must never claim the camera, so a manual aim stays put until
+    # re-enabled. The gate runs before any mode/lock logic.
+    a = TrackingArbiter(lock_frames=1, enabled=False)
+    d = a.decide(_vision(True, 0.95), gps_fresh=True, gps_calibrated=True,
+                 base_locked=True, now_sec=0.0, calibration_valid=True)
+    assert d.owner == "idle"
+    assert d.search_roi is None
+
+
+def test_disabled_arbiter_idles_in_every_mode():
+    for mode in ("gps_only", "vision_only", "auto"):
+        a = TrackingArbiter(lock_frames=1, mode=mode, enabled=False)
+        d = a.decide(_vision(True, 0.95), gps_fresh=True, gps_calibrated=True,
+                     base_locked=True, now_sec=0.0, calibration_valid=True)
+        assert d.owner == "idle", f"mode={mode} must idle when disabled"
+
+
+def test_reenabling_arbiter_resumes_tracking():
+    a = TrackingArbiter(lock_frames=1, enabled=False)
+    a.decide(_vision(True, 0.95), gps_fresh=True, gps_calibrated=True,
+             base_locked=True, now_sec=0.0, calibration_valid=True)
+    # Operator re-enables (hot-config flips the live attribute)
+    a.enabled = True
+    d = a.decide(_vision(True, 0.95), gps_fresh=True, gps_calibrated=True,
+                 base_locked=True, now_sec=0.1, calibration_valid=True)
+    assert d.owner == "vision_follow"
+
+
+def test_enabled_defaults_true_preserves_behavior():
+    a = TrackingArbiter()
+    assert a.enabled is True
+    d = a.decide(_vision(False), gps_fresh=True, gps_calibrated=True,
+                 base_locked=True, now_sec=0.0, calibration_valid=True)
+    assert d.owner == "gps_tracker"
+
+
 def test_just_locked_vision_survives_a_stale_gps_frame():
     # ARB-1: the GPS->idle short-circuit ran before vision-lock counting, so a single
     # stale-GPS frame blocked the GPS->vision handoff exactly when vision just locked.

@@ -77,6 +77,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
             },
             "tracking": {
                 "mode": getattr(getattr(cfg, "tracking", None), "mode", "auto"),
+                "enabled": getattr(getattr(cfg, "tracking", None), "enabled", True),
             },
             "color": {
                 "enabled": cfg.color.enabled,

@@ -47,11 +47,15 @@ class TrackingArbiter:
                  lock_frames: int = DEFAULT_LOCK_FRAMES,
                  grace_sec: float = DEFAULT_GRACE_SEC,
                  max_gps_age_sec: float = DEFAULT_MAX_GPS_AGE_SEC,
-                 mode: str = "auto"):
+                 mode: str = "auto",
+                 enabled: bool = True):
         self.lock_frames = lock_frames
         self.grace_sec = grace_sec
         self.max_gps_age_sec = max_gps_age_sec
         self.mode = mode
+        # Operator "DISABLE PTZ" latch (tracking.enabled). False = autonomous
+        # tracking never claims the camera, so a manual aim holds until re-enabled.
+        self.enabled = enabled
         self._consecutive_locked = 0
         self._last_locked_time: Optional[float] = None
         self._vision_owns = False  # True once vision takes over from GPS
@@ -89,6 +93,16 @@ class TrackingArbiter:
                 flags survive restart/cancel/KILL and are NOT sufficient for GPS
                 authority (audit 2026-06-13).
         """
+        # --- DISABLE-PTZ latch: autonomy off → idle every frame, regardless of
+        # mode/lock/GPS. Manual control is uncontested so a hand-aim holds until
+        # the operator re-enables. Reset hysteresis so a lock must be re-earned. ---
+        if not self.enabled:
+            self._vision_owns = False
+            self._consecutive_locked = 0
+            self._last_locked_time = None
+            self._last_owner = "idle"
+            return ArbiterDecision(owner="idle")
+
         # --- GPS viability (C1: base locked; C2: CURRENT calibration session valid
         # AND confirmed — persisted pose flags alone are NOT sufficient) ---
         gps_viable = (gps_fresh and gps_calibrated and base_locked

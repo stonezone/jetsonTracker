@@ -136,6 +136,7 @@ class Pipeline(threading.Thread):
             grace_sec=getattr(cfg.gps, "grace_sec", 1.0),
             max_gps_age_sec=getattr(cfg.gps, "drive_stale_sec", 8.0),
             mode=getattr(getattr(cfg, "tracking", None), "mode", "auto"),
+            enabled=getattr(getattr(cfg, "tracking", None), "enabled", True),
         )
         # CameraPose — loaded by calibration endpoint; uncalibrated by default
         from .camera_pose import CameraPose
@@ -675,6 +676,8 @@ class Pipeline(threading.Thread):
                                                        self.arbiter.grace_sec))
                 self.arbiter.mode = getattr(getattr(self.cfg, "tracking", None),
                                             "mode", "auto")
+                self.arbiter.enabled = getattr(getattr(self.cfg, "tracking", None),
+                                               "enabled", True)
                 decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
                                                base_locked, t0,
                                                calibration_valid=calibration_valid)
@@ -713,23 +716,24 @@ class Pipeline(threading.Thread):
                 if decision.owner != prev_state:
                     self._send_zoom("stop")
 
-                # Release outgoing autonomous owner BEFORE requesting new one.
-                # ptz_owner.request refuses cross-owner steals (idle→owner only).
+                # Hand off ownership atomically (OWN-1): transition() releases the
+                # old owner and claims the new one under one lock, so a manual claim
+                # can't slip into a transient idle gap. Only take over from idle or an
+                # arbiter-driven owner — never steal manual/calibrate/testbed.
                 _curr = self.owner.owner
                 _want = decision.owner
-                if _curr in ("vision_follow", "gps_tracker") and _curr != _want:
-                    self.owner.release(_curr)
+                _takeable = _curr in ("idle", "vision_follow", "gps_tracker")
 
                 if decision.owner == "vision_follow":
-                    if _curr != "vision_follow":
-                        self.owner.request("vision_follow")
+                    if _curr != "vision_follow" and _takeable:
+                        self.owner.transition(_curr, "vision_follow")
                     if self.owner.owner in ("vision_follow", "testbed"):
                         self._send_cmd(cmd)
                         zoom_cmd = self._maybe_send_cinematic_zoom(fr, h)
 
                 elif decision.owner == "gps_tracker":
-                    if _curr != "gps_tracker":
-                        self.owner.request("gps_tracker")
+                    if _curr != "gps_tracker" and _takeable:
+                        self.owner.transition(_curr, "gps_tracker")
                     # Only drive GPS if we actually own it (not blocked)
                     if self.owner.owner == "gps_tracker":
                         abs_cmd = self._gps_pointing_cmd(gps_fix, calibration_valid)

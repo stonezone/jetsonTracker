@@ -196,11 +196,18 @@ class GpsCfg:
     base_drift_interval_sec: float = 2.0
     base_drift_max_fix_age_sec: float = 10.0
     base_drift_min_sats: int = 0   # 0 = sats gate off (base sats not yet ingested)
+    # GPS-2: a base Wio reboot/wedge keeps the serial open but stops emitting lines.
+    # reader_alive() only checks the thread is up, so /health flags base_silent when
+    # the reader is alive but no fresh line has arrived for longer than this.
+    base_silent_sec: float = 30.0
 
 
 @dataclass
 class TrackingCfg:
     mode: str = "auto"  # "auto" | "gps_only" | "vision_only"
+    # Operator DISABLE-PTZ latch. False = autonomous tracking is off (arbiter
+    # idles every frame); a manual aim holds until the operator re-enables.
+    enabled: bool = True
 
 
 @dataclass

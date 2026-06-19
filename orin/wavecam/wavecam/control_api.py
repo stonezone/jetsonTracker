@@ -814,6 +814,18 @@ def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             age = gps.last_poll_age_sec() if callable(getattr(gps, "last_poll_age_sec", None)) else None
             snap["components"]["gps_reader"] = {"ok": bool(alive), "age_sec": age, "detail": {}}
             snap["ok"] = snap["ok"] and bool(alive)
+            # GPS-2: base-silent detection. The reader thread can be alive while the
+            # base Wio has rebooted/wedged and stopped emitting lines (last_poll_age
+            # grows without bound). reader_alive() can't see that, so surface it here.
+            silent_sec = float(getattr(getattr(getattr(api.pipeline, "cfg", None),
+                                               "gps", None), "base_silent_sec", 30.0))
+            base_silent = bool(alive) and (age is None or age > silent_sec)
+            snap["components"]["base_silent"] = {
+                "ok": not base_silent, "age_sec": age,
+                "detail": {"reader_alive": bool(alive), "threshold_sec": silent_sec},
+            }
+            if base_silent:
+                snap["ok"] = False
         recorder = getattr(api.pipeline, "recorder", None)
         rec_dir = getattr(getattr(recorder, "config", None), "rec_dir", None)
         if rec_dir is None:

@@ -103,7 +103,8 @@ input,select{width:100%;background:#0b1116;color:var(--text);border:1px solid va
     <div class=control data-key=ptz.cinematic_zoom_enabled><div class=check><label>Cinematic zoom <span class=value id=cinematicEnabled_v></span></label><input id=cinematicEnabled type=checkbox></div></div>
     <div class=control id=subjectSizeControl data-key=ptz.zoom_target_frac><label>Subject size <span class=value id=subjectSize_v></span></label><input id=subjectSize type=range min=.2 max=.8 step=.05></div>
   </div></div>
-  <div class="card feature" id=trackingModeCard><div class=title>TRACKING MODE <span class=tag>hot</span></div><div class=grid>
+  <div class="card feature" id=trackingModeCard><div class=title>TRACKING <span class=tag>hot</span></div><div class=grid>
+    <div class="control full" data-key=tracking.enabled><div class=check><label>Autonomous tracking <span class=value id=trackingEnabled_v></span></label><input id=trackingEnabled type=checkbox></div><div class=caption>Off = DISABLE PTZ: the camera holds your manual aim and tracking will not take over until you turn this back on.</div></div>
     <div class="control full" data-key=tracking.mode><label>Source <span class=value id=trackingMode_v></span></label><select id=trackingMode>
       <option value=auto>Auto (vision + GPS)</option>
       <option value=gps_only>GPS-only</option>
@@ -147,6 +148,7 @@ const defs=[
  {id:'jpegQuality',key:'web.jpeg_quality',path:['web','jpeg_quality'],type:'int'},
  {id:'cinematicEnabled',key:'ptz.cinematic_zoom_enabled',path:['ptz','cinematic_zoom_enabled'],type:'bool',feature:'cinematicCard'},
  {id:'subjectSize',key:'ptz.zoom_target_frac',path:['ptz','zoom_target_frac'],type:'float',digits:2,feature:'cinematicCard'},
+ {id:'trackingEnabled',key:'tracking.enabled',path:['tracking','enabled'],type:'bool',feature:'trackingModeCard'},
  {id:'trackingMode',key:'tracking.mode',path:['tracking','mode'],type:'select',feature:'trackingModeCard'},
  {id:'gpsBoost',key:'fusion.gps_boost',path:['fusion','gps_boost'],type:'float',digits:2,feature:'gpsTuneCard'},
  {id:'gpsStale',key:'gps.stale_threshold_sec',path:['gps','stale_threshold_sec'],type:'int',suffix:'s',feature:'gpsTuneCard'},

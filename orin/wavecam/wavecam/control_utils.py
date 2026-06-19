@@ -55,6 +55,7 @@ HOT_CONFIG_KEYS = (
     "gps.max_pan_speed",
     "gps.max_tilt_speed",
     "tracking.mode",
+    "tracking.enabled",
     "color.preset",
     "color.min_area",
     "color.max_area",

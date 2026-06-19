@@ -124,6 +124,7 @@ class ConfigManager:
             "gps.max_pan_speed": lambda: self.apply_gps_int("max_pan_speed", value, 1, 24, dry_run=dry_run),
             "gps.max_tilt_speed": lambda: self.apply_gps_int("max_tilt_speed", value, 1, 20, dry_run=dry_run),
             "tracking.mode": lambda: self.apply_tracking_mode(value, dry_run=dry_run),
+            "tracking.enabled": lambda: self.apply_tracking_enabled(value, dry_run=dry_run),
             "color.preset": lambda: self.apply_color_preset(value, dry_run=dry_run),
             "color.min_area": lambda: set_int(cfg.color, "min_area", value, 1, 500000, dry_run=dry_run),
             "color.max_area": lambda: set_int(cfg.color, "max_area", value, 100, 1000000, dry_run=dry_run),
@@ -260,12 +261,24 @@ class ConfigManager:
         self._sync_arbiter_from_tracking()
         return None
 
+    def apply_tracking_enabled(self, value: Any, dry_run: bool = False) -> str | None:
+        tracking_cfg = getattr(self.pipeline.cfg, "tracking", None)
+        if tracking_cfg is None:
+            return "tracking.enabled: tracking section not present in config."
+        err = set_bool(tracking_cfg, "enabled", value, dry_run=dry_run)
+        if err is not None:
+            return err
+        if not dry_run:
+            self._sync_arbiter_from_tracking()
+        return None
+
     def _sync_arbiter_from_tracking(self) -> None:
         arbiter = getattr(self.pipeline, "arbiter", None)
         tracking_cfg = getattr(self.pipeline.cfg, "tracking", None)
         if arbiter is None or tracking_cfg is None:
             return
         arbiter.mode = getattr(tracking_cfg, "mode", "auto")
+        arbiter.enabled = getattr(tracking_cfg, "enabled", True)
 
     # ------------------------------------------------------------------
     # Estimator config helpers

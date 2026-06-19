@@ -172,7 +172,7 @@ class DummyPipeline:
                 max_pan_speed=4,
                 max_tilt_speed=3,
             ),
-            tracking=types.SimpleNamespace(mode="auto"),
+            tracking=types.SimpleNamespace(mode="auto", enabled=True),
             estimator=types.SimpleNamespace(
                 shadow=True,
                 enabled=True,
@@ -224,6 +224,7 @@ def test_root_web_ui_exposes_live_ptz_gps_and_ios_parity_controls():
     assert "CINEMATIC ZOOM" in body
     assert "ptz.cinematic_zoom_enabled" in body
     assert "tracking.mode" in body
+    assert "tracking.enabled" in body  # DISABLE-PTZ latch toggle on the live web UI
     assert "gps.drive_zoom" in body
     assert "target_sats" in body
     assert "target_battery_mv" in body
@@ -238,6 +239,13 @@ def test_config_snapshot_exposes_v3_gps_keys():
         "drive_zoom_max_enc", "drive_zoom_max_frac", "gps_bearing_cue_enabled",
     ):
         assert key in body, f"{key} missing from /api/v1/config snapshot"
+
+
+def test_config_snapshot_exposes_tracking_enabled():
+    # DISABLE-PTZ latch: iOS/web feature-detect the toggle from /config, so the
+    # tracking.enabled flag must be visible in the snapshot, not just settable.
+    body = make_client().get("/api/v1/config").json()
+    assert body["current"]["tracking"]["enabled"] is True
 
 
 def test_health_emits_disk_component_when_recorder_missing():
