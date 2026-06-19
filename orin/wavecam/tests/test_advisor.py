@@ -212,6 +212,56 @@ def test_claude_non_auth_error_not_retried(tmp_path):
     assert "500" in report["error"]
 
 
+# ── claude_code provider (headless `claude -p` subprocess) ───────────────
+
+def test_claude_code_runs_cli_with_token_env(tmp_path, monkeypatch):
+    import wavecam.advisor as adv
+    calls = []
+
+    def fake_run(argv, env, timeout):
+        calls.append((argv, env, timeout))
+        return "wavecam agent online\n"
+
+    monkeypatch.setattr(adv, "_run_claude_cli", fake_run)
+    keys_path = _write_keys(tmp_path, claude_code_oauth_token="cco-secret")
+    svc = AdvisorService(_context, keys_path=keys_path)
+    svc.summon("claude_code")
+    report = _wait_done(svc)
+    assert report["status"] == "done"
+    assert report["text"] == "wavecam agent online"  # stdout trimmed
+
+    argv, env, _timeout = calls[0]
+    assert argv[0].endswith("claude") and argv[1] == "-p"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "cco-secret"
+    # the token must travel in the env, never on the command line (process list)
+    assert all("cco-secret" not in a for a in argv)
+
+
+def test_claude_code_cli_failure_is_reported(tmp_path, monkeypatch):
+    import wavecam.advisor as adv
+
+    def boom(argv, env, timeout):
+        raise RuntimeError("claude CLI exited 1: Not logged in")
+
+    monkeypatch.setattr(adv, "_run_claude_cli", boom)
+    svc = AdvisorService(_context,
+                         keys_path=_write_keys(tmp_path, claude_code_oauth_token="x"))
+    svc.summon("claude_code")
+    report = _wait_done(svc)
+    assert report["status"] == "error"
+    assert "Not logged in" in report["error"]
+
+
+def test_claude_code_missing_token_is_friendly_error(tmp_path, monkeypatch):
+    import wavecam.advisor as adv
+    monkeypatch.setattr(adv, "_run_claude_cli", lambda *a, **k: "should not run")
+    svc = AdvisorService(_context, keys_path=_write_keys(tmp_path))  # no claude_code token
+    svc.summon("claude_code")
+    report = _wait_done(svc)
+    assert report["status"] == "error"
+    assert "claude_code_oauth_token" in report["error"]
+
+
 # ── supervise-only invariants ────────────────────────────────────────────
 
 def test_no_tools_in_any_request(tmp_path):
@@ -298,4 +348,4 @@ def test_summon_returns_immediately(tmp_path):
 
 
 def test_provider_registry_complete():
-    assert set(PROVIDERS) == {"claude", "codex", "deepseek"}
+    assert set(PROVIDERS) == {"claude", "claude_code", "codex", "deepseek"}
