@@ -4,7 +4,7 @@ import SwiftUI
 struct AgentView: View {
     @Environment(WaveCamClient.self) private var client
     @State private var requestState: AgentRequestState = .idle
-    @State private var provider: AgentProvider = .claude
+    @State private var provider: AgentProvider = .claudeCode
     @State private var report: WCAgentReport?
     @State private var config: WCConfig?
     @State private var logLines: [WCLogLine] = []
@@ -106,11 +106,15 @@ struct AgentView: View {
 }
 
 enum AgentProvider: String, CaseIterable {
-    case claude, codex, deepseek
+    case claudeCode = "claude_code"
+    case claude
+    case codex
+    case deepseek
 
     var label: String {
         switch self {
-        case .claude: "Claude"
+        case .claudeCode: "Claude"
+        case .claude: "Claude (API)"
         case .codex: "Codex"
         case .deepseek: "DeepSeek"
         }
