@@ -64,7 +64,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 ### Live System Map
 
-- **`:8088`** = WaveCam control API (`/api/v1`) + the live tuning web page. This is the **ACTIVE tracker** the iOS app drives. Tools > Web points here.
+- **`:8088`** = WaveCam control API (`/api/v1`) + the live tuning web page (now incl. the **ASK CLAUDE** agent chat + arm toggle). This is the **ACTIVE tracker** the iOS app drives. Tools > Web points here.
 - **`https://wavecam.freddieland.com`** = same `:8088` UI/API exposed through the Cloudflare `robot-core` tunnel (Google Auth + Access policy, `zackjordan@gmail.com` only).
 - **`:8080`** = retired legacy Dash service. It should stay stopped/disabled; do not re-enable it.
 - **`:8765` / `ws.stonezone.net`** = retired Apple Watch/iPhone Cloudflare GPS relay. `gps-server.service` is disabled and the tunnel ingress was removed.
@@ -128,8 +128,8 @@ python3 .agent-collab/bin/collab.py claim-open --from claude --scope <path> --mo
 
 - All code changes committed to this master repo (stage files explicitly; never `git add -A`)
 - Vision must maintain 30+ FPS
-- The agent/supervisor is **SUPERVISE-ONLY** — it never autonomously moves the camera
-- Emergency Stop / KILL must stay reachable in the iOS app at all times
+- The agent is **supervise-only by default**; an **operator-only ARM toggle** (default OFF, TTL auto-expire, KILL-disarmed) grants it a shell to act via the control API — it never moves the camera *unattended*. Spec: `docs/superpowers/specs/2026-06-19-acting-agent-design.md`; memory `acting-agent-autonomous-build`.
+- Emergency Stop / KILL must stay reachable in the iOS app at all times — **KILL is human-only and supreme** (never an agent capability; it disarms the agent + stops motion)
 - iOS must work in **both portrait and landscape** (tripod-bracket mount)
 - Confirm the live deploy before telling Zack a feature is "live"
 
@@ -151,7 +151,7 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - Don't skip tests
 - Don't create features without searching memories for existing patterns
 - Don't end a session without saving key learnings
-- Don't let the agent/automation move the camera without the supervise-only gate + a reachable Emergency Stop
+- Don't let the agent move the camera without the **operator ARM gate** + a reachable KILL; KILL stays human-only (never an agent tool)
 - Don't edit backend code or deploy to the Orin without Zack's assignment + a bus claim first (Codex's primary lane); don't `git push` to remote
 
 ## Gotchas (hard-won — 2026-06-05, expanded 2026-06-12)
