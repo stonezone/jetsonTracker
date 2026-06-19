@@ -1141,6 +1141,20 @@ def test_legacy_kill_runs_full_safety_sequence():
     assert api._calibration._session["active"] is False  # session cancelled (v1 parity)
 
 
+def test_legacy_ptz_stop_holds_against_autonomous_owner():
+    # Codex review (PR #113): legacy /ptz/stop must actually stop autonomous control,
+    # not send one stop the next frame overrides. hold=True (v1 parity) grabs a sticky
+    # manual hold so a vision/gps owner is displaced and can't be reclaimed.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("vision_follow")
+
+    response = client.post("/ptz/stop", json={})
+
+    assert response.status_code == 200
+    assert pipe.owner.owner == "manual"  # autonomous displaced, sticky-held
+
+
 def test_legacy_ptz_stop_preserves_calibrate_session():
     # H3: legacy /ptz/stop must not silently drop a CALIBRATE session. It used to
     # release whatever owner held the camera (including calibrate).

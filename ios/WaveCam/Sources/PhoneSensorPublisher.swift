@@ -55,11 +55,16 @@ final class PhoneSensorPublisher: NSObject {
     /// driven by actual POST outcome, not the status-poll `connected` flag, which
     /// could wedge the feed when a transient /status read failed (2026-06-16).
     private static let sensorIdleGrace: TimeInterval = 30
+    // Force a heading stream restart only after this long without a callback, so the
+    // recovery in publish() can't thrash stop→start every tick (which never lets the
+    // compass settle). ~3 publish ticks.
+    private static let headingStaleRestartSec: TimeInterval = 3.0
 
     // Latest sensor snapshots (written from callbacks, read on publish timer).
     // All callbacks and the timer run on MainActor so no explicit lock needed.
     private var latestHeadingDeg: Double? = nil
     private var latestHeadingAcc: Double = -1   // default: invalid
+    private var lastHeadingAt: Date? = nil      // last didUpdateHeading; drives stale-restart
     private var latestLat: Double? = nil
     private var latestLon: Double? = nil
     private var latestHAcc: Double? = nil
@@ -137,6 +142,7 @@ final class PhoneSensorPublisher: NSObject {
         // considers heading "updating" but stopped delivering; stop→start forces a fresh start.
         locationManager.stopUpdatingHeading()
         locationManager.startUpdatingHeading()
+        lastHeadingAt = Date()   // seed the staleness clock at (re)start
     }
 
     // MARK: - Altimeter
@@ -214,11 +220,15 @@ final class PhoneSensorPublisher: NSObject {
 
         // Heading can silently STOP delivering after a magnetometer disturbance or a
         // background cycle while the location stream keeps flowing (observed: GPS keeps
-        // updating, compass goes stale). Re-assert it each tick — idempotent if already
-        // running, a restart if it dropped. This is the robustness the proven
-        // gps-relay-framework relies on (it re-calls startUpdatingHeading continuously).
-        if sensorsActive, CLLocationManager.headingAvailable() {
-            locationManager.startUpdatingHeading()
+        // updating, compass goes stale). Recover only once it has actually gone STALE —
+        // a bare startUpdatingHeading() is a no-op when CoreLocation still thinks heading
+        // is active, so force startHeading()'s stop→start. Gating on staleness avoids
+        // thrashing stop→start every tick, which would never let the compass settle
+        // (Codex review, PR #113).
+        if sensorsActive, CLLocationManager.headingAvailable(),
+           let last = lastHeadingAt,
+           Date().timeIntervalSince(last) > Self.headingStaleRestartSec {
+            startHeading()
         }
 
         var body: [String: Any] = ["bump": bumpPending]
@@ -268,6 +278,7 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
             let mag = newHeading.magneticHeading
             self.latestHeadingDeg = mag.isNaN ? nil : mag
             self.latestHeadingAcc = newHeading.headingAccuracy
+            self.lastHeadingAt = Date()   // fresh callback — heading stream is alive
             // trueHeading < 0 means no magnetic calibration yet — treat as absent.
             self.latestTrueHeadingDeg = newHeading.trueHeading >= 0 ? newHeading.trueHeading : nil
         }

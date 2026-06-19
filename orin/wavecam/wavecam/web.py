@@ -512,11 +512,14 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/ptz/stop", dependencies=[Depends(require(PTZ))])
     def ptz_stop():
-        # STOP via the same calibrate-safe path as /api/v1/ptz/stop: halt pan/tilt
-        # + zoom, cancel stale deadman timers, release a manual owner — but do NOT
-        # blindly drop a CALIBRATE session, and do not clear the kill latch.
+        # STOP via the same calibrate-safe path as /api/v1/ptz/stop. hold=True to
+        # match v1's default (PtzStopRequest.hold): a legacy STOP must actually halt
+        # autonomous control — grab a sticky manual hold so the arbiter can't reclaim
+        # the camera on the next frame (hold=False only released a manual owner, so a
+        # vision/gps owner kept driving). CALIBRATE is preserved (the manual request
+        # fails while calibrate owns); the kill latch is untouched.
         api = app.state.control_api
-        api.stop_ptz(hold=False)
+        api.stop_ptz(hold=True)
         api.bump_revision()
         return {"ok": True, "owner": pipeline.owner.owner}
 
