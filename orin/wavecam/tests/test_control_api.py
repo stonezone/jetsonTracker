@@ -256,6 +256,18 @@ def test_agent_arm_then_kill_clears(monkeypatch):
     assert client.get("/api/v1/status").json()["agent"]["armed"] is False  # KILL disarmed
 
 
+def test_agent_resume_clears_kill_allows_rearm(monkeypatch):
+    _stub_claude(monkeypatch)
+    client = TestClient(build_app(_agent_pipe(True)))
+    client.post("/api/v1/agent/arm", json={"armed": True})
+    client.post("/api/v1/safety/kill")
+    assert client.get("/api/v1/status").json()["agent"]["killed"] is True
+    client.post("/api/v1/safety/resume")
+    after = client.get("/api/v1/status").json()["agent"]
+    assert after["killed"] is False   # resume cleared the agent KILL latch
+    assert client.post("/api/v1/agent/arm", json={"armed": True}).json()["armed"] is True
+
+
 def test_supported_agent_reflects_enabled():
     on = TestClient(build_app(_agent_pipe(True))).get("/api/v1/config").json()
     off = TestClient(build_app(_agent_pipe(False))).get("/api/v1/config").json()

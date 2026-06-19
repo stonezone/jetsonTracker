@@ -1057,6 +1057,7 @@ class ControlApiAdapter:
             if self.pipeline.owner.owner != IDLE:
                 self.pipeline.owner.release(self.pipeline.owner.owner)
             self.pipeline.state.set_status(killed=False, state="SEARCHING")
+        self._system.agent_resume()   # clear the agent KILL latch so it can be re-armed
 
     # --- PTZ delegation stubs (behavior lives in PtzDispatcher) ---
 

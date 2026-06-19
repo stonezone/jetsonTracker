@@ -153,6 +153,12 @@ class SystemManager:
         if self._agent_arm is not None:
             self._agent_arm.kill()
 
+    def agent_resume(self) -> None:
+        """RESUME path hook — clear the agent KILL latch so it can be re-armed.
+        Stays disarmed; arming is always an explicit operator action afterward."""
+        if self._agent_arm is not None:
+            self._agent_arm.clear_kill()
+
     def agent_arm_snapshot(self) -> dict:
         if self._agent_arm is None:
             return {"armed": False, "killed": False, "enabled": False}
