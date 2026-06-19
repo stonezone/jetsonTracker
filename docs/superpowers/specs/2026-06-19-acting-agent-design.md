@@ -92,6 +92,14 @@ re-implement an agent loop.
 - **Pass →** proceed. **Fail →** surface to Zack with options (e.g. persistent stream-json subprocess
   with injected turns) before building Phase 1.
 
+**Result (2026-06-19): PASSED.** (1) `claude -p --resume <sid>` recalled a codeword across two
+separate `-p` invocations. (2) the **gating mechanism** is real — `--disallowedTools Bash` → `BLOCKED`
+(command did not run); `--allowedTools Bash --permission-mode bypassPermissions` executed and returned
+output with no interactive hang. (MCP-tool-name restriction, `mcp__wavecam__*`, verified at Phase-1
+build once the server exists.) **Impl note:** `--allowedTools`/`--disallowedTools` are *variadic* —
+pass the operator prompt via **stdin**, not as a trailing positional, or it gets consumed as tool
+names.
+
 ## 4 · Components (SRP — one purpose each)
 
 - **`agent_mcp_server.py`** *(new, backend)* — WaveCam ops exposed as MCP tools. Calls `SystemManager`
