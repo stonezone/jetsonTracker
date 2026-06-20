@@ -76,21 +76,6 @@ REFRESH_REPLY = json.dumps(
 
 # ── request shaping ──────────────────────────────────────────────────────
 
-def test_claude_request_shape(tmp_path):
-    svc, calls = _service(tmp_path, CLAUDE_REPLY)
-    assert svc.summon("claude")[0]
-    report = _wait_done(svc)
-    url, headers, body = calls[0]
-    assert url == "https://api.anthropic.com/v1/messages"
-    # OAuth ONLY: bearer token + the oauth beta header, never x-api-key.
-    assert headers["Authorization"].startswith("Bearer sk-ant-oat01")
-    assert headers["anthropic-beta"] == "oauth-2025-04-20"
-    assert "x-api-key" not in {k.lower() for k in headers}
-    assert body["model"] == "claude-opus-4-8"
-    assert body["system"] == SYSTEM_PROMPT
-    assert report["text"] == "HEALTHY — all good."
-
-
 def test_codex_request_shape(tmp_path):
     svc, calls = _service(tmp_path, CODEX_SSE_REPLY)
     assert svc.summon("codex")[0]
@@ -163,13 +148,62 @@ def test_codex_non_auth_error_not_retried(tmp_path):
     assert "500" in report["error"]
 
 
+# ── claude_code provider (headless `claude -p` subprocess) ───────────────
+
+def test_claude_code_runs_cli_with_token_env(tmp_path, monkeypatch):
+    import wavecam.advisor as adv
+    calls = []
+
+    def fake_run(argv, env, timeout):
+        calls.append((argv, env, timeout))
+        return "wavecam agent online\n"
+
+    monkeypatch.setattr(adv, "_run_claude_cli", fake_run)
+    keys_path = _write_keys(tmp_path, claude_code_oauth_token="cco-secret")
+    svc = AdvisorService(_context, keys_path=keys_path)
+    svc.summon("claude_code")
+    report = _wait_done(svc)
+    assert report["status"] == "done"
+    assert report["text"] == "wavecam agent online"  # stdout trimmed
+
+    argv, env, _timeout = calls[0]
+    assert argv[0].endswith("claude") and argv[1] == "-p"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "cco-secret"
+    # the token must travel in the env, never on the command line (process list)
+    assert all("cco-secret" not in a for a in argv)
+
+
+def test_claude_code_cli_failure_is_reported(tmp_path, monkeypatch):
+    import wavecam.advisor as adv
+
+    def boom(argv, env, timeout):
+        raise RuntimeError("claude CLI exited 1: Not logged in")
+
+    monkeypatch.setattr(adv, "_run_claude_cli", boom)
+    svc = AdvisorService(_context,
+                         keys_path=_write_keys(tmp_path, claude_code_oauth_token="x"))
+    svc.summon("claude_code")
+    report = _wait_done(svc)
+    assert report["status"] == "error"
+    assert "Not logged in" in report["error"]
+
+
+def test_claude_code_missing_token_is_friendly_error(tmp_path, monkeypatch):
+    import wavecam.advisor as adv
+    monkeypatch.setattr(adv, "_run_claude_cli", lambda *a, **k: "should not run")
+    svc = AdvisorService(_context, keys_path=_write_keys(tmp_path))  # no claude_code token
+    svc.summon("claude_code")
+    report = _wait_done(svc)
+    assert report["status"] == "error"
+    assert "claude_code_oauth_token" in report["error"]
+
+
 # ── supervise-only invariants ────────────────────────────────────────────
 
 def test_no_tools_in_any_request(tmp_path):
     """The advisor must never offer the model tools — supervise-only is
     structural, not just prompted."""
-    for provider, reply in [("claude", CLAUDE_REPLY),
-                            ("codex", CODEX_SSE_REPLY),
+    for provider, reply in [("codex", CODEX_SSE_REPLY),
                             ("deepseek", CHAT_REPLY)]:
         svc, calls = _service(tmp_path, reply)
         svc.summon(provider)
@@ -179,8 +213,8 @@ def test_no_tools_in_any_request(tmp_path):
 
 
 def test_events_truncated_in_prompt(tmp_path):
-    svc, calls = _service(tmp_path, CLAUDE_REPLY)
-    svc.summon("claude")
+    svc, calls = _service(tmp_path, CHAT_REPLY)
+    svc.summon("deepseek")
     _wait_done(svc)
     prompt = calls[0][2]["messages"][0]["content"]
     assert prompt.count('"kind": "lock"') <= 30
@@ -189,7 +223,7 @@ def test_events_truncated_in_prompt(tmp_path):
 # ── state machine ────────────────────────────────────────────────────────
 
 def test_unknown_provider_refused(tmp_path):
-    svc, _ = _service(tmp_path, CLAUDE_REPLY)
+    svc, _ = _service(tmp_path, CHAT_REPLY)
     ok, msg = svc.summon("skynet")
     assert not ok and "skynet" in msg
 
@@ -199,11 +233,11 @@ def test_second_summon_refused_while_running(tmp_path):
 
     def slow_post(url, headers, body, timeout=0):
         gate.wait(2.0)
-        return CLAUDE_REPLY
+        return CHAT_REPLY
 
     svc = AdvisorService(_context, keys_path=_write_keys(tmp_path),
                          post_fn=slow_post)
-    assert svc.summon("claude")[0]
+    assert svc.summon("deepseek")[0]
     ok, msg = svc.summon("deepseek")
     assert not ok and "already running" in msg
     gate.set()
@@ -218,7 +252,7 @@ def test_provider_error_reported_not_raised(tmp_path):
 
     svc = AdvisorService(_context, keys_path=_write_keys(tmp_path),
                          post_fn=bad_post)
-    svc.summon("claude")
+    svc.summon("deepseek")
     report = _wait_done(svc)
     assert report["status"] == "error"
     assert "429" in report["error"]
@@ -226,8 +260,8 @@ def test_provider_error_reported_not_raised(tmp_path):
 
 def test_missing_keys_file_is_friendly_error(tmp_path):
     svc = AdvisorService(_context, keys_path=str(tmp_path / "nope.json"),
-                         post_fn=lambda *a, **k: CLAUDE_REPLY)
-    svc.summon("claude")
+                         post_fn=lambda *a, **k: CHAT_REPLY)
+    svc.summon("deepseek")
     report = _wait_done(svc)
     assert report["status"] == "error"
     assert "keys file missing" in report["error"]
@@ -237,16 +271,16 @@ def test_summon_returns_immediately(tmp_path):
     """The request thread must never wait on the provider (2026-06-08 rule)."""
     def slow_post(url, headers, body, timeout=0):
         time.sleep(0.5)
-        return CLAUDE_REPLY
+        return CHAT_REPLY
 
     svc = AdvisorService(_context, keys_path=_write_keys(tmp_path),
                          post_fn=slow_post)
     t0 = time.time()
-    svc.summon("claude")
+    svc.summon("deepseek")
     assert time.time() - t0 < 0.1
     assert svc.report()["status"] == "running"
     _wait_done(svc)
 
 
 def test_provider_registry_complete():
-    assert set(PROVIDERS) == {"claude", "codex", "deepseek"}
+    assert set(PROVIDERS) == {"claude_code", "codex", "deepseek"}

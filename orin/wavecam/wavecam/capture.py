@@ -60,6 +60,11 @@ class FrameGrabber(threading.Thread):
             ok, frame = cap.read()
             if not ok or frame is None:
                 self._connected = False
+                # Drop the stale frame so read() returns None on disconnect; the pipeline's
+                # `if frame is None` guard then goes NO_VIDEO instead of running YOLO +
+                # tracking on a frozen frame until RTSP reconnects (CAP-1).
+                with self._lock:
+                    self._latest = None
                 cap.release()
                 cap = None
                 time.sleep(self.cfg.reconnect_sec)
@@ -77,6 +82,12 @@ class FrameGrabber(threading.Thread):
     @property
     def connected(self) -> bool:
         return self._connected
+
+    @property
+    def frames(self) -> int:
+        """Total frames captured. A wedged grabber returns the same non-None frame
+        from read() while this stops advancing — the zombie-detection signal."""
+        return self._frames
 
     def stop(self) -> None:
         self._stop.set()

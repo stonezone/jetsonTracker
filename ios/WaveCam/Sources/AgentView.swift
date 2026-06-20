@@ -4,12 +4,15 @@ import SwiftUI
 struct AgentView: View {
     @Environment(WaveCamClient.self) private var client
     @State private var requestState: AgentRequestState = .idle
-    @State private var provider: AgentProvider = .claude
+    @State private var provider: AgentProvider = .claudeCode
     @State private var report: WCAgentReport?
     @State private var config: WCConfig?
     @State private var logLines: [WCLogLine] = []
     @State private var logLevel: LogLevelFilter = .all
     @State private var logsLoading = false
+    @State private var showChat = false
+
+    private var agentSupported: Bool { config?.supported?.agent == true || client.mode == .mock }
 
     var body: some View {
         ScrollView {
@@ -17,6 +20,11 @@ struct AgentView: View {
                 AgentStatusHeader(status: client.status)
                 SupervisorHealthCard(services: serviceRows)
                 AgentAuthorityCard()
+                if agentSupported {
+                    AskClaudeCard(unread: client.agentChatLog.count,
+                                  armed: client.agentArmed && !client.killed,
+                                  onOpen: { showChat = true })
+                }
                 AgentRequestCard(state: requestState, provider: $provider,
                                  onSummon: summonDiagnostics)
                 if let r = report {
@@ -46,6 +54,10 @@ struct AgentView: View {
         }
         .onChange(of: logLevel) {
             Task { await loadLogs() }
+        }
+        .fullScreenCover(isPresented: $showChat) {
+            AgentChatView(providers: config?.supported?.agentProviders)
+                .environment(client)
         }
     }
 
@@ -105,14 +117,49 @@ struct AgentView: View {
     }
 }
 
+// MARK: - Ask Claude entry card (chat lives full-screen in AgentChatView)
+
+private struct AskClaudeCard: View {
+    let unread: Int
+    let armed: Bool
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            OperatorCard {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        OperatorSectionLabel("Ask Claude")
+                        Text(armed ? "ARMED — Claude can act on the rig"
+                                   : (unread > 0 ? "\(unread) message\(unread == 1 ? "" : "s") in the thread"
+                                                 : "Chat about status, calibration, setup"))
+                            .font(.system(size: 12))
+                            .foregroundStyle(armed ? WC.warn : WC.muted)
+                    }
+                    Spacer()
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(WC.accent)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open the Claude chat")
+    }
+}
+
 enum AgentProvider: String, CaseIterable {
-    case claude, codex, deepseek
+    case claudeCode = "claude_code"
+    case deepseek
+    case glm
+    case kimi
 
     var label: String {
         switch self {
-        case .claude: "Claude"
-        case .codex: "Codex"
+        case .claudeCode: "Claude"
         case .deepseek: "DeepSeek"
+        case .glm: "GLM"
+        case .kimi: "Kimi"
         }
     }
 }

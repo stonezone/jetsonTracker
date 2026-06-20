@@ -1,4 +1,3 @@
-import CoreMotion
 import SwiftUI
 
 // MARK: - Wizard root
@@ -28,11 +27,6 @@ struct CalibrateView: View {
     @State private var headingPreviewPending = false   // preview shown, awaiting tap-accept
     @State private var headingBearingDeg: Double? = nil
     @State private var headingDistanceM: Double? = nil
-
-    // Level sub-state — populated from CMMotionManager while on the level step
-    @State private var levelRoll: Double = 0.0
-    @State private var levelPitch: Double = 0.0
-    @State private var motionManager = CMMotionManager()
 
     // Legacy (checklist-only) state — preserved from the original CalibrateView
     @State private var activeStepID = LegacyStep.preflight.id
@@ -69,9 +63,6 @@ struct CalibrateView: View {
             await client.refresh()
             await probeSessionEndpoint()
         }
-        .onDisappear {
-            motionManager.stopDeviceMotionUpdates()
-        }
     }
 
     // MARK: - Wizard body (PR #88)
@@ -87,16 +78,6 @@ struct CalibrateView: View {
                 isInFlight: isInFlight,
                 refusalMessage: refusalMessage,
                 onCapture: lockLocation,
-                onDismissRefusal: dismissRefusal
-            )
-        case .level:
-            LevelCard(
-                roll: levelRoll,
-                pitch: levelPitch,
-                sessionState: sessionState,
-                isInFlight: isInFlight,
-                refusalMessage: refusalMessage,
-                onCheck: checkLevel,
                 onDismissRefusal: dismissRefusal
             )
         case .heading:
@@ -218,31 +199,10 @@ struct CalibrateView: View {
             switch result {
             case let .success(state):
                 sessionState = state
-                startMotionUpdates()
-                wizardStep = .level
-            case let .failure(error):
-                refusalMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func checkLevel() {
-        guard !isInFlight else { return }
-        Task {
-            isInFlight = true
-            refusalMessage = nil
-            let result = await client.calibrateLevel(rollDeg: levelRoll, pitchDeg: levelPitch)
-            isInFlight = false
-            switch result {
-            case let .success(state):
-                sessionState = state
-                stopMotionUpdates()
-                if state.session?.level?.passed == true {
-                    wizardStep = .heading
-                } else {
-                    let tilt = state.session?.level?.tiltMagDeg ?? 0
-                    refusalMessage = String(format: "Tripod not level — tilt %.1f°. Adjust and re-check.", tilt)
-                }
+                // Level step removed 2026-06-17: the rig-phone mounts off the camera and on
+                // its side, so it can't sense pan-axis tilt. Operator levels by hand; go
+                // straight to heading. (Backend no longer requires a level check.)
+                wizardStep = .heading
             case let .failure(error):
                 refusalMessage = error.localizedDescription
             }
@@ -356,33 +316,24 @@ struct CalibrateView: View {
             isInFlight = true
             let result = await client.calibrateSessionExit()
             isInFlight = false
-            if case let .success(state) = result { sessionState = state }
-            wizardStep = .idle
-            headingPreviewPending = false
-            headingBearingDeg = nil
-            headingDistanceM = nil
-            refusalMessage = nil
+            switch result {
+            case let .success(state):
+                sessionState = state
+                wizardStep = .idle
+                headingPreviewPending = false
+                headingBearingDeg = nil
+                headingDistanceM = nil
+                refusalMessage = nil
+            case let .failure(error):
+                // Exit POST failed — the backend may still hold the calibrate PTZ
+                // lockout. Keep the wizard open and surface the error so the operator
+                // doesn't believe calibration exited while it is still active.
+                refusalMessage = error.localizedDescription
+            }
         }
     }
 
     private func dismissRefusal() { refusalMessage = nil }
-
-    // MARK: - Motion
-
-    private func startMotionUpdates() {
-        guard motionManager.isDeviceMotionAvailable else { return }
-        motionManager.deviceMotionUpdateInterval = 0.25
-        motionManager.startDeviceMotionUpdates(to: .main) { motion, _ in
-            guard let m = motion else { return }
-            // Gravity-vector tilt — valid when the phone is rigidly mounted on the tripod.
-            levelRoll = m.gravity.x * 90.0
-            levelPitch = m.gravity.y * 90.0
-        }
-    }
-
-    private func stopMotionUpdates() {
-        motionManager.stopDeviceMotionUpdates()
-    }
 
     // MARK: - Legacy capture (preserved from original CalibrateView)
 
@@ -431,7 +382,7 @@ struct CalibrateView: View {
 // MARK: - Wizard steps enum
 
 private enum WizardStep {
-    case idle, location, level, heading, validation, confirm, done
+    case idle, location, heading, validation, confirm, done
 }
 
 // MARK: - Wizard cards
@@ -501,7 +452,7 @@ private struct LocationCard: View {
     var body: some View {
         GlassCard(cornerRadius: WCRadius.lg, padding: WCSpace.md) {
             VStack(alignment: .leading, spacing: WCSpace.md) {
-                calHeaderRow(icon: "location.fill", title: "STEP 1 OF 4", subtitle: "Lock base location")
+                calHeaderRow(icon: "location.fill", title: "STEP 1 OF 3", subtitle: "Lock base location")
 
                 Text("Averages the base Wio GPS fixes and applies an HDOP×UERE error-radius model (realistic ~2–15 m estimate, not just sample noise). The lever-arm offset (antenna → camera origin) is subtracted automatically.")
                     .font(WCFont.body)
@@ -547,63 +498,6 @@ private struct LocationResultRow: View {
     }
 }
 
-private struct LevelCard: View {
-    let roll: Double
-    let pitch: Double
-    let sessionState: WCCalibrationSessionState?
-    let isInFlight: Bool
-    let refusalMessage: String?
-    let onCheck: () -> Void
-    let onDismissRefusal: () -> Void
-
-    private var tiltMag: Double { max(abs(roll), abs(pitch)) }
-
-    var body: some View {
-        GlassCard(cornerRadius: WCRadius.lg, padding: WCSpace.md) {
-            VStack(alignment: .leading, spacing: WCSpace.md) {
-                calHeaderRow(icon: "level", title: "STEP 2 OF 4", subtitle: "Level check")
-
-                Text("The pan axis must be level within 0.5° — a 2° tilt creates a sinusoidal azimuth error a single heading offset can't correct. Use a bubble level on the tripod head or read the iPhone values below (requires the phone to be rigidly mounted).")
-                    .font(WCFont.body)
-                    .foregroundStyle(WC.muted)
-                    .lineSpacing(4)
-
-                HStack(spacing: WCSpace.sm) {
-                    tiltMetric(label: "ROLL", value: roll)
-                    tiltMetric(label: "PITCH", value: pitch)
-                    tiltMetric(label: "MAX", value: tiltMag)
-                }
-
-                calRefusalRow(refusalMessage, onDismiss: onDismissRefusal)
-
-                GlassButton(
-                    label: isInFlight ? "Checking…" : "Check level",
-                    icon: "level",
-                    role: .normal,
-                    disabled: isInFlight,
-                    action: onCheck
-                )
-            }
-        }
-    }
-
-    private func tiltMetric(label: String, value: Double) -> some View {
-        let color: Color = {
-            let mag = abs(value)
-            if mag <= 0.3 { return WC.ok }
-            if mag <= 0.5 { return WC.warn }
-            return WC.kill
-        }()
-        return OperatorMetric(
-            label: label,
-            value: String(format: "%.2f°", value),
-            tint: color,
-            cornerRadius: WCRadius.sm,
-            uppercaseValue: false
-        )
-    }
-}
-
 private struct HeadingCard: View {
     let gpsBearingDeg: Double?
     let gpsDistanceM: Double?
@@ -621,7 +515,7 @@ private struct HeadingCard: View {
     var body: some View {
         GlassCard(cornerRadius: WCRadius.lg, padding: WCSpace.md) {
             VStack(alignment: .leading, spacing: WCSpace.md) {
-                calHeaderRow(icon: "safari.fill", title: "STEP 3 OF 4", subtitle: "Capture heading")
+                calHeaderRow(icon: "safari.fill", title: "STEP 2 OF 3", subtitle: "Capture heading")
 
                 if previewPending {
                     previewPanel
@@ -709,7 +603,7 @@ private struct ValidationCard: View {
     var body: some View {
         GlassCard(cornerRadius: WCRadius.lg, padding: WCSpace.md) {
             VStack(alignment: .leading, spacing: WCSpace.md) {
-                calHeaderRow(icon: "checkmark.seal", title: "STEP 4A OF 4", subtitle: "Validation check")
+                calHeaderRow(icon: "checkmark.seal", title: "STEP 3A OF 3", subtitle: "Validation check")
 
                 Text("Aim at a DIFFERENT stationary landmark (independent of the heading capture). The backend predicts where it should be and shows the miss. This is the guard against a confidently-wrong calibration.")
                     .font(WCFont.body)
@@ -753,7 +647,7 @@ private struct ConfirmCard: View {
     var body: some View {
         GlassCard(cornerRadius: WCRadius.lg, padding: WCSpace.md) {
             VStack(alignment: .leading, spacing: WCSpace.md) {
-                calHeaderRow(icon: "checkmark.seal.fill", title: "STEP 4B OF 4", subtitle: "Confirm validation")
+                calHeaderRow(icon: "checkmark.seal.fill", title: "STEP 3B OF 3", subtitle: "Confirm validation")
 
                 if let v = validation {
                     VStack(alignment: .leading, spacing: WCSpace.xs) {

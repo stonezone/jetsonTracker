@@ -51,6 +51,7 @@ struct TuneView: View {
     // TRACKING MODE (feature-detected; appears once the GPS-only-mode backend is deployed)
     @State private var trackingModeAvailable = false
     @State private var trackingMode: String = "auto"
+    @State private var trackingEnabled = true
 
     // PRESETS feature state
     @State private var presetsSupported = false
@@ -112,17 +113,22 @@ struct TuneView: View {
 
                 OperatorCard(title: "DETECTION") {
                     sliderRow("YOLO confidence", value: $conf, range: 0.05...0.95, step: 0.05, readout: fmt(conf), key: "detector.conf")
+                    if let n = everyN {
+                        OperatorDivider()
+                        sliderRow("YOLO every N frames", value: Binding(get: { Double(n) }, set: { everyN = Int($0) }),
+                                  range: 1...30, step: 1, readout: "\(n)", key: "detector.every_n", isInt: true)
+                        tuneCaption("Run the heavy detector every Nth frame; color + tracking fill the gaps to hold 30+ FPS. Raise if FPS drops; lower (1–2) for a snappier lock.")
+                    }
                     OperatorDivider()
                     toggleRow("Require YOLO person", isOn: $requirePerson, key: "fusion.require_person")
                     tuneCaption("Off: track the color cue even when YOLO can't make out a person — best when you're far offshore. On: only lock onto a confirmed person (you'll lose lock at distance).")
-                    OperatorDivider()
-                    toggleRow("Show detection mask", isOn: $showMask, key: "web.show_mask")
-                    if let hud = showHud {
-                        OperatorDivider()
-                        toggleRow("Show debug HUD", isOn: Binding(get: { hud }, set: { showHud = $0 }), key: "web.show_hud")
-                        tuneCaption("The on-video readout (confidence, lock, FPS). Off = a clean picture for filming; on = diagnostics while tuning.")
-                    }
                 }
+
+                // LOCK (acquire/release hysteresis + color↔person match) — next in the pipeline.
+                lockCard
+
+                // COLOR (blob size + mask cleanup) — refines what the color cue accepts.
+                colorCard
 
                 OperatorCard(title: "MOTION") {
                     sliderRow("Max pan speed", value: $maxPan, range: 1...24, step: 1, readout: "\(Int(maxPan))", key: "ptz.max_pan_speed", isInt: true)
@@ -133,6 +139,9 @@ struct TuneView: View {
                     OperatorDivider()
                     sliderRow("Feed-forward gain", value: $ffGain, range: 0.0...1.0, step: 0.05, readout: fmt(ffGain), key: "ptz.ff_gain")
                 }
+
+                // MOTION ADVANCED (ff mult, min speed, command interval, invert, jpeg).
+                advancedMotionCard
 
                 if cinematicAvailable {
                     OperatorCard(title: "CINEMATIC ZOOM") {
@@ -145,17 +154,29 @@ struct TuneView: View {
                 }
 
                 if trackingModeAvailable {
-                    OperatorCard(title: "TRACKING MODE") {
+                    OperatorCard(title: "TRACKING") {
+                        toggleRow("Autonomous tracking", isOn: $trackingEnabled, key: "tracking.enabled")
+                        tuneCaption("Off = DISABLE PTZ: the camera holds your manual aim and tracking won't take over until you turn this back on.")
+                        OperatorDivider()
                         pickerRow("Source", selection: $trackingMode,
                                   options: [("auto", "Auto (vision + GPS)"), ("gps_only", "GPS-only"), ("vision_only", "Vision-only")],
                                   key: "tracking.mode")
                         tuneCaption("GPS-only forces pointing on GPS geometry and ignores vision, so a false color lock can't hijack it. Auto is the normal vision+GPS mode.")
                     }
                 }
+
+                // GPS TRACKING — pointing geometry once tracking is on.
                 gpsCard
-                advancedDetectionCard
-                colorCard
-                advancedMotionCard
+
+                // DISPLAY/DEBUG — the on-video readout toggles (out of DETECTION, which is now detector-only).
+                OperatorCard(title: "DISPLAY") {
+                    toggleRow("Show detection mask", isOn: $showMask, key: "web.show_mask")
+                    if let hud = showHud {
+                        OperatorDivider()
+                        toggleRow("Show debug HUD", isOn: Binding(get: { hud }, set: { showHud = $0 }), key: "web.show_hud")
+                        tuneCaption("The on-video readout (confidence, lock, FPS). Off = a clean picture for filming; on = diagnostics while tuning.")
+                    }
+                }
 
                 // Always visible — restarting the service is beach first-aid (GPS
                 // Ingest DOWN, wedged camera link), not just a restart-keys helper.
@@ -287,44 +308,50 @@ struct TuneView: View {
     @ViewBuilder private func presetChip(_ preset: WCPreset) -> some View {
         let isActive = preset.name == activePresetName
         let isModified = isActive && isPresetModified
-        Button {
-            applyPreset(named: preset.name)
-        } label: {
-            HStack(spacing: 4) {
-                Text(preset.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                if isModified {
-                    Circle()
-                        .fill(WC.warn)
-                        .frame(width: 5, height: 5)
-                }
-                if !preset.builtin {
-                    Button {
-                        presetDeleteTarget = preset
-                        showPresetDeleteConfirm = true
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(isActive ? Color.black.opacity(0.5) : WC.muted)
+        // Apply and delete are SIBLING buttons in the chip's HStack — not nested. A delete
+        // Button inside the apply Button's label had no distinct hit target, so tapping the
+        // ✕ fired applyPreset and deleting a custom preset was impossible.
+        HStack(spacing: 4) {
+            Button {
+                applyPreset(named: preset.name)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(preset.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    if isModified {
+                        Circle()
+                            .fill(WC.warn)
+                            .frame(width: 5, height: 5)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 1)
                 }
             }
-            .foregroundStyle(isActive ? Color.black : WC.txt)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(
-                isActive ? WC.accent : WC.accent.opacity(0.12),
-                in: .rect(cornerRadius: 10)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isActive ? WC.accent : WC.accent.opacity(0.30))
-            )
+            .buttonStyle(.plain)
+
+            if !preset.builtin {
+                Button {
+                    presetDeleteTarget = preset
+                    showPresetDeleteConfirm = true
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(isActive ? Color.black.opacity(0.5) : WC.muted)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 1)
+            }
         }
-        .buttonStyle(.plain)
+        .foregroundStyle(isActive ? Color.black : WC.txt)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(
+            isActive ? WC.accent : WC.accent.opacity(0.12),
+            in: .rect(cornerRadius: 10)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isActive ? WC.accent : WC.accent.opacity(0.30))
+        )
         .disabled(client.mode != .live)
     }
 
@@ -410,7 +437,10 @@ struct TuneView: View {
             d["ptz.cinematic_zoom_enabled"] = .bool(cinematicEnabled)
             d["ptz.zoom_target_frac"]       = .double(subjectSize)
         }
-        if trackingModeAvailable { d["tracking.mode"] = .string(trackingMode) }
+        if trackingModeAvailable {
+            d["tracking.mode"] = .string(trackingMode)
+            d["tracking.enabled"] = .bool(trackingEnabled)
+        }
         if let v = everyN              { d["detector.every_n"]          = .int(v) }
         if let v = lockThreshold       { d["fusion.lock_threshold"]     = .double(v) }
         if let v = unlockThreshold     { d["fusion.unlock_threshold"]   = .double(v) }
@@ -463,26 +493,23 @@ struct TuneView: View {
         }
     }
 
-    @ViewBuilder private var advancedDetectionCard: some View {
-        let anyVisible = everyN != nil || lockThreshold != nil || unlockThreshold != nil || matchDist != nil
+    @ViewBuilder private var lockCard: some View {
+        let anyVisible = lockThreshold != nil || unlockThreshold != nil || matchDist != nil
         if anyVisible {
-            OperatorCard(title: "DETECTION ADVANCED") {
-                if let n = everyN {
-                    sliderRow("YOLO every N frames", value: Binding(get: { Double(n) }, set: { everyN = Int($0) }),
-                              range: 1...30, step: 1, readout: "\(n)", key: "detector.every_n", isInt: true)
-                }
+            OperatorCard(title: "LOCK") {
                 if let lt = lockThreshold {
-                    if everyN != nil { OperatorDivider() }
                     sliderRow("Lock threshold", value: Binding(get: { lt }, set: { lockThreshold = $0 }),
                               range: 0.05...0.95, step: 0.05, readout: fmt(lt), key: "fusion.lock_threshold")
+                    tuneCaption("Fused confidence needed to ACQUIRE a lock. Raise for fewer false locks; lower to grab eagerly in marginal visibility.")
                 }
                 if let ut = unlockThreshold {
-                    if everyN != nil || lockThreshold != nil { OperatorDivider() }
+                    if lockThreshold != nil { OperatorDivider() }
                     sliderRow("Unlock threshold", value: Binding(get: { ut }, set: { unlockThreshold = $0 }),
                               range: 0.05...0.95, step: 0.05, readout: fmt(ut), key: "fusion.unlock_threshold")
+                    tuneCaption("Confidence below which the lock RELEASES. Must stay below Lock. Lower to hold through spray/occlusion.")
                 }
                 if let md = matchDist {
-                    if everyN != nil || lockThreshold != nil || unlockThreshold != nil { OperatorDivider() }
+                    if lockThreshold != nil || unlockThreshold != nil { OperatorDivider() }
                     sliderRow("Color/YOLO match px", value: Binding(get: { md }, set: { matchDist = $0 }),
                               range: 20...500, step: 10, readout: "\(Int(md))", key: "fusion.match_dist")
                 }
@@ -676,6 +703,7 @@ struct TuneView: View {
         if client.mode == .mock || cfg.supported?.trackingMode == true {
             trackingModeAvailable = true
             trackingMode = cfg.current.tracking?.mode ?? "auto"
+            trackingEnabled = cfg.current.tracking?.enabled ?? true
         }
         // Feature-detected advanced keys — remain nil when backend doesn't expose them
         everyN = cfg.current.detector.everyN

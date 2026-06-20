@@ -37,6 +37,7 @@ from .control_media import (
 from .control_snapshots import (
     build_config_snapshot,
     build_gps,
+    build_sensors_snapshot,
     build_status_snapshot,
     gps_fix_snapshot,
     map_axis,
@@ -54,6 +55,14 @@ from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 
 
 FrameSource = Callable[[], Any]
+
+# API-1: cap concurrent agent chat turns. Each turn blocks a worker thread for up
+# to the claude -p timeout (~120s); without a cap, enough concurrent/retried turns
+# could exhaust Starlette's threadpool and stall every route — including
+# /safety/kill. The route runs the blocking call via asyncio.to_thread behind this
+# semaphore, so the event loop and the rest of the threadpool stay responsive.
+_AGENT_CHAT_MAX_CONCURRENT = 2
+_agent_chat_semaphore = asyncio.Semaphore(_AGENT_CHAT_MAX_CONCURRENT)
 
 GUIDE_FILENAME = "WaveCam_Guide.html"
 GUIDE_ASSET_DIR = "guide_assets"
@@ -180,6 +189,10 @@ class CalibrationHeadingLockRequest(CalibrationBaseRequest):
     latency_error_deg: float | None = Field(default=None, ge=0.0)
     tilt_error_deg: float | None = Field(default=None, ge=0.0)
     position_error_deg: float | None = Field(default=None, ge=0.0)
+    # Phone-compass heading source: the phone's own CLHeading.headingAccuracy in degrees.
+    # When present (method=phone), it IS the heading uncertainty (the magnetometer is the
+    # bearing instrument), so a lenient max_uncertainty_deg is required to accept it.
+    heading_acc_deg: float | None = Field(default=None, ge=0.0, le=360.0)
 
 
 class CalibrationValidationRequest(CalibrationBaseRequest):
@@ -226,7 +239,16 @@ class RestartRequest(BaseModel):
 class AgentSummonRequest(BaseModel):
     source: str | None = Field(default=None, max_length=64)
     reason: str | None = Field(default=None, max_length=256)
-    provider: str = Field(default="claude", max_length=16)
+    provider: str = Field(default="claude_code", max_length=24)
+
+
+class AgentChatRequest(BaseModel):
+    message: str = Field(default="", max_length=4000)
+    provider: str = Field(default="claude_code", max_length=24)
+
+
+class AgentArmRequest(BaseModel):
+    armed: bool = False
 
 
 class PhoneSampleRequest(BaseModel):
@@ -241,6 +263,10 @@ class PhoneSampleRequest(BaseModel):
     lon: float | None = Field(default=None, ge=-180.0, le=180.0)
     h_acc: float | None = Field(default=None, ge=0.0)
     bump: bool = False
+    true_heading_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+    alt_m: float | None = Field(default=None)
+    alt_acc: float | None = Field(default=None)
+    baro_rel_m: float | None = Field(default=None)
 
 
 def register_control_api(app: FastAPI, pipeline, frames: FrameSource) -> None:
@@ -330,11 +356,7 @@ def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/safety/kill", dependencies=[Depends(require(SAFETY))])
     def safety_kill(_: SafetyKillRequest | None = None):
-        api.cancel_calibration_session("killed")
-        api.pipeline.kill(True)
-        api.media.stop_for_safety()
-        api.cancel_manual_deadman()
-        api.cancel_zoom_deadman()
+        api.kill_for_safety()
         api.bump_revision()
         return api.ok()
 
@@ -409,7 +431,15 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
         api.send_manual_zoom_velocity(req.value, req.deadman_ms)
-        if req.value == 0:
+        if api.manual_held:
+            # Operator has explicitly LOCKED manual (STOP PTZ / hold). Zoom must not drop the
+            # lock: stop only the zoom motion via the zoom deadman; never release the manual
+            # owner or arm a releasing manual deadman.
+            if req.value == 0:
+                api.cancel_zoom_deadman()
+            else:
+                api.schedule_zoom_deadman(req.deadman_ms)
+        elif req.value == 0:
             if not api.manual_pan_tilt_active:
                 api.cancel_manual_deadman()
                 api.release_manual_owner()
@@ -472,7 +502,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         if refusal is not None:
             return refusal
         try:
-            api.capture_calibration(
+            persisted = api.capture_calibration(
                 "heading",
                 {
                     "heading_deg": req.heading_deg,
@@ -483,7 +513,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         finally:
             api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
-        return api.calibration_ok()
+        return api.calibration_persisted_response(persisted)
 
     @app.post("/api/v1/calibration/tilt", dependencies=[Depends(require(PTZ))])
     def calibration_tilt(req: TiltCalibrationRequest):
@@ -491,7 +521,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         if refusal is not None:
             return refusal
         try:
-            api.capture_calibration(
+            persisted = api.capture_calibration(
                 "tilt",
                 {
                     "tilt_deg": req.tilt_deg,
@@ -502,7 +532,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         finally:
             api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
-        return api.calibration_ok()
+        return api.calibration_persisted_response(persisted)
 
     @app.post("/api/v1/calibration/zoom", dependencies=[Depends(require(PTZ))])
     def calibration_zoom(req: ZoomCalibrationRequest):
@@ -510,7 +540,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         if refusal is not None:
             return refusal
         try:
-            api.capture_calibration(
+            persisted = api.capture_calibration(
                 "zoom",
                 {
                     "zoom_fov_deg": req.zoom_fov_deg,
@@ -521,7 +551,7 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         finally:
             api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
-        return api.calibration_ok()
+        return api.calibration_persisted_response(persisted)
 
     @app.post("/api/v1/calibration/base-lock", dependencies=[Depends(require(PTZ))])
     def calibration_base_lock(req: CalibrationBaseRequest):
@@ -532,14 +562,14 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             api.release_manual_owner(restore_autonomous=True)
             return api.refusal("gps_unavailable", "Base GPS has no fix yet.", 503)
         try:
-            api.capture_calibration("base_lock", {
+            persisted = api.capture_calibration("base_lock", {
                 "source": normalized_text(req.source, "unknown", 64),
                 "note": normalized_optional_text(req.note, 256),
             })
         finally:
             api.release_manual_owner(restore_autonomous=True)
         api.bump_revision()
-        return api.calibration_ok()
+        return api.calibration_persisted_response(persisted)
 
     @app.get("/api/v1/calibration/fov", dependencies=[Depends(require(READ))])
     def calibration_fov_get():
@@ -605,6 +635,13 @@ def register_media_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             result = api.media.start(req.segment_seconds if req else None)
         except MediaUnavailable as exc:
             return api.refusal("media_unavailable", exc.message, 503)
+        # ffmpeg can die instantly (missing binary, bad RTSP, full disk); the recorder
+        # reports that as started:False. Surface it as 503 instead of 200/ok:true so the
+        # operator isn't told recording started when it didn't (REC-1). The already-running
+        # case has no "started" key, so `is False` matches only the failure.
+        if result.get("started") is False:
+            return api.refusal("recording_failed",
+                               result.get("error", "Recording did not start."), 503)
         api.bump_revision()
         return media_ok(api, result)
 
@@ -686,6 +723,18 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def agent_summon(req: AgentSummonRequest | None = None):
         return api.request_agent_summon(req or AgentSummonRequest())
 
+    @app.post("/api/v1/agent/chat", dependencies=[Depends(require(SERVICE))])
+    async def agent_chat(req: AgentChatRequest):
+        # Async + to_thread + semaphore (API-1): the blocking claude -p subprocess
+        # runs off the event loop and is capped, so a slow/stuck agent turn can't
+        # occupy the whole threadpool and delay safety routes.
+        async with _agent_chat_semaphore:
+            return await asyncio.to_thread(api.request_agent_chat, req.message, req.provider)
+
+    @app.post("/api/v1/agent/arm", dependencies=[Depends(require(CONFIG))])
+    def agent_arm(req: AgentArmRequest):
+        return api.request_agent_arm(req.armed)
+
     @app.get("/api/v1/agent/report", dependencies=[Depends(require(READ))])
     def agent_report():
         return api.agent_report()
@@ -719,6 +768,10 @@ def register_sensors_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             h_acc=req.h_acc,
             bump=req.bump,
             received_at=time.time(),
+            true_heading_deg=req.true_heading_deg,
+            alt_m=req.alt_m,
+            alt_acc=req.alt_acc,
+            baro_rel_m=req.baro_rel_m,
         )
         api.sensor_hub.ingest(sample)
         return {"ok": True, "request_id": make_request_id()}
@@ -727,6 +780,56 @@ def register_sensors_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def sensors_baseline_reset():
         api.sensor_hub.reset_baseline()
         return {"ok": True, "request_id": make_request_id()}
+
+    @app.websocket("/api/v1/sensors/phone/ws")
+    async def sensors_phone_ws(websocket: WebSocket):
+        """Persistent phone-sensor stream. The iOS publisher holds ONE connection and
+        pushes a fix per tick; a flaky link self-heals via the client's reconnect/queue
+        instead of dropping fire-and-forget POSTs (the failure mode of the HTTP route).
+        Each frame is the same shape as PhoneSampleRequest. `{"type":"ping"}` frames are
+        answered with `{"type":"pong"}` for the client's latency/heartbeat tracking."""
+        await websocket.accept()
+        if not websocket_authorized(websocket, READ):
+            await websocket.close(code=1008)
+            return
+        try:
+            while True:
+                raw = await websocket.receive_json()
+                if isinstance(raw, dict) and raw.get("type") == "ping":
+                    await websocket.send_json(
+                        {"type": "pong", "id": raw.get("id"), "ts": raw.get("ts")}
+                    )
+                    continue
+                try:
+                    req = PhoneSampleRequest(**raw)
+                except Exception:
+                    # Drop a malformed frame without tearing down the stream — one bad
+                    # sample must not cost the persistent connection (idempotent telemetry).
+                    continue
+                api.sensor_hub.ingest(
+                    PhoneSample(
+                        heading_deg=req.heading_deg,
+                        heading_acc=req.heading_acc,
+                        lat=req.lat,
+                        lon=req.lon,
+                        h_acc=req.h_acc,
+                        bump=req.bump,
+                        received_at=time.time(),
+                        true_heading_deg=req.true_heading_deg,
+                        alt_m=req.alt_m,
+                        alt_acc=req.alt_acc,
+                        baro_rel_m=req.baro_rel_m,
+                    )
+                )
+        except WebSocketDisconnect:
+            return
+        except Exception:
+            # Unexpected error: close so the client reconnects rather than wedging.
+            try:
+                await websocket.close(code=1011)
+            except Exception:
+                pass
+            return
 
 
 def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
@@ -740,13 +843,48 @@ def register_health_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             age = gps.last_poll_age_sec() if callable(getattr(gps, "last_poll_age_sec", None)) else None
             snap["components"]["gps_reader"] = {"ok": bool(alive), "age_sec": age, "detail": {}}
             snap["ok"] = snap["ok"] and bool(alive)
-        try:
-            import shutil
-            free_gb = shutil.disk_usage(str(api.pipeline.recorder.config.rec_dir)).free / 1e9
-            snap["components"]["disk"] = {"ok": free_gb > 5.0, "age_sec": 0,
-                                          "detail": {"free_gb": round(free_gb, 1)}}
-        except Exception:
-            pass
+            # GPS-2: base-silent detection. The reader thread can be alive while the
+            # base Wio has rebooted/wedged and stopped emitting lines (last_poll_age
+            # grows without bound). reader_alive() can't see that, so surface it here.
+            silent_sec = float(getattr(getattr(getattr(api.pipeline, "cfg", None),
+                                               "gps", None), "base_silent_sec", 30.0))
+            base_silent = bool(alive) and (age is None or age > silent_sec)
+            snap["components"]["base_silent"] = {
+                "ok": not base_silent, "age_sec": age,
+                "detail": {"reader_alive": bool(alive), "threshold_sec": silent_sec},
+            }
+            if base_silent:
+                snap["ok"] = False
+        recorder = getattr(api.pipeline, "recorder", None)
+        rec_dir = getattr(getattr(recorder, "config", None), "rec_dir", None)
+        if rec_dir is None:
+            # Don't silently drop the disk component when there's no recorder —
+            # report it unknown so the low-disk guard stays visible to /health.
+            snap["components"]["disk"] = {"ok": False, "age_sec": 0,
+                                          "detail": {"reason": "recorder_unavailable"}}
+        else:
+            try:
+                import shutil
+                free_gb = shutil.disk_usage(str(rec_dir)).free / 1e9
+                snap["components"]["disk"] = {"ok": free_gb > 5.0, "age_sec": 0,
+                                              "detail": {"free_gb": round(free_gb, 1)}}
+            except Exception as e:
+                snap["components"]["disk"] = {"ok": False, "age_sec": 0,
+                                              "detail": {"reason": f"disk_check_failed: {type(e).__name__}"}}
+        # Detector health — a missing engine makes Pipeline.__init__ swallow the load error
+        # and leave detector=None: API stays up, vision is dead (zombie rig). Surface it so
+        # post-deploy /health checks catch it instead of flying blind (DET-1).
+        detector = getattr(api.pipeline, "detector", None)
+        det_cfg = getattr(getattr(api.pipeline, "cfg", None), "detector", None)
+        det_enabled = bool(getattr(det_cfg, "enabled", True))
+        if det_enabled and detector is None:
+            snap["components"]["detector"] = {"ok": False, "age_sec": 0,
+                                              "detail": {"reason": "engine_load_failed"}}
+            snap["ok"] = False
+        else:
+            snap["components"]["detector"] = {"ok": True, "age_sec": 0,
+                                              "detail": {"loaded": detector is not None,
+                                                         "enabled": det_enabled}}
         return snap
 
 
@@ -785,6 +923,8 @@ class ControlApiAdapter:
         self.sensor_hub = SensorHub(
             events=getattr(pipeline, "events", None),
             cfg=getattr(pipeline, "cfg", None),
+            base_pos=(lambda: pipeline.gps.get_camera_position()
+                      if getattr(pipeline, "gps", None) is not None else None),
         )
 
     @property
@@ -797,7 +937,16 @@ class ControlApiAdapter:
             self._revision += 1
 
     def status_snapshot(self) -> dict:
-        return build_status_snapshot(self.pipeline, self.revision, self.media.status())
+        snap = build_status_snapshot(self.pipeline, self.revision, self.media.status())
+        # Base position for the read-only sensors snapshot. Not redundant with
+        # SensorHub's own base_pos lambda — that feeds the ingest-time at-rig gate;
+        # this feeds the /status diagnostic block.
+        base_pos = (self.pipeline.gps.get_camera_position()
+                    if getattr(self.pipeline, "gps", None) is not None else None)
+        ref = getattr(getattr(self.pipeline, "_store", None), "reference_heading", None)
+        snap["sensors"] = build_sensors_snapshot(self.sensor_hub.latest(), base_pos, ref)
+        snap["agent"] = self._system.agent_arm_snapshot()
+        return snap
 
     def config_snapshot(self) -> dict:
         snapshot = build_config_snapshot(self.pipeline, self.revision, self.calibration_state())
@@ -805,6 +954,10 @@ class ControlApiAdapter:
             pending_restart = dict(self._pending_restart_config)
         snapshot["pending_restart"] = pending_restart
         snapshot["restart_required"] = bool(pending_restart)
+        # Configured agent providers (claude_code + any vendor with a key present) so the
+        # iOS picker only offers backends that will actually work.
+        if isinstance(snapshot.get("supported"), dict):
+            snapshot["supported"]["agent_providers"] = self.agent_providers()
         return snapshot
 
     def ok(self) -> JSONResponse:
@@ -846,8 +999,20 @@ class ControlApiAdapter:
     def validate_calibration_capture(self, req: CalibrationBaseRequest) -> JSONResponse | None:
         return self._calibration.validate_calibration_capture(req)
 
-    def capture_calibration(self, step: str, values: dict) -> None:
-        self._calibration.capture_calibration(step, values)
+    def capture_calibration(self, step: str, values: dict) -> bool:
+        return self._calibration.capture_calibration(step, values)
+
+    def calibration_persisted_response(self, persisted: bool):
+        """200 calibration_ok when the pose persisted, else a 503 so the operator
+        knows the lock is volatile (M2 — a save failure must not read as success)."""
+        if persisted:
+            return self.calibration_ok()
+        return self.refusal(
+            "persist_failed",
+            "Calibration applied in memory but failed to persist to disk; it will "
+            "NOT survive a restart. Check the rig pose-store path/disk.",
+            503,
+        )
 
     def start_calibration_session(self, req: CalibrationSessionStartRequest) -> JSONResponse:
         return self._calibration.start_session(req)
@@ -857,6 +1022,19 @@ class ControlApiAdapter:
 
     def cancel_calibration_session(self, reason: str = "cancelled") -> None:
         self._calibration.cancel_session(reason)
+
+    def kill_for_safety(self) -> None:
+        """Full safety-kill sequence shared by the v1 and legacy kill routes:
+        cancel any CALIBRATE session, latch KILL, stop recording, clear deadmen."""
+        self.cancel_calibration_session("killed")
+        self.pipeline.kill(True)
+        self.media.stop_for_safety()
+        self.cancel_manual_deadman()
+        self.cancel_zoom_deadman()
+        self._system.agent_kill()   # supervise-only floor: KILL disarms the agent
+
+    def claim_manual_from_calibrate(self) -> bool:
+        return self._ptz.claim_manual_from_calibrate()
 
     def lock_calibration_location(self, req: CalibrationLocationRequest) -> JSONResponse:
         return self._calibration.lock_location(req)
@@ -896,6 +1074,7 @@ class ControlApiAdapter:
             if self.pipeline.owner.owner != IDLE:
                 self.pipeline.owner.release(self.pipeline.owner.owner)
             self.pipeline.state.set_status(killed=False, state="SEARCHING")
+        self._system.agent_resume()   # clear the agent KILL latch so it can be re-armed
 
     # --- PTZ delegation stubs (behavior lives in PtzDispatcher) ---
 
@@ -929,6 +1108,10 @@ class ControlApiAdapter:
     @property
     def manual_pan_tilt_active(self) -> bool:
         return self._ptz.manual_pan_tilt_active
+
+    @property
+    def manual_held(self) -> bool:
+        return self._ptz.manual_held
 
     def schedule_manual_deadman(self, deadman_ms: int) -> int:
         return self._ptz.schedule_manual_deadman(deadman_ms)
@@ -986,6 +1169,15 @@ class ControlApiAdapter:
 
     def request_agent_summon(self, req: AgentSummonRequest) -> JSONResponse:
         return self._system.request_agent_summon(req)
+
+    def request_agent_chat(self, message: str, provider: str = "claude_code") -> JSONResponse:
+        return self._system.request_agent_chat(message, provider)
+
+    def agent_providers(self) -> list:
+        return self._system.agent_providers()
+
+    def request_agent_arm(self, armed: bool) -> JSONResponse:
+        return self._system.request_agent_arm(armed)
 
     def agent_report(self) -> JSONResponse:
         return self._system.agent_report()

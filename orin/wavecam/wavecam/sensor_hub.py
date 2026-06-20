@@ -20,10 +20,36 @@ never race.
 from __future__ import annotations
 
 import threading
+from typing import Optional, Tuple
 
-from .gps_geo import normalize_180 as _normalize_180
+from .gps_geo import haversine_m, normalize_180 as _normalize_180
 from dataclasses import dataclass
-from typing import Optional
+
+
+AT_RIG_M: float = 15.0
+"""Phone within this many metres of the base Wio ⇒ treated as co-located with the rig.
+15 m is ~3× a typical good consumer GPS horizontal error (HDOP≈1, ~5 m): enough buffer
+for the phone↔base offset + multipath, while still rejecting a phone left indoors."""
+
+
+def compute_at_rig(
+    phone_lat: Optional[float],
+    phone_lon: Optional[float],
+    base_pos: Optional[Tuple[float, float, float]],
+    gate_m: float = AT_RIG_M,
+) -> Tuple[Optional[bool], Optional[float], str]:
+    """Return (at_rig, dist_m, basis).
+
+    at_rig is True when the phone is within gate_m of the base, False when
+    confirmed farther, and None when either fix is absent (unknown).
+    Co-location only — proves the phone is NEAR the rig, not docked (Stage 2).
+    """
+    if phone_lat is None or phone_lon is None:
+        return None, None, "no_phone_fix"
+    if base_pos is None:
+        return None, None, "no_base_fix"
+    dist = haversine_m(base_pos[0], base_pos[1], phone_lat, phone_lon)
+    return (dist <= gate_m), round(dist, 1), "gps_proximity"
 
 
 @dataclass
@@ -36,6 +62,10 @@ class PhoneSample:
     h_acc: Optional[float]
     bump: bool
     received_at: float                 # time.time() at ingest
+    true_heading_deg: Optional[float] = None   # GPS-corrected; None → no fix/invalid
+    alt_m: Optional[float] = None              # GPS altitude (m)
+    alt_acc: Optional[float] = None            # vertical accuracy (m); <0 → invalid
+    baro_rel_m: Optional[float] = None         # CMAltimeter relative altitude (m)
 
 
 class SensorHub:
@@ -45,13 +75,17 @@ class SensorHub:
     thread; `latest()` is a non-blocking snapshot read.
     """
 
-    def __init__(self, events, cfg) -> None:
+    def __init__(self, events, cfg, base_pos=None) -> None:
         """
-        events: EventRing instance (or None in unit tests — hub skips recording).
-        cfg:    live Config object; reads cfg.sensors.enabled / drift_alert_deg.
+        events:   EventRing instance (or None in unit tests — hub skips recording).
+        cfg:      live Config object; reads cfg.sensors.enabled / drift_alert_deg.
+        base_pos: callable returning (lat, lon, alt) of the base Wio, or None
+                  when unavailable.  Used by the at-rig gate to suppress monitors
+                  when the phone is confirmed off-rig.
         """
         self._events = events
         self._cfg = cfg
+        self._base_pos = base_pos
         self._lock = threading.Lock()
 
         # Latest sample (None until first POST).
@@ -83,6 +117,22 @@ class SensorHub:
         No-ops if sensors.enabled is False (cheap kill-switch; route still 200s).
         """
         if not getattr(getattr(self._cfg, "sensors", None), "enabled", False):
+            return
+
+        # At-rig gate: resolve current base position and check co-location.
+        # Suppress monitors ONLY when the phone is CONFIRMED off-rig (at_rig is
+        # False).  Unknown (None) — no base fix or no phone fix — lets monitors
+        # run so drift detection is not silently dropped on a base-GPS outage.
+        # Never let a base-position read raise into the request thread (this runs in
+        # the POST handler) — treat any failure as unknown (at_rig None ⇒ monitors run).
+        try:
+            base_pos = self._base_pos() if callable(self._base_pos) else None
+        except Exception:
+            base_pos = None
+        at_rig, _, _ = compute_at_rig(sample.lat, sample.lon, base_pos)
+        if at_rig is False:
+            with self._lock:
+                self._sample = sample   # still cache the latest sample
             return
 
         with self._lock:

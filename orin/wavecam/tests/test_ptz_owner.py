@@ -60,4 +60,32 @@ o.request("vision_follow")
 check(not o.can_autonomous_start("gps_tracker"), "cannot start a 2nd autonomous owner")
 check(not o.can_autonomous_start("manual"), "manual is not an autonomous owner")
 
+# OWN-1: atomic transition() closes the release()->request() TOCTOU window where a
+# manual claim could slip into the transient idle gap during an autonomous handoff.
+o2 = PtzOwner()
+check(o2.transition("idle", "vision_follow") and o2.owner == "vision_follow",
+      "transition idle -> vision_follow (atomic claim)")
+check(o2.transition("vision_follow", "gps_tracker") and o2.owner == "gps_tracker",
+      "transition vision_follow -> gps_tracker (atomic autonomous handoff)")
+
+# TOCTOU: if the owner moved underneath us (manual grabbed it), the atomic
+# transition must REFUSE and leave the operator's manual ownership intact.
+o2.release("gps_tracker")
+check(o2.request("manual") and o2.owner == "manual", "manual owns after operator claim")
+check(not o2.transition("gps_tracker", "vision_follow"),
+      "transition refused when current != expected_from (no clobber of manual)")
+check(o2.owner == "manual", "manual ownership preserved through refused transition")
+o2.release("manual")
+
+# transition to idle / invalid is refused; idle is reached via release(), not transition
+check(not o2.transition("idle", "idle"), "transition to idle refused")
+check(not o2.transition("idle", "bogus"), "transition to unknown owner refused")
+
+# KILL latch blocks transition
+o2.request("vision_follow")
+o2.kill()
+check(not o2.transition("idle", "gps_tracker"), "transition blocked while killed")
+check(o2.owner == "idle", "owner stays idle while killed")
+o2.resume()
+
 print("\nALL %d CHECKS PASSED" % _n)

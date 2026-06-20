@@ -43,23 +43,36 @@ final class PhoneSensorPublisher: NSObject {
     private let client: WaveCamClient
     private let locationManager = CLLocationManager()
     private let motionManager = CMMotionManager()
+    private let socket: PhoneSensorSocket
 
     private var publishTimer: Task<Void, Never>?
     private var running = false
     private var sensorsActive = false
-    private var disconnectedSince: Date?
+    private var postFailingSince: Date?
 
-    /// Disconnected this long -> sensors stop (GPS Best + 20Hz motion are the
-    /// battery cost; the 1Hz timer itself is negligible). Review 2026-06-12.
+    /// POSTs failing this long -> stop sensors (GPS Best + 20Hz motion are the
+    /// battery cost; the 1Hz timer itself is negligible). Battery guard is now
+    /// driven by actual POST outcome, not the status-poll `connected` flag, which
+    /// could wedge the feed when a transient /status read failed (2026-06-16).
     private static let sensorIdleGrace: TimeInterval = 30
+    // Force a heading stream restart only after this long without a callback, so the
+    // recovery in publish() can't thrash stop→start every tick (which never lets the
+    // compass settle). ~3 publish ticks.
+    private static let headingStaleRestartSec: TimeInterval = 3.0
 
     // Latest sensor snapshots (written from callbacks, read on publish timer).
     // All callbacks and the timer run on MainActor so no explicit lock needed.
     private var latestHeadingDeg: Double? = nil
     private var latestHeadingAcc: Double = -1   // default: invalid
+    private var lastHeadingAt: Date? = nil      // last didUpdateHeading; drives stale-restart
     private var latestLat: Double? = nil
     private var latestLon: Double? = nil
     private var latestHAcc: Double? = nil
+    private var latestTrueHeadingDeg: Double? = nil
+    private var latestAltM: Double? = nil
+    private var latestAltAcc: Double? = nil
+    private let altimeter = CMAltimeter()
+    private var latestBaroRelM: Double? = nil
 
     // Bump detection state.
     private var bumpPending = false
@@ -69,6 +82,7 @@ final class PhoneSensorPublisher: NSObject {
 
     init(client: WaveCamClient) {
         self.client = client
+        self.socket = PhoneSensorSocket(endpoint: { [client] in client.phoneSensorWSEndpoint })
         super.init()
         locationManager.delegate = self
     }
@@ -78,8 +92,12 @@ final class PhoneSensorPublisher: NSObject {
     func start() {
         guard !running else { return }
         running = true
-        // Sensors start on the first connected tick and stop after a
-        // disconnected grace period — no rig, no GPS/IMU battery burn.
+        // Gather immediately while foregrounded. The POST is NOT gated on the
+        // status-poll's `connected` flag — a transient /status failure must not
+        // wedge the independent, idempotent sensor feed. Battery is protected by
+        // stopping sensors after sustained POST failures (publish) + on background.
+        if client.mode == .live { startSensors() }
+        socket.open()
         startPublishTimer()
     }
 
@@ -88,15 +106,18 @@ final class PhoneSensorPublisher: NSObject {
         running = false
         publishTimer?.cancel()
         publishTimer = nil
+        socket.close()
         stopSensors()
     }
 
     private func startSensors() {
         guard !sensorsActive else { return }
         sensorsActive = true
-        startHeading()
+        // Location first: trueHeading needs an active location fix (gps-relay-framework order).
         startLocation()
+        startHeading()
         startAccelerometer()
+        startAltimeter()
     }
 
     private func stopSensors() {
@@ -105,13 +126,33 @@ final class PhoneSensorPublisher: NSObject {
         locationManager.stopUpdatingHeading()
         locationManager.stopUpdatingLocation()
         motionManager.stopDeviceMotionUpdates()
+        altimeter.stopRelativeAltitudeUpdates()
     }
 
     // MARK: - Heading
 
     private func startHeading() {
         guard CLLocationManager.headingAvailable() else { return }
+        // The phone mounts landscape on the rig; this sets the heading reference frame. The
+        // correct variant (.landscapeRight vs .landscapeLeft) depends on the physical mounting
+        // and must be verified with the phone PROPERLY SEATED — a fallen/leaning phone reads
+        // ~180° off and masquerades as the wrong variant (2026-06-16 field note).
+        locationManager.headingOrientation = .landscapeRight
+        // Clean restart: a bare startUpdatingHeading() is a no-op if CoreLocation already
+        // considers heading "updating" but stopped delivering; stop→start forces a fresh start.
+        locationManager.stopUpdatingHeading()
         locationManager.startUpdatingHeading()
+        lastHeadingAt = Date()   // seed the staleness clock at (re)start
+    }
+
+    // MARK: - Altimeter
+
+    private func startAltimeter() {
+        guard CMAltimeter.isRelativeAltitudeAvailable() else { return }
+        altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, _ in
+            guard let data else { return }
+            self?.latestBaroRelM = data.relativeAltitude.doubleValue
+        }
     }
 
     // MARK: - Location
@@ -172,26 +213,53 @@ final class PhoneSensorPublisher: NSObject {
     }
 
     private func publish() async {
-        guard client.connected else {
-            if disconnectedSince == nil {
-                disconnectedSince = Date()
-            } else if Date().timeIntervalSince(disconnectedSince!) > Self.sensorIdleGrace {
-                stopSensors()
-            }
-            return
+        // Stream over the persistent, self-healing websocket rather than a fire-and-forget
+        // POST. Sent whenever foreground + live; the socket no-ops while disconnected and
+        // reconnects on its own, so a flaky link recovers instead of silently dropping fixes.
+        guard client.mode == .live else { return }
+
+        // Heading can silently STOP delivering after a magnetometer disturbance or a
+        // background cycle while the location stream keeps flowing (observed: GPS keeps
+        // updating, compass goes stale). Recover only once it has actually gone STALE —
+        // a bare startUpdatingHeading() is a no-op when CoreLocation still thinks heading
+        // is active, so force startHeading()'s stop→start. Gating on staleness avoids
+        // thrashing stop→start every tick, which would never let the compass settle
+        // (Codex review, PR #113).
+        if sensorsActive, CLLocationManager.headingAvailable(),
+           let last = lastHeadingAt,
+           Date().timeIntervalSince(last) > Self.headingStaleRestartSec {
+            startHeading()
         }
-        disconnectedSince = nil
-        startSensors()
+
         var body: [String: Any] = ["bump": bumpPending]
         bumpPending = false
 
-        body["heading_deg"] = latestHeadingDeg
+        if let h = latestHeadingDeg { body["heading_deg"] = h }
         body["heading_acc"] = latestHeadingAcc
         if let lat = latestLat { body["lat"] = lat }
         if let lon = latestLon { body["lon"] = lon }
         if let hAcc = latestHAcc { body["h_acc"] = hAcc }
+        if let th = latestTrueHeadingDeg { body["true_heading_deg"] = th }
+        if let alt = latestAltM { body["alt_m"] = alt }
+        if let altAcc = latestAltAcc { body["alt_acc"] = altAcc }
+        if let baro = latestBaroRelM { body["baro_rel_m"] = baro }
 
-        await client.postPhoneSensor(body)
+        socket.send(body)
+        client.notePhoneSensorStream(connected: socket.connected)
+
+        // Battery guard on the live stream state: after a sustained disconnect (rig
+        // unreachable) stop the high-power GPS Best + 20 Hz motion; reconnection restarts
+        // them. startSensors() is idempotent.
+        if socket.connected {
+            postFailingSince = nil
+            startSensors()
+        } else {
+            if postFailingSince == nil {
+                postFailingSince = Date()
+            } else if Date().timeIntervalSince(postFailingSince!) > Self.sensorIdleGrace {
+                stopSensors()
+            }
+        }
     }
 }
 
@@ -204,8 +272,15 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
         // headingAccuracy < 0 means invalid — pass it through as-is so the backend
         // can distinguish "no calibration" from a valid low-accuracy reading.
         Task { @MainActor [weak self] in
-            self?.latestHeadingDeg = newHeading.magneticHeading
-            self?.latestHeadingAcc = newHeading.headingAccuracy
+            guard let self else { return }
+            // magneticHeading can be NaN on a bad read; NaN would fail JSON serialization and
+            // drop the WHOLE fix, so treat it as absent (gps-relay-framework resolveHeading).
+            let mag = newHeading.magneticHeading
+            self.latestHeadingDeg = mag.isNaN ? nil : mag
+            self.latestHeadingAcc = newHeading.headingAccuracy
+            self.lastHeadingAt = Date()   // fresh callback — heading stream is alive
+            // trueHeading < 0 means no magnetic calibration yet — treat as absent.
+            self.latestTrueHeadingDeg = newHeading.trueHeading >= 0 ? newHeading.trueHeading : nil
         }
     }
 
@@ -213,9 +288,28 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
                                      didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
         Task { @MainActor [weak self] in
-            self?.latestLat = loc.coordinate.latitude
-            self?.latestLon = loc.coordinate.longitude
-            self?.latestHAcc = loc.horizontalAccuracy
+            guard let self else { return }
+            // iOS sets horizontalAccuracy < 0 to flag an invalid fix, where lat/lon are
+            // meaningless. A negative h_acc also violates the backend's ge=0 bound and 422s
+            // the ENTIRE sample (dropping a valid heading with it), so drop the location
+            // fields until the fix is valid rather than poison the whole POST.
+            if loc.horizontalAccuracy >= 0 {
+                self.latestLat = loc.coordinate.latitude
+                self.latestLon = loc.coordinate.longitude
+                self.latestHAcc = loc.horizontalAccuracy
+            } else {
+                self.latestLat = nil
+                self.latestLon = nil
+                self.latestHAcc = nil
+            }
+            // verticalAccuracy < 0 flags an invalid altitude.
+            if loc.verticalAccuracy >= 0 {
+                self.latestAltM = loc.altitude
+                self.latestAltAcc = loc.verticalAccuracy
+            } else {
+                self.latestAltM = nil
+                self.latestAltAcc = nil
+            }
         }
     }
 
@@ -227,6 +321,10 @@ extension PhoneSensorPublisher: CLLocationManagerDelegate {
                 if self.running {
                     manager.desiredAccuracy = kCLLocationAccuracyBest
                     manager.startUpdatingLocation()
+                    // Heading must be (re)started AFTER auth is granted — if startSensors() ran
+                    // first (auth still .notDetermined) the initial startUpdatingHeading never
+                    // delivered. Re-run it on the grant edge (the proposal's §6.1 fix).
+                    self.startHeading()
                 }
             default:
                 // Denied or restricted — clear any stale position data.

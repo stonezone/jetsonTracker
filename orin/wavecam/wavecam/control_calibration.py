@@ -23,6 +23,7 @@ from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 LEVEL_MAX_DEG = 0.5
 LOCATION_MIN_RADIUS_M = 2.5
 LOCATION_DEFAULT_RADIUS_M = 15.0
+LIVE_BASE_MAX_AGE_SEC = 3.0   # GPS-2: reject the live-base fallback if the cached fix is older than this
 LOCATION_DEFAULT_UERE_M = 5.0
 LOCATION_WARMUP_SEC = 60.0
 HEADING_DEFAULT_BUDGET_DEG = 2.0
@@ -336,6 +337,21 @@ class CalibrationManager:
             gps = getattr(self.pipeline, "gps", None)
             cam = gps.get_camera_position() if gps is not None else None
             if cam is not None:
+                # Freshness gate (GPS-2): get_camera_position() returns the last
+                # cached base fix unconditionally. A rebooted base Wio leaves a
+                # STALE _cam cached (the documented "base reboot staleifies serial"
+                # gotcha) — locking it would silently corrupt every bearing. Require
+                # a live reader and a recent fix before accepting the live base.
+                cam_age = gps.get_camera_age() if hasattr(gps, "get_camera_age") else None
+                reader_ok = gps.reader_alive() if hasattr(gps, "reader_alive") else True
+                if not reader_ok or cam_age is None or cam_age > LIVE_BASE_MAX_AGE_SEC:
+                    return self._calibration_refusal(
+                        "gps_stale",
+                        "Live base position is stale or unavailable; reacquire the base "
+                        "fix (or send explicit samples) before locking location.",
+                        503,
+                        base_age_sec=None if cam_age is None else round(cam_age, 1),
+                    )
                 samples = [
                     {
                         "lat": float(cam[0]),
@@ -442,6 +458,24 @@ class CalibrationManager:
         ]
         return kept or samples
 
+    def _persist_step(self, step: str, entry: dict) -> bool:
+        """Write a wizard step to the CalibrationStore and flush to disk.
+
+        CAL-1: the session wizard mutated pose/_session in memory only, so a
+        confirmed calibration was lost on the next restart (re-introducing the
+        "gps_calibrated true but reference_heading null" class CalibrationStore was
+        built to prevent). Mirror capture_calibration: set_step + save under the
+        adapter lock. Returns False on a save failure so the route can surface 503.
+        Caller MUST hold self._lock.
+        """
+        self._store.set_step(step, entry)
+        try:
+            self._store.save()
+            return True
+        except Exception as e:
+            print(f"[control_api] calibration wizard save failed ({step}): {e}")
+            return False
+
     def _commit_location(self, entry: dict) -> JSONResponse:
         with self._lock:
             self.pipeline.pose.lat = float(entry["lat"])
@@ -450,6 +484,13 @@ class CalibrationManager:
             self._session["location"] = entry
             self._session["valid"] = False
             self._session["confirmed"] = False
+            persisted = self._persist_step("location", entry)
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Location locked in memory but failed to write to disk.",
+                503,
+            )
         return self.calibration_ok()
 
     def check_level(self, req) -> JSONResponse:
@@ -478,12 +519,19 @@ class CalibrationManager:
             self._session["level"] = entry
             self._session["valid"] = False
             self._session["confirmed"] = False
+            persisted = self._persist_step("level", entry)
         if not entry["passed"]:
             return self._calibration_refusal(
                 "pan_axis_not_level",
                 "Pan axis is outside the level gate; level the tripod before heading capture.",
                 uncertainty_deg=round(tilt_mag, 3),
                 max_tilt_deg=max_tilt,
+            )
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Level captured in memory but failed to write to disk.",
+                503,
             )
         return self.calibration_ok()
 
@@ -496,12 +544,11 @@ class CalibrationManager:
                 "operator_accept_required",
                 "Heading capture requires explicit operator acceptance of the preview.",
             )
-        level = self._session.get("level")
-        if not level or not level.get("passed"):
-            return self._calibration_refusal(
-                "level_required",
-                "A passing level check is required before heading capture.",
-            )
+        # Level gate removed 2026-06-17: on this rig the only attitude sensor is the
+        # phone, which mounts OFF the camera (magnetic isolation) and on its side, so its
+        # roll/pitch can never represent the pan-axis tilt. The operator levels the tripod
+        # by hand; tilt_error falls back to 0 in _estimate_heading_uncertainty when no level
+        # entry exists. A level check remains available but is no longer required.
         location = self._session.get("location")
         if not location:
             return self._calibration_refusal(
@@ -544,6 +591,10 @@ class CalibrationManager:
             )
             entry = {
                 "bearing_deg": round(bearing % 360.0, 6),
+                # set_step("heading", ...) maps heading_deg -> reference_heading; the
+                # camera "heading" IS the bearing it's aimed at, so persist both so a
+                # restart restores reference_heading (CAL-1).
+                "heading_deg": round(bearing % 360.0, 6),
                 "pan_enc": pan_enc,
                 "pan_enc_per_deg": PRISUAL_PAN_ENC_PER_DEG,
                 "distance_m": None if distance_m is None else round(distance_m, 3),
@@ -558,6 +609,13 @@ class CalibrationManager:
             self._session["validation"] = None
             self._session["valid"] = False
             self._session["confirmed"] = False
+            persisted = self._persist_step("heading", entry)
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Heading captured in memory but failed to write to disk.",
+                503,
+            )
         return self.calibration_ok()
 
     def validate_heading(self, req) -> JSONResponse:
@@ -606,12 +664,19 @@ class CalibrationManager:
             self._session["validation"] = entry
             self._session["valid"] = False
             self._session["confirmed"] = False
+            persisted = self._persist_step("validation", entry)
         if not accepted:
             return self._calibration_refusal(
                 "validation_miss_too_large",
                 "Independent validation miss exceeds the configured budget.",
                 miss_deg=entry["miss_deg"],
                 max_miss_deg=budget,
+            )
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Validation captured in memory but failed to write to disk.",
+                503,
             )
         return self.calibration_ok()
 
@@ -636,6 +701,15 @@ class CalibrationManager:
             self._session["valid"] = True
             self._session["confirmed"] = True
             self._session["banner"] = "VALID"
+            # Persist the confirmed validation so the VALID state (and the validation
+            # record) survives a restart — the final, most important commit (CAL-1).
+            persisted = self._persist_step("validation", validation)
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Validation confirmed in memory but failed to write to disk.",
+                503,
+            )
         return self.calibration_ok()
 
     def _resolve_bearing(self, req, location: dict | None) -> tuple[float | None, float | None]:
@@ -655,6 +729,17 @@ class CalibrationManager:
 
     def _estimate_heading_uncertainty(self, req, location: dict, distance_m: float | None) -> float:
         method = str(_field(req, "method", _field(req, "source", "")) or "").lower()
+        # Phone-compass source: the bearing comes from the phone's magnetometer, so the
+        # dominant uncertainty is its reported heading accuracy (CLHeading.headingAccuracy),
+        # NOT GPS position geometry. Use it directly. A phone heading is a COARSE acquisition
+        # cue (±15-25° in practice), not a 2° lock — the caller must pass a lenient
+        # max_uncertainty_deg to accept it, and the default budget will reject it.
+        phone_acc = _optional_float(_field(req, "heading_acc_deg"))
+        if "phone" in method or phone_acc is not None:
+            acc = phone_acc if (phone_acc is not None and phone_acc >= 0) else HEADING_DEFAULT_BUDGET_DEG
+            vision_error = _optional_float(_field(req, "vision_error_deg")) or 0.5
+            latency_error = _optional_float(_field(req, "latency_error_deg")) or 0.2
+            return _quadrature([acc, vision_error, latency_error])
         base_error = _optional_float(_field(req, "base_error_radius_m"))
         if base_error is None:
             base_error = float(location.get("error_radius_m", LOCATION_DEFAULT_RADIUS_M))
@@ -712,7 +797,12 @@ class CalibrationManager:
             try:
                 self._store.save()
             except Exception as e:
+                # Don't report success when the entry didn't persist — it would be lost on
+                # restart while the operator saw ok:true (CAL-1, the M2 pattern on the FOV
+                # path). Mirror calibration_persisted_response: 503.
                 print(f"[control_calibration] fov_curve save failed: {e}")
+                return JSONResponse(
+                    {"ok": False, "error": f"FOV entry not persisted: {e}"}, 503)
         return JSONResponse({"ok": True, "fov_entries": [list(e) for e in curve]})
 
     def validate_calibration_capture(self, req) -> JSONResponse | None:
@@ -725,18 +815,16 @@ class CalibrationManager:
         # an active calibration session). Save it so release_manual_owner can restore
         # the session when the capture is done.
         if current == "calibrate" and req.takeover:
-            if not self.pipeline.owner.release("calibrate"):
-                return self._api.refusal("owner_busy", "Cannot release calibrate owner.")
-            self._api._ptz._restore_owner_after_manual = "calibrate"
-            if not self.pipeline.owner.request("manual"):
-                self.pipeline.owner.request("calibrate")  # restore
+            # Lock-guarded takeover (stops PTZ first, stages calibrate restore under
+            # the dispatcher lock) — no external poke of _restore_owner_after_manual.
+            if not self._api.claim_manual_from_calibrate():
                 return self._api.refusal("owner_busy", "Cannot claim manual for capture.")
             return None
         if not self._api.claim_manual(takeover=req.takeover):
             return self._api.refusal("owner_busy", "Another PTZ owner holds the camera.")
         return None
 
-    def capture_calibration(self, step: str, values: dict) -> None:
+    def capture_calibration(self, step: str, values: dict) -> bool:
         # Encoder source: the PtzState poller cache (fresh to ~0.1s at 10Hz and
         # plausibility-gated), NOT a direct inquiry — a request-thread inquiry
         # races the poller on the shared UDP socket (reply theft), and the
@@ -795,5 +883,7 @@ class CalibrationManager:
             self._store.set_step(step, values)
             try:
                 self._store.save()
+                return True
             except Exception as e:
                 print(f"[control_api] calibration save failed: {e}")
+                return False

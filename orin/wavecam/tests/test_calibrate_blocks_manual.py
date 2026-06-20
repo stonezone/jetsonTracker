@@ -119,6 +119,31 @@ def test_calibrate_cannot_be_restored_after_kill():
     assert pipe.owner.killed is True
 
 
+def test_claim_manual_from_calibrate_stops_ptz_and_stages_restore():
+    # H1/H2: the calibrate->manual standalone-capture takeover must run inside the
+    # dispatcher lock (no external poke of _restore_owner_after_manual) AND stop
+    # PTZ before the capture samples encoders, mirroring claim_manual.
+    pipe, disp = make_dispatcher()
+    assert pipe.owner.request(CALIBRATE)
+    assert disp.claim_manual_from_calibrate() is True
+    assert pipe.owner.owner == "manual"
+    assert disp._restore_owner_after_manual == CALIBRATE
+    # PTZ + zoom halted before sampling (H2)
+    assert "stop" in pipe.ptz.calls
+    assert ("zoom", "stop", 0) in pipe.ptz.calls
+    # releasing manual restores the calibrate session (existing B13 contract)
+    disp.release_manual_owner()
+    assert pipe.owner.owner == CALIBRATE
+
+
+def test_claim_manual_from_calibrate_refuses_when_not_calibrate():
+    # Only valid from an active calibrate session; never displaces another owner.
+    pipe, disp = make_dispatcher()
+    assert pipe.owner.request("vision_follow")
+    assert disp.claim_manual_from_calibrate() is False
+    assert pipe.owner.owner == "vision_follow"
+
+
 if __name__ == "__main__":
     test_owner_rejects_manual_while_calibrate_holds()
     test_calibrate_blocks_autonomous_start()

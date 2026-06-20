@@ -64,16 +64,23 @@ class DirectRadioGps:
         baud: int = 115200,
         reconnect_sec: float = 3.0,
         serial_factory: SerialFactory | None = None,
+        coast_on_no_fix_sec: float = 2.0,
     ):
         self.dev_path = dev_path
         self.baud = int(baud)
         self.reconnect_sec = float(reconnect_sec)
         self._serial_factory = serial_factory
+        # GPS-1: on an HONEST no-fix packet, coast on the last good fix for this long
+        # (a wipeout / wave-trough blackout) instead of dropping the aim instantly.
+        # 0 = clear immediately (the pre-GPS-1 behavior).
+        self.coast_on_no_fix_sec = float(coast_on_no_fix_sec)
         self.enabled = False
         self._serial = None
 
         self._lock = threading.Lock()
         self._latest: Optional[NormalizedFix] = None
+        self._last_fix_ok_ts: Optional[float] = None   # when _latest was last set from a real fix
+        self._latest_no_fix_at: Optional[float] = None  # ts of the most recent honest no-fix packet
         self._cam: Optional[Tuple[float, float, float]] = None
         self._cam_ts: float = 0.0
         self._last_poll_ts: Optional[float] = None
@@ -195,8 +202,11 @@ class DirectRadioGps:
             lat = _e7_to_deg(data.get("lat_e7"))
             lon = _e7_to_deg(data.get("lon_e7"))
             if lat is None or lon is None:
+                # Corrupt/partial line (fix flag set, coords unparseable): keep the
+                # last-known-good fix instead of erasing it. get_fix() re-ages it
+                # from its ts and the downstream age gate (drive_stale_sec) drops it
+                # once stale, so a transient bad packet no longer drops the track.
                 with self._lock:
-                    self._latest = None
                     self._target_telemetry = telemetry
                     self._last_poll_ts = now
                 return
@@ -213,7 +223,16 @@ class DirectRadioGps:
             )
 
         with self._lock:
-            self._latest = fix
+            if fix is not None:
+                # Real fix → refresh the position and stamp when it was good.
+                self._latest = fix
+                self._last_fix_ok_ts = now
+            else:
+                # Honest no-fix (fix flag clear): GPS-1 — KEEP the last fix and let
+                # get_fix() coast on it for coast_on_no_fix_sec, then drop. Telemetry
+                # (battery/sats) is still valid and updates. With coast=0 this clears
+                # on the next get_fix() (old behavior).
+                self._latest_no_fix_at = now
             self._target_telemetry = telemetry
             self._last_poll_ts = now
 
@@ -232,8 +251,16 @@ class DirectRadioGps:
         now = time.time() if now is None else now
         with self._lock:
             fix = self._latest
+            no_fix_at = self._latest_no_fix_at
+            ok_ts = self._last_fix_ok_ts
         if fix is None:
             return None
+        # GPS-1 coast: if the latest packet was an honest no-fix, keep returning the
+        # last good fix only until coast_on_no_fix_sec past when it was last good; then
+        # drop it (the downstream drive_stale_sec gate also still applies via age_sec).
+        if no_fix_at is not None and (ok_ts is None or no_fix_at >= ok_ts):
+            if (now - (ok_ts if ok_ts is not None else no_fix_at)) > self.coast_on_no_fix_sec:
+                return None
         return replace(fix, age_sec=max(0.0, now - fix.ts))
 
     def get_camera_position(self) -> Optional[Tuple[float, float, float]]:

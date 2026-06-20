@@ -47,11 +47,15 @@ class TrackingArbiter:
                  lock_frames: int = DEFAULT_LOCK_FRAMES,
                  grace_sec: float = DEFAULT_GRACE_SEC,
                  max_gps_age_sec: float = DEFAULT_MAX_GPS_AGE_SEC,
-                 mode: str = "auto"):
+                 mode: str = "auto",
+                 enabled: bool = True):
         self.lock_frames = lock_frames
         self.grace_sec = grace_sec
         self.max_gps_age_sec = max_gps_age_sec
         self.mode = mode
+        # Operator "DISABLE PTZ" latch (tracking.enabled). False = autonomous
+        # tracking never claims the camera, so a manual aim holds until re-enabled.
+        self.enabled = enabled
         self._consecutive_locked = 0
         self._last_locked_time: Optional[float] = None
         self._vision_owns = False  # True once vision takes over from GPS
@@ -75,7 +79,8 @@ class TrackingArbiter:
                gps_calibrated: bool,
                base_locked: bool,
                now_sec: float,
-               calibration_valid: bool = False) -> ArbiterDecision:
+               calibration_valid: bool = False,
+               capture_ok: bool = True) -> ArbiterDecision:
         """Return who drives this frame.
 
         Args:
@@ -88,7 +93,35 @@ class TrackingArbiter:
                 valid and confirmed. Fail-closed default (False) — persisted pose
                 flags survive restart/cancel/KILL and are NOT sufficient for GPS
                 authority (audit 2026-06-13).
+            capture_ok: False if the camera frames have gone stale (a wedged/dead
+                grabber). Vision authority requires live frames; GPS pointing does
+                not depend on the camera, so gps_only still works (ZOMBIE-1).
         """
+        # --- Zombie-rig guard (ZOMBIE-1): a wedged grabber keeps the last frame
+        # non-None, so the vision loop keeps running fusion on a frozen frame while
+        # /status reports TRACKING. Vision must NOT drive the PTZ on stale frames.
+        # gps_only is exempt (it doesn't use vision). Reset hysteresis so a lock is
+        # re-earned once frames resume. ---
+        if not capture_ok and self._tracking_mode() != "gps_only":
+            self._vision_owns = False
+            self._consecutive_locked = 0
+            self._last_locked_time = None
+            gps_viable = (gps_fresh and gps_calibrated and base_locked and calibration_valid)
+            owner = "gps_tracker" if (self.enabled and gps_viable) else "idle"
+            self._last_owner = owner
+            roi = (0.5, 0.5, 0.5, 0.5) if owner == "gps_tracker" else None
+            return ArbiterDecision(owner=owner, search_roi=roi)
+
+        # --- DISABLE-PTZ latch: autonomy off → idle every frame, regardless of
+        # mode/lock/GPS. Manual control is uncontested so a hand-aim holds until
+        # the operator re-enables. Reset hysteresis so a lock must be re-earned. ---
+        if not self.enabled:
+            self._vision_owns = False
+            self._consecutive_locked = 0
+            self._last_locked_time = None
+            self._last_owner = "idle"
+            return ArbiterDecision(owner="idle")
+
         # --- GPS viability (C1: base locked; C2: CURRENT calibration session valid
         # AND confirmed — persisted pose flags alone are NOT sufficient) ---
         gps_viable = (gps_fresh and gps_calibrated and base_locked
@@ -113,8 +146,12 @@ class TrackingArbiter:
 
         # --- GPS→STOP on data loss (MUST run before state mutation) ---
         # If we were GPS-tracking and GPS became unviable, release to idle
-        # (camera holds position, doesn't coast on stale bearing).
-        if mode == "auto" and not gps_viable and self._last_owner == "gps_tracker":
+        # (camera holds position, doesn't coast on stale bearing). But NOT if vision is
+        # locked this frame: this short-circuit runs before the lock counting below, so a
+        # single stale-GPS frame would otherwise block the GPS→vision handoff exactly when
+        # vision just acquired — a visible tracking stutter (ARB-1).
+        if (mode == "auto" and not gps_viable and self._last_owner == "gps_tracker"
+                and not vision.locked):
             self._last_owner = "idle"
             self._vision_owns = False
             self._consecutive_locked = 0

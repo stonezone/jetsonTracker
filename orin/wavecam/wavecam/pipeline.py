@@ -28,6 +28,10 @@ from .ptz_owner import PtzOwner
 from .tracking_arbiter import TrackingArbiter
 
 DEFAULT_STOP_RESEND_INTERVAL_SEC = 0.25
+# Frames must advance within this budget or capture is "stale" — a wedged grabber
+# hands back the same non-None frame forever (ZOMBIE-1). Generous vs the ~35fps
+# loop so a momentary hiccup doesn't drop vision authority.
+CAPTURE_STALE_SEC = 2.0
 
 # GPS-cued ROI minimum size (px) — ensures the detector has enough context even
 # when the GPS-predicted position is at a frame edge (review 2026-06-12).
@@ -55,11 +59,16 @@ def compute_roi_crop(
     y1 = int(max(0, cy - side))
     x2 = int(min(frame_w, cx + side))
     y2 = int(min(frame_h, cy + side))
-    # Re-enforce minimum size after edge clamping
+    # Re-enforce minimum size after edge clamping. Two-sided: push the high edge
+    # out, then pull the low edge in if the box is pinned against the high frame
+    # bound — otherwise an ROI near the right/bottom edge stays undersized because
+    # x2/y2 are already capped at the frame and can't grow.
     if x2 - x1 < _ROI_MIN_PX:
         x2 = min(frame_w, x1 + _ROI_MIN_PX)
+        x1 = max(0, x2 - _ROI_MIN_PX)
     if y2 - y1 < _ROI_MIN_PX:
         y2 = min(frame_h, y1 + _ROI_MIN_PX)
+        y1 = max(0, y2 - _ROI_MIN_PX)
     return (x1, y1, x2, y2)
 
 
@@ -119,11 +128,16 @@ class Pipeline(threading.Thread):
 
         # YOLO is optional + lazily built (so missing torch doesn't kill the rig)
         self.detector = None
+        self._detector_load_error: str | None = None
         if cfg.detector.enabled:
             try:
                 self.detector = detector_factory()
-            except Exception as e:  # pragma: no cover - depends on torch/ultralytics
+            except Exception as e:
+                # Don't crash the rig, but don't fail silently either: stash the reason
+                # and record a detector_failed event once self.events exists (DET-1b),
+                # so a zombie rig (engine dead, API up) is in the event stream too.
                 print(f"[pipeline] YOLO disabled (load failed): {e}")
+                self._detector_load_error = str(e)
 
         # P1: GPS coarse-pointing handoff
         self.arbiter = TrackingArbiter(
@@ -131,6 +145,7 @@ class Pipeline(threading.Thread):
             grace_sec=getattr(cfg.gps, "grace_sec", 1.0),
             max_gps_age_sec=getattr(cfg.gps, "drive_stale_sec", 8.0),
             mode=getattr(getattr(cfg, "tracking", None), "mode", "auto"),
+            enabled=getattr(getattr(cfg, "tracking", None), "enabled", True),
         )
         # CameraPose — loaded by calibration endpoint; uncalibrated by default
         from .camera_pose import CameraPose
@@ -143,6 +158,11 @@ class Pipeline(threading.Thread):
         # Event ring — records lock/owner/gps/kill transitions for /events
         from .events import EventRing
         self.events = EventRing(maxlen=500)
+        # Surface a swallowed detector-load failure now that the ring exists (DET-1b).
+        if self._detector_load_error is not None:
+            self.events.record("detector_failed",
+                               {"reason": "engine_load_failed",
+                                "error": self._detector_load_error})
         # PtzState — background encoder poller. Started in run() only when
         # ptz.enabled is True. Additive telemetry; does not affect the servo.
         from .ptz_state import PtzState
@@ -201,6 +221,11 @@ class Pipeline(threading.Thread):
         if on:
             self.state.set_status(killed=True, state="KILLED")
             self.owner.kill()                  # sticky latch + owner -> idle
+            # Reset arbiter hysteresis so a stale mid-kill lock can't instantly
+            # re-grant vision_follow on RESUME — the operator killed because the
+            # lock was wrong; post-resume must re-earn it from scratch (KILL-1).
+            if hasattr(self, "arbiter"):
+                self.arbiter.reset_vision_state()
             self._pointing_verifier.clear()    # no resend may outlive a KILL
             self._last_kill = {"reason": reason or "operator", "at_unix_ms": int(time.time() * 1000)}
             if self.cfg.ptz.enabled:
@@ -579,6 +604,9 @@ class Pipeline(threading.Thread):
         n_fps = 0
         fps = 0.0
         t_log = time.time()
+        _last_frames = -1
+        _last_frame_advance = time.time()
+        _capture_stale = False
 
         while not self._stop.is_set():
             t0 = time.time()
@@ -587,6 +615,22 @@ class Pipeline(threading.Thread):
                 self.state.set_status(state="NO_VIDEO", connected=self.grab.connected)
                 time.sleep(0.1)
                 continue
+
+            # Zombie-rig guard (ZOMBIE-1): a wedged grabber keeps handing back the
+            # SAME non-None frame, so this loop runs fusion on a frozen image while
+            # /status says TRACKING. Detect via the grabber's frame counter (advances
+            # only on a genuinely new frame); when it stalls past the budget, mark
+            # capture stale so the arbiter drops vision authority.
+            _frames = self.grab.frames
+            if _frames != _last_frames:
+                _last_frames = _frames
+                _last_frame_advance = t0
+            capture_ok = (t0 - _last_frame_advance) < CAPTURE_STALE_SEC
+            if not capture_ok and not _capture_stale:
+                _capture_stale = True
+                self.events.record("vision_stale", {"stale_sec": round(t0 - _last_frame_advance, 1)})
+            elif capture_ok and _capture_stale:
+                _capture_stale = False
 
             h, w = frame.shape[:2]
             if self.estimator is None and self._frame_i % 120 == 0:
@@ -637,7 +681,13 @@ class Pipeline(threading.Thread):
             if self.state.killed or self._restarting:
                 cmd = STOP_CMD
                 abs_cmd = None
-                self._send_cmd(cmd)               # killed/restarting -> force stop
+                # Force the stop directly — bypass _send_cmd's dedupe/rate-limit so a
+                # creeping PTZ on the kill path is re-stopped every frame, not throttled
+                # for up to stop_resend_interval (SAFE-1). Stopping is always safe.
+                if self.cfg.ptz.enabled:
+                    self.ptz.stop()
+                self._last_cmd_key = cmd.key()
+                self._last_cmd_time = time.time()
                 self._send_zoom("stop")
                 zoom_cmd = "hold"
                 self._arbiter_state = "restarting" if self._restarting else "killed"
@@ -670,9 +720,12 @@ class Pipeline(threading.Thread):
                                                        self.arbiter.grace_sec))
                 self.arbiter.mode = getattr(getattr(self.cfg, "tracking", None),
                                             "mode", "auto")
+                self.arbiter.enabled = getattr(getattr(self.cfg, "tracking", None),
+                                               "enabled", True)
                 decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
                                                base_locked, t0,
-                                               calibration_valid=calibration_valid)
+                                               calibration_valid=calibration_valid,
+                                               capture_ok=capture_ok)
                 prev_state = self._arbiter_state
                 self._arbiter_state = decision.owner
                 # Observability (Plan v3 Phase 0): record why authority resolved
@@ -708,23 +761,24 @@ class Pipeline(threading.Thread):
                 if decision.owner != prev_state:
                     self._send_zoom("stop")
 
-                # Release outgoing autonomous owner BEFORE requesting new one.
-                # ptz_owner.request refuses cross-owner steals (idle→owner only).
+                # Hand off ownership atomically (OWN-1): transition() releases the
+                # old owner and claims the new one under one lock, so a manual claim
+                # can't slip into a transient idle gap. Only take over from idle or an
+                # arbiter-driven owner — never steal manual/calibrate/testbed.
                 _curr = self.owner.owner
                 _want = decision.owner
-                if _curr in ("vision_follow", "gps_tracker") and _curr != _want:
-                    self.owner.release(_curr)
+                _takeable = _curr in ("idle", "vision_follow", "gps_tracker")
 
                 if decision.owner == "vision_follow":
-                    if _curr != "vision_follow":
-                        self.owner.request("vision_follow")
+                    if _curr != "vision_follow" and _takeable:
+                        self.owner.transition(_curr, "vision_follow")
                     if self.owner.owner in ("vision_follow", "testbed"):
                         self._send_cmd(cmd)
                         zoom_cmd = self._maybe_send_cinematic_zoom(fr, h)
 
                 elif decision.owner == "gps_tracker":
-                    if _curr != "gps_tracker":
-                        self.owner.request("gps_tracker")
+                    if _curr != "gps_tracker" and _takeable:
+                        self.owner.transition(_curr, "gps_tracker")
                     # Only drive GPS if we actually own it (not blocked)
                     if self.owner.owner == "gps_tracker":
                         abs_cmd = self._gps_pointing_cmd(gps_fix, calibration_valid)

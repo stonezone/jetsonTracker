@@ -95,3 +95,11 @@ gps:
 estimator:
   enabled: true
   shadow: true
+
+sensors:
+  # Phase-3 phone-on-tripod diagnostic ingest. enabled=False discards every POST
+  # silently (route still returns 200), so /status.sensors never populates and the
+  # iOS Sensors panel shows nothing even though the phone is posting. Must be true
+  # for SensorHub to cache phone samples. (2026-06-16: was defaulting off.)
+  enabled: true
+  drift_alert_deg: 12.0

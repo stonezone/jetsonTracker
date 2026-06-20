@@ -10,13 +10,15 @@ prepare_for_restart as a convenience so callers don't reach into _ptz directly.
 """
 from __future__ import annotations
 
+import json
 import threading
 
 from fastapi.responses import JSONResponse
 
 from .control_utils import make_request_id, normalized_text
 from .ptz_owner import IDLE
-from .advisor import AdvisorService
+from .advisor import AdvisorService, KEYS_PATH
+from .agent_session import REQUEST_TIMEOUT_SEC, AgentSession, ArmState
 from .supervisor import restart_systemd_unit
 
 
@@ -32,6 +34,24 @@ class SystemManager:
         self._restart_timer: threading.Timer | None = None
         self._restart_pending = False
         self.advisor = AdvisorService(self._advisor_context)
+        # Interactive acting-agent (Phase 1a): the conversation + arm/KILL bridge.
+        # Built only when enabled, so a disabled agent costs nothing and core boots
+        # unaffected. The arm gate is the supervise-only floor acting tiers read.
+        acfg = getattr(getattr(pipeline, "cfg", None), "agent", None)
+        self._agent_enabled = bool(getattr(acfg, "enabled", False))
+        # arm_ttl_sec must outlast a single chat turn, or the arm window could expire
+        # mid-subprocess while claude still holds Bash. Clamp to a safe floor.
+        ttl = float(getattr(acfg, "arm_ttl_sec", 600.0))
+        min_ttl = REQUEST_TIMEOUT_SEC + 60.0
+        if self._agent_enabled and ttl < min_ttl:
+            print(f"[agent] arm_ttl_sec {ttl:g}s < safe minimum {min_ttl:g}s — clamping")
+            ttl = min_ttl
+        self._agent_arm: ArmState | None = (
+            ArmState(ttl_sec=ttl) if self._agent_enabled else None
+        )
+        self._agent_session: AgentSession | None = (
+            AgentSession(keys_path=KEYS_PATH) if self._agent_enabled else None
+        )
 
     def _advisor_context(self) -> dict:
         """Read-only snapshot for the advisor: status + recent events.
@@ -79,7 +99,7 @@ class SystemManager:
     def request_agent_summon(self, req) -> JSONResponse:
         source = normalized_text(req.source, "unknown", 64)
         reason = normalized_text(req.reason, "operator_diagnostics", 256)
-        provider = normalized_text(getattr(req, "provider", None), "claude", 16)
+        provider = normalized_text(getattr(req, "provider", None), "claude_code", 24)
         accepted, message = self.advisor.summon(provider)
         return JSONResponse(
             {
@@ -104,6 +124,83 @@ class SystemManager:
             {"ok": True, "request_id": make_request_id(),
              "report": self.advisor.report()}
         )
+
+    def request_agent_chat(self, message: str, provider: str = "claude_code") -> JSONResponse:
+        if not self._agent_enabled or self._agent_session is None:
+            return JSONResponse(
+                {"ok": False, "code": "agent_disabled",
+                 "message": "Interactive agent is not enabled on this rig."}
+            )
+        msg = normalized_text(message, "", 4000)
+        prov = normalized_text(provider, "claude_code", 24)
+        status_text = json.dumps(self._api.status_snapshot())
+        armed = self._agent_arm.can_act() if self._agent_arm else False
+        try:
+            result = self._agent_session.chat(msg, status_text, armed=armed, provider=prov)
+        except Exception as exc:  # surface as a failed turn; the session is preserved
+            return JSONResponse(
+                {"ok": False, "code": "agent_error", "message": str(exc)[:200]}
+            )
+        self._audit_agent_turn(armed)
+        # Re-read arm state AFTER the (long) turn — a KILL mid-request must not be
+        # masked by the pre-turn 'armed' capture, or the client would re-arm itself.
+        current_armed = self._agent_arm.can_act() if self._agent_arm else False
+        return JSONResponse(
+            {"ok": True, "request_id": make_request_id(),
+             "reply": result["reply"], "armed": current_armed}
+        )
+
+    def agent_providers(self) -> list:
+        """Providers the operator can pick: claude_code (always, when enabled) plus any
+        vendor whose API key is present in agent_keys.json. Drives supported.agent_providers
+        so the iOS picker only offers configured backends."""
+        if not self._agent_enabled:
+            return []
+        from .agent_session import PROVIDER_ENDPOINTS, _load_keys
+        providers = ["claude_code"]
+        try:
+            keys = _load_keys(KEYS_PATH)
+        except Exception:
+            return providers
+        for name, (_base, key_field, _model) in PROVIDER_ENDPOINTS.items():
+            if keys.get(key_field):
+                providers.append(name)
+        return providers
+
+    def _audit_agent_turn(self, armed: bool) -> None:
+        ring = getattr(self.pipeline, "events", None)
+        if ring is not None:
+            try:
+                ring.record("agent_chat", {"armed": armed})
+            except Exception as exc:
+                print(f"[agent] audit failed: {exc}")
+
+    def request_agent_arm(self, armed: bool) -> JSONResponse:
+        if not self._agent_enabled or self._agent_arm is None:
+            return JSONResponse({"ok": False, "code": "agent_disabled"})
+        if armed:
+            self._agent_arm.arm()
+        else:
+            self._agent_arm.disarm()
+        return JSONResponse({"ok": True, "armed": self._agent_arm.can_act()})
+
+    def agent_kill(self) -> None:
+        """KILL path hook — supervise-only floor: KILL disarms the agent."""
+        if self._agent_arm is not None:
+            self._agent_arm.kill()
+
+    def agent_resume(self) -> None:
+        """RESUME path hook — clear the agent KILL latch so it can be re-armed.
+        Stays disarmed; arming is always an explicit operator action afterward."""
+        if self._agent_arm is not None:
+            self._agent_arm.clear_kill()
+
+    def agent_arm_snapshot(self) -> dict:
+        if self._agent_arm is None:
+            return {"armed": False, "killed": False, "enabled": False}
+        snap = self._agent_arm.snapshot()
+        snap["enabled"] = True
+        return snap
 
     # ------------------------------------------------------------------
     # Restart state

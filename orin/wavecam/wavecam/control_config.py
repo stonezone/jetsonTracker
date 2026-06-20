@@ -110,14 +110,22 @@ class ConfigManager:
             "fusion.gps_boost": lambda: set_float(cfg.fusion, "gps_boost", value, 0.0, 0.5, dry_run=dry_run),
             "fusion.gps_boost_radius_frac": lambda: set_float(cfg.fusion, "gps_boost_radius_frac", value, 0.05, 0.75, dry_run=dry_run),
             "fusion.gps_roi_enabled": lambda: set_bool(cfg.fusion, "gps_roi_enabled", value, dry_run=dry_run),
+            "fusion.gps_bearing_cue_enabled": lambda: set_bool(cfg.fusion, "gps_bearing_cue_enabled", value, dry_run=dry_run),
             "gps.stale_threshold_sec": lambda: self.apply_gps_float("stale_threshold_sec", value, 1.0, 120.0, dry_run=dry_run),
             "gps.drive_stale_sec": lambda: self.apply_gps_float("drive_stale_sec", value, 1.0, 60.0, dry_run=dry_run),
+            "gps.coast_on_no_fix_sec": lambda: self.apply_gps_coast(value, dry_run=dry_run),
             "gps.grace_sec": lambda: self.apply_gps_float("grace_sec", value, 0.1, 10.0, dry_run=dry_run),
             "gps.lock_frames": lambda: self.apply_gps_int("lock_frames", value, 1, 30, dry_run=dry_run),
             "gps.drive_zoom": lambda: self.apply_gps_bool("drive_zoom", value, dry_run=dry_run),
+            "gps.drive_zoom_near_m": lambda: self.apply_gps_float("drive_zoom_near_m", value, 1.0, 300.0, dry_run=dry_run),
+            "gps.drive_zoom_far_m": lambda: self.apply_gps_float("drive_zoom_far_m", value, 5.0, 600.0, dry_run=dry_run),
+            "gps.drive_zoom_max_enc": lambda: self.apply_gps_float("drive_zoom_max_enc", value, 0.0, 16384.0, dry_run=dry_run),
+            "gps.drive_zoom_max_frac": lambda: self.apply_gps_float("drive_zoom_max_frac", value, 0.0, 1.0, dry_run=dry_run),
+            "gps.base_drift_enabled": lambda: self.apply_gps_bool("base_drift_enabled", value, dry_run=dry_run),
             "gps.max_pan_speed": lambda: self.apply_gps_int("max_pan_speed", value, 1, 24, dry_run=dry_run),
             "gps.max_tilt_speed": lambda: self.apply_gps_int("max_tilt_speed", value, 1, 20, dry_run=dry_run),
             "tracking.mode": lambda: self.apply_tracking_mode(value, dry_run=dry_run),
+            "tracking.enabled": lambda: self.apply_tracking_enabled(value, dry_run=dry_run),
             "color.preset": lambda: self.apply_color_preset(value, dry_run=dry_run),
             "color.min_area": lambda: set_int(cfg.color, "min_area", value, 1, 500000, dry_run=dry_run),
             "color.max_area": lambda: set_int(cfg.color, "max_area", value, 100, 1000000, dry_run=dry_run),
@@ -203,6 +211,21 @@ class ConfigManager:
             self._sync_arbiter_from_gps()
         return None
 
+    def apply_gps_coast(self, value: Any, dry_run: bool = False) -> str | None:
+        """gps.coast_on_no_fix_sec — set cfg AND push to the live DirectRadioGps reader,
+        which holds its own copy (read on every get_fix, not via cfg)."""
+        gps_cfg = self._gps_cfg()
+        if gps_cfg is None:
+            return "gps.coast_on_no_fix_sec: GPS section not present in config."
+        error = set_float(gps_cfg, "coast_on_no_fix_sec", value, 0.0, 30.0, dry_run=dry_run)
+        if error is not None:
+            return error
+        if not dry_run:
+            reader = getattr(self.pipeline, "gps", None)
+            if reader is not None and hasattr(reader, "coast_on_no_fix_sec"):
+                reader.coast_on_no_fix_sec = float(gps_cfg.coast_on_no_fix_sec)
+        return None
+
     def apply_gps_int(self, attr: str, value: Any, lo: int, hi: int,
                       dry_run: bool = False) -> str | None:
         gps_cfg = self._gps_cfg()
@@ -254,12 +277,24 @@ class ConfigManager:
         self._sync_arbiter_from_tracking()
         return None
 
+    def apply_tracking_enabled(self, value: Any, dry_run: bool = False) -> str | None:
+        tracking_cfg = getattr(self.pipeline.cfg, "tracking", None)
+        if tracking_cfg is None:
+            return "tracking.enabled: tracking section not present in config."
+        err = set_bool(tracking_cfg, "enabled", value, dry_run=dry_run)
+        if err is not None:
+            return err
+        if not dry_run:
+            self._sync_arbiter_from_tracking()
+        return None
+
     def _sync_arbiter_from_tracking(self) -> None:
         arbiter = getattr(self.pipeline, "arbiter", None)
         tracking_cfg = getattr(self.pipeline.cfg, "tracking", None)
         if arbiter is None or tracking_cfg is None:
             return
         arbiter.mode = getattr(tracking_cfg, "mode", "auto")
+        arbiter.enabled = getattr(tracking_cfg, "enabled", True)
 
     # ------------------------------------------------------------------
     # Estimator config helpers

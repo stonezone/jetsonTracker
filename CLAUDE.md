@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**WaveCam** is a vision-based auto-filming PTZ camera (a SoloShot replacement) that films Zack foil-surfing **50-300m offshore**. A Jetson Orin Nano runs YOLOv8 person detection plus a bright-**orange-rashguard color cue** to keep the subject framed; a **Prisual NDI PTZ camera** does pan/tilt/zoom; a native **iOS app + watchOS companion** are the operator consoles; **direct-LoRa Wio GPS** already provides coarse-point/zoom while vision refines. Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + device installs + Zack-comms.
+**WaveCam** is a vision-based auto-filming PTZ camera (a SoloShot replacement) that films Zack foil-surfing **50-300m offshore**. A Jetson Orin Nano runs YOLO11n person detection plus a bright-**orange-rashguard color cue** to keep the subject framed; a **Prisual NDI PTZ camera** does pan/tilt/zoom; a native **iOS app + watchOS companion** are the operator consoles; **direct-LoRa Wio GPS** already provides coarse-point/zoom while vision refines. Two agents build it: **Codex** = Orin backend + deploy; **Claude** = iOS app + device installs + Zack-comms.
 
 > The DIY 2xNEMA17 stepper gimbal and the Apple-Watch/BN-220 GPS in the old "jetsonTracker" design are **SUPERSEDED**. The canonical current architecture lives in the `.claude` memory `wavecam-architecture-pivot` — verify against reality, not legacy docs.
 
@@ -64,7 +64,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 ### Live System Map
 
-- **`:8088`** = WaveCam control API (`/api/v1`) + the live tuning web page. This is the **ACTIVE tracker** the iOS app drives. Tools > Web points here.
+- **`:8088`** = WaveCam control API (`/api/v1`) + the live tuning web page (now incl. the **ASK CLAUDE** agent chat + arm toggle). This is the **ACTIVE tracker** the iOS app drives. Tools > Web points here.
 - **`https://wavecam.freddieland.com`** = same `:8088` UI/API exposed through the Cloudflare `robot-core` tunnel (Google Auth + Access policy, `zackjordan@gmail.com` only).
 - **`:8080`** = retired legacy Dash service. It should stay stopped/disabled; do not re-enable it.
 - **`:8765` / `ws.stonezone.net`** = retired Apple Watch/iPhone Cloudflare GPS relay. `gps-server.service` is disabled and the tunnel ingress was removed.
@@ -72,7 +72,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 ### Hardware Stack
 
 - **Camera**: Prisual **NDI PTZ** — **20x optical zoom** (subject is well-resolved at 300m; the range challenge is narrow-FOV *acquisition*, NOT pixel count — don't treat distant subjects as a small-object detection problem). RAW VISCA over UDP `192.168.100.88:1259` (no auth; NOT Sony 8-byte framed). Video = RTSP (`/1` 1080p60, `/2` 640x360); ONVIF `:81` backup.
-- **Compute**: Jetson Orin Nano (YOLOv8n TensorRT). Wired LAN `192.168.100.10`.
+- **Compute**: Jetson Orin Nano (YOLO11n TensorRT). Wired LAN `192.168.100.10`.
 - **GPS**: LoRa — SeeedStudio **Wio Tracker L1 Lite** (nRF52840, SX1262, L76K multi-constellation) running the custom `firmware/direct-lora/` firmware. The remote tracker sends GPS over LoRa; the base Wio emits JSONL over USB; `DirectRadioGps` feeds WaveCam. Meshtastic is no longer used.
 - **Legacy gimbal**: STM32 Nucleo **F401RE** + 2x NEMA17 (the old DIY pan/tilt; firmware archived under `archive/legacy-20260606/stm32-nucleo-stepper/`).
 - **Operator app**: iOS WaveCam (iPhone-only, personal dev build) on the live `/api/v1`.
@@ -82,14 +82,14 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 - **Orin ↔ Camera**: RAW VISCA UDP `192.168.100.88:1259`; video over RTSP.
 - **Orin control API**: `http://<orin>:8088/api/v1` (status / safety / ptz / media / config / telemetry / agent / system).
-- **Live detector model**: YOLO (`yolo26n` family, TensorRT engine) — rebuilt directly on the Orin 2026-06-10 (cross-device export problem is resolved). To confirm what's running: `GET /api/v1/config` or trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`.
+- **Live detector model**: YOLO11n TensorRT (`yolo11n.engine`) — swapped from yolov8n on 2026-06-15, rebuilt directly on the Orin (cross-device export problem is resolved). The `yolo26n` family is NOT usable on the rig's ultralytics (8.3.233); the model is not the tracking bottleneck. To confirm what's running: `GET /api/v1/config` or trace systemd `wavecam.service` ExecStart → `config.orin.servo.yaml` → `detector.model`.
 - **Orin ↔ base Wio**: USB serial `/dev/ttyACM0` @115200, JSONL from the custom direct-LoRa firmware.
 - **Legacy Orin ↔ STM32**: UART (F401RE gimbal), archived and not part of the active WaveCam runtime.
 - **Two-agent collab**: `.agent-collab/bin/collab.py` (emit / claim-open / claim-close). Claim before editing shared files.
 
 ## GPS Architecture (current)
 
-> **DEPLOYED STATE (2026-06-14): the custom direct-LoRa firmware is the LIVE GPS source** (`gps.source=direct_lora` on the rig), NOT Meshtastic. Root-cause of the long Wio no-fix: the L76K GNSS speaks **CASIC/PCAS at fixed 9600** (not MTK/PMTK/57600) — firmware fixed in `firmware/direct-lora/`. The base Wio now has a battery installed; acquire the fix on battery power and keep it off the Orin's USB rail (host RF noise → 0 sats), then connect USB data. `/status.gps` now exposes `target_battery_mv`/`target_sats`; `/config` advertises `supported.tracking_mode`. A **`tracking.mode` hot key (`auto` | `gps_only` | `vision_only`)** gates the arbiter — `gps_only` forces GPS pointing and ignores vision (no false-color-lock hijack). A **CALIBRATE mode** (operator wizard, iOS Calibrate tab) establishes camera location + heading: spec `docs/superpowers/specs/2026-06-13-calibrate-mode-design.md`; endpoints `/api/v1/calibration/{session/start,session/exit,location,level,heading-lock,validation,validation/confirm}` (owner=`calibrate` PTZ lockout — kills the arbiter fight; KILL cancels CALIBRATE). **Heading = aim at a STATIONARY target AT RANGE (≥50 m / a surveyed landmark), NOT close** (10 m ≈ 27° GPS-bearing error); scale fixed at 14.4 counts/deg; location lock = averaged base fix with a model (HDOP×UERE) radius. The legacy Meshtastic relay path is fully superseded.
+> **DEPLOYED STATE (2026-06-14): the custom direct-LoRa firmware is the LIVE GPS source** (`gps.source=direct_lora` on the rig), NOT Meshtastic. Root-cause of the long Wio no-fix: the L76K GNSS speaks **CASIC/PCAS at fixed 9600** (not MTK/PMTK/57600) — firmware fixed in `firmware/direct-lora/`. The base Wio now has a battery installed; acquire the fix on battery power and keep it off the Orin's USB rail (host RF noise → 0 sats), then connect USB data. `/status.gps` now exposes `target_battery_mv`/`target_sats`; `/config` advertises `supported.tracking_mode`. A **`tracking.mode` hot key (`auto` | `gps_only` | `vision_only`)** gates the arbiter — `gps_only` forces GPS pointing and ignores vision (no false-color-lock hijack). A separate **`tracking.enabled` hot key (DISABLE-PTZ latch)** turns autonomy OFF entirely — the arbiter idles every frame so a manual aim holds until re-enabled (distinct from the transient STOP-PTZ hold; web + iOS Tune toggles). A **CALIBRATE mode** (operator wizard, iOS Calibrate tab) establishes camera location + heading: spec `docs/superpowers/specs/2026-06-13-calibrate-mode-design.md`; endpoints `/api/v1/calibration/{session/start,session/exit,location,level,heading-lock,validation,validation/confirm}` (owner=`calibrate` PTZ lockout — kills the arbiter fight; KILL cancels CALIBRATE). **Heading = aim at a STATIONARY target AT RANGE (≥50 m / a surveyed landmark), NOT close** (10 m ≈ 27° GPS-bearing error); scale fixed at 14.4 counts/deg; location lock = averaged base fix with a model (HDOP×UERE) radius. The legacy Meshtastic relay path is fully superseded.
 
 **Plan**: LoRa GPS does coarse point + zoom when the subject is too far for YOLO/color to be reliable (toward 300m); vision (orange-confirmed person) refines once the subject is resolvable in-frame; **Cinematic Zoom** then holds subject size.
 
@@ -101,7 +101,7 @@ jetsonTracker/                 # master repo (product = WaveCam)
 ## Development Guidelines
 
 - **Test on the live rig** before claiming a backend/vision change works (Codex's lane).
-- **Use TensorRT** engines for production inference (live = `yolov8n.engine`).
+- **Use TensorRT** engines for production inference (live = `yolo11n.engine`).
 - **iOS**: feature-detect every config-driven control against `GET /config`; keep **portrait + landscape parity** (the phone tripod-mounts); verify layout on-device.
 - **Document** architecture/hardware changes under `docs/`.
 
@@ -128,8 +128,8 @@ python3 .agent-collab/bin/collab.py claim-open --from claude --scope <path> --mo
 
 - All code changes committed to this master repo (stage files explicitly; never `git add -A`)
 - Vision must maintain 30+ FPS
-- The agent/supervisor is **SUPERVISE-ONLY** — it never autonomously moves the camera
-- Emergency Stop / KILL must stay reachable in the iOS app at all times
+- The agent is **supervise-only by default**; an **operator-only ARM toggle** (default OFF, TTL auto-expire, KILL-disarmed) grants it a shell to act via the control API — it never moves the camera *unattended*. Spec: `docs/superpowers/specs/2026-06-19-acting-agent-design.md`; memory `acting-agent-autonomous-build`.
+- Emergency Stop / KILL must stay reachable in the iOS app at all times — **KILL is human-only and supreme** (never an agent capability; it disarms the agent + stops motion)
 - iOS must work in **both portrait and landscape** (tripod-bracket mount)
 - Confirm the live deploy before telling Zack a feature is "live"
 
@@ -151,7 +151,7 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - Don't skip tests
 - Don't create features without searching memories for existing patterns
 - Don't end a session without saving key learnings
-- Don't let the agent/automation move the camera without the supervise-only gate + a reachable Emergency Stop
+- Don't let the agent move the camera without the **operator ARM gate** + a reachable KILL; KILL stays human-only (never an agent tool)
 - Don't edit backend code or deploy to the Orin without Zack's assignment + a bus claim first (Codex's primary lane); don't `git push` to remote
 
 ## Gotchas (hard-won — 2026-06-05, expanded 2026-06-12)

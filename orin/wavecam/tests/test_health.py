@@ -55,3 +55,43 @@ def test_watchdog_health_paths_exist(tmp_path):
     assert body["components"]["gps_reader"]["ok"] is False
     assert body["components"]["gps_reader"]["age_sec"] == 12.3
     assert isinstance(body["components"]["disk"]["detail"]["free_gb"], float)
+
+
+def test_base_silent_flags_wedged_base(tmp_path):
+    # GPS-2: reader thread alive but no fresh lines for > base_silent_sec means the
+    # base Wio is wedged (serial open, silent). reader_alive() can't see this, so a
+    # dedicated component must flag it ok:false instead of looking healthy.
+    pl = DummyPipeline()
+    pl.recorder.config = types.SimpleNamespace(rec_dir=tmp_path)
+    pl.gps = types.SimpleNamespace(
+        reader_alive=lambda: True,
+        last_poll_age_sec=lambda: 99.0,   # silent for 99s (> 30s default)
+    )
+    body = TestClient(build_app(pl)).get("/api/v1/health").json()
+    assert body["components"]["base_silent"]["ok"] is False
+    assert body["components"]["base_silent"]["detail"]["reader_alive"] is True
+    assert body["ok"] is False
+
+
+def test_base_silent_ok_when_fresh(tmp_path):
+    pl = DummyPipeline()
+    pl.recorder.config = types.SimpleNamespace(rec_dir=tmp_path)
+    pl.gps = types.SimpleNamespace(
+        reader_alive=lambda: True,
+        last_poll_age_sec=lambda: 1.5,    # fresh
+    )
+    body = TestClient(build_app(pl)).get("/api/v1/health").json()
+    assert body["components"]["base_silent"]["ok"] is True
+
+
+def test_base_silent_ok_when_reader_down(tmp_path):
+    # A dead reader is the gps_reader component's job to flag; base_silent should not
+    # double-fault (you can't be "silent" if the thread isn't even running).
+    pl = DummyPipeline()
+    pl.recorder.config = types.SimpleNamespace(rec_dir=tmp_path)
+    pl.gps = types.SimpleNamespace(
+        reader_alive=lambda: False,
+        last_poll_age_sec=lambda: None,
+    )
+    body = TestClient(build_app(pl)).get("/api/v1/health").json()
+    assert body["components"]["base_silent"]["ok"] is True

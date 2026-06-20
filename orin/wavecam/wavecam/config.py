@@ -171,6 +171,9 @@ class GpsCfg:
     # drive_stale_sec is tighter: a 44s-old fix on an 8m/s foiler points ~350m behind
     # (review 2026-06-12); this gate keeps steering honest without affecting the HUD display
     drive_stale_sec: float = 8.0    # remote fix age > this → too old to STEER
+    # GPS-1: on an honest no-fix packet (wipeout / wave-trough blackout) coast on the
+    # last good fix this long before dropping the aim. 0 = drop immediately.
+    coast_on_no_fix_sec: float = 2.0
     # P2: GPS-driven zoom (off by default — untuned; enable when ready)
     drive_zoom: bool = False
     # Phase-4 (v3): GPS-driven zoom curve params (used only when drive_zoom=True +
@@ -196,11 +199,18 @@ class GpsCfg:
     base_drift_interval_sec: float = 2.0
     base_drift_max_fix_age_sec: float = 10.0
     base_drift_min_sats: int = 0   # 0 = sats gate off (base sats not yet ingested)
+    # GPS-2: a base Wio reboot/wedge keeps the serial open but stops emitting lines.
+    # reader_alive() only checks the thread is up, so /health flags base_silent when
+    # the reader is alive but no fresh line has arrived for longer than this.
+    base_silent_sec: float = 30.0
 
 
 @dataclass
 class TrackingCfg:
     mode: str = "auto"  # "auto" | "gps_only" | "vision_only"
+    # Operator DISABLE-PTZ latch. False = autonomous tracking is off (arbiter
+    # idles every frame); a manual aim holds until the operator re-enables.
+    enabled: bool = True
 
 
 @dataclass
@@ -239,6 +249,18 @@ class SensorsCfg:
 
 
 @dataclass
+class AgentCfg:
+    # Interactive acting-agent (Claude Code `claude -p`). enabled=False ⇒ the
+    # /agent/chat and /agent/arm routes report agent_disabled and core boots
+    # unaffected. arm_ttl_sec auto-disarms an idle armed session (supervise-only
+    # floor). model/mcp_config_path reserved for the acting-tools phase (1b+).
+    enabled: bool = False
+    model: str = ""
+    arm_ttl_sec: float = 600.0
+    mcp_config_path: str = ""
+
+
+@dataclass
 class Config:
     camera: CameraCfg
     ptz: PtzCfg
@@ -252,6 +274,7 @@ class Config:
     tracking: TrackingCfg = field(default_factory=TrackingCfg)
     estimator: EstimatorCfg = field(default_factory=EstimatorCfg)
     sensors: SensorsCfg = field(default_factory=SensorsCfg)
+    agent: AgentCfg = field(default_factory=AgentCfg)
     source_path: str = ""   # set by load_config; the rig yaml; empty in unit tests
 
 
@@ -282,6 +305,7 @@ def _apply_overlay(cfg: "Config", overlay_path: str) -> None:
         "tracking": "tracking",
         "estimator": "estimator",
         "sensors": "sensors",
+        "agent": "agent",
     }
     for section, kv in ov.items():
         if section not in _KNOWN_SECTIONS:
@@ -327,6 +351,7 @@ def load_config(path: str) -> Config:
         tracking=TrackingCfg(**{**TrackingCfg().__dict__, **_d(raw, "tracking", {})}),
         estimator=EstimatorCfg(**{**EstimatorCfg().__dict__, **_d(raw, "estimator", {})}),
         sensors=SensorsCfg(**{**SensorsCfg().__dict__, **_d(raw, "sensors", {})}),
+        agent=AgentCfg(**{**AgentCfg().__dict__, **_d(raw, "agent", {})}),
     )
 
     # Apply overlay (config.local.yaml) over the base config — rig-owned, deploy-safe.

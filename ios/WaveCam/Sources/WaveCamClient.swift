@@ -64,6 +64,8 @@ struct WCStatus: Codable, Sendable {
     /// True when the TargetEstimator is running in shadow mode (never commands).
     /// Absent on older backends — UI hides shadow indicator when nil.
     var shadowMode: Bool?
+    /// Phone-on-tripod sensor diagnostic block. Absent on older backends.
+    var sensors: Sensors?
 
     struct Session: Codable, Sendable {
         var state: String
@@ -113,6 +115,41 @@ struct WCStatus: Codable, Sendable {
         var cameraLan: Bool?
         var uplink: Bool?
     }
+    // NO explicit CodingKeys here. The shared `decoder` uses .convertFromSnakeCase, which
+    // maps snake_case JSON (heading_deg, alt_m, age_sec, co_location, …) to these camelCase
+    // properties automatically. Declaring snake_case CodingKeys would CONFLICT: the decoder
+    // first converts "heading_deg"→"headingDeg", then can't match a key whose raw value is
+    // literally "heading_deg", so every multi-word field silently decodes to nil while lat/lon
+    // (single-word) survive — which is exactly the "GPS shows but no heading/altitude" bug.
+    struct Sensors: Codable, Sendable {
+        struct Phone: Codable, Sendable {
+            var headingDeg: Double?
+            var trueHeadingDeg: Double?
+            var headingAcc: Double?
+            var lat: Double?
+            var lon: Double?
+            var hAcc: Double?
+            var altM: Double?
+            var altAcc: Double?
+            var baroRelM: Double?
+            var ageSec: Double?
+            var tripodReference: Bool?
+        }
+        struct Base: Codable, Sendable {
+            var lat: Double?
+            var lon: Double?
+            var altM: Double?
+        }
+        struct CoLocation: Codable, Sendable {
+            var phoneBaseDistM: Double?
+            var atRig: Bool?
+            var basis: String?
+        }
+        var phone: Phone?
+        var base: Base?
+        var coLocation: CoLocation?
+        var headingBiasDeg: Double?
+    }
 }
 
 // H4: tolerant decoding — a renamed/missing backend field must degrade one HUD
@@ -137,6 +174,7 @@ extension WCStatus {
         services = try c.decodeIfPresent([String: String].self, forKey: .services)
         network = try c.decodeIfPresent(Network.self, forKey: .network)
         shadowMode = try c.decodeIfPresent(Bool.self, forKey: .shadowMode)
+        sensors = try c.decodeIfPresent(Sensors.self, forKey: .sensors)
     }
 }
 
@@ -235,6 +273,8 @@ struct WCConfig: Codable, Sendable {
         var cinematicZoom: Bool?
         var mediaDelete: Bool?
         var trackingMode: Bool?
+        var agent: Bool?   // interactive acting-agent (Phase 1a) — absent on older backends
+        var agentProviders: [String]?   // configured agent providers (Phase 2); absent on older backends
     }
 
     struct Current: Codable, Sendable {
@@ -275,6 +315,7 @@ struct WCConfig: Codable, Sendable {
         }
         struct Tracking: Codable, Sendable {
             var mode: String?   // "auto" | "gps_only" | "vision_only"
+            var enabled: Bool?  // DISABLE-PTZ latch: false = autonomous tracking off
         }
         struct ColorCfg: Codable, Sendable {
             var preset: String
@@ -695,6 +736,10 @@ struct WCHealth: Codable, Sendable {
 /// Estimator shadow-tick detail, present when kind == "shadow".
 /// All fields are optional — absent on older backends or non-shadow events.
 struct ShadowDetail: Codable, Sendable {
+    // NO explicit CodingKeys. The shared decoder uses .convertFromSnakeCase, which
+    // maps the backend's snake_case shadow keys (bearing_deg, pan_enc_would, …) to
+    // these camelCase properties. Declaring snake_case CodingKeys here would conflict
+    // with that conversion and silently null every field (IOS-1 / the 86a05b2 gotcha).
     var bearingDeg: Double?
     var distM: Double?
     var panEncWould: Int?
@@ -702,16 +747,6 @@ struct ShadowDetail: Codable, Sendable {
     var ownerActual: String?
     var gpsUpdated: Bool?
     var visionUpdated: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case bearingDeg = "bearing_deg"
-        case distM = "dist_m"
-        case panEncWould = "pan_enc_would"
-        case bearingStdDeg = "bearing_std_deg"
-        case ownerActual = "owner_actual"
-        case gpsUpdated = "gps_updated"
-        case visionUpdated = "vision_updated"
-    }
 }
 
 /// One event entry from GET /api/v1/events.
@@ -783,6 +818,32 @@ struct WCAgentReport: Decodable {
     init(status: String?, provider: String?, text: String?, error: String?, durationSec: Double?) {
         self.status = status; self.provider = provider; self.text = text
         self.error = error; self.durationSec = durationSec
+    }
+}
+
+struct WCAgentChat: Codable, Sendable {
+    var ok: Bool = false
+    var reply: String = ""
+    var armed: Bool = false
+}
+
+/// One line in the agent chat. Lives at module scope (not inside AgentView) so the
+/// conversation persists on WaveCamClient across view teardown.
+struct WCAgentChatLine: Identifiable, Sendable {
+    enum Role: Sendable { case you, claude }
+    let id = UUID()
+    let role: Role
+    let text: String
+}
+
+// Tolerant decode in an extension (keeps the memberwise init; no snake_case
+// CodingKeys — the shared decoder is .convertFromSnakeCase).
+extension WCAgentChat {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try c.decodeIfPresent(Bool.self, forKey: .ok) ?? false
+        reply = try c.decodeIfPresent(String.self, forKey: .reply) ?? ""
+        armed = try c.decodeIfPresent(Bool.self, forKey: .armed) ?? false
     }
 }
 
@@ -886,9 +947,26 @@ final class WaveCamClient {
     /// failure can't paint a false "PTZ failed" banner on the PTZ screen (review #P1-C).
     private(set) var lastControlError: String?
 
+    /// Result + time of the most recent phone-sensor POST (T3.1 diagnostic). The backend's
+    /// sensors.age_sec alone can't distinguish "app stopped posting" from "app posting but
+    /// backend dropping the sample" — this surfaces the client side of that. nil until the
+    /// first attempt.
+    private(set) var lastPhoneSensorPostOk: Bool?
+    private(set) var lastPhoneSensorPostAt: Date?
+
     /// Optimistic local KILL latch: set the instant the operator hits Emergency Stop so the
     /// latch overlay appears immediately, before the ~1Hz poll round-trips (review: optimistic KILL).
     private(set) var optimisticKilled = false
+
+    /// Agent chat lives on the CLIENT, not the AgentView, so the conversation + an in-flight
+    /// turn survive a tab switch (the view's @State was torn down on disappear — the field
+    /// "lose Claude when you come back" bug). The send Task is client-owned and never cancelled
+    /// by a view lifecycle.
+    private(set) var agentChatLog: [WCAgentChatLine] = []
+    private(set) var agentChatSending = false
+    var agentChatProvider: AgentProvider = .claudeCode
+    var agentArmed = false
+    private var agentChatTask: Task<Void, Never>?
 
     /// True while a KILL request is in flight and the backend has not yet confirmed it.
     /// Gates `refresh()` so a poll returning killed==false cannot prematurely clear the
@@ -1615,12 +1693,38 @@ final class WaveCamClient {
     /// Only posts in live mode; no-ops in mock/offline so the publisher never needs to know.
     func postPhoneSensor(_ body: [String: Any]) async {
         guard mode == .live else { return }
-        _ = try? await post("sensors/phone", body: body)
+        do {
+            _ = try await post("sensors/phone", body: body, idempotent: true)
+            lastPhoneSensorPostOk = true
+        } catch {
+            lastPhoneSensorPostOk = false
+        }
+        lastPhoneSensorPostAt = Date()
+    }
+
+    /// Current websocket endpoint for the phone-sensor stream (ws/wss derived from the
+    /// active route + token), or nil in mock mode. Re-read by PhoneSensorSocket on each
+    /// (re)connect so route failover and token changes are picked up automatically.
+    var phoneSensorWSEndpoint: (url: URL, token: String?)? {
+        guard mode == .live,
+              var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        comps.scheme = (baseURL.scheme?.lowercased() == "https") ? "wss" : "ws"
+        comps.path = "/api/v1/sensors/phone/ws"
+        comps.query = nil
+        guard let url = comps.url else { return nil }
+        return (url, token)
+    }
+
+    /// Surface the phone-sensor stream's live connection state to the diagnostic panel
+    /// (reuses the existing POST-status fields: ok == connected).
+    func notePhoneSensorStream(connected: Bool) {
+        lastPhoneSensorPostOk = connected
+        lastPhoneSensorPostAt = Date()
     }
 
     /// POST /api/v1/agent/summon — requests an on-demand diagnostic pass from the supervisor.
     /// Returns true when the server accepts the request (2xx). In mock mode always returns true.
-    func summonAgent(provider: String = "claude") async -> Bool {
+    func summonAgent(provider: String = "claude_code") async -> Bool {
         if mode == .mock { return true }
         do {
             _ = try await post("agent/summon", body: [
@@ -1644,6 +1748,63 @@ final class WaveCamClient {
         struct Envelope: Decodable { let report: WCAgentReport? }
         guard let data = try? await getWithFallback("agent/report") else { return nil }
         return (try? Self.decoder.decode(Envelope.self, from: data))?.report
+    }
+
+    func sendAgentChat(_ message: String, provider: String) async -> WCAgentChat? {
+        if mode == .mock {
+            return WCAgentChat(ok: true, reply: "Mock: status looks healthy — 30 FPS, subject locked.", armed: false)
+        }
+        guard let data = try? await post("agent/chat", body: ["message": message, "provider": provider]) else {
+            lastCommandError = "Agent chat failed."
+            return nil
+        }
+        return try? Self.decoder.decode(WCAgentChat.self, from: data)
+    }
+
+    /// Append the operator's line and run the turn as a CLIENT-owned task. Not tied to any
+    /// view, so navigating away mid-turn doesn't cancel it and the reply still lands in the log.
+    @MainActor
+    func sendAgentChatTurn(_ text: String) {
+        let msg = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !msg.isEmpty, !agentChatSending else { return }
+        agentChatLog.append(WCAgentChatLine(role: .you, text: msg))
+        agentChatSending = true
+        let provider = agentChatProvider.rawValue
+        agentChatTask?.cancel()
+        agentChatTask = Task { [weak self] in
+            guard let self else { return }
+            let resp = await self.sendAgentChat(msg, provider: provider)
+            await MainActor.run {
+                if let r = resp, r.ok {
+                    self.agentChatLog.append(WCAgentChatLine(role: .claude, text: r.reply))
+                    if !self.killed { self.agentArmed = r.armed }   // a late reply can't re-arm after KILL
+                } else {
+                    self.agentChatLog.append(WCAgentChatLine(
+                        role: .claude, text: "⚠️ " + (self.lastCommandError ?? "No response.")))
+                }
+                self.agentChatSending = false
+            }
+        }
+    }
+
+    @MainActor
+    func armAgent(_ on: Bool) {
+        Task { [weak self] in
+            guard let self else { return }
+            let ok = await self.setAgentArm(on)
+            await MainActor.run { if ok { self.agentArmed = on } }
+        }
+    }
+
+    func setAgentArm(_ armed: Bool) async -> Bool {
+        if mode == .mock { return armed }
+        do {
+            _ = try await post("agent/arm", body: ["armed": armed])
+            return true
+        } catch {
+            lastCommandError = "Arm toggle failed: \(error.localizedDescription)"
+            return false
+        }
     }
 
     // 12 canned log lines across all levels for mock/offline demos.
@@ -1778,7 +1939,11 @@ final class WaveCamClient {
     private func candidateOrder(now: Date = Date()) -> [URL] {
         if activeRoute == .wifi || activeRoute == .custom {
             if now < nextTetherProbeAt {
-                return [baseURL, tetherBaseURL, wifiBaseURL]
+                // Within the recheck window: stay on the known-good route and do NOT
+                // probe the (usually-absent) tether subnet — otherwise every status
+                // poll AND control POST blackholes on the tether read timeout. Tether
+                // is retried once per tetherRecheckInterval when the window elapses.
+                return [baseURL, wifiBaseURL]
             }
             nextTetherProbeAt = now.addingTimeInterval(tetherRecheckInterval)
         }
@@ -1896,12 +2061,13 @@ final class WaveCamClient {
     }
 
     @discardableResult
-    private func post(_ path: String, body: [String: Any]) async throws -> Data {
+    private func post(_ path: String, body: [String: Any], idempotent: Bool = false) async throws -> Data {
         let payload = try JSONSerialization.data(withJSONObject: body)
         var failoverError: Error?
-        // Mutating POSTs fail over only on *connection* errors. A reached server that
-        // returns an HTTP error propagates immediately -- never re-send to another host
-        // (would risk double-applying a command). Same candidates as getWithFallback.
+        // Mutating POSTs fail over only on *connection* errors (server provably never
+        // received it) so a command is never double-applied. Idempotent telemetry
+        // (sensors/phone — latest-sample-wins) opts into read-style failover so a dead
+        // tether candidate that times out still retries the Wi-Fi route this tick.
         for candidate in apiCandidates() {
             do {
                 var req = URLRequest(url: candidate.appending(path: path))
@@ -1919,7 +2085,11 @@ final class WaveCamClient {
             } catch let error as WaveCamAPIError {
                 throw error
             } catch let error as URLError {
-                guard error.isWriteRouteFailoverAllowed else { throw error }
+                // Idempotent posts (phone-sensor telemetry, latest-sample-wins) opt into
+                // read-style failover so a blackholed tether candidate that times out still
+                // retries the Wi-Fi route this tick; mutating posts keep the strict
+                // connection-only rule so a command is never double-applied (the default).
+                guard idempotent ? error.isReadRouteFailoverAllowed : error.isWriteRouteFailoverAllowed else { throw error }
                 failoverError = error
             }
         }

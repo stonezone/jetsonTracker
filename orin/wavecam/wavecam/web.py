@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
-from .auth import CONFIG, PTZ, SAFETY, require
+from .auth import CONFIG, PTZ, READ, SAFETY, require
 from .control_api import register_control_api
 from .ptz_owner import AUTONOMOUS
 
@@ -41,6 +41,12 @@ button:hover{border-color:var(--cyan)}button.active{border-color:var(--amber);co
 label{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:11px;margin-bottom:6px}.value{color:var(--text);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}
 input,select{width:100%;background:#0b1116;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px}input[type=range]{padding:0;accent-color:var(--cyan)}input[type=checkbox]{width:auto}.check{display:flex;align-items:center;justify-content:space-between;gap:8px;height:100%}
 .control.pending{border-color:var(--amber)}.control.saved{border-color:var(--green)}.control.failed{border-color:var(--red)}.feature.hidden,.control.hidden{display:none}.control.dimmed{opacity:.5}.caption{color:var(--muted);font-size:11px;line-height:1.35;margin-top:6px}.full{grid-column:1/-1}#msg{min-height:18px;color:var(--muted);font:12px ui-monospace,SFMono-Regular,Menlo,monospace}.foot{color:var(--muted);font-size:11px;line-height:1.35}
+.agentlog{max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin:8px 0;padding-right:4px}
+.agentmsg{padding:6px 9px;border-radius:8px;font-size:12px;line-height:1.4;white-space:pre-wrap;max-width:92%}
+.agentmsg.you{align-self:flex-end;background:rgba(54,209,196,.12);color:var(--cyan)}
+.agentmsg.claude{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+#agentArmBtn.armed{border-color:var(--amber);color:var(--amber)}
+#agentInput{flex:1;background:#0d1217;border:1px solid var(--line);color:var(--txt,#e9eff4);border-radius:6px;padding:7px 9px;font:12px ui-monospace,Menlo,monospace}
 @media(max-width:980px){main{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){main{padding:8px}.grid{grid-template-columns:1fr}.bar button{flex:1 1 auto}}
 </style></head><body><main>
 <section class=video>
@@ -65,6 +71,7 @@ input,select{width:100%;background:#0b1116;color:var(--text);border:1px solid va
       <button class=go id=resumeBtn onclick="sendCommand('resume')">RESUME</button>
       <button id=autoBtn onclick="sendCommand('auto')">START AUTO</button>
       <button id=stopBtn onclick="sendCommand('stop')">STOP PTZ</button>
+      <button id=homeBtn onclick="sendCommand('home')">HOME</button>
       <button onclick="sendCommand('zin')">ZOOM IN</button>
       <button onclick="sendCommand('zout')">ZOOM OUT</button>
       <button onclick="sendCommand('zstop')">ZOOM STOP</button>
@@ -102,7 +109,8 @@ input,select{width:100%;background:#0b1116;color:var(--text);border:1px solid va
     <div class=control data-key=ptz.cinematic_zoom_enabled><div class=check><label>Cinematic zoom <span class=value id=cinematicEnabled_v></span></label><input id=cinematicEnabled type=checkbox></div></div>
     <div class=control id=subjectSizeControl data-key=ptz.zoom_target_frac><label>Subject size <span class=value id=subjectSize_v></span></label><input id=subjectSize type=range min=.2 max=.8 step=.05></div>
   </div></div>
-  <div class="card feature" id=trackingModeCard><div class=title>TRACKING MODE <span class=tag>hot</span></div><div class=grid>
+  <div class="card feature" id=trackingModeCard><div class=title>TRACKING <span class=tag>hot</span></div><div class=grid>
+    <div class="control full" data-key=tracking.enabled><div class=check><label>Autonomous tracking <span class=value id=trackingEnabled_v></span></label><input id=trackingEnabled type=checkbox></div><div class=caption>Off = DISABLE PTZ: the camera holds your manual aim and tracking will not take over until you turn this back on.</div></div>
     <div class="control full" data-key=tracking.mode><label>Source <span class=value id=trackingMode_v></span></label><select id=trackingMode>
       <option value=auto>Auto (vision + GPS)</option>
       <option value=gps_only>GPS-only</option>
@@ -116,6 +124,12 @@ input,select{width:100%;background:#0b1116;color:var(--text);border:1px solid va
     <div class=control data-key=gps.drive_zoom><div class=check><label>GPS drives zoom <span class=value id=gpsDriveZoom_v></span></label><input id=gpsDriveZoom type=checkbox></div></div>
   </div></div>
   <div class=card><div class=title>RESTART ONLY <span class=tag id=restartCount></span></div><div class=foot id=restartKeys></div></div>
+  <div class="card feature" id=agentCard><div class=title>ASK CLAUDE <span class=tag id=agentArmTag>read-only</span></div>
+    <div class=bar><button id=agentArmBtn onclick="agentArm()">Arm: can act</button></div>
+    <div class=caption>Read-only Q&amp;A. Arm to let Claude act on the rig via the control API. KILL disarms instantly.</div>
+    <div class=agentlog id=agentLog></div>
+    <div class=bar><input id=agentInput type=text placeholder="Ask about status, calibration, setup..."><button id=agentSendBtn onclick="agentSend()">Send</button></div>
+  </div>
 </section></main>
 <script>
 const $=id=>document.getElementById(id);
@@ -146,6 +160,7 @@ const defs=[
  {id:'jpegQuality',key:'web.jpeg_quality',path:['web','jpeg_quality'],type:'int'},
  {id:'cinematicEnabled',key:'ptz.cinematic_zoom_enabled',path:['ptz','cinematic_zoom_enabled'],type:'bool',feature:'cinematicCard'},
  {id:'subjectSize',key:'ptz.zoom_target_frac',path:['ptz','zoom_target_frac'],type:'float',digits:2,feature:'cinematicCard'},
+ {id:'trackingEnabled',key:'tracking.enabled',path:['tracking','enabled'],type:'bool',feature:'trackingModeCard'},
  {id:'trackingMode',key:'tracking.mode',path:['tracking','mode'],type:'select',feature:'trackingModeCard'},
  {id:'gpsBoost',key:'fusion.gps_boost',path:['fusion','gps_boost'],type:'float',digits:2,feature:'gpsTuneCard'},
  {id:'gpsStale',key:'gps.stale_threshold_sec',path:['gps','stale_threshold_sec'],type:'int',suffix:'s',feature:'gpsTuneCard'},
@@ -213,6 +228,7 @@ async function loadConfig(){
  const supported=cfg.supported||{};
  setHidden('cinematicCard',supported.cinematic_zoom!==true);
  setHidden('trackingModeCard',supported.tracking_mode!==true);
+ setHidden('agentCard',supported.agent!==true);
  const hasGps=!!cfg.current?.gps||supported.gps===true;
  setHidden('gpsTuneCard',!hasGps);
  $('colorPreset').innerHTML=(supported.color_presets||[]).map(x=>`<option value="${x}">${x}</option>`).join('');
@@ -239,6 +255,7 @@ async function sendCommand(kind){
  if(kind==='resume')req=fetch('/api/v1/safety/resume',body({source:'operator_ui'}));
  if(kind==='auto')req=fetch('/api/v1/ptz/auto',opts);
  if(kind==='stop')req=fetch('/api/v1/ptz/stop',body({hold:true,source:'operator_ui'}));
+ if(kind==='home')req=fetch('/api/v1/ptz/home',body({requested_owner:'manual',takeover:true,source:'operator_ui'}));
  if(kind==='zin')req=fetch('/api/v1/ptz/zoom',body({requested_owner:'manual',takeover:true,value:.5,source:'operator_ui'}));
  if(kind==='zout')req=fetch('/api/v1/ptz/zoom',body({requested_owner:'manual',takeover:true,value:-.5,source:'operator_ui'}));
  if(kind==='zstop')req=fetch('/api/v1/ptz/zoom',body({requested_owner:'manual',takeover:true,value:0,source:'operator_ui'}));
@@ -341,6 +358,7 @@ function normalizeStatus(raw){
    cmd:raw.ptz.pan_tilt_cmd,
    connected:raw.network?.camera_lan??raw.ptz.enabled,
    killed:raw.safety?.killed,
+   agent:raw.agent,
    gps
   };
  }
@@ -388,9 +406,36 @@ async function poll(){
   $('killBtn').classList.toggle('active',!!s.killed);
   $('autoBtn').classList.toggle('active',s.owner==='testbed'||s.owner==='vision_follow'||s.owner==='gps_tracker');
   $('stopBtn').classList.toggle('active',s.owner==='manual');
+  if(s.agent&&s.agent.enabled)agentSetArmUI(s.agent.armed,s.agent.killed||s.killed);
  }catch(e){}
  setTimeout(poll,500);
 }
+let agentArmed=false;
+function agentAppend(role,text){
+ const log=$('agentLog'); if(!log)return;
+ const d=document.createElement('div'); d.className='agentmsg '+role; d.textContent=text;
+ log.appendChild(d); log.scrollTop=log.scrollHeight;
+}
+function agentSetArmUI(armed,killed){
+ agentArmed=!!armed&&!killed;
+ const btn=$('agentArmBtn'),tag=$('agentArmTag');
+ if(btn){btn.classList.toggle('armed',agentArmed);btn.textContent=agentArmed?'Disarm':'Arm: can act';btn.disabled=!!killed;}
+ if(tag)tag.textContent=killed?'killed':(agentArmed?'ARMED':'read-only');
+}
+async function agentArm(){
+ const btn=$('agentArmBtn'); if(!btn||btn.disabled)return;
+ try{const r=await postJson('/api/v1/agent/arm',{armed:!agentArmed}); agentSetArmUI(r.armed,false);}
+ catch(e){agentAppend('claude','warning: arm failed: '+e.message);}
+}
+async function agentSend(){
+ const inp=$('agentInput'); if(!inp)return;
+ const msg=inp.value.trim(); if(!msg)return;
+ inp.value=''; agentAppend('you',msg); $('agentSendBtn').disabled=true;
+ try{const r=await postJson('/api/v1/agent/chat',{message:msg}); agentAppend('claude',r.reply||'(no reply)'); agentSetArmUI(r.armed,false);}
+ catch(e){agentAppend('claude','warning: '+e.message);}
+ finally{$('agentSendBtn').disabled=false;}
+}
+$('agentInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')agentSend();});
 initJoystick(); loadConfig().catch(e=>$('msg').textContent=e.message); poll();
 </script></body></html>"""
 
@@ -476,12 +521,15 @@ def build_app(pipeline) -> FastAPI:
             yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
             time.sleep(0.03)
 
-    @app.get("/stream.mjpg")
+    # AUTH-1: gate the legacy read routes like the /api/v1 reads, so enabling auth is
+    # all-or-nothing instead of leaving the console's data routes open. No-op while auth
+    # is off (live default). The MJPEG stream can't set a header, so it accepts ?token=.
+    @app.get("/stream.mjpg", dependencies=[Depends(require(READ, allow_query_token=True))])
     def stream():
         return StreamingResponse(_frames(),
                                  media_type="multipart/x-mixed-replace; boundary=frame")
 
-    @app.get("/status")
+    @app.get("/status", dependencies=[Depends(require(READ))])
     def status():
         s = pipeline.state.get_status()
         s.update(pipeline.owner.state())      # expose owner + sticky kill latch
@@ -489,7 +537,12 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/kill", dependencies=[Depends(require(SAFETY))])
     def kill():
-        pipeline.kill(True)
+        # Route through the same safety sequence as /api/v1/safety/kill so the
+        # legacy button also cancels calibration, stops recording, and clears
+        # deadmen — not just latch the kill.
+        api = app.state.control_api
+        api.kill_for_safety()
+        api.bump_revision()
         return {"killed": True}
 
     @app.post("/resume", dependencies=[Depends(require(SAFETY))])
@@ -500,14 +553,15 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/ptz/stop", dependencies=[Depends(require(PTZ))])
     def ptz_stop():
-        # STOP: halt pan/tilt AND zoom, cancel stale deadman timers, and
-        # release the current owner WITHOUT clearing the kill latch.
+        # STOP via the same calibrate-safe path as /api/v1/ptz/stop. hold=True to
+        # match v1's default (PtzStopRequest.hold): a legacy STOP must actually halt
+        # autonomous control — grab a sticky manual hold so the arbiter can't reclaim
+        # the camera on the next frame (hold=False only released a manual owner, so a
+        # vision/gps owner kept driving). CALIBRATE is preserved (the manual request
+        # fails while calibrate owns); the kill latch is untouched.
         api = app.state.control_api
-        api.cancel_manual_deadman()
-        api.cancel_zoom_deadman()
-        pipeline.ptz.stop()
-        pipeline.ptz.zoom("stop")
-        pipeline.owner.release(pipeline.owner.owner)
+        api.stop_ptz(hold=True)
+        api.bump_revision()
         return {"ok": True, "owner": pipeline.owner.owner}
 
     @app.post("/ptz/zin", dependencies=[Depends(require(PTZ))])

@@ -62,6 +62,19 @@ def test_kill_stops_camera_and_sets_status():
     assert pipe.ptz.calls == ["stop", ("zoom", "stop", 0)]
 
 
+def test_kill_resets_arbiter_hysteresis():
+    # KILL-1: KILL must reset the arbiter's vision hysteresis so a stale mid-kill
+    # lock can't instantly re-grant vision_follow on RESUME.
+    pipe = make_pipeline()
+    reset_calls = []
+    pipe.arbiter = types.SimpleNamespace(reset_vision_state=lambda: reset_calls.append(1))
+    pipe.owner.request("testbed")
+
+    pipe.kill(True)
+
+    assert reset_calls == [1]
+
+
 def test_resume_clears_killed_status_without_waiting_for_next_frame():
     pipe = make_pipeline()
     pipe.kill(True)

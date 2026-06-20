@@ -172,7 +172,7 @@ class DummyPipeline:
                 max_pan_speed=4,
                 max_tilt_speed=3,
             ),
-            tracking=types.SimpleNamespace(mode="auto"),
+            tracking=types.SimpleNamespace(mode="auto", enabled=True),
             estimator=types.SimpleNamespace(
                 shadow=True,
                 enabled=True,
@@ -215,17 +215,152 @@ def make_client():
     return TestClient(build_app(DummyPipeline()))
 
 
+# ---------------------------------------------------------------------------
+# Interactive acting-agent — Phase 1a (chat + arm/KILL bridge)
+# ---------------------------------------------------------------------------
+
+def _agent_pipe(enabled: bool):
+    pipe = DummyPipeline()
+    pipe.cfg.agent = types.SimpleNamespace(
+        enabled=enabled, model="", arm_ttl_sec=600.0, mcp_config_path="")
+    return pipe
+
+
+def _stub_claude(monkeypatch, reply="ok", sid="S1"):
+    import wavecam.agent_session as ags
+    monkeypatch.setattr(ags, "_load_token", lambda p: "tok")
+    monkeypatch.setattr(
+        ags, "_run_claude_cli",
+        lambda argv, env, stdin_text, timeout: '{"result":"%s","session_id":"%s"}' % (reply, sid))
+
+
+def test_agent_chat_disabled_returns_code():
+    client = TestClient(build_app(_agent_pipe(False)))
+    body = client.post("/api/v1/agent/chat", json={"message": "hi"}).json()
+    assert body["ok"] is False and body["code"] == "agent_disabled"
+
+
+def test_agent_chat_round_trip(monkeypatch):
+    _stub_claude(monkeypatch, reply="all good")
+    client = TestClient(build_app(_agent_pipe(True)))
+    body = client.post("/api/v1/agent/chat", json={"message": "status?"}).json()
+    assert body["ok"] is True and body["reply"] == "all good"
+
+
+def test_agent_arm_then_kill_clears(monkeypatch):
+    _stub_claude(monkeypatch)
+    client = TestClient(build_app(_agent_pipe(True)))
+    assert client.post("/api/v1/agent/arm", json={"armed": True}).json() == {"ok": True, "armed": True}
+    assert client.get("/api/v1/status").json()["agent"]["armed"] is True
+    client.post("/api/v1/safety/kill")
+    assert client.get("/api/v1/status").json()["agent"]["armed"] is False  # KILL disarmed
+
+
+def test_agent_resume_clears_kill_allows_rearm(monkeypatch):
+    _stub_claude(monkeypatch)
+    client = TestClient(build_app(_agent_pipe(True)))
+    client.post("/api/v1/agent/arm", json={"armed": True})
+    client.post("/api/v1/safety/kill")
+    assert client.get("/api/v1/status").json()["agent"]["killed"] is True
+    client.post("/api/v1/safety/resume")
+    after = client.get("/api/v1/status").json()["agent"]
+    assert after["killed"] is False   # resume cleared the agent KILL latch
+    assert client.post("/api/v1/agent/arm", json={"armed": True}).json()["armed"] is True
+
+
+def test_agent_chat_threads_provider(monkeypatch):
+    import wavecam.agent_session as ags
+    seen = {}
+    monkeypatch.setattr(ags, "_load_token", lambda p: "tok")
+    monkeypatch.setattr(ags, "_load_keys", lambda p: {"glm_api_key": "GK"})
+    def fake_run(argv, env, stdin_text, timeout):
+        seen["base"] = env.get("ANTHROPIC_BASE_URL")
+        return '{"result":"hi","session_id":"S"}'
+    monkeypatch.setattr(ags, "_run_claude_cli", fake_run)
+    client = TestClient(build_app(_agent_pipe(True)))
+    body = client.post("/api/v1/agent/chat", json={"message": "hi", "provider": "glm"}).json()
+    assert body["ok"] is True
+    assert seen["base"] == "https://api.z.ai/api/anthropic"   # provider routed to GLM
+
+
+def test_supported_lists_agent_providers(monkeypatch):
+    import wavecam.agent_session as ags
+    monkeypatch.setattr(ags, "_load_keys", lambda p: {"deepseek_api_key": "k"})
+    cfg = TestClient(build_app(_agent_pipe(True))).get("/api/v1/config").json()
+    provs = cfg["supported"]["agent_providers"]
+    assert "claude_code" in provs        # always, when enabled
+    assert "deepseek" in provs           # key present
+    assert "glm" not in provs            # no key → not offered
+
+
+def test_agent_chat_route_is_async():
+    # API-1: agent_chat must be an async route so the blocking claude -p call runs
+    # via asyncio.to_thread behind a semaphore and can't exhaust the threadpool that
+    # serves /safety/kill. A sync def here would reintroduce the starvation risk.
+    import inspect
+    app = build_app(_agent_pipe(True))
+    route = next(r for r in app.routes if getattr(r, "path", None) == "/api/v1/agent/chat")
+    assert inspect.iscoroutinefunction(route.endpoint), "agent_chat must be async def"
+
+
+def test_arm_ttl_clamped_to_safe_minimum():
+    # An operator-set arm_ttl shorter than a chat turn would let the window expire
+    # mid-subprocess while claude still holds Bash. It must be clamped up.
+    pipe = DummyPipeline()
+    pipe.cfg.agent = types.SimpleNamespace(enabled=True, model="", arm_ttl_sec=1.0, mcp_config_path="")
+    client = TestClient(build_app(pipe))
+    assert client.get("/api/v1/status").json()["agent"]["ttl_sec"] >= 180.0
+
+
+def test_supported_agent_reflects_enabled():
+    on = TestClient(build_app(_agent_pipe(True))).get("/api/v1/config").json()
+    off = TestClient(build_app(_agent_pipe(False))).get("/api/v1/config").json()
+    assert on["supported"]["agent"] is True
+    assert off["supported"]["agent"] is False
+
+
 def test_root_web_ui_exposes_live_ptz_gps_and_ios_parity_controls():
     body = make_client().get("/").text
 
     assert "id=ptzJoystick" in body
+    assert "sendCommand('home')" in body  # HOME button recenters PTZ via /api/v1/ptz/home
     assert "/api/v1/status" in body
     assert "CINEMATIC ZOOM" in body
     assert "ptz.cinematic_zoom_enabled" in body
     assert "tracking.mode" in body
+    assert "tracking.enabled" in body  # DISABLE-PTZ latch toggle on the live web UI
     assert "gps.drive_zoom" in body
     assert "target_sats" in body
     assert "target_battery_mv" in body
+
+
+def test_config_snapshot_exposes_v3_gps_keys():
+    # H6: iOS feature-detects controls from /config; the v3 GPS/fusion knobs must
+    # be visible there, not just settable.
+    body = make_client().get("/api/v1/config").text
+    for key in (
+        "base_drift_enabled", "drive_zoom_near_m", "drive_zoom_far_m",
+        "drive_zoom_max_enc", "drive_zoom_max_frac", "gps_bearing_cue_enabled",
+    ):
+        assert key in body, f"{key} missing from /api/v1/config snapshot"
+
+
+def test_config_snapshot_exposes_tracking_enabled():
+    # DISABLE-PTZ latch: iOS/web feature-detect the toggle from /config, so the
+    # tracking.enabled flag must be visible in the snapshot, not just settable.
+    body = make_client().get("/api/v1/config").json()
+    assert body["current"]["tracking"]["enabled"] is True
+
+
+def test_health_emits_disk_component_when_recorder_missing():
+    # M5: with no recorder, the disk check previously raised AttributeError and the
+    # disk component was silently dropped from /health, hiding the low-disk guard.
+    # It must still be reported (ok:false + reason) so field/post-deploy checks see it.
+    pipe = DummyPipeline()
+    pipe.recorder = None
+    body = TestClient(build_app(pipe)).get("/api/v1/health").json()
+    assert "disk" in body["components"], "disk component must be present without a recorder"
+    assert body["components"]["disk"]["ok"] is False
 
 
 def wait_until(predicate, timeout_sec=0.5):
@@ -698,6 +833,44 @@ def test_api_v1_calibration_is_owner_gated_kill_safe_and_validated():
     assert killed.json()["code"] == "killed"
 
 
+def _start_calibrate_session(client):
+    return client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True, "source": "test"},
+    )
+
+
+def test_location_lock_live_base_refused_when_stale():
+    # GPS-2: with no samples, the live-base fallback must NOT lock a stale cached
+    # base position (rebooted Wio leaves _cam cached). Expect a gps_stale refusal.
+    pipe = DummyPipeline()
+    pipe.gps = types.SimpleNamespace(
+        get_camera_position=lambda: (21.6, -158.0, 3.0),
+        get_camera_age=lambda: 42.0,           # stale (> LIVE_BASE_MAX_AGE_SEC)
+        reader_alive=lambda: True,
+    )
+    client = TestClient(build_app(pipe))
+    assert pipe.owner.request("testbed") is True
+    _start_calibrate_session(client)
+    r = client.post("/api/v1/calibration/location", json={"source": "test"})
+    assert r.status_code == 503
+    assert r.json()["code"] == "gps_stale"
+
+
+def test_location_lock_live_base_accepted_when_fresh():
+    pipe = DummyPipeline()
+    pipe.gps = types.SimpleNamespace(
+        get_camera_position=lambda: (21.6, -158.0, 3.0),
+        get_camera_age=lambda: 0.5,            # fresh
+        reader_alive=lambda: True,
+    )
+    client = TestClient(build_app(pipe))
+    assert pipe.owner.request("testbed") is True
+    _start_calibrate_session(client)
+    r = client.post("/api/v1/calibration/location", json={"source": "test"})
+    assert r.status_code == 200
+
+
 def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -804,6 +977,48 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert pipe.owner.owner == "testbed"
 
 
+def test_calibration_wizard_persists_to_disk_survives_restart():
+    # CAL-1: the session wizard mutated pose/_session in memory only — a confirmed
+    # calibration was lost on restart. Run the full wizard, then load a FRESH
+    # CalibrationStore from the same file and assert location + reference_heading +
+    # the step log survived.
+    import os
+    from wavecam.calibration_store import CalibrationStore
+
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+    client.post("/api/v1/calibration/session/start",
+                json={"requested_owner": "manual", "takeover": True, "source": "test"})
+    client.post("/api/v1/calibration/location", json={
+        "source": "test",
+        "samples": [
+            {"lat": 21.6, "lon": -158.0, "alt_m": 3.0, "hdop": 1.2, "h_acc_m": 4.0,
+             "fix_age_sec": 1.0, "uptime_sec": 90.0, "sats": 9},
+            {"lat": 21.60001, "lon": -158.00001, "alt_m": 3.2, "hdop": 1.1, "h_acc_m": 4.5,
+             "fix_age_sec": 1.0, "uptime_sec": 95.0, "sats": 10},
+        ],
+    })
+    client.post("/api/v1/calibration/heading-lock", json={
+        "method": "landmark", "operator_accepted": True, "bearing_deg": 90.0,
+        "distance_m": 250.0, "pan_enc": 1000.0, "source": "test"})
+    client.post("/api/v1/calibration/validation",
+                json={"bearing_deg": 91.0, "distance_m": 250.0, "pan_enc": 1014.4})
+    confirmed = client.post("/api/v1/calibration/validation/confirm",
+                            json={"accepted": True, "source": "test"})
+    assert confirmed.status_code == 200
+
+    # Simulate a restart: read the pose file back through a brand-new store.
+    pose_path = os.environ["WAVECAM_POSE_PATH"]
+    assert os.path.exists(pose_path), "wizard must have written the pose file"
+    reloaded = CalibrationStore.load(pose_path)
+    assert reloaded.reference_heading == 90.0          # heading survived (CAL-1 core)
+    assert reloaded.pose.lat != 0.0 and reloaded.pose.lon != 0.0  # location survived
+    assert "location" in reloaded.steps
+    assert "heading" in reloaded.steps
+    assert "validation" in reloaded.steps
+
+
 def test_api_v1_calibrate_heading_refuses_bad_error_budget():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -844,7 +1059,115 @@ def test_api_v1_calibrate_heading_refuses_bad_error_budget():
     assert body["code"] == "uncertainty_too_high"
     assert body["uncertainty_deg"] > 2.0
     assert pipe.pose.calibrated is False
+
+
+def test_heading_lock_no_longer_requires_level():
+    # Level gate removed 2026-06-17: the rig-phone (the only attitude sensor) mounts OFF
+    # the camera for magnetic isolation, so it can't sense pan-axis tilt. heading-lock must
+    # succeed with NO level step — the operator levels the tripod by hand.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+    assert client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True},
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/calibration/location",
+        json={"method": "manual_map_pin", "lat": 21.6, "lon": -158.0, "manual_error_radius_m": 3.0},
+    ).status_code == 200
+
+    # Deliberately skip /api/v1/calibration/level entirely.
+    heading = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={
+            "method": "landmark",
+            "operator_accepted": True,
+            "bearing_deg": 90.0,
+            "distance_m": 250.0,
+            "pan_enc": 1000.0,
+            "source": "test",
+        },
+    )
+    assert heading.status_code == 200, heading.json()
+    state = heading.json()["calibration"]["session"]
+    assert state["heading_lock"]["confidence"] > 0.0
+    assert state["level"] is None  # no level was ever captured
+
+
+def test_heading_lock_from_phone_compass_uses_reported_accuracy():
+    # Phone-compass source: the bearing is the phone magnetometer reading, so heading
+    # uncertainty IS the phone's heading_acc_deg (not GPS position geometry). A phone heading
+    # is a COARSE acquisition cue, so the default 2 deg budget rejects it and a lenient budget
+    # accepts it — and the recorded uncertainty tracks the phone accuracy.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+    assert client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True},
+    ).status_code == 200
+    assert client.post(
+        "/api/v1/calibration/location",
+        json={"method": "manual_map_pin", "lat": 21.6, "lon": -158.0, "manual_error_radius_m": 3.0},
+    ).status_code == 200
+
+    refused = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={
+            "method": "phone",
+            "operator_accepted": True,
+            "bearing_deg": 207.0,
+            "heading_acc_deg": 18.0,
+            "pan_enc": 1000.0,
+        },
+    )
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "uncertainty_too_high"
+
+    accepted = client.post(
+        "/api/v1/calibration/heading-lock",
+        json={
+            "method": "phone",
+            "operator_accepted": True,
+            "bearing_deg": 207.0,
+            "heading_acc_deg": 18.0,
+            "pan_enc": 1000.0,
+            "max_uncertainty_deg": 25.0,
+        },
+    )
+    assert accepted.status_code == 200, accepted.json()
+    hl = accepted.json()["calibration"]["session"]["heading_lock"]
+    assert 17.0 <= hl["uncertainty_deg"] <= 19.0  # ~quadrature(18, 0.5, 0.2)
+    assert abs(pipe.pose.bearing_to_pan_encoder(208.0) - 1014.4) < 0.01
     assert pipe.owner.owner == "calibrate"
+
+
+def test_zoom_does_not_drop_a_held_manual_lock():
+    # Bug fix 2026-06-17: STOP PTZ (hold) locks manual, but zooming used to release that lock
+    # (zoom-stop release when pan/tilt idle, or the manual deadman it armed), handing the
+    # camera back to the tracker mid-aim. A held manual must survive zoom.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+
+    # STOP PTZ with hold=true grabs a sticky manual lock from the autonomous owner.
+    assert client.post("/api/v1/ptz/stop", json={"hold": True}).status_code == 200
+    assert pipe.owner.owner == "manual"
+
+    # Zoom in, then zoom-stop — the lock must persist through both.
+    assert client.post(
+        "/api/v1/ptz/zoom", json={"requested_owner": "manual", "takeover": True, "value": 0.5}
+    ).status_code == 200
+    assert pipe.owner.owner == "manual"
+    assert client.post(
+        "/api/v1/ptz/zoom", json={"requested_owner": "manual", "takeover": True, "value": 0.0}
+    ).status_code == 200
+    assert pipe.owner.owner == "manual", "zoom-stop must not drop the held manual lock"
+
+    # START AUTO is the explicit unlock — the held flag clears and the tracker takes back over.
+    assert client.post("/api/v1/ptz/auto").status_code == 200
+    assert pipe.owner.owner == "testbed"
 
 
 def test_api_v1_calibrate_kill_cancels_session():
@@ -978,6 +1301,55 @@ def test_legacy_resume_does_not_autostart_tracking_owner():
     assert response.json()["killed"] is False
     assert pipe.owner.killed is False
     assert pipe.owner.owner == "idle"
+
+
+def test_legacy_kill_runs_full_safety_sequence():
+    # H3: legacy /kill must run the SAME safety sequence as /api/v1/safety/kill —
+    # cancel the active CALIBRATE session, not just latch the kill and leave the
+    # session (and its recording/deadmen) running. pipeline.kill() alone releases
+    # the owner but does NOT mark the session inactive.
+    client = make_client()
+    api = client.app.state.control_api
+    pipe = client.app.state.pipeline
+    started = client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True, "source": "test"},
+    )
+    assert started.status_code == 200
+    assert started.json()["calibration"]["active"] is True
+    assert pipe.owner.owner == "calibrate"
+
+    client.post("/kill", json={})
+
+    assert pipe.owner.killed is True
+    assert api._calibration._session["active"] is False  # session cancelled (v1 parity)
+
+
+def test_legacy_ptz_stop_holds_against_autonomous_owner():
+    # Codex review (PR #113): legacy /ptz/stop must actually stop autonomous control,
+    # not send one stop the next frame overrides. hold=True (v1 parity) grabs a sticky
+    # manual hold so a vision/gps owner is displaced and can't be reclaimed.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("vision_follow")
+
+    response = client.post("/ptz/stop", json={})
+
+    assert response.status_code == 200
+    assert pipe.owner.owner == "manual"  # autonomous displaced, sticky-held
+
+
+def test_legacy_ptz_stop_preserves_calibrate_session():
+    # H3: legacy /ptz/stop must not silently drop a CALIBRATE session. It used to
+    # release whatever owner held the camera (including calibrate).
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("calibrate")
+
+    response = client.post("/ptz/stop", json={})
+
+    assert response.status_code == 200
+    assert pipe.owner.owner == "calibrate"
 
 
 def test_legacy_zoom_routes_use_owner_gate_and_deadman():
@@ -1751,3 +2123,108 @@ def test_build_gps_includes_live_reader_target_telemetry():
     assert gps["target_battery_mv"] == 3910
     assert gps["target_sats"] == 14
     assert gps["reader_alive"] is True
+
+
+def test_status_exposes_sensors_block():
+    # Base position present + an ingested phone sample near it → at_rig true.
+    pipe = DummyPipeline()
+    pipe.cfg.sensors.enabled = True
+    pipe.gps = types.SimpleNamespace(
+        get_camera_position=lambda: (21.0, -157.0, 5.0),
+        get_camera_age=lambda: 1.0,
+        reader_alive=lambda: True, last_poll_age_sec=lambda: 0.5,
+        get_target_telemetry=lambda: {},
+    )
+    app = build_app(pipe)
+    # build_app → ControlApiAdapter.__init__ sets pipeline._store = CalibrationStore; set
+    # reference_heading on the live store object so status_snapshot picks it up.
+    pipe._store.reference_heading = 100.0
+    client = TestClient(app)
+    client.post("/api/v1/sensors/phone", json={
+        "heading_deg": 100.0, "heading_acc": 3.0, "true_heading_deg": 101.0,
+        "lat": 21.00001, "lon": -157.00001, "h_acc": 4.0,
+        "alt_m": 12.0, "alt_acc": 6.0, "bump": False,
+    })
+    body = client.get("/api/v1/status").json()
+    s = body["sensors"]
+    assert s["phone"]["true_heading_deg"] == 101.0
+    assert s["phone"]["alt_m"] == 12.0
+    assert s["base"]["lat"] == 21.0
+    assert s["co_location"]["at_rig"] is True
+    assert s["co_location"]["basis"] == "gps_proximity"
+    assert 0 <= s["co_location"]["phone_base_dist_m"] < 15   # ~1.4 m, within AT_RIG_M
+    assert s["phone"]["tripod_reference"] is True
+    assert s["heading_bias_deg"] == 1.0   # phone true 101.0 − reference 100.0
+
+
+def test_sensors_phone_ws_ingests_stream():
+    # The persistent websocket stream ingests fixes identically to the HTTP route, a
+    # malformed frame does not tear down the connection, and a heartbeat ping is answered.
+    pipe = DummyPipeline()
+    pipe.cfg.sensors.enabled = True
+    client = TestClient(build_app(pipe))
+    with client.websocket_connect("/api/v1/sensors/phone/ws") as ws:
+        ws.send_json({"heading_deg": 999.0})  # out of range → dropped, stream survives
+        ws.send_json({
+            "heading_deg": 120.0, "heading_acc": 5.0, "true_heading_deg": 121.0,
+            "lat": 21.0, "lon": -157.0, "h_acc": 4.0, "bump": False,
+        })
+        # Heartbeat round-trips; frames process in order, so the fix is ingested by now.
+        ws.send_json({"type": "ping", "id": "hb1"})
+        pong = ws.receive_json()
+        assert pong["type"] == "pong" and pong["id"] == "hb1"
+    phone = client.get("/api/v1/status").json()["sensors"]["phone"]
+    assert phone is not None
+    assert phone["true_heading_deg"] == 121.0
+    assert phone["heading_deg"] == 120.0
+
+
+def test_sensors_phone_ws_noop_when_disabled():
+    # enabled=False → the stream is accepted but SensorHub records nothing.
+    pipe = DummyPipeline()
+    pipe.cfg.sensors.enabled = False
+    client = TestClient(build_app(pipe))
+    with client.websocket_connect("/api/v1/sensors/phone/ws") as ws:
+        ws.send_json({"heading_deg": 120.0, "heading_acc": 5.0,
+                      "lat": 21.0, "lon": -157.0, "h_acc": 4.0, "bump": False})
+        ws.send_json({"type": "ping", "id": "hb2"})
+        assert ws.receive_json()["type"] == "pong"
+    assert client.get("/api/v1/status").json()["sensors"]["phone"] is None
+
+
+def test_status_reports_detector_loaded_flag():
+    # DET-1: /status surfaces whether the detector engine is loaded, so a zombie rig
+    # (API up, vision dead) is visible rather than silently green.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.detector = object()
+    assert client.get("/api/v1/status").json()["tracking"]["detector_loaded"] is True
+    pipe.detector = None
+    assert client.get("/api/v1/status").json()["tracking"]["detector_loaded"] is False
+
+
+def test_health_flags_missing_detector_engine():
+    # DET-1: detector enabled but not loaded (engine missing) → /health marks the detector
+    # component unhealthy with a clear reason, instead of reporting green.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.detector = None
+    det = client.get("/api/v1/health").json()["components"]["detector"]
+    assert det["ok"] is False
+    assert det["detail"]["reason"] == "engine_load_failed"
+    pipe.detector = object()
+    det = client.get("/api/v1/health").json()["components"]["detector"]
+    assert det["ok"] is True
+    assert det["detail"]["loaded"] is True
+
+
+def test_record_start_returns_503_when_ffmpeg_dies_immediately():
+    # REC-1: recorder.start() reports started:False when ffmpeg exits instantly; the API
+    # must surface 503, not 200/ok:true (operator must not believe recording started).
+    client = make_client()
+    pipe = client.app.state.pipeline
+    pipe.recorder.start = lambda segment_seconds=None: {
+        "ok": True, "started": False, "error": "ffmpeg exited immediately"}
+    r = client.post("/api/v1/media/record/start", json={})
+    assert r.status_code == 503
+    assert r.json()["ok"] is False

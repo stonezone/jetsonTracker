@@ -1,5 +1,7 @@
 [
  "/",
+ "/api/v1/agent/arm",
+ "/api/v1/agent/chat",
  "/api/v1/agent/report",
  "/api/v1/agent/summon",
  "/api/v1/calibration",

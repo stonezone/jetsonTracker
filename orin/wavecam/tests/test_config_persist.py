@@ -99,6 +99,30 @@ def test_load_config_tracking_mode_from_overlay(tmp_path):
     assert cfg.tracking.mode == "gps_only"
 
 
+# ---------------------------------------------------------------------------
+# AgentCfg — interactive acting-agent config (Phase 1a)
+# ---------------------------------------------------------------------------
+
+def test_agent_cfg_defaults_when_absent(tmp_path):
+    """No agent section in YAML → AgentCfg defaults (disabled, ttl 600)."""
+    y = tmp_path / "config.yaml"
+    y.write_text("fusion:\n  gps_boost: 0.2\n")
+    cfg = load_config(str(y))
+    assert cfg.agent.enabled is False
+    assert cfg.agent.arm_ttl_sec == 600.0
+
+
+def test_agent_cfg_from_overlay(tmp_path):
+    """An agent section in config.local.yaml applies — proves it's a known overlay section."""
+    y = tmp_path / "config.yaml"
+    y.write_text("fusion:\n  gps_boost: 0.2\n")
+    ov = tmp_path / "config.local.yaml"
+    ov.write_text("agent:\n  enabled: true\n  arm_ttl_sec: 300\n")
+    cfg = load_config(str(y))
+    assert cfg.agent.enabled is True
+    assert cfg.agent.arm_ttl_sec == 300
+
+
 def test_load_config_invalid_tracking_mode_resets_to_auto(tmp_path, capsys):
     y = tmp_path / "config.yaml"
     y.write_text("tracking:\n  mode: orange_only\n")

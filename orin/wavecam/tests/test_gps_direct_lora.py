@@ -34,8 +34,11 @@ def test_remote_seq_line_updates_subject_fix_from_scaled_json():
     }
 
 
-def test_remote_no_fix_clears_subject_snapshot():
-    g = DirectRadioGps()
+def test_remote_no_fix_coasts_then_clears():
+    # GPS-1: an honest no-fix (e.g. a wipeout or a wave-trough GPS blackout) should
+    # NOT drop the aim instantly — coast on the last fix for coast_on_no_fix_sec, then
+    # clear. (Distinct from a corrupt fix:1 packet, which retains via its own branch.)
+    g = DirectRadioGps(coast_on_no_fix_sec=2.0)
     g._handle_line(
         '{"seq":1,"fix":1,"lat_e7":100000000,"lon_e7":200000000,'
         '"gps_age_ms":0,"speed_cm_s":0,"course_cdeg":0}',
@@ -44,10 +47,49 @@ def test_remote_no_fix_clears_subject_snapshot():
     assert g.get_fix(now=1000.0) is not None
 
     g._handle_line('{"seq":2,"fix":0,"gps_age_ms":65535,"sats":4,"batt_mv":3810}', now=1001.0)
-    assert g.get_fix(now=1001.0) is None
+    assert g.get_fix(now=1001.5) is not None      # within the 2s coast window → still aiming
+    assert g.get_fix(now=1003.5) is None          # past the window → cleared
+    # telemetry (battery/sats) updates from the no-fix packet regardless
     assert g.get_target_telemetry() == {
         "target_battery_mv": 3810,
         "target_sats": 4,
+    }
+
+
+def test_remote_no_fix_zero_coast_clears_immediately():
+    # coast_on_no_fix_sec=0 reproduces the old behavior (clear at once).
+    g = DirectRadioGps(coast_on_no_fix_sec=0.0)
+    g._handle_line(
+        '{"seq":1,"fix":1,"lat_e7":100000000,"lon_e7":200000000,"gps_age_ms":0}',
+        now=1000.0,
+    )
+    g._handle_line('{"seq":2,"fix":0}', now=1001.0)
+    assert g.get_fix(now=1001.0) is None
+
+
+def test_corrupt_fix_line_retains_last_good():
+    """A fix:1 line whose coords are unparseable is a corrupt/partial LoRa packet,
+    not an honest no-fix. It must NOT erase the last-known-good subject fix — the
+    downstream age gate (drive_stale_sec) drops a fix once it ages out, so keeping
+    the last position for the 0.2-2s until the next beacon avoids a tracking drop.
+    Telemetry and the poll timestamp still update from the corrupt line."""
+    g = DirectRadioGps()
+    g._handle_line(
+        '{"seq":1,"fix":1,"lat_e7":216000000,"lon_e7":-1580000000,"gps_age_ms":0}',
+        now=1000.0,
+    )
+    assert g.get_fix(now=1000.0) is not None
+
+    # fix flag set but lat/lon missing → corrupt line; last-good must survive.
+    g._handle_line('{"seq":2,"fix":1,"sats":7,"batt_mv":3850}', now=1001.0)
+    fix = g.get_fix(now=1001.0)
+    assert fix is not None, "last-good fix must be retained on a corrupt fix line"
+    assert abs(fix.lat - 21.6) < 1e-7
+    assert abs(fix.lon - -158.0) < 1e-7
+    assert abs(fix.age_sec - 1.0) < 1e-6  # age grows from the original ts
+    assert g.get_target_telemetry() == {
+        "target_battery_mv": 3850,
+        "target_sats": 7,
     }
 
 
@@ -142,8 +184,9 @@ def test_run_selector_uses_direct_lora_source(monkeypatch):
     made = {}
 
     class FakeDirect:
-        def __init__(self, dev_path, baud, reconnect_sec):
+        def __init__(self, dev_path, baud, reconnect_sec, coast_on_no_fix_sec=2.0):
             made["args"] = (dev_path, baud, reconnect_sec)
+            made["coast"] = coast_on_no_fix_sec
 
         def connect(self):
             made["connected"] = True
@@ -168,6 +211,7 @@ def test_run_selector_uses_direct_lora_source(monkeypatch):
     assert isinstance(gps, FakeDirect)
     assert made == {
         "args": ("/dev/serial/by-id/wio-base", 115200, 0.5),
+        "coast": 2.0,
         "connected": True,
     }
 

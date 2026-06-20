@@ -19,6 +19,8 @@ from .control_utils import (
 from .ptz_owner import IDLE
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_DOWN, TILT_STOP, TILT_UP
 from .supervisor import read_health, snapshot_services
+from .sensor_hub import compute_at_rig
+from .gps_geo import normalize_180
 
 
 # ---------------------------------------------------------------------------
@@ -57,18 +59,26 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "person_aim_y": getattr(cfg.fusion, "person_aim_y", 0.5),
                 "gps_boost": getattr(cfg.fusion, "gps_boost", 0.2),
                 "gps_boost_radius_frac": getattr(cfg.fusion, "gps_boost_radius_frac", 0.25),
+                "gps_bearing_cue_enabled": getattr(cfg.fusion, "gps_bearing_cue_enabled", False),
             },
             "gps": {
                 "enabled": getattr(getattr(cfg, "gps", None), "enabled", False),
                 "stale_threshold_sec": getattr(getattr(cfg, "gps", None), "stale_threshold_sec", 10.0),
+                "coast_on_no_fix_sec": getattr(getattr(cfg, "gps", None), "coast_on_no_fix_sec", 2.0),
                 "grace_sec": getattr(getattr(cfg, "gps", None), "grace_sec", 1.0),
                 "lock_frames": getattr(getattr(cfg, "gps", None), "lock_frames", 5),
                 "drive_zoom": getattr(getattr(cfg, "gps", None), "drive_zoom", False),
+                "drive_zoom_near_m": getattr(getattr(cfg, "gps", None), "drive_zoom_near_m", 40.0),
+                "drive_zoom_far_m": getattr(getattr(cfg, "gps", None), "drive_zoom_far_m", 250.0),
+                "drive_zoom_max_enc": getattr(getattr(cfg, "gps", None), "drive_zoom_max_enc", 16384.0),
+                "drive_zoom_max_frac": getattr(getattr(cfg, "gps", None), "drive_zoom_max_frac", 0.6),
+                "base_drift_enabled": getattr(getattr(cfg, "gps", None), "base_drift_enabled", True),
                 "max_pan_speed": getattr(getattr(cfg, "gps", None), "max_pan_speed", 4),
                 "max_tilt_speed": getattr(getattr(cfg, "gps", None), "max_tilt_speed", 3),
             },
             "tracking": {
                 "mode": getattr(getattr(cfg, "tracking", None), "mode", "auto"),
+                "enabled": getattr(getattr(cfg, "tracking", None), "enabled", True),
             },
             "color": {
                 "enabled": cfg.color.enabled,
@@ -119,6 +129,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
             "show_hud": True,
             "gps": getattr(pipeline, "gps", None) is not None,
             "tracking_mode": True,
+            "agent": bool(getattr(getattr(cfg, "agent", None), "enabled", False)),
             "yolo_classes": list(YOLO_CLASSES),
             "person_aim_y": {
                 "0.20": "head/upper face",
@@ -144,7 +155,8 @@ def build_status_snapshot(pipeline, revision: int, media: dict | None = None) ->
         "safety": build_safety(legacy, pipeline),
         "authority": build_authority(pipeline),
         "ptz": build_ptz(legacy, pipeline),
-        "tracking": build_tracking(legacy),
+        "tracking": {**build_tracking(legacy),
+                     "detector_loaded": getattr(pipeline, "detector", None) is not None},
         "gps": build_gps(pipeline, legacy),
         "calibration": build_calibration(pipeline),
         "media": media if media is not None else unknown_media(),
@@ -402,6 +414,49 @@ def build_calibration(pipeline) -> dict:
     if callable(getter):
         return getter()
     return empty_calibration_state()
+
+
+# ---------------------------------------------------------------------------
+# Phone-sensor diagnostic snapshot
+# ---------------------------------------------------------------------------
+
+def build_sensors_snapshot(sample, base_pos, reference_heading=None,
+                           now: float | None = None) -> dict:
+    """Phone-on-tripod diagnostic block: phone (as the rig received it), the Wio
+    base position, the co-location/at-rig gate, and the measured heading bias vs the
+    calibrated reference. Read-only; no corrective use."""
+    now = time.time() if now is None else now
+    at_rig, dist_m, basis = compute_at_rig(
+        getattr(sample, "lat", None), getattr(sample, "lon", None), base_pos
+    )
+    phone = None
+    if sample is not None:
+        phone = {
+            "heading_deg": sample.heading_deg,
+            "true_heading_deg": sample.true_heading_deg,
+            "heading_acc": sample.heading_acc,
+            "lat": sample.lat, "lon": sample.lon, "h_acc": sample.h_acc,
+            "alt_m": sample.alt_m, "alt_acc": sample.alt_acc,
+            "baro_rel_m": sample.baro_rel_m,
+            "age_sec": round(now - sample.received_at, 1),
+            "tripod_reference": (at_rig is True),
+        }
+    base = None
+    if base_pos is not None:
+        base = {"lat": base_pos[0], "lon": base_pos[1],
+                "alt_m": base_pos[2] if len(base_pos) > 2 else None}
+    # Measured fixed offset (steel-plate hard-iron + mount alignment) — only meaningful
+    # when the phone is confirmed at the rig and a manual heading lock exists.
+    heading_bias_deg = None
+    th = getattr(sample, "true_heading_deg", None) if sample is not None else None
+    if at_rig is True and th is not None and reference_heading is not None:
+        heading_bias_deg = round(normalize_180(th - reference_heading), 1)
+    return {
+        "phone": phone,
+        "base": base,
+        "co_location": {"phone_base_dist_m": dist_m, "at_rig": at_rig, "basis": basis},
+        "heading_bias_deg": heading_bias_deg,
+    }
 
 
 # ---------------------------------------------------------------------------

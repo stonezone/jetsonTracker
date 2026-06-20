@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import threading
 import time
 import urllib.error
@@ -53,6 +54,13 @@ EVENTS_TAIL = 30
 CODEX_BACKEND_URL = "https://chatgpt.com/backend-api/codex/responses"
 CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
 CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"  # the Codex CLI public client
+
+# Headless Claude Code (`claude -p`) — the officially-supported Agent-SDK path that
+# runs on the operator's Claude subscription (and refreshes its own token). The advisor
+# shells out by ABSOLUTE path because wavecam.service is non-interactive: it sources
+# neither .profile (installer PATH) nor .bashrc (CLAUDE_CODE_OAUTH_TOKEN), so the token
+# is passed explicitly from agent_keys.json instead. Overridable via keys.claude_cli_path.
+CLAUDE_CLI_PATH = "/home/zack/.local/bin/claude"
 
 SYSTEM_PROMPT = (
     "You are the WaveCam supervisor: a diagnostics advisor for an "
@@ -127,30 +135,6 @@ def _default_post(url: str, headers: dict, body: dict,
 
 
 # ── providers: each is consult(keys_path, prompt, post) -> reply text ───────
-
-def _consult_claude(keys_path: str, prompt: str, post: Callable) -> str:
-    token = _require(_load_keys(keys_path), "claude_oauth_token", keys_path)
-    raw = post(
-        "https://api.anthropic.com/v1/messages",
-        {
-            "Authorization": f"Bearer {token}",
-            "anthropic-version": "2023-06-01",
-            # OAuth bearer tokens are rejected on /v1/messages without this.
-            "anthropic-beta": "oauth-2025-04-20",
-        },
-        {
-            "model": "claude-opus-4-8",
-            "max_tokens": MAX_REPLY_TOKENS,
-            "system": SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-    )
-    resp = json.loads(raw)
-    return "".join(
-        b.get("text", "") for b in resp.get("content", [])
-        if b.get("type") == "text"
-    )
-
 
 def _consult_deepseek(keys_path: str, prompt: str, post: Callable) -> str:
     key = _require(_load_keys(keys_path), "deepseek_api_key", keys_path)
@@ -237,8 +221,31 @@ def _consult_codex(keys_path: str, prompt: str, post: Callable) -> str:
         return _codex_call(keys, prompt, post)
 
 
+def _run_claude_cli(argv: list[str], env: dict, timeout: float) -> str:
+    """Run the claude CLI and return stdout. Module-level so offline tests can
+    monkeypatch it instead of spawning a real subprocess."""
+    proc = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=timeout)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()[:200]
+        raise RuntimeError(f"claude CLI exited {proc.returncode}: {detail}")
+    return proc.stdout
+
+
+def _consult_claude_code(keys_path: str, prompt: str, post: Callable) -> str:
+    """Headless Claude Code (`claude -p`) on the operator's subscription — the
+    officially-supported Agent-SDK path. Claude Code manages its own token refresh,
+    so unlike _consult_claude there is nothing to rotate here. `post` is unused (this
+    provider shells out rather than calling HTTP); the token is injected into the child
+    env, never onto the command line (so it can't leak via the process list)."""
+    keys = _load_keys(keys_path)
+    token = _require(keys, "claude_code_oauth_token", keys_path)
+    cli = str(keys.get("claude_cli_path") or CLAUDE_CLI_PATH)
+    env = {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": token}
+    return _run_claude_cli([cli, "-p", prompt], env, REQUEST_TIMEOUT_SEC)
+
+
 PROVIDERS: dict[str, Callable[[str, str, Callable], str]] = {
-    "claude": _consult_claude,
+    "claude_code": _consult_claude_code,
     "codex": _consult_codex,
     "deepseek": _consult_deepseek,
 }

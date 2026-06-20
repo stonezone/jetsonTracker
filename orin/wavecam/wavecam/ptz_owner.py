@@ -63,6 +63,26 @@ class PtzOwner:
                 return True
             return False
 
+    def transition(self, expected_from: str, to: str) -> bool:
+        """Atomically hand the PTZ from expected_from to `to` in ONE locked step.
+
+        Closes the OWN-1 race: the arbiter used to release(old) then request(new)
+        as two unlocked calls, leaving a transient idle window where a manual claim
+        could slip in (a non-takeover claim would wrongly succeed). Refuses — and
+        leaves ownership untouched — if killed, if `to` is not a grantable owner,
+        or if the current owner is no longer expected_from (state moved underneath
+        us: e.g. the operator grabbed manual). The caller decides which
+        expected_from values are legal to take over (never manual/calibrate)."""
+        with self._lock:
+            if self._killed:
+                return False
+            if to not in OWNERS or to == IDLE:
+                return False
+            if self._owner != expected_from:
+                return False
+            self._owner = to
+            return True
+
     def kill(self) -> None:
         """Sticky global KILL: drop ownership and latch until resume()."""
         with self._lock:
