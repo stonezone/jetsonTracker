@@ -83,5 +83,11 @@ class FrameGrabber(threading.Thread):
     def connected(self) -> bool:
         return self._connected
 
+    @property
+    def frames(self) -> int:
+        """Total frames captured. A wedged grabber returns the same non-None frame
+        from read() while this stops advancing — the zombie-detection signal."""
+        return self._frames
+
     def stop(self) -> None:
         self._stop.set()

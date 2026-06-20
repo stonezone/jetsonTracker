@@ -50,15 +50,16 @@ class PtzDispatcher:
                 return False
             self.pipeline.ptz.stop()
             self.pipeline.ptz.zoom("stop")
-            if not self.pipeline.owner.release(current_owner):
+            # Atomic handoff (SAFE-2): one locked release+grant so the arbiter
+            # thread can't slip into the transient idle window and re-seize the
+            # PTZ between release() and request("manual"). transition() refuses if
+            # the owner moved underneath us, leaving ownership untouched (no restore
+            # needed). Only overwrite the restore target if none is already staged.
+            if not self.pipeline.owner.transition(current_owner, "manual"):
                 return False
-            self._restore_owner_after_manual = current_owner
-            if self.pipeline.owner.request("manual"):
-                return True
-            # Takeover failed after we released the previous owner — restore it.
-            if not self.pipeline.owner.killed:
-                self.pipeline.owner.request(current_owner)
-            return False
+            if self._restore_owner_after_manual is None:
+                self._restore_owner_after_manual = current_owner
+            return True
 
     def claim_manual_from_calibrate(self) -> bool:
         """Take over from an active CALIBRATE session for a standalone capture.
@@ -157,14 +158,25 @@ class PtzDispatcher:
                 self._manual_held = True
                 return
             if current_owner in AUTONOMOUS:
-                self._restore_owner_after_manual = current_owner
-                if not self.pipeline.owner.release(current_owner):
+                # Atomic handoff (SAFE-2): close the release→request gap the arbiter
+                # could exploit to re-seize PTZ and silently lose the operator's hold.
+                if not self.pipeline.owner.transition(current_owner, "manual"):
                     return
+                if self._restore_owner_after_manual is None:
+                    self._restore_owner_after_manual = current_owner
+                self._manual_held = True
+                return
             if self.pipeline.owner.request("manual"):
                 self._manual_held = True
 
     def send_manual_velocity(self, req) -> None:
         with self._lock:
+            # Re-check KILL under the lock before issuing VISCA: a KILL that lands
+            # after claim_manual succeeded but before these bytes go out would
+            # otherwise move the camera for one frame (SAFE-3).
+            if self.pipeline.owner.killed:
+                self.pipeline.ptz.stop()
+                return
             cfg = self.pipeline.cfg.ptz
             pan_dir, pan_speed = map_axis(req.pan, cfg, "pan")
             tilt_dir, tilt_speed = map_axis(req.tilt, cfg, "tilt")
@@ -186,6 +198,9 @@ class PtzDispatcher:
 
     def send_manual_zoom_velocity(self, zoom: float, deadman_ms: int = 800) -> None:
         with self._lock:
+            if self.pipeline.owner.killed:   # SAFE-3: no zoom motion after KILL
+                self.pipeline.ptz.zoom("stop")
+                return
             if zoom == 0:
                 self.pipeline.ptz.zoom("stop")
                 return

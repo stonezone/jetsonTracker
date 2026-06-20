@@ -23,6 +23,7 @@ from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 LEVEL_MAX_DEG = 0.5
 LOCATION_MIN_RADIUS_M = 2.5
 LOCATION_DEFAULT_RADIUS_M = 15.0
+LIVE_BASE_MAX_AGE_SEC = 3.0   # GPS-2: reject the live-base fallback if the cached fix is older than this
 LOCATION_DEFAULT_UERE_M = 5.0
 LOCATION_WARMUP_SEC = 60.0
 HEADING_DEFAULT_BUDGET_DEG = 2.0
@@ -336,6 +337,21 @@ class CalibrationManager:
             gps = getattr(self.pipeline, "gps", None)
             cam = gps.get_camera_position() if gps is not None else None
             if cam is not None:
+                # Freshness gate (GPS-2): get_camera_position() returns the last
+                # cached base fix unconditionally. A rebooted base Wio leaves a
+                # STALE _cam cached (the documented "base reboot staleifies serial"
+                # gotcha) — locking it would silently corrupt every bearing. Require
+                # a live reader and a recent fix before accepting the live base.
+                cam_age = gps.get_camera_age() if hasattr(gps, "get_camera_age") else None
+                reader_ok = gps.reader_alive() if hasattr(gps, "reader_alive") else True
+                if not reader_ok or cam_age is None or cam_age > LIVE_BASE_MAX_AGE_SEC:
+                    return self._calibration_refusal(
+                        "gps_stale",
+                        "Live base position is stale or unavailable; reacquire the base "
+                        "fix (or send explicit samples) before locking location.",
+                        503,
+                        base_age_sec=None if cam_age is None else round(cam_age, 1),
+                    )
                 samples = [
                     {
                         "lat": float(cam[0]),

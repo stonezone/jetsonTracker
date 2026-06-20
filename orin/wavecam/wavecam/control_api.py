@@ -56,6 +56,14 @@ from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 
 FrameSource = Callable[[], Any]
 
+# API-1: cap concurrent agent chat turns. Each turn blocks a worker thread for up
+# to the claude -p timeout (~120s); without a cap, enough concurrent/retried turns
+# could exhaust Starlette's threadpool and stall every route — including
+# /safety/kill. The route runs the blocking call via asyncio.to_thread behind this
+# semaphore, so the event loop and the rest of the threadpool stay responsive.
+_AGENT_CHAT_MAX_CONCURRENT = 2
+_agent_chat_semaphore = asyncio.Semaphore(_AGENT_CHAT_MAX_CONCURRENT)
+
 GUIDE_FILENAME = "WaveCam_Guide.html"
 GUIDE_ASSET_DIR = "guide_assets"
 GUIDE_ROOT_ENV = "WAVECAM_GUIDE_ROOT"
@@ -715,8 +723,12 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         return api.request_agent_summon(req or AgentSummonRequest())
 
     @app.post("/api/v1/agent/chat", dependencies=[Depends(require(SERVICE))])
-    def agent_chat(req: AgentChatRequest):
-        return api.request_agent_chat(req.message)
+    async def agent_chat(req: AgentChatRequest):
+        # Async + to_thread + semaphore (API-1): the blocking claude -p subprocess
+        # runs off the event loop and is capped, so a slow/stuck agent turn can't
+        # occupy the whole threadpool and delay safety routes.
+        async with _agent_chat_semaphore:
+            return await asyncio.to_thread(api.request_agent_chat, req.message)
 
     @app.post("/api/v1/agent/arm", dependencies=[Depends(require(CONFIG))])
     def agent_arm(req: AgentArmRequest):

@@ -28,6 +28,10 @@ from .ptz_owner import PtzOwner
 from .tracking_arbiter import TrackingArbiter
 
 DEFAULT_STOP_RESEND_INTERVAL_SEC = 0.25
+# Frames must advance within this budget or capture is "stale" — a wedged grabber
+# hands back the same non-None frame forever (ZOMBIE-1). Generous vs the ~35fps
+# loop so a momentary hiccup doesn't drop vision authority.
+CAPTURE_STALE_SEC = 2.0
 
 # GPS-cued ROI minimum size (px) — ensures the detector has enough context even
 # when the GPS-predicted position is at a frame edge (review 2026-06-12).
@@ -217,6 +221,11 @@ class Pipeline(threading.Thread):
         if on:
             self.state.set_status(killed=True, state="KILLED")
             self.owner.kill()                  # sticky latch + owner -> idle
+            # Reset arbiter hysteresis so a stale mid-kill lock can't instantly
+            # re-grant vision_follow on RESUME — the operator killed because the
+            # lock was wrong; post-resume must re-earn it from scratch (KILL-1).
+            if hasattr(self, "arbiter"):
+                self.arbiter.reset_vision_state()
             self._pointing_verifier.clear()    # no resend may outlive a KILL
             self._last_kill = {"reason": reason or "operator", "at_unix_ms": int(time.time() * 1000)}
             if self.cfg.ptz.enabled:
@@ -595,6 +604,9 @@ class Pipeline(threading.Thread):
         n_fps = 0
         fps = 0.0
         t_log = time.time()
+        _last_frames = -1
+        _last_frame_advance = time.time()
+        _capture_stale = False
 
         while not self._stop.is_set():
             t0 = time.time()
@@ -603,6 +615,22 @@ class Pipeline(threading.Thread):
                 self.state.set_status(state="NO_VIDEO", connected=self.grab.connected)
                 time.sleep(0.1)
                 continue
+
+            # Zombie-rig guard (ZOMBIE-1): a wedged grabber keeps handing back the
+            # SAME non-None frame, so this loop runs fusion on a frozen image while
+            # /status says TRACKING. Detect via the grabber's frame counter (advances
+            # only on a genuinely new frame); when it stalls past the budget, mark
+            # capture stale so the arbiter drops vision authority.
+            _frames = self.grab.frames
+            if _frames != _last_frames:
+                _last_frames = _frames
+                _last_frame_advance = t0
+            capture_ok = (t0 - _last_frame_advance) < CAPTURE_STALE_SEC
+            if not capture_ok and not _capture_stale:
+                _capture_stale = True
+                self.events.record("vision_stale", {"stale_sec": round(t0 - _last_frame_advance, 1)})
+            elif capture_ok and _capture_stale:
+                _capture_stale = False
 
             h, w = frame.shape[:2]
             if self.estimator is None and self._frame_i % 120 == 0:
@@ -653,7 +681,13 @@ class Pipeline(threading.Thread):
             if self.state.killed or self._restarting:
                 cmd = STOP_CMD
                 abs_cmd = None
-                self._send_cmd(cmd)               # killed/restarting -> force stop
+                # Force the stop directly — bypass _send_cmd's dedupe/rate-limit so a
+                # creeping PTZ on the kill path is re-stopped every frame, not throttled
+                # for up to stop_resend_interval (SAFE-1). Stopping is always safe.
+                if self.cfg.ptz.enabled:
+                    self.ptz.stop()
+                self._last_cmd_key = cmd.key()
+                self._last_cmd_time = time.time()
                 self._send_zoom("stop")
                 zoom_cmd = "hold"
                 self._arbiter_state = "restarting" if self._restarting else "killed"
@@ -690,7 +724,8 @@ class Pipeline(threading.Thread):
                                                "enabled", True)
                 decision = self.arbiter.decide(fr, gps_fresh, gps_calibrated,
                                                base_locked, t0,
-                                               calibration_valid=calibration_valid)
+                                               calibration_valid=calibration_valid,
+                                               capture_ok=capture_ok)
                 prev_state = self._arbiter_state
                 self._arbiter_state = decision.owner
                 # Observability (Plan v3 Phase 0): record why authority resolved

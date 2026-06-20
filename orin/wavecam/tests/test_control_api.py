@@ -268,6 +268,16 @@ def test_agent_resume_clears_kill_allows_rearm(monkeypatch):
     assert client.post("/api/v1/agent/arm", json={"armed": True}).json()["armed"] is True
 
 
+def test_agent_chat_route_is_async():
+    # API-1: agent_chat must be an async route so the blocking claude -p call runs
+    # via asyncio.to_thread behind a semaphore and can't exhaust the threadpool that
+    # serves /safety/kill. A sync def here would reintroduce the starvation risk.
+    import inspect
+    app = build_app(_agent_pipe(True))
+    route = next(r for r in app.routes if getattr(r, "path", None) == "/api/v1/agent/chat")
+    assert inspect.iscoroutinefunction(route.endpoint), "agent_chat must be async def"
+
+
 def test_arm_ttl_clamped_to_safe_minimum():
     # An operator-set arm_ttl shorter than a chat turn would let the window expire
     # mid-subprocess while claude still holds Bash. It must be clamped up.
@@ -796,6 +806,44 @@ def test_api_v1_calibration_is_owner_gated_kill_safe_and_validated():
 
     assert killed.status_code == 409
     assert killed.json()["code"] == "killed"
+
+
+def _start_calibrate_session(client):
+    return client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True, "source": "test"},
+    )
+
+
+def test_location_lock_live_base_refused_when_stale():
+    # GPS-2: with no samples, the live-base fallback must NOT lock a stale cached
+    # base position (rebooted Wio leaves _cam cached). Expect a gps_stale refusal.
+    pipe = DummyPipeline()
+    pipe.gps = types.SimpleNamespace(
+        get_camera_position=lambda: (21.6, -158.0, 3.0),
+        get_camera_age=lambda: 42.0,           # stale (> LIVE_BASE_MAX_AGE_SEC)
+        reader_alive=lambda: True,
+    )
+    client = TestClient(build_app(pipe))
+    assert pipe.owner.request("testbed") is True
+    _start_calibrate_session(client)
+    r = client.post("/api/v1/calibration/location", json={"source": "test"})
+    assert r.status_code == 503
+    assert r.json()["code"] == "gps_stale"
+
+
+def test_location_lock_live_base_accepted_when_fresh():
+    pipe = DummyPipeline()
+    pipe.gps = types.SimpleNamespace(
+        get_camera_position=lambda: (21.6, -158.0, 3.0),
+        get_camera_age=lambda: 0.5,            # fresh
+        reader_alive=lambda: True,
+    )
+    client = TestClient(build_app(pipe))
+    assert pipe.owner.request("testbed") is True
+    _start_calibrate_session(client)
+    r = client.post("/api/v1/calibration/location", json={"source": "test"})
+    assert r.status_code == 200
 
 
 def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():

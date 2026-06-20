@@ -79,7 +79,8 @@ class TrackingArbiter:
                gps_calibrated: bool,
                base_locked: bool,
                now_sec: float,
-               calibration_valid: bool = False) -> ArbiterDecision:
+               calibration_valid: bool = False,
+               capture_ok: bool = True) -> ArbiterDecision:
         """Return who drives this frame.
 
         Args:
@@ -92,7 +93,25 @@ class TrackingArbiter:
                 valid and confirmed. Fail-closed default (False) — persisted pose
                 flags survive restart/cancel/KILL and are NOT sufficient for GPS
                 authority (audit 2026-06-13).
+            capture_ok: False if the camera frames have gone stale (a wedged/dead
+                grabber). Vision authority requires live frames; GPS pointing does
+                not depend on the camera, so gps_only still works (ZOMBIE-1).
         """
+        # --- Zombie-rig guard (ZOMBIE-1): a wedged grabber keeps the last frame
+        # non-None, so the vision loop keeps running fusion on a frozen frame while
+        # /status reports TRACKING. Vision must NOT drive the PTZ on stale frames.
+        # gps_only is exempt (it doesn't use vision). Reset hysteresis so a lock is
+        # re-earned once frames resume. ---
+        if not capture_ok and self._tracking_mode() != "gps_only":
+            self._vision_owns = False
+            self._consecutive_locked = 0
+            self._last_locked_time = None
+            gps_viable = (gps_fresh and gps_calibrated and base_locked and calibration_valid)
+            owner = "gps_tracker" if (self.enabled and gps_viable) else "idle"
+            self._last_owner = owner
+            roi = (0.5, 0.5, 0.5, 0.5) if owner == "gps_tracker" else None
+            return ArbiterDecision(owner=owner, search_roi=roi)
+
         # --- DISABLE-PTZ latch: autonomy off → idle every frame, regardless of
         # mode/lock/GPS. Manual control is uncontested so a hand-aim holds until
         # the operator re-enables. Reset hysteresis so a lock must be re-earned. ---

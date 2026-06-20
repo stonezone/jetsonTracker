@@ -247,4 +247,35 @@ def test_just_locked_vision_survives_a_stale_gps_frame():
     assert d.owner == "vision_follow"
 
 
+# --- ZOMBIE-1: stale capture drops vision authority ---
+
+def test_stale_capture_forces_idle_when_vision_would_own():
+    # A wedged grabber (capture_ok=False) must not let vision drive the PTZ on a
+    # frozen frame, even though fusion reports locked.
+    a = TrackingArbiter(lock_frames=1)
+    d = a.decide(_vision(True, 0.9), gps_fresh=False, gps_calibrated=True,
+                 base_locked=False, now_sec=0.0, capture_ok=False)
+    assert d.owner == "idle"
+
+
+def test_stale_capture_still_allows_gps_tracker():
+    # GPS pointing doesn't depend on the camera, so a stale grabber must NOT kill
+    # GPS authority (only vision).
+    a = TrackingArbiter()
+    d = a.decide(_vision(False), gps_fresh=True, gps_calibrated=True,
+                 base_locked=True, now_sec=0.0, calibration_valid=True, capture_ok=False)
+    assert d.owner == "gps_tracker"
+
+
+def test_capture_recovers_then_vision_must_re_earn_lock():
+    # After a stale spell, vision lock counting was reset, so a single locked frame
+    # with lock_frames>1 should NOT instantly re-grant.
+    a = TrackingArbiter(lock_frames=3)
+    a.decide(_vision(True, 0.9), gps_fresh=False, gps_calibrated=True,
+             base_locked=False, now_sec=0.0, capture_ok=False)  # stale: idle + reset
+    d = a.decide(_vision(True, 0.9), gps_fresh=False, gps_calibrated=True,
+                 base_locked=False, now_sec=0.1, capture_ok=True)  # 1 frame only
+    assert d.owner == "idle"  # needs 3 consecutive locked frames
+
+
 print("ARBITER TESTS PASSED")
