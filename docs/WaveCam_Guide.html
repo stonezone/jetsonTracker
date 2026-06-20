@@ -398,6 +398,8 @@ python3 firmware/direct-lora/tools/read_base.py</code>
 
       <p style="color:var(--muted); font-size:0.9rem; margin:0 0 0.8rem">The app shows <b>STEP N OF 6</b> in the header as you progress. Each step has a Confirm or Capture button &mdash; tap it only when the expected result is met.</p>
 
+      <p style="color:var(--muted); font-size:0.88rem; margin:0 0 0.8rem"><b>Note:</b> the old separate IMU <b>Level</b> step was <b>removed (2026-06-17)</b> &mdash; the rig-phone mounts on its side off the camera and can&rsquo;t sense pan-axis tilt, so the backend no longer requires a level check. You level the tripod by hand; the wizard goes straight from location to heading. The Tilt &mdash; horizon reference step (Step 4) below is unrelated and still captures the camera&rsquo;s tilt-zero.</p>
+
       <div class="card" style="margin-bottom:0.7rem">
         <div class="ctrl-top" style="margin-bottom:0.45rem"><span class="pill hot" style="font-size:0.75rem">Step 1 of 6</span><h3 style="margin:0">Preflight</h3></div>
         <p style="margin:0 0 0.55rem; color:var(--muted); font-size:0.92rem">The app shows a live checklist &mdash; every row must be green before you can proceed.</p>
@@ -483,11 +485,13 @@ python3 firmware/direct-lora/tools/read_base.py</code>
       <div class="sec-head">
         <div class="kicker">Tune tab &middot; the control reference</div>
         <h2>Every knob, what it does, when to touch it</h2>
-        <p class="sub">Tune is under <b>Tools &rarr; Tune</b>. All controls below are <span class="pill hot">Hot</span> &mdash; they apply live via <code>POST /config/hot</code> with no restart. Save a set as a <b>Preset</b> for tow-foil, wing-foil, land-chase, sunny, or cloudy conditions.</p>
+        <p class="sub">Tune is under <b>Tools &rarr; Tune</b>. Most controls are <span class="pill hot">Hot</span> &mdash; they apply live via <code>POST /config/hot</code> with no restart; a few advanced keys are <span class="pill restart">Restart</span>. Save a set as a <b>Preset</b> for tow-foil, wing-foil, land-chase, sunny, or cloudy conditions.</p>
       </div>
 
+      <p class="sub" style="margin:0 0 1rem; color:var(--muted); font-size:0.95rem">The cards below are listed in the <b>same order they appear in the iOS Tune tab</b> &mdash; scroll the app and this reference in lockstep. Every key in the first ten cards is <span class="pill hot">Hot</span> (applies live via <code>POST /config/hot</code>). The <b>Service</b> card at the very bottom of the app is restart-only.</p>
+
       <div class="ctrl-group">
-        <h3><span class="pill subj">A</span> Tracking Trigger <span class="tag">what gets detected &amp; locked</span></h3>
+        <h3><span class="pill subj">1</span> Target <span class="tag">what gets detected</span></h3>
         <div class="ctrls">
 
           <div class="ctrl">
@@ -506,6 +510,22 @@ python3 firmware/direct-lora/tools/read_base.py</code>
               <div class="adj"><b>Adjust</b><span>Only when testing with a prop instead of a person (e.g. surfboard=37, cup=41).</span></div>
             </div>
           </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Person aim Y</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.person_aim_y</span></div>
+            <div class="ctrl-what">Where on your body the reticle targets: 0 = head, 0.5 = center, 1 = feet. Range: 0.0&ndash;1.0. Default: 0.5.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Lower (0.3&ndash;0.4)</b><span>Keep your head/upper body framed on a wave.</span></div>
+              <div class="adj"><b>Raise (0.6+)</b><span>Frame more board / full body.</span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h3><span class="pill subj">2</span> Detection <span class="tag">how the neural net runs</span></h3>
+        <div class="ctrls">
 
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">YOLO confidence</span><span class="pill hot">Hot</span><span class="ctrl-key">detector.conf</span></div>
@@ -543,6 +563,13 @@ python3 firmware/direct-lora/tools/read_base.py</code>
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h3><span class="pill ok">3</span> Lock <span class="tag">acquire-strict &middot; hold-lenient</span></h3>
+        <div class="ctrls">
+
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Lock threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.lock_threshold</span></div>
             <div class="ctrl-what">Fused confidence needed to <b>acquire</b> a lock. Range: 0.05&ndash;0.95. Default: <b>0.60</b>. A confirmed color+person target scores 0.5 + 0.5&times;YOLO_conf. Must stay above unlock threshold.</div>
@@ -572,14 +599,23 @@ python3 firmware/direct-lora/tools/read_base.py</code>
             </div>
           </div>
 
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Person aim Y</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.person_aim_y</span></div>
-            <div class="ctrl-what">Where on your body the reticle targets: 0 = head, 0.5 = center, 1 = feet. Range: 0.0&ndash;1.0. Default: 0.5.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Lower (0.3&ndash;0.4)</b><span>Keep your head/upper body framed on a wave.</span></div>
-              <div class="adj"><b>Raise (0.6+)</b><span>Frame more board / full body.</span></div>
-            </div>
-          </div>
+        </div>
+      </div>
+
+      <div class="callout teal" style="margin-top:0.9rem">
+        <h3>What &ldquo;confidence&rdquo; means &mdash; the ladder</h3>
+        <p>Lock/unlock compare a <b>fused</b> score, not raw YOLO output. The ladder from code:</p>
+        <ul>
+          <li><b>Color + person matched</b> (blob center within match_dist of person center): <code>0.5 + 0.5 &times; YOLO_conf</code> &rarr; range &asymp; 0.5&ndash;1.0. Always acquires above lock=0.60 when YOLO_conf &ge; 0.2.</li>
+          <li><b>Color-only sustain</b> (<code>CONF_SUSTAIN = 0.45</code>): a color blob (or a person near the last tracked position) while locked. Holds. Does not acquire.</li>
+          <li><b>Person-only, no color</b> (<code>CONF_PERSON_ONLY = 0.2</code>): a YOLO person with no matching color blob. Never holds, never acquires. Background people are completely ignored.</li>
+          <li><b>GPS cue boost</b>: when GPS owns the camera and a blob is within the cue radius, it gets +<code>gps_boost</code> (default 0.20), capped at 0.95. A color-only blob at sustain (0.45) + 0.20 boost = 0.65 &mdash; enough to cross lock=0.60. This is how GPS shepherds vision onto a far, small target.</li>
+        </ul>
+      </div>
+
+      <div class="ctrl-group">
+        <h3><span class="pill subj">4</span> Color <span class="tag">blob filter &amp; mask cleanup</span></h3>
+        <div class="ctrls">
 
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Min color area</span><span class="pill hot">Hot</span><span class="ctrl-key">color.min_area</span></div>
@@ -607,43 +643,12 @@ python3 firmware/direct-lora/tools/read_base.py</code>
             </div>
           </div>
 
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Show detection mask</span><span class="pill hot">Hot</span><span class="ctrl-key">web.show_mask</span></div>
-            <div class="ctrl-what">Overlay the color-detection mask on the feed &mdash; your tuning X-ray. Turn on while adjusting color settings; off for clean recording.</div>
-          </div>
-
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Show debug HUD</span><span class="pill hot">Hot</span><span class="ctrl-key">web.show_hud</span></div>
-            <div class="ctrl-what">The on-video readout (confidence score, lock state, FPS) in the Orin&rsquo;s MJPEG stream. Off = a clean picture for filming; on = diagnostics while tuning.</div>
-          </div>
-
         </div>
       </div>
 
-      <div class="callout teal" style="margin-top:0.9rem">
-        <h3>What &ldquo;confidence&rdquo; means &mdash; the ladder</h3>
-        <p>Lock/unlock compare a <b>fused</b> score, not raw YOLO output. The ladder from code:</p>
-        <ul>
-          <li><b>Color + person matched</b> (blob center within match_dist of person center): <code>0.5 + 0.5 &times; YOLO_conf</code> &rarr; range &asymp; 0.5&ndash;1.0. Always acquires above lock=0.60 when YOLO_conf &ge; 0.2.</li>
-          <li><b>Color-only sustain</b> (<code>CONF_SUSTAIN = 0.45</code>): a color blob (or a person near the last tracked position) while locked. Holds. Does not acquire.</li>
-          <li><b>Person-only, no color</b> (<code>CONF_PERSON_ONLY = 0.2</code>): a YOLO person with no matching color blob. Never holds, never acquires. Background people are completely ignored.</li>
-          <li><b>GPS cue boost</b>: when GPS owns the camera and a blob is within the cue radius, it gets +<code>gps_boost</code> (default 0.20), capped at 0.95. A color-only blob at sustain (0.45) + 0.20 boost = 0.65 &mdash; enough to cross lock=0.60. This is how GPS shepherds vision onto a far, small target.</li>
-        </ul>
-      </div>
-
       <div class="ctrl-group">
-        <h3><span class="pill hot">B</span> PTZ Tuning <span class="tag">how fast &amp; smooth it moves</span></h3>
+        <h3><span class="pill hot">5</span> Motion <span class="tag">how fast &amp; smooth it moves</span></h3>
         <div class="ctrls">
-
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Deadband</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.deadzone</span></div>
-            <div class="ctrl-what">How far off-center (as a fraction of the half-frame) before the camera moves. Range: 0.02&ndash;0.30. Default: 0.08.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Calmer &mdash; stops micro-jitter when zoomed in.</span></div>
-              <div class="adj"><b>Lower</b><span>Tighter &mdash; follows every small move.</span></div>
-              <div class="see"><b>Example</b><span>Camera hunts left/right when zoomed in &rarr; raise 0.08 &rarr; 0.12.</span></div>
-            </div>
-          </div>
 
           <div class="ctrl">
             <div class="ctrl-top"><span class="ctrl-name">Max pan speed</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.max_pan_speed</span></div>
@@ -660,6 +665,39 @@ python3 firmware/direct-lora/tools/read_base.py</code>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Big swell, fast vertical changes.</span></div>
               <div class="adj"><b>Lower</b><span>Gentle, steady tilt.</span></div>
+            </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Deadband</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.deadzone</span></div>
+            <div class="ctrl-what">How far off-center (as a fraction of the half-frame) before the camera moves. Range: 0.02&ndash;0.30. Default: 0.08.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Calmer &mdash; stops micro-jitter when zoomed in.</span></div>
+              <div class="adj"><b>Lower</b><span>Tighter &mdash; follows every small move.</span></div>
+              <div class="see"><b>Example</b><span>Camera hunts left/right when zoomed in &rarr; raise 0.08 &rarr; 0.12.</span></div>
+            </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Feed-forward gain</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_gain</span></div>
+            <div class="ctrl-what">Predictive lead &mdash; moves ahead of your motion instead of only chasing it. 0 = pure reactive. Range: 0.0&ndash;1.0. Default: 0.0.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise 0.05&ndash;0.3</b><span>To keep up with fast cut-backs. Too high overshoots.</span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h3><span class="pill hot">6</span> Motion Advanced <span class="tag">fine controller &amp; mount tuning</span></h3>
+        <div class="ctrls">
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">FF deadband mult</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_deadzone_mult</span></div>
+            <div class="ctrl-what">Widens the deadband for the feed-forward term so noise doesn&rsquo;t trigger predictive motion. Range: 1.0&ndash;4.0. Default: 1.5.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>If feed-forward makes it twitchy.</span></div>
             </div>
           </div>
 
@@ -682,24 +720,13 @@ python3 firmware/direct-lora/tools/read_base.py</code>
           </div>
 
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Feed-forward gain</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_gain</span></div>
-            <div class="ctrl-what">Predictive lead &mdash; moves ahead of your motion instead of only chasing it. 0 = pure reactive. Range: 0.0&ndash;1.0. Default: 0.0.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise 0.05&ndash;0.3</b><span>To keep up with fast cut-backs. Too high overshoots.</span></div>
-            </div>
+            <div class="ctrl-top"><span class="ctrl-name">Invert tilt</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.invert_tilt</span></div>
+            <div class="ctrl-what">Flip up/down if the camera tilts the wrong direction for your mount. Set once at setup.</div>
           </div>
 
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">FF deadband mult</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.ff_deadzone_mult</span></div>
-            <div class="ctrl-what">Widens the deadband for the feed-forward term so noise doesn&rsquo;t trigger predictive motion. Range: 1.0&ndash;4.0. Default: 1.5.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>If feed-forward makes it twitchy.</span></div>
-            </div>
-          </div>
-
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">Invert pan / tilt</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.invert_pan / ptz.invert_tilt</span></div>
-            <div class="ctrl-what">Flip left/right or up/down if the camera moves the wrong direction for your mount. Set once at setup.</div>
+            <div class="ctrl-top"><span class="ctrl-name">Invert pan</span><span class="pill hot">Hot</span><span class="ctrl-key">ptz.invert_pan</span></div>
+            <div class="ctrl-what">Flip left/right if the camera pans the wrong direction for your mount. Set once at setup.</div>
           </div>
 
           <div class="ctrl">
@@ -715,7 +742,7 @@ python3 firmware/direct-lora/tools/read_base.py</code>
       </div>
 
       <div class="ctrl-group">
-        <h3><span class="pill">C</span> Cinematic Zoom <span class="tag">default off &middot; all keys hot</span></h3>
+        <h3><span class="pill">7</span> Cinematic Zoom <span class="tag">default off &middot; all keys hot</span></h3>
         <p class="card" style="margin-bottom:0.8rem">Cinematic Zoom is a bounded zoom policy. It only runs when PTZ is enabled, AUTO owns the camera, and there is a lock on a person box &mdash; then it zooms to hold your on-screen size within a deadband. Enable it only after pan/tilt tracking looks good.</p>
         <div class="ctrls">
           <div class="ctrl">
@@ -741,11 +768,46 @@ python3 firmware/direct-lora/tools/read_base.py</code>
       </div>
 
       <div class="ctrl-group">
-        <h3><span class="pill subj">D</span> GPS Cueing <span class="tag">all keys hot &middot; appears when GPS is live</span></h3>
+        <h3><span class="pill">8</span> Tracking <span class="tag">autonomy master switch &amp; source</span></h3>
         <div class="ctrls">
 
           <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">GPS stale threshold</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.stale_threshold_sec</span></div>
+            <div class="ctrl-top"><span class="ctrl-name">Autonomous tracking</span><span class="pill hot">Hot</span><span class="ctrl-key">tracking.enabled</span></div>
+            <div class="ctrl-what">The <b>DISABLE-PTZ latch</b>. When off, the arbiter idles every frame and autonomy is fully OFF &mdash; a manual aim holds until you re-enable it. Distinct from the transient Stop&nbsp;PTZ hold (which clears on the next manual move). Default: on. KILL is still the supreme human-only stop; this just turns the autonomous servo off without latching KILL.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Off</b><span>Park the camera on a manual aim and keep it there &mdash; no vision/GPS slews.</span></div>
+              <div class="adj"><b>On</b><span>Hand control back to the vision/GPS arbiter.</span></div>
+            </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Source</span><span class="pill hot">Hot</span><span class="ctrl-key">tracking.mode</span></div>
+            <div class="ctrl-what">Gates the arbiter: <code>auto</code> (default, vision + GPS arbitration), <code>gps_only</code> (forces GPS pointing, ignores vision &mdash; no false-color-lock hijack), or <code>vision_only</code> (disables GPS slews).</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>gps_only</b><span>Reacquire at long range without vision locking onto stray orange.</span></div>
+              <div class="adj"><b>vision_only</b><span>Close-range filming where GPS bearing isn&rsquo;t needed.</span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <h3><span class="pill subj">9</span> GPS Tracking <span class="tag">all keys hot &middot; appears when GPS is live</span></h3>
+        <div class="ctrls">
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS lock boost</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.gps_boost</span></div>
+            <div class="ctrl-what">When GPS owns the camera and a blob is within the GPS cue radius, it gets this confidence boost. Range: 0.0&ndash;0.5. Default: <b>0.20</b>. At default: 0.45 + 0.20 = 0.65 &mdash; above lock=0.60. Only active when GPS is pointing.</div>
+            <div class="ctrl-meta">
+              <div class="adj"><b>Raise</b><span>Easier lock at 200&ndash;300 m (small blob). Watch for false locks on other orange near the cue center.</span></div>
+              <div class="adj"><b>Lower</b><span>Strict &mdash; requires a stronger blob even with GPS pointing.</span></div>
+              <div class="see"><b>Example</b><span>GPS active, lock still not engaging at 200 m &rarr; raise from 0.20 to 0.30.</span></div>
+            </div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">GPS stale after</span><span class="pill hot">Hot</span><span class="ctrl-key">gps.stale_threshold_sec</span></div>
             <div class="ctrl-what">Age (seconds) at which a remote GPS fix is considered too stale for pointing. Range: 1&ndash;120 s. Code default 10 s; the rig runs <b>45 s</b> (field test 2026-06-11: the remote broadcasts every 2 s while moving but only every 10 s standing still &mdash; the exact reacquire pose &mdash; so 10 s starved GPS of usable windows).</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Tolerates slower updates (partial sky, weak LoRa day).</span></div>
@@ -768,16 +830,6 @@ python3 firmware/direct-lora/tools/read_base.py</code>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Prevents vision from snatching ownership on a single noisy detection.</span></div>
               <div class="adj"><b>Lower</b><span>Faster handoff to vision when it acquires lock.</span></div>
-            </div>
-          </div>
-
-          <div class="ctrl">
-            <div class="ctrl-top"><span class="ctrl-name">GPS boost</span><span class="pill hot">Hot</span><span class="ctrl-key">fusion.gps_boost</span></div>
-            <div class="ctrl-what">When GPS owns the camera and a blob is within the GPS cue radius, it gets this confidence boost. Range: 0.0&ndash;0.5. Default: <b>0.20</b>. At default: 0.45 + 0.20 = 0.65 &mdash; above lock=0.60. Only active when GPS is pointing.</div>
-            <div class="ctrl-meta">
-              <div class="adj"><b>Raise</b><span>Easier lock at 200&ndash;300 m (small blob). Watch for false locks on other orange near the cue center.</span></div>
-              <div class="adj"><b>Lower</b><span>Strict &mdash; requires a stronger blob even with GPS pointing.</span></div>
-              <div class="see"><b>Example</b><span>GPS active, lock still not engaging at 200 m &rarr; raise from 0.20 to 0.30.</span></div>
             </div>
           </div>
 
@@ -824,7 +876,26 @@ python3 firmware/direct-lora/tools/read_base.py</code>
       </div>
 
       <div class="ctrl-group">
-        <h3><span class="pill">D</span> Base Drift Monitor <span class="tag">v3 Phase 1 &middot; new</span></h3>
+        <h3><span class="pill">10</span> Display <span class="tag">overlays for tuning vs. filming</span></h3>
+        <div class="ctrls">
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Show detection mask</span><span class="pill hot">Hot</span><span class="ctrl-key">web.show_mask</span></div>
+            <div class="ctrl-what">Overlay the color-detection mask on the feed &mdash; your tuning X-ray. Turn on while adjusting color settings; off for clean recording.</div>
+          </div>
+
+          <div class="ctrl">
+            <div class="ctrl-top"><span class="ctrl-name">Show debug HUD</span><span class="pill hot">Hot</span><span class="ctrl-key">web.show_hud</span></div>
+            <div class="ctrl-what">The on-video readout (confidence score, lock state, FPS) in the Orin&rsquo;s MJPEG stream. Off = a clean picture for filming; on = diagnostics while tuning.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <p class="sub" style="margin:1.4rem 0 0.2rem; color:var(--muted); font-size:0.95rem"><b>Cards 11 (Service) and beyond:</b> the app&rsquo;s <b>Service</b> card holds restart-only actions (restart <code>wavecam.service</code>, camera source/codec, PTZ address, detector model). The three groups below &mdash; <b>Base Drift Monitor</b>, <b>Persistent Tracker</b>, and <b>Estimator</b> &mdash; are advanced v3 sections that surface in the web tuning page and in expanded operator views; most are restart-required and default-off.</p>
+
+      <div class="ctrl-group">
+        <h3><span class="pill">v3</span> Base Drift Monitor <span class="tag">v3 Phase 1 &middot; new</span></h3>
         <p class="card" style="margin-bottom:0.8rem">Detects tripod movement by watching fresh base GPS fixes against the latched calibration position. Only <b>CONFIRMED</b> sustained drift withholds GPS authority — noisy or stale base GPS never false-denies pointing. Unknown/suspect states preserve the lock.</p>
         <div class="ctrls">
           <div class="ctrl">
@@ -851,7 +922,7 @@ python3 firmware/direct-lora/tools/read_base.py</code>
       </div>
 
       <div class="ctrl-group">
-        <h3><span class="pill">T</span> Persistent Tracker <span class="tag">v3 Phase 2 &middot; new &middot; restart-required</span></h3>
+        <h3><span class="pill">v3</span> Persistent Tracker <span class="tag">v3 Phase 2 &middot; new &middot; restart-required</span></h3>
         <p class="card" style="margin-bottom:0.8rem">When enabled, YOLO runs in <code>track</code> mode (ByteTrack or BoT-SORT) and the fusion layer prefers the same track ID across frames. Helps prevent target swaps when multiple people or orange objects are in frame. Default-off — no behavior change until a tracker is configured + the service restarted.</p>
         <div class="ctrls">
           <div class="ctrl">
@@ -862,7 +933,7 @@ python3 firmware/direct-lora/tools/read_base.py</code>
       </div>
 
       <div class="ctrl-group">
-        <h3><span class="pill">E</span> Estimator (shadow mode) <span class="tag">observe-only &middot; do not enable in field yet</span></h3>
+        <h3><span class="pill">v3</span> Estimator (shadow mode) <span class="tag">observe-only &middot; do not enable in field yet</span></h3>
         <p class="card" style="margin-bottom:0.8rem">The shadow Kalman estimator fuses GPS position and vision bearing into a world-frame [east, north, ve, vn] state. In shadow mode (<code>estimator.shadow=true</code>, <code>estimator.enabled=false</code>) it logs what it <em>would</em> command but never moves the camera. Enabling requires a populated FOV curve (Calibrate Step 5 + the FOV sweep tool) &mdash; the estimator will refuse to start without it.</p>
         <div class="ctrls">
           <div class="ctrl">
@@ -996,11 +1067,12 @@ python3 firmware/direct-lora/tools/read_base.py</code>
       <div class="sec-head">
         <div class="kicker">Tools &rarr; Agent</div>
         <h2>It watches. It never drives.</h2>
-        <p class="sub">The Agent panel surfaces service health and logs. It is <b>supervise-only</b> by design &mdash; it will never move the camera, run a shell, or restart a service on its own.</p>
+        <p class="sub">The Agent panel surfaces service health, logs, and an <b>ASK CLAUDE</b> chat. It is <b>supervise-only</b> by design &mdash; it will never move the camera, run a shell, or restart a service on its own.</p>
       </div>
-      <div class="grid g3">
+      <div class="grid g4">
         <div class="card"><h3>Service health</h3><p>Green/red rows for the vision, PTZ, and API services so you can spot a stalled component at a glance without SSHing the Orin.</p></div>
         <div class="card"><h3>Logs (shadow events)</h3><p>Recent backend lines for field debugging. When the estimator is in shadow mode, <code>pointing_miss</code> events and estimator predictions appear here &mdash; showing what the shadow track would have commanded vs. what the arbiter actually sent.</p></div>
+        <div class="card"><span class="pill subj">Chat</span><h3>ASK CLAUDE</h3><p>A chat panel that answers questions about the rig from live telemetry &mdash; available in the app&rsquo;s <b>Agent</b> tab and on the <code>:8088</code> web tuning page (alongside the arm toggle). It reads status and surfaces guidance; it never moves the camera. KILL stays human-only and is never an agent capability.</p></div>
         <div class="card"><span class="pill ok">Safe</span><h3>Supervise-only</h3><p>Advisory only. The agent reads telemetry; it never takes action. All camera motion comes from the vision/GPS servo &mdash; not from the agent.</p></div>
       </div>
     </section>
@@ -1020,7 +1092,7 @@ python3 firmware/direct-lora/tools/read_base.py</code>
           <thead><tr><th>Step</th><th>What to do</th><th>Verify</th></tr></thead>
           <tbody>
             <tr><td>1</td><td>Power on, confirm <code>/api/v1/status</code> healthy</td><td>fps &gt; 0, owner=<code>idle</code>, not killed</td></tr>
-            <tr><td>2</td><td>Run CALIBRATE: base lock, heading at &ge;50m target, tilt level, FOV anchor</td><td><code>base_locked=true</code>, <code>calibration_valid=true</code></td></tr>
+            <tr><td>2</td><td>Run CALIBRATE: base lock, heading at &ge;50m target, tilt (horizon zero), FOV anchor</td><td><code>base_locked=true</code>, <code>calibration_valid=true</code></td></tr>
             <tr><td>3</td><td>Toggle <code>tracking.mode</code> (<code>auto</code> / <code>gps_only</code> / <code>vision_only</code>)</td><td>Owner follows the mode; vision lock acquires on orange</td></tr>
             <tr><td>4</td><td>Test KILL — press in iOS, confirm motion stops</td><td>State=<code>KILLED</code>, all PTZ commands blocked</td></tr>
             <tr><td>5</td><td>Manual nudge (joystick deadman)</td><td>Owner=<code>manual</code>, release → <code>idle</code></td></tr>
