@@ -274,6 +274,7 @@ struct WCConfig: Codable, Sendable {
         var mediaDelete: Bool?
         var trackingMode: Bool?
         var agent: Bool?   // interactive acting-agent (Phase 1a) — absent on older backends
+        var agentProviders: [String]?   // configured agent providers (Phase 2); absent on older backends
     }
 
     struct Current: Codable, Sendable {
@@ -826,6 +827,15 @@ struct WCAgentChat: Codable, Sendable {
     var armed: Bool = false
 }
 
+/// One line in the agent chat. Lives at module scope (not inside AgentView) so the
+/// conversation persists on WaveCamClient across view teardown.
+struct WCAgentChatLine: Identifiable, Sendable {
+    enum Role: Sendable { case you, claude }
+    let id = UUID()
+    let role: Role
+    let text: String
+}
+
 // Tolerant decode in an extension (keeps the memberwise init; no snake_case
 // CodingKeys — the shared decoder is .convertFromSnakeCase).
 extension WCAgentChat {
@@ -947,6 +957,16 @@ final class WaveCamClient {
     /// Optimistic local KILL latch: set the instant the operator hits Emergency Stop so the
     /// latch overlay appears immediately, before the ~1Hz poll round-trips (review: optimistic KILL).
     private(set) var optimisticKilled = false
+
+    /// Agent chat lives on the CLIENT, not the AgentView, so the conversation + an in-flight
+    /// turn survive a tab switch (the view's @State was torn down on disappear — the field
+    /// "lose Claude when you come back" bug). The send Task is client-owned and never cancelled
+    /// by a view lifecycle.
+    private(set) var agentChatLog: [WCAgentChatLine] = []
+    private(set) var agentChatSending = false
+    var agentChatProvider: AgentProvider = .claudeCode
+    var agentArmed = false
+    private var agentChatTask: Task<Void, Never>?
 
     /// True while a KILL request is in flight and the backend has not yet confirmed it.
     /// Gates `refresh()` so a poll returning killed==false cannot prematurely clear the
@@ -1730,15 +1750,50 @@ final class WaveCamClient {
         return (try? Self.decoder.decode(Envelope.self, from: data))?.report
     }
 
-    func sendAgentChat(_ message: String) async -> WCAgentChat? {
+    func sendAgentChat(_ message: String, provider: String) async -> WCAgentChat? {
         if mode == .mock {
             return WCAgentChat(ok: true, reply: "Mock: status looks healthy — 30 FPS, subject locked.", armed: false)
         }
-        guard let data = try? await post("agent/chat", body: ["message": message]) else {
+        guard let data = try? await post("agent/chat", body: ["message": message, "provider": provider]) else {
             lastCommandError = "Agent chat failed."
             return nil
         }
         return try? Self.decoder.decode(WCAgentChat.self, from: data)
+    }
+
+    /// Append the operator's line and run the turn as a CLIENT-owned task. Not tied to any
+    /// view, so navigating away mid-turn doesn't cancel it and the reply still lands in the log.
+    @MainActor
+    func sendAgentChatTurn(_ text: String) {
+        let msg = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !msg.isEmpty, !agentChatSending else { return }
+        agentChatLog.append(WCAgentChatLine(role: .you, text: msg))
+        agentChatSending = true
+        let provider = agentChatProvider.rawValue
+        agentChatTask?.cancel()
+        agentChatTask = Task { [weak self] in
+            guard let self else { return }
+            let resp = await self.sendAgentChat(msg, provider: provider)
+            await MainActor.run {
+                if let r = resp, r.ok {
+                    self.agentChatLog.append(WCAgentChatLine(role: .claude, text: r.reply))
+                    if !self.killed { self.agentArmed = r.armed }   // a late reply can't re-arm after KILL
+                } else {
+                    self.agentChatLog.append(WCAgentChatLine(
+                        role: .claude, text: "⚠️ " + (self.lastCommandError ?? "No response.")))
+                }
+                self.agentChatSending = false
+            }
+        }
+    }
+
+    @MainActor
+    func armAgent(_ on: Bool) {
+        Task { [weak self] in
+            guard let self else { return }
+            let ok = await self.setAgentArm(on)
+            await MainActor.run { if ok { self.agentArmed = on } }
+        }
     }
 
     func setAgentArm(_ armed: Bool) async -> Bool {
