@@ -188,6 +188,12 @@ class Fusion:
             if gps_cue_px is not None:
                 cx, cy, r = gps_cue_px
                 if _dist((b.cx, b.cy), (cx, cy)) <= r:
+                    # VIS-1 (deferred review decision): a color blob within the GPS cue
+                    # is ALLOWED to cross the lock threshold and acquire — this is
+                    # intentional for SOLO operation (GPS already aims the camera at the
+                    # subject, so orange-in-the-cue is almost certainly them). The risk
+                    # (a buoy near frame center while GPS owns) is accepted until per-
+                    # session wing/tow modes land; asserted by test_fusion_invariants.
                     boost = float(getattr(self.cfg, "gps_boost", 0.2))
                     conf = min(CONF_BOOST_CAP, conf + boost)
             return (b.cx, b.cy), b.bbox, None, conf, False

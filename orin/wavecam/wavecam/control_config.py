@@ -113,6 +113,7 @@ class ConfigManager:
             "fusion.gps_bearing_cue_enabled": lambda: set_bool(cfg.fusion, "gps_bearing_cue_enabled", value, dry_run=dry_run),
             "gps.stale_threshold_sec": lambda: self.apply_gps_float("stale_threshold_sec", value, 1.0, 120.0, dry_run=dry_run),
             "gps.drive_stale_sec": lambda: self.apply_gps_float("drive_stale_sec", value, 1.0, 60.0, dry_run=dry_run),
+            "gps.coast_on_no_fix_sec": lambda: self.apply_gps_coast(value, dry_run=dry_run),
             "gps.grace_sec": lambda: self.apply_gps_float("grace_sec", value, 0.1, 10.0, dry_run=dry_run),
             "gps.lock_frames": lambda: self.apply_gps_int("lock_frames", value, 1, 30, dry_run=dry_run),
             "gps.drive_zoom": lambda: self.apply_gps_bool("drive_zoom", value, dry_run=dry_run),
@@ -208,6 +209,21 @@ class ConfigManager:
             return error
         if not dry_run:
             self._sync_arbiter_from_gps()
+        return None
+
+    def apply_gps_coast(self, value: Any, dry_run: bool = False) -> str | None:
+        """gps.coast_on_no_fix_sec — set cfg AND push to the live DirectRadioGps reader,
+        which holds its own copy (read on every get_fix, not via cfg)."""
+        gps_cfg = self._gps_cfg()
+        if gps_cfg is None:
+            return "gps.coast_on_no_fix_sec: GPS section not present in config."
+        error = set_float(gps_cfg, "coast_on_no_fix_sec", value, 0.0, 30.0, dry_run=dry_run)
+        if error is not None:
+            return error
+        if not dry_run:
+            reader = getattr(self.pipeline, "gps", None)
+            if reader is not None and hasattr(reader, "coast_on_no_fix_sec"):
+                reader.coast_on_no_fix_sec = float(gps_cfg.coast_on_no_fix_sec)
         return None
 
     def apply_gps_int(self, attr: str, value: Any, lo: int, hi: int,

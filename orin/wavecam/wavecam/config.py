@@ -171,6 +171,9 @@ class GpsCfg:
     # drive_stale_sec is tighter: a 44s-old fix on an 8m/s foiler points ~350m behind
     # (review 2026-06-12); this gate keeps steering honest without affecting the HUD display
     drive_stale_sec: float = 8.0    # remote fix age > this → too old to STEER
+    # GPS-1: on an honest no-fix packet (wipeout / wave-trough blackout) coast on the
+    # last good fix this long before dropping the aim. 0 = drop immediately.
+    coast_on_no_fix_sec: float = 2.0
     # P2: GPS-driven zoom (off by default — untuned; enable when ready)
     drive_zoom: bool = False
     # Phase-4 (v3): GPS-driven zoom curve params (used only when drive_zoom=True +

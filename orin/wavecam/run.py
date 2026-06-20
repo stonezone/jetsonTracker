@@ -71,6 +71,7 @@ def start_gps_reader(cfg):
             dev_path=getattr(gps_cfg, "direct_dev_path", "/dev/ttyACM0"),
             baud=getattr(gps_cfg, "direct_baud", 115200),
             reconnect_sec=getattr(gps_cfg, "direct_reconnect_sec", 3.0),
+            coast_on_no_fix_sec=getattr(gps_cfg, "coast_on_no_fix_sec", 2.0),
         )
     else:
         from wavecam.gps_meshtastic import MeshtasticGps
