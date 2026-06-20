@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from wavecam.agent_session import AgentSession, ArmState
+from wavecam.agent_session import PROVIDER_ENDPOINTS, AgentSession, ArmState
 
 
 def test_default_disarmed():
@@ -131,7 +131,66 @@ def test_run_claude_cli_timeout_is_clean(monkeypatch):
 def test_chat_non_json_output_clears_session(tmp_path):
     keys = tmp_path / "k.json"
     keys.write_text(json.dumps({"claude_code_oauth_token": "t"}))
-    sess = AgentSession(keys_path=str(keys), run=lambda *a: "this is not json", session_id="OLD-SID")
+    sess = AgentSession(keys_path=str(keys), run=lambda *a: "this is not json")
+    sess._session_ids["claude_code"] = "OLD-SID"
     with pytest.raises(RuntimeError, match="non-JSON"):
         sess.chat("hi", status_text="")
-    assert sess.session_id is None   # corrupted turn → fresh session next time, no stale resume
+    assert sess._session_ids.get("claude_code") is None   # corrupted turn → no stale resume
+
+
+def _capture_run():
+    cap = {}
+    def fake_run(argv, env, stdin_text, timeout):
+        cap["argv"] = argv
+        cap["env"] = env
+        return json.dumps({"result": "ok", "session_id": "S1"})
+    return cap, fake_run
+
+
+def test_chat_vendor_provider_injects_env(tmp_path):
+    keys = tmp_path / "k.json"
+    keys.write_text(json.dumps({"deepseek_api_key": "DS_KEY"}))
+    cap, fake_run = _capture_run()
+    sess = AgentSession(keys_path=str(keys), run=fake_run)
+    sess.chat("hi", status_text="", provider="deepseek")
+    assert cap["env"]["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
+    assert cap["env"]["ANTHROPIC_AUTH_TOKEN"] == "DS_KEY"
+    assert cap["env"].get("ANTHROPIC_MODEL", "").startswith("deepseek")
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in cap["env"]   # vendor path doesn't use the OAuth token
+
+
+def test_chat_claude_code_uses_oauth_token(tmp_path):
+    keys = tmp_path / "k.json"
+    keys.write_text(json.dumps({"claude_code_oauth_token": "OAUTH"}))
+    cap, fake_run = _capture_run()
+    sess = AgentSession(keys_path=str(keys), run=fake_run)
+    sess.chat("hi", status_text="", provider="claude_code")
+    assert cap["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "OAUTH"
+    # The default path must not point the CLI at a vendor endpoint. (Don't assert
+    # absence — the host env may carry an ANTHROPIC_BASE_URL; assert it's not a vendor's.)
+    vendor_urls = {base for base, _, _ in PROVIDER_ENDPOINTS.values()}
+    assert cap["env"].get("ANTHROPIC_BASE_URL") not in vendor_urls
+
+
+def test_chat_unconfigured_provider_errors(tmp_path):
+    keys = tmp_path / "k.json"
+    keys.write_text("{}")
+    sess = AgentSession(keys_path=str(keys), run=lambda *a: "{}")
+    with pytest.raises(RuntimeError, match="provider_unconfigured|api_key"):
+        sess.chat("hi", status_text="", provider="glm")
+
+
+def test_session_id_keyed_per_provider(tmp_path):
+    keys = tmp_path / "k.json"
+    keys.write_text(json.dumps({"claude_code_oauth_token": "t", "deepseek_api_key": "k"}))
+    calls = []
+    def fake_run(argv, env, stdin_text, timeout):
+        calls.append(argv)
+        return json.dumps({"result": "ok", "session_id": f"S-{len(calls)}"})
+    sess = AgentSession(keys_path=str(keys), run=fake_run)
+    sess.chat("a", status_text="", provider="claude_code")   # S-1 for claude_code
+    sess.chat("b", status_text="", provider="deepseek")      # S-2 for deepseek, NO resume of S-1
+    assert "--resume" not in calls[1]                        # different provider → fresh session
+    sess.chat("c", status_text="", provider="claude_code")   # resumes claude_code's S-1
+    i = calls[2].index("--resume")
+    assert calls[2][i + 1] == "S-1"

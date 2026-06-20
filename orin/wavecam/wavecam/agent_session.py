@@ -13,11 +13,22 @@ import os
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 CLAUDE_CLI_PATH = "/home/zack/.local/bin/claude"
 REQUEST_TIMEOUT_SEC = 120.0
+
+# Vendor providers run the SAME claude CLI but pointed at an Anthropic-compatible
+# endpoint with a static API key (mirrors the operator's deepclaude/glmcode/kimicode
+# shell aliases). claude_code is the default and uses the subscription OAuth token
+# instead (handled separately). (base_url, key_field in agent_keys.json, model)
+PROVIDER_ENDPOINTS = {
+    "deepseek": ("https://api.deepseek.com/anthropic", "deepseek_api_key", "deepseek-v4-flash"),
+    "glm":      ("https://api.z.ai/api/anthropic", "glm_api_key", "glm-4.7"),
+    "kimi":     ("https://api.moonshot.ai/anthropic", "moonshot_api_key", "kimi-k2.7-code"),
+}
+DEFAULT_PROVIDER = "claude_code"
 
 # Injected as --append-system-prompt every turn. Establishes the rig context and
 # the hard safety rules. The HARD RULES restate the supervise-only / KILL-human-only
@@ -115,9 +126,13 @@ def _run_claude_cli(argv: list[str], env: dict, stdin_text: str, timeout: float)
     return proc.stdout
 
 
-def _load_token(keys_path: str) -> str:
+def _load_keys(keys_path: str) -> dict:
     with open(keys_path) as fh:
-        token = json.load(fh).get("claude_code_oauth_token")
+        return json.load(fh)
+
+
+def _load_token(keys_path: str) -> str:
+    token = _load_keys(keys_path).get("claude_code_oauth_token")
     if not token:
         raise RuntimeError("claude_code_oauth_token missing from agent_keys.json")
     return str(token)
@@ -133,15 +148,36 @@ class AgentSession:
     keys_path: str
     cli_path: str = CLAUDE_CLI_PATH
     run: Optional[Callable[..., str]] = None   # defaults to module _run_claude_cli, resolved at call time
-    session_id: Optional[str] = None
+    # session_id is keyed per provider — a Claude conversation can't --resume under
+    # DeepSeek, so each provider threads its own session.
+    _session_ids: dict = field(default_factory=dict)
 
-    def chat(self, message: str, status_text: str, armed: bool = False) -> dict:
-        token = _load_token(self.keys_path)
-        env = {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": token}
+    def _provider_env(self, provider: str) -> dict:
+        """Env for the claude subprocess. claude_code → subscription OAuth token;
+        a vendor provider → ANTHROPIC_* pointed at its endpoint with its API key."""
+        if provider == DEFAULT_PROVIDER:
+            return {**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": _load_token(self.keys_path)}
+        if provider not in PROVIDER_ENDPOINTS:
+            raise RuntimeError(f"provider_unconfigured: unknown provider {provider!r}")
+        base_url, key_field, model = PROVIDER_ENDPOINTS[provider]
+        keys = _load_keys(self.keys_path)
+        api_key = keys.get(key_field)
+        if not api_key:
+            raise RuntimeError(f"provider_unconfigured: {key_field} missing for {provider}")
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_OAUTH_TOKEN"}
+        env["ANTHROPIC_BASE_URL"] = base_url
+        env["ANTHROPIC_AUTH_TOKEN"] = str(api_key)
+        env["ANTHROPIC_MODEL"] = model
+        return env
+
+    def chat(self, message: str, status_text: str, armed: bool = False,
+             provider: str = DEFAULT_PROVIDER) -> dict:
+        env = self._provider_env(provider)
         argv = [self.cli_path, "--output-format", "json",
                 "--append-system-prompt", AGENT_SYSTEM_PROMPT]
-        if self.session_id:
-            argv += ["--resume", self.session_id]
+        sid = self._session_ids.get(provider)
+        if sid:
+            argv += ["--resume", sid]
         # Arm-state gates the toolset. ARMED → Claude can act (Bash/Edit + auto-approve);
         # DISARMED → read-only advice (no shell). Variadic tool flags MUST precede -p,
         # which terminates them; the operator prompt arrives on stdin.
@@ -157,7 +193,8 @@ class AgentSession:
         try:
             data = json.loads(out)
         except (json.JSONDecodeError, ValueError):
-            self.session_id = None   # corrupted/partial turn — start a fresh session next time
+            self._session_ids[provider] = None   # corrupted/partial turn — fresh session next time
             raise RuntimeError("claude returned non-JSON output")
-        self.session_id = data.get("session_id") or self.session_id
-        return {"reply": data.get("result", ""), "session_id": self.session_id or ""}
+        new_sid = data.get("session_id") or sid
+        self._session_ids[provider] = new_sid
+        return {"reply": data.get("result", ""), "session_id": new_sid or ""}
