@@ -458,6 +458,24 @@ class CalibrationManager:
         ]
         return kept or samples
 
+    def _persist_step(self, step: str, entry: dict) -> bool:
+        """Write a wizard step to the CalibrationStore and flush to disk.
+
+        CAL-1: the session wizard mutated pose/_session in memory only, so a
+        confirmed calibration was lost on the next restart (re-introducing the
+        "gps_calibrated true but reference_heading null" class CalibrationStore was
+        built to prevent). Mirror capture_calibration: set_step + save under the
+        adapter lock. Returns False on a save failure so the route can surface 503.
+        Caller MUST hold self._lock.
+        """
+        self._store.set_step(step, entry)
+        try:
+            self._store.save()
+            return True
+        except Exception as e:
+            print(f"[control_api] calibration wizard save failed ({step}): {e}")
+            return False
+
     def _commit_location(self, entry: dict) -> JSONResponse:
         with self._lock:
             self.pipeline.pose.lat = float(entry["lat"])
@@ -466,6 +484,13 @@ class CalibrationManager:
             self._session["location"] = entry
             self._session["valid"] = False
             self._session["confirmed"] = False
+            persisted = self._persist_step("location", entry)
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Location locked in memory but failed to write to disk.",
+                503,
+            )
         return self.calibration_ok()
 
     def check_level(self, req) -> JSONResponse:
@@ -494,12 +519,19 @@ class CalibrationManager:
             self._session["level"] = entry
             self._session["valid"] = False
             self._session["confirmed"] = False
+            persisted = self._persist_step("level", entry)
         if not entry["passed"]:
             return self._calibration_refusal(
                 "pan_axis_not_level",
                 "Pan axis is outside the level gate; level the tripod before heading capture.",
                 uncertainty_deg=round(tilt_mag, 3),
                 max_tilt_deg=max_tilt,
+            )
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Level captured in memory but failed to write to disk.",
+                503,
             )
         return self.calibration_ok()
 
@@ -559,6 +591,10 @@ class CalibrationManager:
             )
             entry = {
                 "bearing_deg": round(bearing % 360.0, 6),
+                # set_step("heading", ...) maps heading_deg -> reference_heading; the
+                # camera "heading" IS the bearing it's aimed at, so persist both so a
+                # restart restores reference_heading (CAL-1).
+                "heading_deg": round(bearing % 360.0, 6),
                 "pan_enc": pan_enc,
                 "pan_enc_per_deg": PRISUAL_PAN_ENC_PER_DEG,
                 "distance_m": None if distance_m is None else round(distance_m, 3),
@@ -573,6 +609,13 @@ class CalibrationManager:
             self._session["validation"] = None
             self._session["valid"] = False
             self._session["confirmed"] = False
+            persisted = self._persist_step("heading", entry)
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Heading captured in memory but failed to write to disk.",
+                503,
+            )
         return self.calibration_ok()
 
     def validate_heading(self, req) -> JSONResponse:
@@ -621,12 +664,19 @@ class CalibrationManager:
             self._session["validation"] = entry
             self._session["valid"] = False
             self._session["confirmed"] = False
+            persisted = self._persist_step("validation", entry)
         if not accepted:
             return self._calibration_refusal(
                 "validation_miss_too_large",
                 "Independent validation miss exceeds the configured budget.",
                 miss_deg=entry["miss_deg"],
                 max_miss_deg=budget,
+            )
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Validation captured in memory but failed to write to disk.",
+                503,
             )
         return self.calibration_ok()
 
@@ -651,6 +701,15 @@ class CalibrationManager:
             self._session["valid"] = True
             self._session["confirmed"] = True
             self._session["banner"] = "VALID"
+            # Persist the confirmed validation so the VALID state (and the validation
+            # record) survives a restart — the final, most important commit (CAL-1).
+            persisted = self._persist_step("validation", validation)
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Validation confirmed in memory but failed to write to disk.",
+                503,
+            )
         return self.calibration_ok()
 
     def _resolve_bearing(self, req, location: dict | None) -> tuple[float | None, float | None]:

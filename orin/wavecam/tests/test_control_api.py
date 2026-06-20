@@ -952,6 +952,48 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert pipe.owner.owner == "testbed"
 
 
+def test_calibration_wizard_persists_to_disk_survives_restart():
+    # CAL-1: the session wizard mutated pose/_session in memory only — a confirmed
+    # calibration was lost on restart. Run the full wizard, then load a FRESH
+    # CalibrationStore from the same file and assert location + reference_heading +
+    # the step log survived.
+    import os
+    from wavecam.calibration_store import CalibrationStore
+
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("testbed") is True
+    client.post("/api/v1/calibration/session/start",
+                json={"requested_owner": "manual", "takeover": True, "source": "test"})
+    client.post("/api/v1/calibration/location", json={
+        "source": "test",
+        "samples": [
+            {"lat": 21.6, "lon": -158.0, "alt_m": 3.0, "hdop": 1.2, "h_acc_m": 4.0,
+             "fix_age_sec": 1.0, "uptime_sec": 90.0, "sats": 9},
+            {"lat": 21.60001, "lon": -158.00001, "alt_m": 3.2, "hdop": 1.1, "h_acc_m": 4.5,
+             "fix_age_sec": 1.0, "uptime_sec": 95.0, "sats": 10},
+        ],
+    })
+    client.post("/api/v1/calibration/heading-lock", json={
+        "method": "landmark", "operator_accepted": True, "bearing_deg": 90.0,
+        "distance_m": 250.0, "pan_enc": 1000.0, "source": "test"})
+    client.post("/api/v1/calibration/validation",
+                json={"bearing_deg": 91.0, "distance_m": 250.0, "pan_enc": 1014.4})
+    confirmed = client.post("/api/v1/calibration/validation/confirm",
+                            json={"accepted": True, "source": "test"})
+    assert confirmed.status_code == 200
+
+    # Simulate a restart: read the pose file back through a brand-new store.
+    pose_path = os.environ["WAVECAM_POSE_PATH"]
+    assert os.path.exists(pose_path), "wizard must have written the pose file"
+    reloaded = CalibrationStore.load(pose_path)
+    assert reloaded.reference_heading == 90.0          # heading survived (CAL-1 core)
+    assert reloaded.pose.lat != 0.0 and reloaded.pose.lon != 0.0  # location survived
+    assert "location" in reloaded.steps
+    assert "heading" in reloaded.steps
+    assert "validation" in reloaded.steps
+
+
 def test_api_v1_calibrate_heading_refuses_bad_error_budget():
     client = make_client()
     pipe = client.app.state.pipeline

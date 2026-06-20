@@ -735,6 +735,10 @@ struct WCHealth: Codable, Sendable {
 /// Estimator shadow-tick detail, present when kind == "shadow".
 /// All fields are optional — absent on older backends or non-shadow events.
 struct ShadowDetail: Codable, Sendable {
+    // NO explicit CodingKeys. The shared decoder uses .convertFromSnakeCase, which
+    // maps the backend's snake_case shadow keys (bearing_deg, pan_enc_would, …) to
+    // these camelCase properties. Declaring snake_case CodingKeys here would conflict
+    // with that conversion and silently null every field (IOS-1 / the 86a05b2 gotcha).
     var bearingDeg: Double?
     var distM: Double?
     var panEncWould: Int?
@@ -742,16 +746,6 @@ struct ShadowDetail: Codable, Sendable {
     var ownerActual: String?
     var gpsUpdated: Bool?
     var visionUpdated: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case bearingDeg = "bearing_deg"
-        case distM = "dist_m"
-        case panEncWould = "pan_enc_would"
-        case bearingStdDeg = "bearing_std_deg"
-        case ownerActual = "owner_actual"
-        case gpsUpdated = "gps_updated"
-        case visionUpdated = "vision_updated"
-    }
 }
 
 /// One event entry from GET /api/v1/events.
