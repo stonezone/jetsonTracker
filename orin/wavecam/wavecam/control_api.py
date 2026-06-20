@@ -324,6 +324,15 @@ def register_guide_routes(app: FastAPI) -> None:
             return JSONResponse({"ok": False, "code": "guide_asset_not_found"}, status_code=404)
         return FileResponse(path)
 
+    @app.get("/docs/{name}.html", dependencies=[Depends(require(READ))])
+    def docs_html(name: str):
+        """Serve a docs/*.html page (e.g. the yard-test checklist) to the phone on the
+        same network as the app. Traversal-guarded + scoped to docs/, .html only."""
+        path = find_docs_html(name)
+        if path is None:
+            return JSONResponse({"ok": False, "code": "doc_not_found"}, status_code=404)
+        return FileResponse(path, media_type="text/html")
+
 
 def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/status", dependencies=[Depends(require(READ))])
@@ -1240,5 +1249,19 @@ def find_guide_asset(asset_path: str) -> Path | None:
         asset_root = (root / GUIDE_ASSET_DIR).resolve()
         path = (asset_root / requested).resolve()
         if path.is_file() and path.is_relative_to(asset_root):
+            return path
+    return None
+
+
+def find_docs_html(name: str) -> Path | None:
+    """Resolve docs/<name>.html under a guide root. `name` is a single path segment
+    (no slashes, no dots) — the route already strips the .html suffix — so traversal
+    is impossible, but we re-verify containment after resolve() anyway."""
+    if not name or "/" in name or "\\" in name or "." in name:
+        return None
+    for root in guide_root_candidates():
+        docs_root = root.resolve()
+        path = (docs_root / f"{name}.html").resolve()
+        if path.is_file() and path.is_relative_to(docs_root):
             return path
     return None

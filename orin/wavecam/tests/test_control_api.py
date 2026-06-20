@@ -1964,6 +1964,26 @@ def test_guide_route_missing_and_traversal_return_404(tmp_path, monkeypatch):
     assert traversal.json()["code"] == "guide_asset_not_found"
 
 
+def test_docs_html_route_serves_and_guards(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"
+    docs.mkdir(parents=True)
+    (docs / "yard-test-checklist.html").write_text("<!doctype html><title>Yard</title>")
+    (tmp_path / "secret.txt").write_text("secret")
+    monkeypatch.setenv("WAVECAM_GUIDE_ROOT", str(docs))
+    client = make_client()
+
+    ok = client.get("/docs/yard-test-checklist.html")
+    assert ok.status_code == 200
+    assert ok.headers["content-type"].startswith("text/html")
+    assert b"Yard" in ok.content
+
+    missing = client.get("/docs/nope.html")
+    assert missing.status_code == 404 and missing.json()["code"] == "doc_not_found"
+
+    # A name with a dot/slash can't reach a sibling file — route + guard reject it.
+    assert client.get("/docs/..%2Fsecret.html").status_code == 404
+
+
 if __name__ == "__main__":
     test_api_v1_status_maps_legacy_state_to_release_contract()
     test_api_v1_status_reports_pipeline_gps_snapshot_when_available()

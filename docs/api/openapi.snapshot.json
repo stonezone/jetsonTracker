@@ -44,6 +44,7 @@
  "/api/v1/status",
  "/api/v1/system/restart",
  "/api/v1/version",
+ "/docs/{name}.html",
  "/guide",
  "/guide_assets/{asset_path}",
  "/kill",
