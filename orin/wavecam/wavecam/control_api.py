@@ -239,11 +239,12 @@ class RestartRequest(BaseModel):
 class AgentSummonRequest(BaseModel):
     source: str | None = Field(default=None, max_length=64)
     reason: str | None = Field(default=None, max_length=256)
-    provider: str = Field(default="claude", max_length=16)
+    provider: str = Field(default="claude_code", max_length=24)
 
 
 class AgentChatRequest(BaseModel):
     message: str = Field(default="", max_length=4000)
+    provider: str = Field(default="claude_code", max_length=24)
 
 
 class AgentArmRequest(BaseModel):
@@ -728,7 +729,7 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         # runs off the event loop and is capped, so a slow/stuck agent turn can't
         # occupy the whole threadpool and delay safety routes.
         async with _agent_chat_semaphore:
-            return await asyncio.to_thread(api.request_agent_chat, req.message)
+            return await asyncio.to_thread(api.request_agent_chat, req.message, req.provider)
 
     @app.post("/api/v1/agent/arm", dependencies=[Depends(require(CONFIG))])
     def agent_arm(req: AgentArmRequest):
@@ -953,6 +954,10 @@ class ControlApiAdapter:
             pending_restart = dict(self._pending_restart_config)
         snapshot["pending_restart"] = pending_restart
         snapshot["restart_required"] = bool(pending_restart)
+        # Configured agent providers (claude_code + any vendor with a key present) so the
+        # iOS picker only offers backends that will actually work.
+        if isinstance(snapshot.get("supported"), dict):
+            snapshot["supported"]["agent_providers"] = self.agent_providers()
         return snapshot
 
     def ok(self) -> JSONResponse:
@@ -1165,8 +1170,11 @@ class ControlApiAdapter:
     def request_agent_summon(self, req: AgentSummonRequest) -> JSONResponse:
         return self._system.request_agent_summon(req)
 
-    def request_agent_chat(self, message: str) -> JSONResponse:
-        return self._system.request_agent_chat(message)
+    def request_agent_chat(self, message: str, provider: str = "claude_code") -> JSONResponse:
+        return self._system.request_agent_chat(message, provider)
+
+    def agent_providers(self) -> list:
+        return self._system.agent_providers()
 
     def request_agent_arm(self, armed: bool) -> JSONResponse:
         return self._system.request_agent_arm(armed)

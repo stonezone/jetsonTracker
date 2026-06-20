@@ -268,6 +268,31 @@ def test_agent_resume_clears_kill_allows_rearm(monkeypatch):
     assert client.post("/api/v1/agent/arm", json={"armed": True}).json()["armed"] is True
 
 
+def test_agent_chat_threads_provider(monkeypatch):
+    import wavecam.agent_session as ags
+    seen = {}
+    monkeypatch.setattr(ags, "_load_token", lambda p: "tok")
+    monkeypatch.setattr(ags, "_load_keys", lambda p: {"glm_api_key": "GK"})
+    def fake_run(argv, env, stdin_text, timeout):
+        seen["base"] = env.get("ANTHROPIC_BASE_URL")
+        return '{"result":"hi","session_id":"S"}'
+    monkeypatch.setattr(ags, "_run_claude_cli", fake_run)
+    client = TestClient(build_app(_agent_pipe(True)))
+    body = client.post("/api/v1/agent/chat", json={"message": "hi", "provider": "glm"}).json()
+    assert body["ok"] is True
+    assert seen["base"] == "https://api.z.ai/api/anthropic"   # provider routed to GLM
+
+
+def test_supported_lists_agent_providers(monkeypatch):
+    import wavecam.agent_session as ags
+    monkeypatch.setattr(ags, "_load_keys", lambda p: {"deepseek_api_key": "k"})
+    cfg = TestClient(build_app(_agent_pipe(True))).get("/api/v1/config").json()
+    provs = cfg["supported"]["agent_providers"]
+    assert "claude_code" in provs        # always, when enabled
+    assert "deepseek" in provs           # key present
+    assert "glm" not in provs            # no key → not offered
+
+
 def test_agent_chat_route_is_async():
     # API-1: agent_chat must be an async route so the blocking claude -p call runs
     # via asyncio.to_thread behind a semaphore and can't exhaust the threadpool that

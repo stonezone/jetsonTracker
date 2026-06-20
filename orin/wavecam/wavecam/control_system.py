@@ -99,7 +99,7 @@ class SystemManager:
     def request_agent_summon(self, req) -> JSONResponse:
         source = normalized_text(req.source, "unknown", 64)
         reason = normalized_text(req.reason, "operator_diagnostics", 256)
-        provider = normalized_text(getattr(req, "provider", None), "claude", 16)
+        provider = normalized_text(getattr(req, "provider", None), "claude_code", 24)
         accepted, message = self.advisor.summon(provider)
         return JSONResponse(
             {
@@ -125,17 +125,18 @@ class SystemManager:
              "report": self.advisor.report()}
         )
 
-    def request_agent_chat(self, message: str) -> JSONResponse:
+    def request_agent_chat(self, message: str, provider: str = "claude_code") -> JSONResponse:
         if not self._agent_enabled or self._agent_session is None:
             return JSONResponse(
                 {"ok": False, "code": "agent_disabled",
                  "message": "Interactive agent is not enabled on this rig."}
             )
         msg = normalized_text(message, "", 4000)
+        prov = normalized_text(provider, "claude_code", 24)
         status_text = json.dumps(self._api.status_snapshot())
         armed = self._agent_arm.can_act() if self._agent_arm else False
         try:
-            result = self._agent_session.chat(msg, status_text, armed=armed)
+            result = self._agent_session.chat(msg, status_text, armed=armed, provider=prov)
         except Exception as exc:  # surface as a failed turn; the session is preserved
             return JSONResponse(
                 {"ok": False, "code": "agent_error", "message": str(exc)[:200]}
@@ -148,6 +149,23 @@ class SystemManager:
             {"ok": True, "request_id": make_request_id(),
              "reply": result["reply"], "armed": current_armed}
         )
+
+    def agent_providers(self) -> list:
+        """Providers the operator can pick: claude_code (always, when enabled) plus any
+        vendor whose API key is present in agent_keys.json. Drives supported.agent_providers
+        so the iOS picker only offers configured backends."""
+        if not self._agent_enabled:
+            return []
+        from .agent_session import PROVIDER_ENDPOINTS, _load_keys
+        providers = ["claude_code"]
+        try:
+            keys = _load_keys(KEYS_PATH)
+        except Exception:
+            return providers
+        for name, (_base, key_field, _model) in PROVIDER_ENDPOINTS.items():
+            if keys.get(key_field):
+                providers.append(name)
+        return providers
 
     def _audit_agent_turn(self, armed: bool) -> None:
         ring = getattr(self.pipeline, "events", None)

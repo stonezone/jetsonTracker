@@ -17,7 +17,6 @@ import time
 from wavecam.advisor import (
     AdvisorService, PROVIDERS, SYSTEM_PROMPT, ProviderHTTPError,
     CODEX_BACKEND_URL, CODEX_TOKEN_URL, CODEX_CLIENT_ID,
-    CLAUDE_TOKEN_URL, CLAUDE_CLIENT_ID,
 )
 
 
@@ -76,21 +75,6 @@ REFRESH_REPLY = json.dumps(
 
 
 # ── request shaping ──────────────────────────────────────────────────────
-
-def test_claude_request_shape(tmp_path):
-    svc, calls = _service(tmp_path, CLAUDE_REPLY)
-    assert svc.summon("claude")[0]
-    report = _wait_done(svc)
-    url, headers, body = calls[0]
-    assert url == "https://api.anthropic.com/v1/messages"
-    # OAuth ONLY: bearer token + the oauth beta header, never x-api-key.
-    assert headers["Authorization"].startswith("Bearer sk-ant-oat01")
-    assert headers["anthropic-beta"] == "oauth-2025-04-20"
-    assert "x-api-key" not in {k.lower() for k in headers}
-    assert body["model"] == "claude-opus-4-8"
-    assert body["system"] == SYSTEM_PROMPT
-    assert report["text"] == "HEALTHY — all good."
-
 
 def test_codex_request_shape(tmp_path):
     svc, calls = _service(tmp_path, CODEX_SSE_REPLY)
@@ -164,54 +148,6 @@ def test_codex_non_auth_error_not_retried(tmp_path):
     assert "500" in report["error"]
 
 
-# ── claude OAuth refresh flow (Part A — mirrors the codex flow) ──────────
-
-def test_claude_refreshes_on_401_and_persists_rotated_tokens(tmp_path):
-    keys_path = _write_keys(tmp_path, claude_refresh_token="crt-old")
-    calls = []
-    messages_url = "https://api.anthropic.com/v1/messages"
-
-    def fake_post(url, headers, body, timeout=0):
-        calls.append((url, headers, body))
-        if url == messages_url and headers["Authorization"].endswith("test"):
-            raise ProviderHTTPError(401, "token expired")
-        if url == CLAUDE_TOKEN_URL:
-            return REFRESH_REPLY
-        return CLAUDE_REPLY
-
-    svc = AdvisorService(_context, keys_path=keys_path, post_fn=fake_post)
-    svc.summon("claude")
-    report = _wait_done(svc)
-    assert report["status"] == "done"
-    assert report["text"] == "HEALTHY — all good."
-
-    # 1) expired call, 2) refresh, 3) retried with the rotated access token
-    assert [c[0] for c in calls] == [messages_url, CLAUDE_TOKEN_URL, messages_url]
-    refresh_body = calls[1][2]
-    assert refresh_body["client_id"] == CLAUDE_CLIENT_ID
-    assert refresh_body["grant_type"] == "refresh_token"
-    assert refresh_body["refresh_token"] == "crt-old"
-    assert calls[2][1]["Authorization"] == "Bearer eyJ-access-new"
-
-    # rotated tokens persisted under the existing claude_oauth_token key
-    saved = json.loads(open(keys_path).read())
-    assert saved["claude_oauth_token"] == "eyJ-access-new"
-    assert saved["claude_refresh_token"] == "rt-new"
-
-
-def test_claude_non_auth_error_not_retried(tmp_path):
-    def fake_post(url, headers, body, timeout=0):
-        raise ProviderHTTPError(500, "anthropic down")
-
-    svc = AdvisorService(_context,
-                         keys_path=_write_keys(tmp_path, claude_refresh_token="crt-old"),
-                         post_fn=fake_post)
-    svc.summon("claude")
-    report = _wait_done(svc)
-    assert report["status"] == "error"
-    assert "500" in report["error"]
-
-
 # ── claude_code provider (headless `claude -p` subprocess) ───────────────
 
 def test_claude_code_runs_cli_with_token_env(tmp_path, monkeypatch):
@@ -267,8 +203,7 @@ def test_claude_code_missing_token_is_friendly_error(tmp_path, monkeypatch):
 def test_no_tools_in_any_request(tmp_path):
     """The advisor must never offer the model tools — supervise-only is
     structural, not just prompted."""
-    for provider, reply in [("claude", CLAUDE_REPLY),
-                            ("codex", CODEX_SSE_REPLY),
+    for provider, reply in [("codex", CODEX_SSE_REPLY),
                             ("deepseek", CHAT_REPLY)]:
         svc, calls = _service(tmp_path, reply)
         svc.summon(provider)
@@ -278,8 +213,8 @@ def test_no_tools_in_any_request(tmp_path):
 
 
 def test_events_truncated_in_prompt(tmp_path):
-    svc, calls = _service(tmp_path, CLAUDE_REPLY)
-    svc.summon("claude")
+    svc, calls = _service(tmp_path, CHAT_REPLY)
+    svc.summon("deepseek")
     _wait_done(svc)
     prompt = calls[0][2]["messages"][0]["content"]
     assert prompt.count('"kind": "lock"') <= 30
@@ -288,7 +223,7 @@ def test_events_truncated_in_prompt(tmp_path):
 # ── state machine ────────────────────────────────────────────────────────
 
 def test_unknown_provider_refused(tmp_path):
-    svc, _ = _service(tmp_path, CLAUDE_REPLY)
+    svc, _ = _service(tmp_path, CHAT_REPLY)
     ok, msg = svc.summon("skynet")
     assert not ok and "skynet" in msg
 
@@ -298,11 +233,11 @@ def test_second_summon_refused_while_running(tmp_path):
 
     def slow_post(url, headers, body, timeout=0):
         gate.wait(2.0)
-        return CLAUDE_REPLY
+        return CHAT_REPLY
 
     svc = AdvisorService(_context, keys_path=_write_keys(tmp_path),
                          post_fn=slow_post)
-    assert svc.summon("claude")[0]
+    assert svc.summon("deepseek")[0]
     ok, msg = svc.summon("deepseek")
     assert not ok and "already running" in msg
     gate.set()
@@ -317,7 +252,7 @@ def test_provider_error_reported_not_raised(tmp_path):
 
     svc = AdvisorService(_context, keys_path=_write_keys(tmp_path),
                          post_fn=bad_post)
-    svc.summon("claude")
+    svc.summon("deepseek")
     report = _wait_done(svc)
     assert report["status"] == "error"
     assert "429" in report["error"]
@@ -325,8 +260,8 @@ def test_provider_error_reported_not_raised(tmp_path):
 
 def test_missing_keys_file_is_friendly_error(tmp_path):
     svc = AdvisorService(_context, keys_path=str(tmp_path / "nope.json"),
-                         post_fn=lambda *a, **k: CLAUDE_REPLY)
-    svc.summon("claude")
+                         post_fn=lambda *a, **k: CHAT_REPLY)
+    svc.summon("deepseek")
     report = _wait_done(svc)
     assert report["status"] == "error"
     assert "keys file missing" in report["error"]
@@ -336,16 +271,16 @@ def test_summon_returns_immediately(tmp_path):
     """The request thread must never wait on the provider (2026-06-08 rule)."""
     def slow_post(url, headers, body, timeout=0):
         time.sleep(0.5)
-        return CLAUDE_REPLY
+        return CHAT_REPLY
 
     svc = AdvisorService(_context, keys_path=_write_keys(tmp_path),
                          post_fn=slow_post)
     t0 = time.time()
-    svc.summon("claude")
+    svc.summon("deepseek")
     assert time.time() - t0 < 0.1
     assert svc.report()["status"] == "running"
     _wait_done(svc)
 
 
 def test_provider_registry_complete():
-    assert set(PROVIDERS) == {"claude", "claude_code", "codex", "deepseek"}
+    assert set(PROVIDERS) == {"claude_code", "codex", "deepseek"}
