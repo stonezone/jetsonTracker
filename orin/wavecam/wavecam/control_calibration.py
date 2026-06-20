@@ -246,12 +246,16 @@ class CalibrationManager:
                 self._api.reset_restore_owner()
                 self.pipeline.ptz.stop()
                 self.pipeline.ptz.zoom("stop")
-                if not self.pipeline.owner.release(current_owner):
+                # Atomic handoff (closes the OWN-1 race the SAFE-2 fix used for
+                # claim_manual): one locked release+grant so the pipeline vision loop
+                # can't seize the PTZ in a transient-IDLE window between release and
+                # request. transition() refuses if the owner moved underneath us.
+                if not self.pipeline.owner.transition(current_owner, CALIBRATE):
                     return self._calibration_refusal(
                         "owner_busy",
-                        "Could not release current PTZ owner for CALIBRATE.",
+                        "Could not claim PTZ for CALIBRATE (owner changed).",
                     )
-            if not self.pipeline.owner.request(CALIBRATE):
+            elif not self.pipeline.owner.request(CALIBRATE):
                 return self._calibration_refusal(
                     "owner_busy",
                     "Could not claim PTZ for CALIBRATE.",
@@ -281,13 +285,20 @@ class CalibrationManager:
             if self.pipeline.owner.owner == CALIBRATE:
                 self.pipeline.ptz.stop()
                 self.pipeline.ptz.zoom("stop")
-                self.pipeline.owner.release(CALIBRATE)
+                # Atomic restore: hand CALIBRATE → the prior autonomous owner in one
+                # locked step so the pipeline vision loop can't seize the PTZ in a
+                # transient-IDLE window (then leave two writers disagreeing). If there's
+                # no autonomous owner to restore, just release to IDLE.
+                if (restore_prior and previous_owner in AUTONOMOUS
+                        and not self.pipeline.owner.killed):
+                    if not self.pipeline.owner.transition(CALIBRATE, previous_owner):
+                        self.pipeline.owner.release(CALIBRATE)
+                else:
+                    self.pipeline.owner.release(CALIBRATE)
             self._session["active"] = False
             self._session["ended_at_unix_ms"] = _now_ms()
             self._session["banner"] = self._calibration_banner(self._session)
             self.pipeline.state.set_status(state="SEARCHING", cmd="stop")
-            if restore_prior and previous_owner in AUTONOMOUS and not self.pipeline.owner.killed:
-                self.pipeline.owner.request(previous_owner)
         return self.calibration_ok()
 
     def cancel_session(self, reason: str = "cancelled") -> None:

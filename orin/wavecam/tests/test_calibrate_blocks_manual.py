@@ -87,6 +87,26 @@ def test_claim_manual_takes_over_autonomous_only_with_takeover():
     assert pipe.owner.owner == "manual"
 
 
+def test_claim_manual_from_calibrate_is_atomic_and_stages_restore():
+    # GLM A3: CALIBRATE→manual must use the atomic transition() (no transient IDLE
+    # window the pipeline could seize), and stage CALIBRATE for restore on release.
+    pipe, disp = make_dispatcher()
+    assert pipe.owner.request(CALIBRATE)
+    assert disp.claim_manual_from_calibrate() is True
+    assert pipe.owner.owner == "manual"
+    assert disp._restore_owner_after_manual == CALIBRATE
+    # round-trip: releasing manual hands ownership back to CALIBRATE
+    disp.release_manual_owner()
+    assert pipe.owner.owner == CALIBRATE
+
+
+def test_claim_manual_from_calibrate_refuses_when_not_calibrate():
+    pipe, disp = make_dispatcher()
+    assert pipe.owner.request("vision_follow")
+    assert disp.claim_manual_from_calibrate() is False
+    assert pipe.owner.owner == "vision_follow"   # untouched
+
+
 def test_release_manual_restores_calibrate_session():
     # B13/4a25265: a standalone calibrate capture claims manual, then releasing
     # manual must hand ownership back to CALIBRATE.

@@ -82,7 +82,16 @@ class CameraPose:
         dbear = normalize_180(bearing2 - bearing1)
         if abs(dbear) < 1e-6:
             raise ValueError("pan calibration points have ~equal bearing")
-        self.pan_enc_per_deg = (enc2 - enc1) / dbear
+        scale = (enc2 - enc1) / dbear
+        # Prisual pan is unidirectional: encoder must increase with bearing. A
+        # non-positive scale means the two captures were inconsistent (encoder and
+        # bearing moved opposite ways) — every later GPS slew would then command the
+        # wrong direction. Reject it at capture time rather than ship a backwards rig.
+        if scale <= 0:
+            raise ValueError(
+                f"pan scale non-positive ({scale:.3f} enc/deg) — "
+                "re-capture panning in the +bearing direction.")
+        self.pan_enc_per_deg = scale
         self.pan_anchor_enc = enc1
         self.pan_anchor_bearing = bearing1
 

@@ -977,6 +977,28 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert pipe.owner.owner == "testbed"
 
 
+def test_calibrate_start_and_exit_atomic_with_autonomous_owner():
+    # GLM A1/A2: starting CALIBRATE over an AUTONOMOUS owner uses owner.transition()
+    # (atomic, no transient-IDLE window), and exit restores that owner atomically.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("gps_tracker") is True
+
+    started = client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True, "source": "test"},
+    )
+    assert started.status_code == 200
+    assert pipe.owner.owner == "calibrate"
+
+    exited = client.post(
+        "/api/v1/calibration/session/exit",
+        json={"confirm": False, "restore_prior": True, "source": "test"},
+    )
+    assert exited.status_code == 200
+    assert pipe.owner.owner == "gps_tracker"   # atomically restored, not left IDLE
+
+
 def test_calibration_wizard_persists_to_disk_survives_restart():
     # CAL-1: the session wizard mutated pose/_session in memory only — a confirmed
     # calibration was lost on restart. Run the full wizard, then load a FRESH

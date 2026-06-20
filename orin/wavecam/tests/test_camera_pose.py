@@ -38,6 +38,14 @@ def test_pan_two_point_rejects_equal_bearings():
         CameraPose().calibrate_pan_two_point(0.0, 90.0, 100.0, 90.0)
 
 
+def test_pan_two_point_rejects_negative_scale():
+    # GLM A4: encoder DECREASING while bearing increases → negative enc/deg, which
+    # would slew every GPS aim backwards. Reject at capture time.
+    with pytest.raises(ValueError, match="non-positive"):
+        CameraPose().calibrate_pan_two_point(enc1=1447.0, bearing1=90.0,
+                                             enc2=1000.0, bearing2=190.0)
+
+
 def test_tilt_uncalibrated_holds_anchor_calibrated_maps():
     p = CameraPose(tilt_anchor_enc=500.0)
     assert p.elevation_to_tilt_encoder(5.0) == 500.0                  # uncalibrated -> hold
