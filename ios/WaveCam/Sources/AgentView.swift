@@ -150,16 +150,16 @@ private struct AskClaudeCard: View {
 
 enum AgentProvider: String, CaseIterable {
     case claudeCode = "claude_code"
-    case claude
-    case codex
     case deepseek
+    case glm
+    case kimi
 
     var label: String {
         switch self {
         case .claudeCode: "Claude"
-        case .claude: "Claude (API)"
-        case .codex: "Codex"
         case .deepseek: "DeepSeek"
+        case .glm: "GLM"
+        case .kimi: "Kimi"
         }
     }
 }

@@ -1724,7 +1724,7 @@ final class WaveCamClient {
 
     /// POST /api/v1/agent/summon — requests an on-demand diagnostic pass from the supervisor.
     /// Returns true when the server accepts the request (2xx). In mock mode always returns true.
-    func summonAgent(provider: String = "claude") async -> Bool {
+    func summonAgent(provider: String = "claude_code") async -> Bool {
         if mode == .mock { return true }
         do {
             _ = try await post("agent/summon", body: [
