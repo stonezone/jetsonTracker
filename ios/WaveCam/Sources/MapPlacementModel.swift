@@ -1,0 +1,49 @@
+import Foundation
+import Observation
+
+/// State + guards for map-based base placement and heading. Pure (no UIKit/MapKit)
+/// so it is unit-testable; the MapKit view feeds it coordinates and tile-load events.
+@Observable
+final class MapPlacementModel {
+    enum Mode { case base, headingLookAt, headingArrow }
+
+    static let minLookAtMeters = 50.0   // V2: a short look-at produces a bad heading
+    static let radiusFloorM = 2.5
+    static let slopPoints = 8.0         // assumed placement slop, in screen points
+
+    var mode: Mode = .base
+    var baseLat: Double?
+    var baseLon: Double?
+    var lookAtLat: Double?
+    var lookAtLon: Double?
+    var arrowBearingDeg: Double = 0
+    var tilesLoaded = false
+    /// Last error radius computed from the live map zoom (the view updates this on region change).
+    var lastErrorRadiusM = MapPlacementModel.radiusFloorM
+
+    var lookAtDistanceM: Double? {
+        guard let bla = baseLat, let blo = baseLon, let lla = lookAtLat, let llo = lookAtLon else { return nil }
+        return GeoMath.haversineMeters(fromLat: bla, fromLon: blo, toLat: lla, toLon: llo)
+    }
+    var lookAtBearingDeg: Double? {
+        guard let bla = baseLat, let blo = baseLon, let lla = lookAtLat, let llo = lookAtLon else { return nil }
+        return GeoMath.bearingDeg(fromLat: bla, fromLon: blo, toLat: lla, toLon: llo)
+    }
+    var isLookAtValid: Bool { (lookAtDistanceM ?? 0) >= Self.minLookAtMeters }
+
+    /// V4: error radius scales with map zoom; never the optimistic fixed 3 m.
+    func errorRadiusM(metersAcross: Double, screenWidthPoints: Double) -> Double {
+        let metersPerPoint = metersAcross / max(screenWidthPoints, 1)
+        return max(Self.radiusFloorM, metersPerPoint * Self.slopPoints)
+    }
+
+    var canConfirmLocation: Bool { baseLat != nil && baseLon != nil && tilesLoaded }
+    var canConfirmHeading: Bool {
+        guard tilesLoaded else { return false }   // V5
+        switch mode {
+        case .headingLookAt: return isLookAtValid   // V2
+        case .headingArrow: return true
+        case .base: return false
+        }
+    }
+}
