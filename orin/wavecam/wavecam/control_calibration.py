@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 
-from .camera_pose import PRISUAL_PAN_ENC_PER_DEG
+from .camera_pose import PRISUAL_PAN_ENC_PER_DEG, PRISUAL_TILT_ENC_PER_DEG
 from .control_utils import copy_optional_dict, make_request_id
 from .gps_geo import bearing_deg, haversine_m, normalize_180
 from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
@@ -631,6 +631,97 @@ class CalibrationManager:
                 503,
             )
         return self.calibration_ok()
+
+    def offset_calibrate(self, req) -> JSONResponse:
+        """Calibration v2: one physical aim at the tracker's stable GPS re-anchors BOTH
+        axes. The operator frames the tracker (known lat/lon) dead-centre; we read the
+        live pan+tilt encoders, derive the true bearing+distance from base→tracker GPS,
+        and set the pan anchor (calibrate_pan_aim) AND the full tilt anchor (all three
+        fields — the scale too, or elevation_to_tilt_encoder would freeze). Reports the
+        offset vs the coarse step-3 heading and a base-height sanity warning."""
+        refusal = self._require_active()
+        if refusal is not None:
+            return refusal
+        if not bool(_field(req, "operator_accepted", False)):
+            return self._calibration_refusal(
+                "operator_accept_required",
+                "Offset calibration requires explicit operator acceptance of the aim.",
+            )
+        location = self._session.get("location")
+        if not location:
+            return self._calibration_refusal(
+                "location_required",
+                "Lock camera location before the offset aim.",
+            )
+        bearing, distance_m = self._resolve_bearing(req, location)
+        if bearing is None or distance_m is None:
+            return self._calibration_refusal(
+                "bearing_required",
+                "Provide target_lat/target_lon (the tracker GPS) for the offset aim.",
+                422,
+            )
+        enc = self._current_encoder()
+        if enc is None:
+            return self._calibration_refusal(
+                "encoder_unavailable",
+                "No fresh pan/tilt encoder is available for the offset aim.",
+                503,
+            )
+        pan_enc, tilt_enc = float(enc[0]), float(enc[1])
+        base_h = float(location.get("alt_m", 0.0))
+        elev_cal = math.degrees(math.atan2(1.0 - base_h, distance_m))
+        base_height_warning = abs(elev_cal) > 30.0 and distance_m > 50.0
+        step3 = _optional_float(_field(req, "step3_bearing_deg"))
+        offset = None if step3 is None else round(normalize_180(bearing - step3), 3)
+        with self._lock:
+            self.pipeline.pose.calibrate_pan_aim(
+                enc=pan_enc, bearing_deg=bearing, enc_per_deg=PRISUAL_PAN_ENC_PER_DEG)
+            self.pipeline.pose.tilt_anchor_enc = tilt_enc
+            self.pipeline.pose.tilt_anchor_elev = elev_cal
+            self.pipeline.pose.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
+            entry = {
+                "bearing_deg": round(bearing % 360.0, 6),
+                "heading_deg": round(bearing % 360.0, 6),
+                "pan_enc": pan_enc,
+                "tilt_enc": tilt_enc,
+                "pan_enc_per_deg": PRISUAL_PAN_ENC_PER_DEG,
+                "tilt_enc_per_deg": PRISUAL_TILT_ENC_PER_DEG,
+                "tilt_anchor_elev": round(elev_cal, 4),
+                "distance_m": round(distance_m, 3),
+                "offset_deg": offset,
+                "base_height_warning": base_height_warning,
+                "method": "offset_aim",
+                "source": _field(req, "source", None),
+                "captured_at_unix_ms": _now_ms(),
+            }
+            self._session["heading_lock"] = entry
+            self._session["validation"] = None
+            self._session["valid"] = False
+            self._session["confirmed"] = False
+            # Persist the heading step: set_step maps heading_deg -> reference_heading and
+            # save() serialises asdict(pose) — which now carries the pan AND tilt anchors —
+            # so a restart restores the full calibration (CAL-1). Also log the tilt step
+            # for the calibration_state display.
+            persisted = self._persist_step("heading", entry)
+            persisted = self._persist_step("tilt", {
+                "tilt_deg": round(elev_cal, 4),
+                "tilt_enc": tilt_enc,
+                "tilt_enc_per_deg": PRISUAL_TILT_ENC_PER_DEG,
+            }) and persisted
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Offset captured in memory but failed to write to disk.",
+                503,
+            )
+        return JSONResponse({
+            "ok": True,
+            "offset_deg": offset,
+            "bearing_deg": round(bearing % 360.0, 6),
+            "distance_m": round(distance_m, 3),
+            "elev_cal_deg": round(elev_cal, 3),
+            "base_height_warning": base_height_warning,
+        })
 
     def validate_heading(self, req) -> JSONResponse:
         refusal = self._require_active()

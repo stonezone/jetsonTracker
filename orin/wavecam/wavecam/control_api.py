@@ -195,6 +195,15 @@ class CalibrationHeadingLockRequest(CalibrationBaseRequest):
     heading_acc_deg: float | None = Field(default=None, ge=0.0, le=360.0)
 
 
+class CalibrationOffsetRequest(CalibrationBaseRequest):
+    # Calibration v2: single aim at the tracker's stable GPS re-anchors pan+tilt.
+    operator_accepted: bool = False
+    target_lat: float | None = Field(default=None, ge=-90.0, le=90.0)
+    target_lon: float | None = Field(default=None, ge=-180.0, le=180.0)
+    # The coarse step-3 heading, so the response can report how far off it was.
+    step3_bearing_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+
+
 class CalibrationValidationRequest(CalibrationBaseRequest):
     bearing_deg: float | None = Field(default=None, ge=0.0, le=360.0)
     target_lat: float | None = Field(default=None, ge=-90.0, le=90.0)
@@ -490,6 +499,12 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/calibration/heading-lock", dependencies=[Depends(require(PTZ))])
     def calibration_heading_lock(req: CalibrationHeadingLockRequest):
         response = api.lock_calibration_heading(req)
+        api.bump_revision()
+        return response
+
+    @app.post("/api/v1/calibration/offset", dependencies=[Depends(require(PTZ))])
+    def calibration_offset(req: CalibrationOffsetRequest):
+        response = api.offset_calibrate(req)
         api.bump_revision()
         return response
 
@@ -1053,6 +1068,9 @@ class ControlApiAdapter:
 
     def lock_calibration_heading(self, req: CalibrationHeadingLockRequest) -> JSONResponse:
         return self._calibration.heading_lock(req)
+
+    def offset_calibrate(self, req: CalibrationOffsetRequest) -> JSONResponse:
+        return self._calibration.offset_calibrate(req)
 
     def validate_calibration_heading(self, req: CalibrationValidationRequest) -> JSONResponse:
         return self._calibration.validate_heading(req)
