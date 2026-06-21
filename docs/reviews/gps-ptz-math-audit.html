@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveCam GPS-to-PTZ Math Audit</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --fg: #c9d1d9;
+  --muted: #8b949e;
+  --line: #30363d;
+  --card: #161b22;
+  --high: #f85149;
+  --high-bg: rgba(248, 81, 73, 0.12);
+  --medium: #f0883e;
+  --medium-bg: rgba(240, 136, 62, 0.12);
+  --low: #58a6ff;
+  --low-bg: rgba(88, 166, 255, 0.12);
+  --code: #e6edf3;
+  --code-bg: #0d1117;
+  --ok: #3fb950;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 2rem 1rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+}
+.container { max-width: 980px; margin: 0 auto; }
+h1 { font-size: 1.75rem; margin: 0 0 0.5rem; }
+h2 { font-size: 1.25rem; margin: 2rem 0 1rem; border-bottom: 1px solid var(--line); padding-bottom: 0.4rem; }
+h3 { font-size: 1.05rem; margin: 1.5rem 0 0.6rem; }
+p, li { color: var(--fg); }
+.muted { color: var(--muted); }
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.summary-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+.summary-card .count { font-size: 2rem; font-weight: 700; }
+.summary-card .label { color: var(--muted); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.finding {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 1rem 0;
+  overflow: hidden;
+}
+.finding-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.severity {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.severity-high { color: var(--high); background: var(--high-bg); border: 1px solid rgba(248,81,73,0.35); }
+.severity-medium { color: var(--medium); background: var(--medium-bg); border: 1px solid rgba(240,136,62,0.35); }
+.severity-low { color: var(--low); background: var(--low-bg); border: 1px solid rgba(88,166,255,0.35); }
+.finding-title { font-weight: 600; }
+.finding-body { padding: 1rem; }
+.finding-body p { margin: 0.5rem 0; }
+.finding-body p:first-child { margin-top: 0; }
+.finding-body p:last-child { margin-bottom: 0; }
+.location {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  color: var(--code);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.codeblock-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 1rem 0 0.35rem;
+}
+ul.clean { padding-left: 1.25rem; }
+ul.clean li { margin: 0.35rem 0; }
+.ok-list li::marker { color: var(--ok); }
+.note {
+  background: rgba(88, 166, 255, 0.08);
+  border-left: 3px solid var(--low);
+  padding: 0.75rem 1rem;
+  border-radius: 0 8px 8px 0;
+  margin: 1rem 0;
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>WaveCam GPS-to-PTZ Math Audit</h1>
+<p class="muted">Scope: trace the full chain from GPS fix through bearing/elevation calculation to VISCA pan/tilt/zoom commands. Findings are grounded in the code actually read (repository branch <code>fix/glm-calibrate-races-20260620</code>).</p>
+
+<div class="summary">
+  <div class="summary-card"><div class="count" style="color:var(--high)">3</div><div class="label">High</div></div>
+  <div class="summary-card"><div class="count" style="color:var(--medium)">4</div><div class="label">Medium</div></div>
+  <div class="summary-card"><div class="count" style="color:var(--low)">2</div><div class="label">Low</div></div>
+  <div class="summary-card"><div class="count">9</div><div class="label">Total findings</div></div>
+</div>
+
+<h2>Findings</h2>
+
+<!-- HIGH -->
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-high">High</span>
+    <span class="finding-title">Target altitude is hard-coded to sea level in live GPS pointing</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">orin/wavecam/wavecam/gps_pointing.py:50–61</span> and <span class="location">orin/wavecam/wavecam/gps_stub.py:17–25</span></p>
+    <p><strong>What is wrong:</strong> <code>NormalizedFix</code> carries no altitude field. <code>compute_target</code> builds the target <code>GeoPoint</code> from only <code>lat/lon/speed/course</code>, so <code>target.alt_m</code> defaults to <code>0.0</code>. The latched base altitude comes from the base Wio (which may be on a bluff or cliff). <code>elevation_deg</code> therefore computes <code>atan2(0 - base.alt_m, distance)</code> instead of <code>atan2(target.alt_m - base.alt_m, distance)</code>.</p>
+    <p><strong>Why it matters for aim accuracy:</strong> Any time the base is above or below sea level while the tracker is in the water, the tilt command is biased by roughly <code>atan(base_alt / distance)</code>. At 100 m range and a 10 m bluff the camera tilts down ~5.7° more than it should, easily putting the surfer out of frame at tele zoom.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre># 1. Add altitude to the normalized fix seam
+def __init__(self, lat, lon, alt_m=0.0, course=0.0, speed=0.0,
+             ts=0.0, age_sec=0.0, src="direct_lora"):
+    ...
+    self.alt_m = float(alt_m)
+
+# 2. Forward it in compute_target
+target = GeoPoint(lat=fix.lat, lon=fix.lon, alt_m=getattr(fix, "alt_m", 0.0),
+                  speed_mps=fix.speed, course_deg=fix.course)</pre>
+    <p class="muted">Root-cause note: the tracker 32-byte packet has no altitude field. The clean fix requires adding <code>alt_m</code> to <code>TrackerPacket</code> (or repurposing reserved bytes) and emitting it from both tracker/base firmware.</p>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-high">High</span>
+    <span class="finding-title">Estimator shadow tilt ignores target altitude and mis-uses base position</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">orin/wavecam/wavecam/estimator.py:448–454</span></p>
+    <p><strong>What is wrong:</strong> In <code>predict_output</code> the shadow tilt is computed with both points at <code>(pose.lat, pose.lon)</code> and the target altitude forced to <code>0.0</code>:</p>
+    <pre>elev = elevation_deg(
+    GeoPoint(lat=self._pose.lat, lon=self._pose.lon, alt_m=self._pose.alt_m),
+    GeoPoint(lat=self._pose.lat, lon=self._pose.lon, alt_m=0.0),
+    dist_m,
+)</pre>
+    <p>The horizontal position used is the base, not the estimated target location in ENU space. Elevation therefore depends only on <code>-base.alt_m</code>, not on the actual 3-D geometry to the subject.</p>
+    <p><strong>Why it matters for aim accuracy:</strong> This is shadow logging, not live control, but it is the primary evidence used to validate the estimator before it is allowed to command the camera. Logged <code>tilt_enc_would</code> will be systematically wrong whenever base altitude is non-zero, which can lead to incorrect tuning decisions or false confidence in shadow-mode tracking.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre># Convert current ENU estimate back to lat/lon/alt, or at least use it for Δalt.
+# Minimal correct form once target altitude is available:
+target_e, target_n = self._x[0], self._x[1]
+# ENU horizontal distance already is dist_m; vertical delta must come from fix alt.
+# If only 2-D fixes are available, document that tilt shadow is unavailable.
+elev = elevation_deg(
+    GeoPoint(lat=self._pose.lat, lon=self._pose.lon, alt_m=self._pose.alt_m),
+    GeoPoint(lat=target_lat, lon=target_lon, alt_m=target_alt_m),
+    dist_m,
+)</pre>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-high">High</span>
+    <span class="finding-title">iOS heading calibration uses live-base bearing instead of latched-pose geometry</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">ios/WaveCam/Sources/CalibrateView.swift:362</span> and <span class="location">orin/wavecam/wavecam/control_calibration.py:549–630</span></p>
+    <p><strong>What is wrong:</strong> The iOS heading-capture screen sends <code>headingDeg: client.status?.gps?.bearingDeg ?? 0.0</code>. The status-bearing is computed in <code>gps_fix_snapshot</code> using the <em>live</em> base position from <code>get_camera_position()</code>. The backend then stores that value directly as <code>pan_anchor_bearing</code> using the <em>latched</em> pose location. If the two base positions differ, the anchor bearing is inconsistent with the base position used for all future target-bearing calculations.</p>
+    <p><strong>Why it matters for aim accuracy:</strong> All subsequent GPS pan commands compute <code>target_bearing</code> from the latched base, then subtract <code>pan_anchor_bearing</code>. An inconsistent anchor introduces a constant pan bias equal to the bearing error between live and latched base positions. On a moving/wobbling tripod or a base GPS with multipath this can be several degrees.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre>// Option A: iOS passes target_lat/target_lon; backend recomputes from latched pose.
+// Option B: backend recomputes bearing from latched pose when only bearing_deg is supplied.
+
+# In control_calibration.py heading_lock, before using a supplied bearing_deg:
+if bearing_deg is not None and location is not None:
+    # Prefer geometry from the latched pose over a client bearing that may
+    # have been computed from a different (live) base position.
+    lat, lon = location["lat"], location["lon"]
+    if target_lat is not None and target_lon is not None:
+        bearing_deg = bearing_deg(lat, lon, target_lat, target_lon)
+    # Otherwise reject bearing-only captures unless they come with a
+    # freshness/uncertainty bound that proves they match the latched pose.</pre>
+    <p class="muted">Needs verification: confirm whether <code>gps.bearingDeg</code> in the iOS status model is actually sourced from <code>gps_fix_snapshot</code> as read; the client decoding path and the backend snapshot path both point to the live base position.</p>
+  </div>
+</div>
+
+<!-- MEDIUM -->
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-medium">Medium</span>
+    <span class="finding-title">No runtime pan/tilt mechanical soft limits are enforced</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">orin/wavecam/wavecam/camera_pose.py:32–33</span> and <span class="location">orin/wavecam/wavecam/ptz_visca.py:76–97</span></p>
+    <p><strong>What is wrong:</strong> <code>PRISUAL_TILT_ENC_MIN</code>/<code>MAX</code> are defined and documented but never used to clamp commands. Pan limits are not represented at all. The only clamp in <code>pan_tilt_absolute</code> is the signed 16-bit wire-format clamp <code>[-0x8000, 0x7FFF]</code>.</p>
+    <p><strong>Why it matters for aim accuracy:</strong> A GPS target outside the mechanical envelope (±170° pan, -30°/+90° tilt) produces an encoder command the camera cannot reach. The camera hits the hard stop and stops short; the software believes it has commanded the target and will not correct until the target moves back into range.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre># In ptz_visca.py pan_tilt_absolute, or in camera_pose before conversion:
+from wavecam.camera_pose import (
+    PRISUAL_TILT_ENC_MIN, PRISUAL_TILT_ENC_MAX,
+    PRISUAL_PAN_ENC_PER_DEG,
+)
+PAN_ENC_MIN = int(round(-170.0 * PRISUAL_PAN_ENC_PER_DEG))  # -2448
+PAN_ENC_MAX = int(round( 170.0 * PRISUAL_PAN_ENC_PER_DEG))  # +2448
+
+pan = max(PAN_ENC_MIN, min(PAN_ENC_MAX, int(pan_pos)))
+tilt = max(PRISUAL_TILT_ENC_MIN, min(PRISUAL_TILT_ENC_MAX, int(tilt_pos)))</pre>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-medium">Medium</span>
+    <span class="finding-title">ptz.invert_pan / invert_tilt are ignored for GPS absolute commands</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">orin/wavecam/wavecam/controller.py:92–95</span> and <span class="location">orin/wavecam/wavecam/pipeline.py:447–449</span></p>
+    <p><strong>What is wrong:</strong> <code>invert_pan</code>/<code>invert_tilt</code> only flip velocity-servo and manual joystick directions. GPS absolute pan/tilt encoder targets are computed by <code>CameraPose.bearing_to_pan_encoder</code> and <code>elevation_to_tilt_encoder</code> with no inversion step before sending to <code>pan_tilt_absolute</code>.</p>
+    <p><strong>Why it matters for aim accuracy:</strong> If the camera mount reverses the encoder sense relative to true bearing, the operator will set <code>invert_pan=true</code> to make vision/manual control move correctly. GPS absolute commands will then slew in the opposite direction from the computed target. The two-point calibration rejects negative scale, so the operator cannot calibrate the reversed sense away through scale alone.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre># Apply the same inversion to absolute targets that velocity commands use:
+# In pipeline.py _send_absolute_cmd or in gps_pointing compute_target:
+if getattr(self.cfg.ptz, "invert_pan", False):
+    cmd.pan_enc = 2 * pose.pan_anchor_enc - cmd.pan_enc  # mirror about anchor
+if getattr(self.cfg.ptz, "invert_tilt", False):
+    cmd.tilt_enc = 2 * pose.tilt_anchor_enc - cmd.tilt_enc
+
+# Cleaner: encode the inversion sign in pan_enc_per_deg during calibration
+# and reject a mismatched mount before it reaches the live pointing path.</pre>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-medium">Medium</span>
+    <span class="finding-title">Base altitude falls back to 0 when the GNSS fix is 2-D only</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">firmware/direct-lora/src/base/main.cpp:95–96</span> and <span class="location">orin/wavecam/wavecam/camera_pose.py:139–153</span></p>
+    <p><strong>What is wrong:</strong> In <code>update_base_gps</code> the base firmware uses <code>base_gps.altitude.isValid() ? ... : 0.0</code>. A 2-D fix (valid lat/lon, no altitude) is therefore latched as altitude 0. The Orin accepts this value via <code>lock_base_position</code> without an altitude-validity gate.</p>
+    <p><strong>Why it matters for aim accuracy:</strong> Same effect as the sea-level target issue: if the camera is actually elevated and the base GPS momentarily reports a 2-D fix, the latched base altitude becomes 0 and every subsequent elevation calculation is biased.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre>// In base firmware, add an alt_valid flag to the JSON:
+int alt_valid = base_gps.altitude.isValid() ? 1 : 0;
+...
+"alt_valid":%d,"alt_m":%d,
+
+# In control_calibration.lock_location / capture_calibration base_lock:
+if not data.get("alt_valid"):
+    return refusal("gps_2d_fix", "Base lock requires a 3-D fix for accurate tilt.")</pre>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-medium">Medium</span>
+    <span class="finding-title">Status/iOS bearing is computed from live base, not latched pose</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">orin/wavecam/wavecam/control_snapshots.py:330–345</span></p>
+    <p><strong>What is wrong:</strong> <code>gps_fix_snapshot</code> calls <code>gps.get_camera_position()</code> to obtain the base position for distance/bearing. It does not use <code>pipeline.pose.lat/lon</code> even when a base location has been locked. This status value drives the iOS operator display and, as shown above, the iOS heading-calibration input.</p>
+    <p><strong>Why it matters for aim accuracy:</strong> The operator sees a bearing/distance that may differ from the geometry the backend uses for actual pointing. If the operator trusts the displayed bearing for manual cueing or calibration, the result is a consistent pan offset.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre># Prefer latched pose; fall back to live base only before a lock exists.
+if pipeline.pose.has_base:
+    base_lat, base_lon = pipeline.pose.lat, pipeline.pose.lon
+    base_age = None  # latched position has no single age; report calibration age
+else:
+    cam_pos = cam()
+    if cam_pos is None:
+        return snapshot
+    base_lat, base_lon = cam_pos[0], cam_pos[1]
+    base_age = cam_age()
+
+dist = haversine_m(base_lat, base_lon, fix.lat, fix.lon)
+bearing = bearing_deg(base_lat, base_lon, fix.lat, fix.lon)</pre>
+  </div>
+</div>
+
+<!-- LOW -->
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-low">Low</span>
+    <span class="finding-title">elevation_deg returns 0° for a directly-overhead target</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">orin/wavecam/wavecam/gps_geo.py:51–57</span></p>
+    <p><strong>What is wrong:</strong> The near-zero distance guard returns <code>0.0</code> regardless of altitude difference. When base and target share the same horizontal position, the true elevation is ±90°.</p>
+    <p><strong>Why it matters for aim accuracy:</strong> A surfer directly below a cliff-mounted camera would be commanded to the horizon instead of straight down. This is an edge case for the current surf-filming geometry but is mathematically incorrect.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre>def elevation_deg(base: GeoPoint, target: GeoPoint, distance_m: float) -> float:
+    d_alt = target.alt_m - base.alt_m
+    if distance_m <= 1e-6:
+        return 90.0 if d_alt > 0.0 else (-90.0 if d_alt < 0.0 else 0.0)
+    return math.degrees(math.atan2(d_alt, distance_m))</pre>
+  </div>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="severity severity-low">Low</span>
+    <span class="finding-title">Phone drift monitor ingests magnetic heading, not true heading</span>
+  </div>
+  <div class="finding-body">
+    <p><span class="location">ios/WaveCam/Sources/PhoneSensorPublisher.swift:276–283</span> and <span class="location">orin/wavecam/wavecam/sensor_hub.py:113–215</span></p>
+    <p><strong>What is wrong:</strong> The iOS publisher sets <code>heading_deg = magneticHeading</code> and only puts <code>trueHeading</code> in the separate <code>true_heading_deg</code> field. The backend drift monitor uses <code>heading_deg</code> for baseline deviation. Magnetic declination is constant for a given location, so deviation-from-baseline cancels it out, but any absolute comparison is offset by local declination (e.g., ~10° in Hawaii).</p>
+    <p><strong>Why it matters for aim accuracy:</strong> Low direct impact because the current calibration flow uses GPS/landmark bearing, not phone heading. If a future client uses <code>method="phone"</code> for heading lock, the captured <code>pan_anchor_bearing</code> will be off by declination and every GPS pan command will be biased by that amount.</p>
+    <p class="codeblock-label">Proposed fix</p>
+    <pre>// iOS: send trueHeading in heading_deg; keep magnetic as magnetic_heading_deg if needed.
+self.latestHeadingDeg = newHeading.trueHeading >= 0 ? newHeading.trueHeading : nil
+
+# Backend: for phone-method calibration, prefer true_heading_deg if present:
+phone_heading = sample.true_heading_deg if sample.true_heading_deg is not None else sample.heading_deg</pre>
+  </div>
+</div>
+
+<h2>No Issues Found</h2>
+<ul class="clean ok-list">
+  <li><strong>Bearing wraparound:</strong> <code>normalize_180</code> correctly maps across the 0°/360° seam and the ±180° boundary (<code>orin/wavecam/wavecam/gps_geo.py:45–48</code>).</li>
+  <li><strong>atan2 argument order:</strong> <code>bearing_deg</code> uses <code>atan2(sin(Δλ)·cosφ₂, cosφ₁·sinφ₂ − sinφ₁·cosφ₂·cosΔλ)</code>, the standard initial-bearing formula, and wraps to <code>[0, 360)</code> (<code>gps_geo.py:36–42</code>).</li>
+  <li><strong>Distance model:</strong> <code>haversine_m</code> is great-circle and clamps the <code>asin</code> argument; appropriate for 50–300 m surf-filming ranges (<code>gps_geo.py:27–33</code>).</li>
+  <li><strong>Lead prediction:</strong> <code>predict_lead</code> projects along course at speed on the sphere, with a 0.1 m/s floor to avoid amplifying GPS jitter (<code>gps_geo.py:60–73</code>).</li>
+  <li><strong>Relative bearing:</strong> <code>CameraPose.bearing_to_pan_encoder</code> computes wrap-safe relative bearing <code>normalize_180(target − anchor)</code> before scaling (<code>camera_pose.py:118–121</code>).</li>
+  <li><strong>Calibration scale sign:</strong> two-point pan calibration rejects non-positive scale, preventing reversed GPS slews (<code>camera_pose.py:90–93</code>).</li>
+  <li><strong>Base drift gating:</strong> the monitor preserves <code>base_locked=True</code> in <code>unknown</code>/<code>suspect</code> states and only denies GPS authority on confirmed <code>unlocked</code> drift, matching the intended fail-safe behavior (<code>base_drift.py:101–148</code>).</li>
+  <li><strong>Fix freshness gating:</strong> live pointing is gated on <code>fix.age_sec &lt; drive_stale_sec</code> and the current calibration session being <code>valid &amp;&amp; confirmed</code>; stale fixes do not drive PTZ (<code>pipeline.py:700–728</code>).</li>
+</ul>
+
+<h2>Methodology</h2>
+<ul class="clean">
+  <li>Read the core math modules: <code>gps_geo.py</code>, <code>camera_pose.py</code>, <code>gps_pointing.py</code>, <code>estimator.py</code>, <code>gps_bearing_cue.py</code>.</li>
+  <li>Read the data path: <code>gps_direct_lora.py</code>, <code>gps_meshtastic.py</code>, <code>gps_stub.py</code>, <code>pipeline.py</code>, <code>ptz_visca.py</code>, <code>ptz_state.py</code>, <code>controller.py</code>.</li>
+  <li>Read calibration and config wiring: <code>control_calibration.py</code>, <code>calibration_store.py</code>, <code>control_api.py</code>, <code>control_snapshots.py</code>, <code>control_config.py</code>.</li>
+  <li>Read tracker/base firmware: <code>firmware/direct-lora/src/tracker/main.cpp</code>, <code>base/main.cpp</code>, <code>common/packet.h</code>.</li>
+  <li>Read iOS sensor/calibration client: <code>ios/WaveCam/Sources/PhoneSensorPublisher.swift</code>, <code>CalibrateView.swift</code>, <code>WaveCamClient.swift</code>.</li>
+  <li>Read representative tests to confirm expected behavior and wraparound handling.</li>
+</ul>
+
+<div class="note">
+  <strong>Operational note:</strong> Severity ratings assume the current surf-filming use case (base near sea level, short-to-medium range, target in the water). Issues marked <em>High</em> become less severe if the rig is always operated on a flat beach with a 3-D base fix and the operator always re-locks base position immediately before heading calibration. Issues marked <em>Medium/Low</em> become more severe on cliff/elevated mounts or if the estimator shadow is promoted to live control.
+</div>
+
+</div>
+</body>
+</html>
