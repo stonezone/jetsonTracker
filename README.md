@@ -239,5 +239,5 @@ To be determined.
 
 ---
 
-**Last Updated:** June 6, 2026
-**Project Status:** WaveCam backend live on Orin; LoRa GPS is future work.
+**Last Updated:** June 21, 2026
+**Project Status:** WaveCam backend live on Orin; **direct-LoRa GPS is the live GPS source** (vision + GPS tracking deployed). Current state of truth: `CLAUDE.md` + `docs/PROJECT_STATUS.md`.

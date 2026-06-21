@@ -60,7 +60,7 @@ do not assume the Orin is enforcing `172.20.10.8` locally.
 ## Step 4 — service vs host
 
 If the host pings but `:8088` is dead → the `wavecam.service` is down (Codex/Zack lane: restart it
-via `ssh orin` + `systemctl restart wavecam.service`; **Claude never touches the Orin runtime**).
+via `ssh orin` + `systemctl restart wavecam.service`. Claude has a standing grant to deploy via `deploy.sh` + restart the service; the KILL-reachable + supervise-only rails always hold).
 If the host doesn't ping at all → it's a network/power/reboot issue, not the service.
 
 ## Step 5 — verify recovery

@@ -1,5 +1,6 @@
 # WaveCam — Project Status
 
+> ⚠️ **Partially superseded (2026-06-21).** Calibration v2 (map place + single-aim offset refine) shipped and the field down-tilt bug is fixed (backend `400fdd7`, iOS build 567). The live detector is **yolo11n** (swapped from yolov8n 2026-06-15). For the authoritative current state see `CLAUDE.md`, `MEMORY.md`, and the Claude-OS `JetsonTracker-project_memories` KB. The snapshot below is kept for history.
 
 **Last updated:** 2026-06-14 · supersedes the 2026-06-09 status.
 **One-line:** Direct-LoRa GPS is the live source, vision + GPS tracking is deployed on `main`, `tracking.mode` (`auto`/`gps_only`/`vision_only`) is exposed, and WaveCamWatch is bundled. Remaining: field hardening, GPS→fusion confidence injection, and optional external 10 Hz GNSS.
@@ -32,7 +33,7 @@
 - FastAPI control API `/api/v1` on `:8088` (status/safety/ptz/media/config/telemetry/agent/system); RAW VISCA/UDP PTZ; RTSP video + MJPEG operator feed; live `config/hot` tuning; recording; cinematic zoom; supervisor + systemd `wavecam.service`; optional default-off bearer auth.
 - iOS app `ios/WaveCam/` — Live / PTZ / Calibrate / Tools (Tune+Agent+Web) / Connect tabs, Emergency Stop, Keychain, feature-detection on `GET /config`.
 - WaveCamWatch — Status/Tracking tab (KILL/Resume/Record remote controls) and Record Session tab (1 Hz GPS + 4 Hz IMU JSONL for offline scoring).
-- Live detector = **`yolov8n.engine`** (TensorRT), rebuilt on the Orin Nano.
+- Live detector = **`yolo11n.engine`** (TensorRT), rebuilt on the Orin Nano (swapped from yolov8n 2026-06-15).
 
 ### GPS
 - `gps_geo.py` (haversine/bearing/elevation/lead), `camera_pose.py` (anchor+scale calibration, `lock_base_position`), `gps_pointing.py` (encoder targets) — pure, unit-tested.
@@ -64,7 +65,7 @@
 - **🟠 Base Wio USB RF noise:** onboard L76K can show 0 sats when the base Wio is powered from the Orin USB rail. **Workaround:** the base Wio now has a battery installed; acquire the fix on battery power, then connect USB data.
 - **🟡 Stale serial on base reboot:** any base Wio reboot re-enumerates `/dev/ttyACM0` → ingest handle stale. Fix: `ssh orin 'sudo systemctl restart wavecam.service'`.
 - **🟡 MJPEG through Cloudflare Access:** live preview may not stream reliably through Access; use local `:8088` on-site.
-- **🟢 Cross-device YOLO TRT engine:** resolved — `yolov8n.engine` rebuilt on the Orin.
+- **🟢 Cross-device YOLO TRT engine:** resolved — `yolo11n.engine` rebuilt on the Orin.
 - **🟢 Meshtastic config drift:** no longer applies; direct-LoRa firmware has compile-time radio constants.
 
 ---
@@ -90,7 +91,7 @@ Tracker Wio (surfer) --LoRa--> Base Wio (Orin /dev/ttyACM0) --USB--> Orin ingest
 - **Camera (Prisual NDI PTZ):** RAW VISCA over UDP `192.168.100.88:1259` (no auth; NOT Sony 8-byte). Video RTSP `/1` 1080p60, `/2` 640×360; ONVIF `:81` backup.
 - **Control API:** `http://<orin>:8088/api/v1`. Live tuning page at `:8088`. (`:8080` = retired legacy Dash — keep stopped.)
 - **Remote access:** `https://wavecam.freddieland.com` via Cloudflare `robot-core` tunnel (Google Auth + Access, `zackjordan@gmail.com` only).
-- **Deploy:** runtime at `/data/projects/gimbal/wavecam`; deploy = scp + `systemctl restart wavecam.service`. Detector model resolves via `config.orin.servo.yaml` → `detector.model` = `yolov8n.engine`. The `config.local.yaml` overlay (preserved across deploys) sets `gps.source: direct_lora`.
+- **Deploy:** runtime at `/data/projects/gimbal/wavecam`; deploy = scp + `systemctl restart wavecam.service`. Detector model resolves via `config.orin.servo.yaml` → `detector.model` = `yolo11n.engine`. The `config.local.yaml` overlay (preserved across deploys) sets `gps.source: direct_lora`.
 
 ---
 

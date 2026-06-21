@@ -45,7 +45,7 @@ color:
 
 detector:
   enabled: false         # first run = orange color-only (no YOLO/model dep). Enable
-  model: "yolo26n.pt"    # + point at /data/projects/gimbal/models/yolov8n.engine when ready
+  model: "yolo11n.pt"    # live rig uses yolo11n.engine (config.orin.servo.yaml); yolo26n is unusable on the rig ultralytics 8.3.233
   conf: 0.35
   imgsz: 640
   person_class: 0
