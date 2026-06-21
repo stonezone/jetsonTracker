@@ -100,6 +100,21 @@ struct TuneView: View {
                     presetsSection
                 }
 
+                // TRACKING hoisted to the top (audit TUNE-1): the per-session field toggles
+                // (DISABLE-PTZ latch + source mode) the yard test depends on are reachable
+                // before the tuning-session sliders.
+                if trackingModeAvailable {
+                    OperatorCard(title: "TRACKING") {
+                        toggleRow("Autonomous tracking", isOn: $trackingEnabled, key: "tracking.enabled")
+                        tuneCaption("Off = DISABLE PTZ: the camera holds your manual aim and tracking won't take over until you turn this back on.")
+                        OperatorDivider()
+                        pickerRow("Source", selection: $trackingMode,
+                                  options: [("auto", "Auto (vision + GPS)"), ("gps_only", "GPS-only"), ("vision_only", "Vision-only")],
+                                  key: "tracking.mode")
+                        tuneCaption("GPS-only forces pointing on GPS geometry and ignores vision, so a false color lock can't hijack it. Auto is the normal vision+GPS mode.")
+                    }
+                }
+
                 OperatorCard(title: "TARGET") {
                     pickerRow("Color preset", selection: $colorPreset, options: presets.map { ($0.id, $0.name) }, key: "color.preset")
                     tuneCaption("Match the subject's color. Your orange rashguard → Orange / red. Other presets chase that color instead, so the camera won't lock onto you.")
@@ -150,18 +165,6 @@ struct TuneView: View {
                             OperatorDivider()
                             sliderRow("Subject size", value: $subjectSize, range: 0.2...0.8, step: 0.05, readout: fmt(subjectSize), key: "ptz.zoom_target_frac")
                         }
-                    }
-                }
-
-                if trackingModeAvailable {
-                    OperatorCard(title: "TRACKING") {
-                        toggleRow("Autonomous tracking", isOn: $trackingEnabled, key: "tracking.enabled")
-                        tuneCaption("Off = DISABLE PTZ: the camera holds your manual aim and tracking won't take over until you turn this back on.")
-                        OperatorDivider()
-                        pickerRow("Source", selection: $trackingMode,
-                                  options: [("auto", "Auto (vision + GPS)"), ("gps_only", "GPS-only"), ("vision_only", "Vision-only")],
-                                  key: "tracking.mode")
-                        tuneCaption("GPS-only forces pointing on GPS geometry and ignores vision, so a false color lock can't hijack it. Auto is the normal vision+GPS mode.")
                     }
                 }
 

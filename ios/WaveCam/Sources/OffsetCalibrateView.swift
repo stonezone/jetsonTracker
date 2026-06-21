@@ -16,6 +16,11 @@ struct OffsetCalibrateView: View {
     @State private var message: String?
     @State private var capturedOffset: Double?
     @State private var killed = false
+    // After a successful capture, show the backend's AUTHORITATIVE result (audit IOS-A2)
+    // and don't auto-dismiss — the operator confirms with Done.
+    @State private var committed = false
+    @State private var capturedWarning = false
+    @State private var committedState: WCCalibrationSessionState?
 
     /// Offset the capture will set = (base→tracker bearing) − the coarse step-3 heading.
     /// base→tracker bearing == status.gps.bearingDeg, so it previews before capture.
@@ -47,7 +52,7 @@ struct OffsetCalibrateView: View {
                 map.frame(minHeight: 220)
 
                 if let o = capturedOffset ?? previewOffset {
-                    offsetReadout(o)
+                    offsetReadout(o, warning: committed ? capturedWarning : baseHeightWarning)
                 }
 
                 captureControls
@@ -90,16 +95,17 @@ struct OffsetCalibrateView: View {
         .mapStyle(.hybrid)
     }
 
-    @ViewBuilder private func offsetReadout(_ o: Double) -> some View {
+    @ViewBuilder private func offsetReadout(_ o: Double, warning: Bool) -> some View {
         let band = model.offsetBand(o)
         let color: Color = band == .small ? .green : (band == .moderate ? .yellow : .red)
         VStack(spacing: 2) {
-            Text(String(format: "offset %+.1f°", o)).bold().foregroundStyle(color)
+            Text(String(format: committed ? "offset applied %+.1f°" : "offset %+.1f°", o))
+                .bold().foregroundStyle(color)
             if band == .large {
                 Text("Large — tracker may be too close, mis-aimed, or base height is wrong.")
                     .font(.caption2).foregroundStyle(.red)
             }
-            if baseHeightWarning {
+            if warning {
                 Text("Base height looks wrong for this distance — re-check it.")
                     .font(.caption2).foregroundStyle(.red)
             }
@@ -107,21 +113,33 @@ struct OffsetCalibrateView: View {
     }
 
     @ViewBuilder private var captureControls: some View {
-        Button {
-            Task {
-                busy = true; message = nil; defer { busy = false }
-                capturedOffset = previewOffset
-                switch await client.calibrateOffset(step3BearingDeg: step3BearingDeg) {
-                case .success(let state): onDone(state)
-                case .failure(let e): message = "Failed: \(e.localizedDescription)"
+        if committed {
+            Label("Pan + tilt re-anchored from the tracker aim.", systemImage: "checkmark.seal.fill")
+                .font(.footnote).foregroundStyle(.green)
+            Button { onDone(committedState) } label: { Text("Done").frame(maxWidth: .infinity) }
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button {
+                Task {
+                    busy = true; message = nil; defer { busy = false }
+                    switch await client.calibrateOffset(step3BearingDeg: step3BearingDeg) {
+                    case .success(let state):
+                        // Show the backend's authoritative offset/warning, not the iOS preview.
+                        let hl = state.session?.headingLock
+                        capturedOffset = hl?.offsetDeg ?? previewOffset
+                        capturedWarning = hl?.baseHeightWarning ?? baseHeightWarning
+                        committedState = state
+                        committed = true
+                    case .failure(let e): message = "Failed: \(e.localizedDescription)"
+                    }
                 }
-            }
-        } label: { Text("Capture — re-anchor pan+tilt").frame(maxWidth: .infinity) }
-            .buttonStyle(.borderedProminent)
-            .disabled(!model.canCapture || busy || killed)
+            } label: { Text("Capture — re-anchor pan+tilt").frame(maxWidth: .infinity) }
+                .buttonStyle(.borderedProminent)
+                .disabled(!model.canCapture || busy || killed)
 
-        Button("Skip — coarse mode (heading uncalibrated)") { onDone(nil) }
-            .font(.footnote).foregroundStyle(.orange).disabled(busy)
+            Button("Skip — coarse mode (heading uncalibrated)") { onDone(nil) }
+                .font(.footnote).foregroundStyle(.orange).disabled(busy)
+        }
     }
 
     private func pollStatus() async {

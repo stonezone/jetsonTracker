@@ -465,6 +465,10 @@ struct WCCalHeadingLockEntry: Codable, Sendable {
     var uncertaintyDeg: Double?
     var confidence: Double?
     var method: String?
+    // Offset-calibrate (Calibration v2) carries these in the heading_lock entry so the UI
+    // can show the backend's authoritative values, not the iOS preview (audit IOS-A2).
+    var offsetDeg: Double?
+    var baseHeightWarning: Bool?
 }
 
 extension WCCalHeadingLockEntry {
@@ -477,6 +481,8 @@ extension WCCalHeadingLockEntry {
         uncertaintyDeg = try c.decodeIfPresent(Double.self, forKey: .uncertaintyDeg)
         confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
         method = try c.decodeIfPresent(String.self, forKey: .method)
+        offsetDeg = try c.decodeIfPresent(Double.self, forKey: .offsetDeg)
+        baseHeightWarning = try c.decodeIfPresent(Bool.self, forKey: .baseHeightWarning)
     }
 }
 
