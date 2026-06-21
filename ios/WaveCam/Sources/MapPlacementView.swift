@@ -11,7 +11,7 @@ struct MapPlacementView: View {
     let initialLat: Double
     let initialLon: Double
     let purpose: MapPlacementModel.Mode
-    let onDone: () -> Void
+    let onDone: (WCCalibrationSessionState?) -> Void
     @State private var busy = false
     @State private var message: String?
 
@@ -96,7 +96,7 @@ struct MapPlacementView: View {
     private func confirm(_ op: @escaping () async -> Result<WCCalibrationSessionState, WaveCamCalibrationError>) async {
         busy = true; message = nil; defer { busy = false }
         switch await op() {
-        case .success: onDone()
+        case .success(let state): onDone(state)
         case .failure(let e): message = "Failed: \(e.localizedDescription)"
         }
     }

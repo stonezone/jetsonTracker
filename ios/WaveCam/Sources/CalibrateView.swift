@@ -22,6 +22,8 @@ struct CalibrateView: View {
     @State private var sessionState: WCCalibrationSessionState? = nil
     @State private var isInFlight = false
     @State private var refusalMessage: String? = nil
+    @State private var showingMap = false
+    @State private var mapPurpose: MapPlacementModel.Mode = .base
 
     // Heading capture sub-state
     @State private var headingPreviewPending = false   // preview shown, awaiting tap-accept
@@ -63,6 +65,17 @@ struct CalibrateView: View {
             await client.refresh()
             await probeSessionEndpoint()
         }
+        .sheet(isPresented: $showingMap) {
+            if let bla = client.status?.sensors?.base?.lat, let blo = client.status?.sensors?.base?.lon {
+                MapPlacementView(client: client, initialLat: bla, initialLon: blo, purpose: mapPurpose) { state in
+                    if let state { sessionState = state }
+                    showingMap = false
+                }
+            } else {
+                Text("No base GPS fix yet to center the map — use the GPS flow above, or wait for a base fix.")
+                    .font(WCFont.body).foregroundStyle(WC.muted).padding()
+            }
+        }
     }
 
     // MARK: - Wizard body (PR #88)
@@ -78,6 +91,7 @@ struct CalibrateView: View {
                 isInFlight: isInFlight,
                 refusalMessage: refusalMessage,
                 onCapture: lockLocation,
+                onPlaceOnMap: { mapPurpose = .base; showingMap = true },
                 onDismissRefusal: dismissRefusal
             )
         case .heading:
@@ -91,7 +105,8 @@ struct CalibrateView: View {
                 onPreview: previewHeading,
                 onAccept: acceptHeading,
                 onCancel: cancelHeadingPreview,
-                onDismissRefusal: dismissRefusal
+                onDismissRefusal: dismissRefusal,
+                onSetHeadingOnMap: { mapPurpose = .headingLookAt; showingMap = true }
             )
         case .validation:
             ValidationCard(
@@ -447,6 +462,7 @@ private struct LocationCard: View {
     let isInFlight: Bool
     let refusalMessage: String?
     let onCapture: () -> Void
+    let onPlaceOnMap: () -> Void
     let onDismissRefusal: () -> Void
 
     var body: some View {
@@ -471,6 +487,14 @@ private struct LocationCard: View {
                     role: .normal,
                     disabled: isInFlight,
                     action: onCapture
+                )
+
+                GlassButton(
+                    label: "Place on map (satellite)",
+                    icon: "map.fill",
+                    role: .normal,
+                    disabled: isInFlight,
+                    action: onPlaceOnMap
                 )
             }
         }
@@ -509,6 +533,7 @@ private struct HeadingCard: View {
     let onAccept: () -> Void
     let onCancel: () -> Void
     let onDismissRefusal: () -> Void
+    let onSetHeadingOnMap: () -> Void
 
     private var hasBearing: Bool { gpsBearingDeg != nil }
 
@@ -552,6 +577,14 @@ private struct HeadingCard: View {
             role: .normal,
             disabled: isInFlight || !hasBearing,
             action: onPreview
+        )
+
+        GlassButton(
+            label: "Set heading on map (satellite)",
+            icon: "map.fill",
+            role: .normal,
+            disabled: isInFlight,
+            action: onSetHeadingOnMap
         )
     }
 
