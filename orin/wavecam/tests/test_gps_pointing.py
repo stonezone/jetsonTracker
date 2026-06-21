@@ -136,3 +136,27 @@ def test_gps_pointing_cmd_drive_zoom_true_gives_zoom_enc():
     cmd = pipe._gps_pointing_cmd(fix, calibration_valid=True)
     assert cmd is not None
     assert cmd.zoom_enc is not None and cmd.zoom_enc >= 0
+
+
+# --- Calibration v2 Task 1: live subject altitude pinned to 1 m ----------------
+
+def test_gps_pointing_subject_treated_at_1m_gives_down_tilt():
+    """The foiler is at sea level; the live target must use a fixed 1 m altitude
+    (not the noisy tracker GPS alt, not 0). With an elevated base + calibrated tilt,
+    the commanded tilt must be the depression computed from subject=1 m, looking down."""
+    import math
+    from wavecam.camera_pose import PRISUAL_TILT_ENC_PER_DEG
+    from wavecam.gps_geo import haversine_m
+    pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=13.0)  # base on a 13 m dune
+    pipe.pose.tilt_anchor_enc = 0.0
+    pipe.pose.tilt_anchor_elev = 0.0
+    pipe.pose.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG             # tilt calibrated horizontal
+    fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
+                        ts=1000.0, age_sec=2.0, src="lora")
+    cmd = pipe._gps_pointing_cmd(fix, calibration_valid=True)
+    assert cmd is not None
+    d = haversine_m(21.6, -158.0, 21.601, -158.0)
+    expected_elev = math.degrees(math.atan2(1.0 - 13.0, d))          # subject 1 m, base 13 m
+    expected_tilt = int(0.0 + (expected_elev - 0.0) * PRISUAL_TILT_ENC_PER_DEG)
+    assert cmd.tilt_enc == expected_tilt
+    assert cmd.tilt_enc < 0                                          # looking down at the water

@@ -547,7 +547,11 @@ class Pipeline(threading.Thread):
             return None
         gps_cfg = self.cfg.gps
         drive_zoom = getattr(gps_cfg, "drive_zoom", False)
-        target = GeoPoint(lat=fix.lat, lon=fix.lon,
+        # Subject altitude is pinned to a fixed 1 m above sea level — a foiler is always
+        # at sea level, and the tracker's GPS altitude is the noisiest GPS axis (≈±13 m
+        # here), which fed atan2() a bogus elevation and dived the camera at the ground.
+        # Base height is the only real altitude input (operator-set in CALIBRATE v2).
+        target = GeoPoint(lat=fix.lat, lon=fix.lon, alt_m=1.0,
                           speed_mps=fix.speed, course_deg=fix.course)
         zoom_curve = ZoomCurve(
             near_m=float(getattr(gps_cfg, "drive_zoom_near_m", 40.0)),
