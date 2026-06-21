@@ -722,8 +722,14 @@ class CalibrationManager:
                 "Offset captured in memory but failed to write to disk.",
                 503,
             )
+        # Return the standard session-state response (so the iOS wizard advances + the
+        # session-state decoder is happy) PLUS the offset summary as sibling fields.
         return JSONResponse({
             "ok": True,
+            "request_id": make_request_id(),
+            "revision": self._api.revision,
+            "calibration": self.calibration_state(),
+            "status": self._api.status_snapshot(),
             "offset_deg": offset,
             "bearing_deg": round(bearing % 360.0, 6),
             "distance_m": round(distance_m, 3),
