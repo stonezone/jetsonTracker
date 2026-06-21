@@ -1447,6 +1447,41 @@ final class WaveCamClient {
         return await sendCalibrationSession("calibration/heading-lock", body: body)
     }
 
+    // MARK: - Map-based placement (manual coords on satellite imagery; bypasses GPS noise)
+
+    /// Request body for a manual map-placed base location (bypasses live-base averaging).
+    nonisolated static func mapLocationBody(lat: Double, lon: Double, errorRadiusM: Double, source: String) -> [String: Any] {
+        ["method": "map_manual", "use_live_base": false,
+         "lat": lat, "lon": lon, "manual_error_radius_m": errorRadiusM, "source": source]
+    }
+
+    /// Request body for look-at heading. `pan_enc` is intentionally OMITTED so the backend
+    /// captures the live encoder at request time (review finding V1) — the operator keeps the
+    /// camera aimed at the look-at landmark through the request.
+    nonisolated static func mapHeadingBody(targetLat: Double, targetLon: Double, operatorAccepted: Bool, source: String) -> [String: Any] {
+        ["method": "map_lookat", "operator_accepted": operatorAccepted,
+         "target_lat": targetLat, "target_lon": targetLon, "source": source]
+    }
+
+    /// POST /api/v1/calibration/location — manual coords from the map crosshair.
+    func calibrateLocationManual(lat: Double, lon: Double, errorRadiusM: Double,
+                                 source: String = "ios_native") async
+        -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/location",
+                                            body: Self.mapLocationBody(lat: lat, lon: lon, errorRadiusM: errorRadiusM, source: source))
+    }
+
+    /// POST /api/v1/calibration/heading-lock — look-at point from the map (target coords).
+    /// `preview: true` probes (operator_accepted:false); `false` locks.
+    func calibrateMapHeading(preview: Bool, targetLat: Double, targetLon: Double,
+                             source: String = "ios_native") async
+        -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/heading-lock",
+                                            body: Self.mapHeadingBody(targetLat: targetLat, targetLon: targetLon, operatorAccepted: !preview, source: source))
+    }
+
     /// POST /api/v1/calibration/validation
     /// Sight an independent check-point; backend returns predicted vs actual miss.
     func calibrateValidation(
