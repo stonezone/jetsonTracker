@@ -40,7 +40,10 @@ struct MapKitContainer: UIViewRepresentable {
         init(model: MapPlacementModel) { self.model = model }
 
         func mapViewDidFinishLoadingMap(_ mapView: MKMapView) { model.tilesLoaded = true }
-        func mapViewDidFailLoadingMap(_ mapView: MKMapView, withError error: Error) { model.tilesLoaded = false }
+        func mapViewDidFailLoadingMap(_ mapView: MKMapView, withError error: Error) {
+            // Sticky (review F-003): don't un-latch tilesLoaded on a transient re-load
+            // failure. If tiles never load at all, it stays its initial false and V5 holds.
+        }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             let rect = mapView.visibleMapRect

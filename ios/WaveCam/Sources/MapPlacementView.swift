@@ -37,7 +37,11 @@ struct MapPlacementView: View {
         .padding()
         .onAppear {
             model.mode = purpose
-            if purpose == .headingLookAt { model.baseLat = initialLat; model.baseLon = initialLon }
+            // Capture the initial center immediately so confirm isn't gated on a first
+            // pan (review F-002). Base mode overwrites this from regionDidChange as the
+            // operator pans; heading mode keeps it as the locked base.
+            model.baseLat = initialLat
+            model.baseLon = initialLon
         }
     }
 
@@ -70,7 +74,9 @@ struct MapPlacementView: View {
         case .headingLookAt:
             Text("Aim the camera at a distant landmark in Live, hold it still, center the crosshair on that same landmark.")
                 .font(.caption).foregroundStyle(.secondary)
-            if let d = model.lookAtDistanceM { Text(String(format: "look-at distance %.0f m", d)).font(.footnote) }
+            if let d = model.lookAtDistanceM, let b = model.lookAtBearingDeg {
+                Text(String(format: "look-at %.0f m @ %.0f° (heading this sets)", d, b)).font(.footnote)
+            }
             if !model.isLookAtValid {
                 Text("Move ≥50 m from the base for a usable heading").font(.footnote).foregroundStyle(.orange)
             }
