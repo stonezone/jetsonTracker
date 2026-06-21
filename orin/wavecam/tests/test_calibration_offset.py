@@ -98,3 +98,26 @@ def test_offset_calibrate_requires_target():
     resp = m.offset_calibrate({"operator_accepted": True})
     assert _json(resp)["ok"] is False
     assert _json(resp)["code"] == "bearing_required"
+
+
+class _FakeFix:
+    def __init__(self, lat, lon):
+        self.lat = lat; self.lon = lon
+
+
+class _FakeGps:
+    def __init__(self, lat, lon):
+        self._fix = _FakeFix(lat, lon)
+
+    def get_fix(self):
+        return self._fix
+
+
+def test_offset_calibrate_falls_back_to_live_tracker_fix():
+    m = _manager(pan=500.0, tilt=-30.0)
+    m.pipeline.gps = _FakeGps(21.60072, -158.0)        # backend's live tracker fix, ~80 m N
+    resp = m.offset_calibrate({"operator_accepted": True})  # no target coords supplied
+    body = _json(resp)
+    assert body["ok"] is True
+    assert m.pipeline.pose.tilt_enc_per_deg == PRISUAL_TILT_ENC_PER_DEG
+    assert body["distance_m"] > 50

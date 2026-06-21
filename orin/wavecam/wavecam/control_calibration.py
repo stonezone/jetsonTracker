@@ -655,9 +655,17 @@ class CalibrationManager:
             )
         bearing, distance_m = self._resolve_bearing(req, location)
         if bearing is None or distance_m is None:
+            # No operator-supplied target → use the backend's own live tracker fix (the
+            # authoritative position; the tracker is stationary during calibration).
+            gps = getattr(self.pipeline, "gps", None)
+            fix = gps.get_fix() if gps is not None else None
+            if fix is not None:
+                bearing = bearing_deg(float(location["lat"]), float(location["lon"]), fix.lat, fix.lon)
+                distance_m = haversine_m(float(location["lat"]), float(location["lon"]), fix.lat, fix.lon)
+        if bearing is None or distance_m is None:
             return self._calibration_refusal(
                 "bearing_required",
-                "Provide target_lat/target_lon (the tracker GPS) for the offset aim.",
+                "No tracker fix available — send target_lat/target_lon or wait for a live tracker fix.",
                 422,
             )
         enc = self._current_encoder()
