@@ -21,6 +21,29 @@ final class MapPlacementModel {
     /// Last error radius computed from the live map zoom (the view updates this on region change).
     var lastErrorRadiusM = MapPlacementModel.radiusFloorM
 
+    /// Calibration v2: operator-entered base height above sea level (m). The only real
+    /// altitude input — target/subject are a fixed 1 m. Default 2 m (a beach tripod).
+    var baseHeightM: Double = 2.0
+    /// Manual coordinate entry (alternative to dropping the pin). Decimal degrees.
+    var manualLatText: String = ""
+    var manualLonText: String = ""
+    /// Manual heading entry (deg true) — the primary heading path (phone compass / nav).
+    var manualHeadingDeg: Double?
+
+    /// Parsed manual coordinate, or nil if either field is blank/invalid/out of range.
+    var parsedManualCoord: (lat: Double, lon: Double)? {
+        guard let la = Double(manualLatText.trimmingCharacters(in: .whitespaces)),
+              let lo = Double(manualLonText.trimmingCharacters(in: .whitespaces)),
+              (-90.0...90.0).contains(la), (-180.0...180.0).contains(lo) else { return nil }
+        return (la, lo)
+    }
+
+    /// Predicted tilt depression (deg, negative = down) at a given range for the entered
+    /// base height — shown live so an implausible height is caught as the operator types.
+    func predictedDepressionDeg(atMeters d: Double) -> Double {
+        GeoMath.elevationDeg(baseAltM: baseHeightM, distanceM: d)
+    }
+
     var lookAtDistanceM: Double? {
         guard let bla = baseLat, let blo = baseLon, let lla = lookAtLat, let llo = lookAtLon else { return nil }
         return GeoMath.haversineMeters(fromLat: bla, fromLon: blo, toLat: lla, toLon: llo)

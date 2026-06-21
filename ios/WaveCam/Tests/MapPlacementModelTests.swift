@@ -40,4 +40,22 @@ final class MapPlacementModelTests: XCTestCase {
         m.lookAtLat = 21.6461                               // far enough
         XCTAssertTrue(m.canConfirmHeading)
     }
+    func testParsedManualCoordRejectsGarbageAndRange() {
+        let m = MapPlacementModel()
+        m.manualLatText = "abc"; m.manualLonText = "-158.05"
+        XCTAssertNil(m.parsedManualCoord)
+        m.manualLatText = "200"                              // out of range
+        XCTAssertNil(m.parsedManualCoord)
+        m.manualLatText = " 21.680843 "                      // trimmed + valid
+        XCTAssertEqual(m.parsedManualCoord?.lat ?? 0, 21.680843, accuracy: 1e-6)
+        XCTAssertEqual(m.parsedManualCoord?.lon ?? 0, -158.05, accuracy: 1e-6)
+    }
+    func testPredictedDepressionDeepensWithHeight() {
+        let m = MapPlacementModel()
+        m.baseHeightM = 2
+        XCTAssertLessThan(m.predictedDepressionDeg(atMeters: 100), 0)   // looks down
+        let shallow = m.predictedDepressionDeg(atMeters: 100)
+        m.baseHeightM = 13
+        XCTAssertLessThan(m.predictedDepressionDeg(atMeters: 100), shallow)  // steeper down
+    }
 }
