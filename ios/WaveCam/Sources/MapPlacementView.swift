@@ -18,6 +18,8 @@ struct MapPlacementView: View {
     var body: some View {
         VStack(spacing: 12) {
             if purpose != .base {
+                manualHeadingSection
+                Text("…or set heading on the map:").font(.caption2).foregroundStyle(.secondary)
                 Picker("", selection: $model.mode) {
                     Text("Look-at").tag(MapPlacementModel.Mode.headingLookAt)
                     Text("Arrow").tag(MapPlacementModel.Mode.headingArrow)
@@ -59,15 +61,49 @@ struct MapPlacementView: View {
         }
     }
 
+    /// Manual heading entry — the primary path (operator reads a bearing off a phone
+    /// compass / nav device); the map look-at/arrow below are alternatives.
+    @ViewBuilder private var manualHeadingSection: some View {
+        HStack {
+            Text("Heading °").font(.footnote)
+            TextField("deg", value: $model.manualHeadingDeg, format: .number)
+                .textFieldStyle(.roundedBorder).frame(width: 90).keyboardType(.numbersAndPunctuation)
+            Button("Set") {
+                if let h = model.manualHeadingDeg {
+                    Task { await confirm { await client.calibrateHeadingLockAccept(bearingDeg: h, distanceM: nil) } }
+                }
+            }.disabled(model.manualHeadingDeg == nil || busy)
+        }
+        Text("Type the bearing from your compass / nav device.")
+            .font(.caption2).foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder private var baseHeightSection: some View {
+        HStack {
+            TextField("Lat", text: $model.manualLatText).keyboardType(.numbersAndPunctuation)
+            TextField("Lon", text: $model.manualLonText).keyboardType(.numbersAndPunctuation)
+        }.textFieldStyle(.roundedBorder).font(.footnote)
+        HStack {
+            Text("Base height (m)").font(.footnote)
+            TextField("m", value: $model.baseHeightM, format: .number)
+                .textFieldStyle(.roundedBorder).frame(width: 70).keyboardType(.numbersAndPunctuation)
+            Text(String(format: "≈%.0f° down @100 m", -model.predictedDepressionDeg(atMeters: 100)))
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
     @ViewBuilder private var controls: some View {
         switch model.mode {
         case .base:
-            Text("Center the crosshair on the real tripod spot.")
+            Text("Center the crosshair on the real tripod spot, or type coordinates.")
                 .font(.caption).foregroundStyle(.secondary)
+            baseHeightSection
             Button {
-                Task { await confirm { await client.calibrateLocationManual(lat: model.baseLat ?? initialLat,
-                                                                            lon: model.baseLon ?? initialLon,
-                                                                            errorRadiusM: model.lastErrorRadiusM) } }
+                let coord = model.parsedManualCoord
+                Task { await confirm { await client.calibrateLocationManual(
+                    lat: coord?.lat ?? model.baseLat ?? initialLat,
+                    lon: coord?.lon ?? model.baseLon ?? initialLon,
+                    errorRadiusM: model.lastErrorRadiusM, altM: model.baseHeightM) } }
             } label: { Text("Use this location (±\(Int(model.lastErrorRadiusM)) m)") }
                 .disabled(!model.canConfirmLocation || busy)
 

@@ -3,47 +3,42 @@ import Observation
 
 /// State + gating for the Calibration v2 offset-aim step. Its OWN model (not a branch in
 /// MapPlacementModel — keeps that one scoped to placement+heading). Pure (no MapKit) so the
-/// fix-quality / LoRa-freshness gating and the offset interpretation are unit-testable.
+/// fix-quality gating and the offset interpretation are unit-testable. Inputs come from
+/// `status.gps` (distance/bearing/sats/age/stale); the raw tracker lat/lon isn't in status,
+/// so the tracker pin is derived via GeoMath.destination, and the offset itself uses the
+/// backend's own live fix (the handler falls back to it when no coords are sent).
 @Observable
 final class OffsetCalibrateModel {
     enum OffsetBand { case small, moderate, large }
 
-    // Quality thresholds for accepting a capture (review FU-2).
     static let minSats = 6
-    static let maxHdop = 2.0
-    static let maxFixAgeSec = 3.0
-    static let maxLoraAgeSec = 5.0
+    static let minDistanceM = 30.0      // want ~50-100 m; warn below 30
 
     var baseLat: Double?
     var baseLon: Double?
     var baseHeightM: Double = 2.0
-    var trackerLat: Double?
-    var trackerLon: Double?
 
-    // Live tracker fix quality + LoRa link freshness (fed from status).
-    var sats: Int?
-    var hdop: Double?
-    var fixAgeSec: Double?
-    var loraAgeSec: Double?      // nil => no packets from the remote at all
+    // From status.gps:
+    var targetSats: Int?
+    var targetAgeSec: Double?           // nil => no fix/packets from the remote yet
+    var stale: Bool?                    // backend's authoritative staleness flag
+    var distanceM: Double?              // base -> tracker
+    var bearingDeg: Double?             // base -> tracker
 
-    var distanceM: Double? {
-        guard let bla = baseLat, let blo = baseLon, let tla = trackerLat, let tlo = trackerLon else { return nil }
-        return GeoMath.haversineMeters(fromLat: bla, fromLon: blo, toLat: tla, toLon: tlo)
-    }
-    var bearingDeg: Double? {
-        guard let bla = baseLat, let blo = baseLon, let tla = trackerLat, let tlo = trackerLon else { return nil }
-        return GeoMath.bearingDeg(fromLat: bla, fromLon: blo, toLat: tla, toLon: tlo)
+    /// Tracker position for the dual-pin map, derived from base + status distance/bearing
+    /// (status has no raw tracker coords).
+    var trackerCoord: (lat: Double, lon: Double)? {
+        guard let bla = baseLat, let blo = baseLon, let d = distanceM, let b = bearingDeg else { return nil }
+        return GeoMath.destination(fromLat: bla, fromLon: blo, bearingDeg: b, distanceM: d)
     }
 
-    /// Blocking reason, or nil when a capture is safe. Precedence distinguishes the three
-    /// failure modes (FU-4) because their recovery differs: link down vs stale vs no GPS.
+    /// Blocking reason, or nil when a capture is safe. Distinguishes failure modes (FU-4)
+    /// because their recovery differs: no fix vs stale vs weak vs too-close.
     var gateMessage: String? {
-        if loraAgeSec == nil { return "No packets from the tracker — check the LoRa link." }
-        if (loraAgeSec ?? 0) > Self.maxLoraAgeSec { return "Tracker fix is stale — wait for a fresh packet." }
-        if trackerLat == nil || trackerLon == nil { return "Waiting for a GPS fix from the tracker…" }
-        if (sats ?? 0) < Self.minSats || (hdop ?? 99) > Self.maxHdop || (fixAgeSec ?? 99) > Self.maxFixAgeSec {
-            return "Weak fix (check sats / HDOP) — wait for a better lock."
-        }
+        if targetAgeSec == nil && distanceM == nil { return "No fix from the tracker yet — give it open sky." }
+        if stale == true { return "Tracker fix is stale — wait for a fresh packet." }
+        if (targetSats ?? 0) < Self.minSats { return "Weak fix (few satellites) — wait for a better lock." }
+        if (distanceM ?? 0) < Self.minDistanceM { return "Move the tracker farther out (≈50–100 m) for a clean offset." }
         return nil
     }
 

@@ -41,4 +41,11 @@ final class CalibrationRequestTests: XCTestCase {
                                                   step3BearingDeg: nil, source: "ios_native")
         XCTAssertNil(b["step3_bearing_deg"])
     }
+    func testOffsetBodyOmitsCoordsForLiveFix() {
+        let b = WaveCamClient.offsetCalibrateBody(targetLat: nil, targetLon: nil,
+                                                  step3BearingDeg: 180, source: "ios_native")
+        XCTAssertNil(b["target_lat"])           // backend uses its own live fix
+        XCTAssertNil(b["target_lon"])
+        XCTAssertEqual(b["operator_accepted"] as? Bool, true)
+    }
 }

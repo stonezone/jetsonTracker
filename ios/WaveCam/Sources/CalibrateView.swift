@@ -24,6 +24,7 @@ struct CalibrateView: View {
     @State private var refusalMessage: String? = nil
     @State private var showingMap = false
     @State private var mapPurpose: MapPlacementModel.Mode = .base
+    @State private var showingOffset = false
 
     // Heading capture sub-state
     @State private var headingPreviewPending = false   // preview shown, awaiting tap-accept
@@ -74,6 +75,14 @@ struct CalibrateView: View {
             } else {
                 Text("No base GPS fix yet to center the map — use the GPS flow above, or wait for a base fix.")
                     .font(WCFont.body).foregroundStyle(WC.muted).padding()
+            }
+        }
+        .sheet(isPresented: $showingOffset) {
+            OffsetCalibrateView(client: client,
+                                step3BearingDeg: sessionState?.session?.headingLock?.bearingDeg
+                                    ?? sessionState?.referenceHeading) { state in
+                if let state { sessionState = state }
+                showingOffset = false
             }
         }
     }
@@ -128,6 +137,15 @@ struct CalibrateView: View {
             )
         case .done:
             DoneCard(sessionState: sessionState, onExit: exitCalibration, isInFlight: isInFlight)
+        }
+
+        if sessionState?.session?.headingLock != nil && (wizardStep == .heading || wizardStep == .validation) {
+            Button { showingOffset = true } label: {
+                Label("Refine: aim camera at tracker (offset)", systemImage: "scope")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(isInFlight)
         }
 
         if wizardStep != .idle {

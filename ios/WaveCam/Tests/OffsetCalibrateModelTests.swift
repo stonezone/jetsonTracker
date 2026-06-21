@@ -5,29 +5,27 @@ final class OffsetCalibrateModelTests: XCTestCase {
     private func goodFix() -> OffsetCalibrateModel {
         let m = OffsetCalibrateModel()
         m.baseLat = 21.6; m.baseLon = -158.0
-        m.trackerLat = 21.6007; m.trackerLon = -158.0
-        m.sats = 9; m.hdop = 1.2; m.fixAgeSec = 1; m.loraAgeSec = 1
+        m.targetSats = 9; m.targetAgeSec = 1; m.stale = false
+        m.distanceM = 80; m.bearingDeg = 0
         return m
     }
 
-    func testCanCaptureNeedsQualityFix() {
+    func testCanCaptureNeedsQualityAndDistance() {
         let m = goodFix()
         XCTAssertTrue(m.canCapture)
-        m.hdop = 8.0
-        XCTAssertFalse(m.canCapture)          // HDOP too high
-        m.hdop = 1.2; m.sats = 3
+        m.targetSats = 3
         XCTAssertFalse(m.canCapture)          // too few sats
+        m.targetSats = 9; m.distanceM = 10
+        XCTAssertFalse(m.canCapture)          // too close
     }
 
     func testGateMessageDistinguishesFailureModes() {
         let m = goodFix()
         XCTAssertNil(m.gateMessage)
-        m.loraAgeSec = nil
-        XCTAssertEqual(m.gateMessage, "No packets from the tracker — check the LoRa link.")
-        m.loraAgeSec = 30
+        m.stale = true
         XCTAssertEqual(m.gateMessage, "Tracker fix is stale — wait for a fresh packet.")
-        m.loraAgeSec = 1; m.trackerLat = nil
-        XCTAssertEqual(m.gateMessage, "Waiting for a GPS fix from the tracker…")
+        let blank = OffsetCalibrateModel()
+        XCTAssertEqual(blank.gateMessage, "No fix from the tracker yet — give it open sky.")
     }
 
     func testOffsetBands() {
@@ -37,9 +35,10 @@ final class OffsetCalibrateModelTests: XCTestCase {
         XCTAssertEqual(m.offsetBand(-25), .large)
     }
 
-    func testDistanceAndBearing() {
-        let m = goodFix()
-        XCTAssertEqual(m.bearingDeg ?? -1, 0, accuracy: 0.5)     // tracker due north
-        XCTAssertEqual(m.distanceM ?? 0, 77.8, accuracy: 2.0)    // ~0.0007 deg lat
+    func testTrackerCoordFromBearingDistance() {
+        let m = goodFix()       // 80 m due north of the base
+        guard let t = m.trackerCoord else { return XCTFail("no tracker coord") }
+        XCTAssertEqual(GeoMath.bearingDeg(fromLat: 21.6, fromLon: -158.0, toLat: t.lat, toLon: t.lon), 0, accuracy: 0.5)
+        XCTAssertEqual(GeoMath.haversineMeters(fromLat: 21.6, fromLon: -158.0, toLat: t.lat, toLon: t.lon), 80, accuracy: 1.0)
     }
 }

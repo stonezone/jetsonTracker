@@ -32,4 +32,18 @@ enum GeoMath {
         guard distanceM > 1e-6 else { return 0 }
         return atan2(subjectAltM - baseAltM, distanceM) * 180 / .pi
     }
+
+    /// Forward geodesic: the point `distanceM` along `bearingDeg` from a start point.
+    /// Used to place the tracker pin from the base + the status distance/bearing (status
+    /// exposes those, not the raw tracker lat/lon).
+    static func destination(fromLat lat: Double, fromLon lon: Double,
+                            bearingDeg: Double, distanceM: Double) -> (lat: Double, lon: Double) {
+        let r = 6_371_000.0
+        let d = distanceM / r
+        let th = bearingDeg * .pi / 180
+        let p1 = lat * .pi / 180, l1 = lon * .pi / 180
+        let p2 = asin(sin(p1) * cos(d) + cos(p1) * sin(d) * cos(th))
+        let l2 = l1 + atan2(sin(th) * sin(d) * cos(p1), cos(d) - sin(p1) * sin(p2))
+        return (p2 * 180 / .pi, l2 * 180 / .pi)
+    }
 }

@@ -1463,12 +1463,12 @@ final class WaveCamClient {
     /// Request body for the offset-calibrate aim (Calibration v2). `step3BearingDeg` is the
     /// coarse heading so the backend can report how far off it was. pan/tilt encoders are
     /// captured server-side at request time (operator holds the tracker framed).
-    nonisolated static func offsetCalibrateBody(targetLat: Double, targetLon: Double,
+    nonisolated static func offsetCalibrateBody(targetLat: Double?, targetLon: Double?,
                                                 step3BearingDeg: Double?, source: String) -> [String: Any] {
-        var b: [String: Any] = ["operator_accepted": true,
-                                "target_lat": targetLat, "target_lon": targetLon, "source": source]
+        var b: [String: Any] = ["operator_accepted": true, "source": source]
+        if let la = targetLat, let lo = targetLon { b["target_lat"] = la; b["target_lon"] = lo }
         if let s = step3BearingDeg { b["step3_bearing_deg"] = s }
-        return b
+        return b   // omit coords => backend uses its own live tracker fix
     }
 
     /// Request body for look-at heading. `pan_enc` is intentionally OMITTED so the backend
@@ -1489,7 +1489,8 @@ final class WaveCamClient {
     }
 
     /// POST /api/v1/calibration/offset — single tracker aim re-anchors pan+tilt (Calibration v2).
-    func calibrateOffset(targetLat: Double, targetLon: Double, step3BearingDeg: Double?,
+    /// Omitting target coords lets the backend use its own live tracker fix.
+    func calibrateOffset(targetLat: Double? = nil, targetLon: Double? = nil, step3BearingDeg: Double?,
                          source: String = "ios_native") async
         -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
         guard mode == .live else { return .failure(.unavailable) }

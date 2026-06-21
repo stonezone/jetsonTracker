@@ -28,4 +28,10 @@ final class GeoMathTests: XCTestCase {
         XCTAssertLessThan(GeoMath.elevationDeg(baseAltM: 13.0, distanceM: 100.0),
                           GeoMath.elevationDeg(baseAltM: 2.0, distanceM: 100.0))
     }
+    func testDestinationRoundTripsWithBearingAndDistance() {
+        // 80 m due north of the base, then re-derive bearing+distance back to it.
+        let d = GeoMath.destination(fromLat: 21.6, fromLon: -158.0, bearingDeg: 0, distanceM: 80)
+        XCTAssertEqual(GeoMath.bearingDeg(fromLat: 21.6, fromLon: -158.0, toLat: d.lat, toLon: d.lon), 0, accuracy: 0.5)
+        XCTAssertEqual(GeoMath.haversineMeters(fromLat: 21.6, fromLon: -158.0, toLat: d.lat, toLon: d.lon), 80, accuracy: 0.5)
+    }
 }
