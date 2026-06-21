@@ -130,6 +130,7 @@ live tilt clamp: elev = min(elev, pointing.max_tilt_up_deg)  # default +5 deg, l
 2. **Step 4 is optional, labeled "coarse mode"** — skipping the tracker aim is allowed but produces a clearly-labeled coarse state with a warning + stated expected accuracy. The full aim is the calibrated path.
 
 ## Open risks
-- `alt_manual` flag vs guard for the no-clobber requirement — resolve in plan (touches `CameraPose` schema).
+- **PM-2 (deferred, low):** the live up-tilt clamp is asymmetric — a grossly-too-HIGH operator base altitude (e.g. a 200 m typo on a beach) dives the camera at the ground with no floor to catch it. Down-tilt is intentionally unclamped (legit for a balcony/dune). Mitigations already in scope: the Phase-3 iOS base-height field shows the predicted depression as you type, and the Phase-2 offset step warns when `|elev_cal|>30°`. A symmetric down-floor or a base-alt plausibility bound (e.g. −5…50 m) at `_commit_location` is a candidate follow-up if those prove insufficient in the field.
+- `alt_manual` flag vs guard for the no-clobber requirement — RESOLVED in Phase 1: runtime flag on `CameraPose` (not persisted); cleared only by a later non-manual `/location` commit or a restart.
 - Twist gesture vs map-pan (map rotation already disabled, so two-finger rotation is free) — verify on-device.
 - Saved-spots iOS-local lost on reinstall — acceptable for v2.

@@ -25,6 +25,7 @@ def test_compute_target_clamps_up_tilt():
     target = GeoPoint(lat=21.6009, lon=-158.0, alt_m=1.0)
     pt = compute_target(base, target, _tilt_pose(-50.0), lead_s=0.0, max_up_elev_deg=5.0)
     assert pt.tilt_enc <= 5.0 * 14.4 + 1e-6          # clamped at +5 deg
+    assert pt.clamped is True                        # flag set so the caller can log it
 
 
 def test_compute_target_down_tilt_unaffected_by_clamp():
@@ -32,6 +33,7 @@ def test_compute_target_down_tilt_unaffected_by_clamp():
     target = GeoPoint(lat=21.6009, lon=-158.0, alt_m=1.0)   # below camera => down tilt
     pt = compute_target(base, target, _tilt_pose(10.0), lead_s=0.0, max_up_elev_deg=5.0)
     assert pt.tilt_enc < 0.0                         # unaffected, still looking down
+    assert pt.clamped is False
 
 
 def test_zoom_curve_edges_and_clamp():

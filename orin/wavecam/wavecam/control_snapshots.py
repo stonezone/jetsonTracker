@@ -75,6 +75,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "base_drift_enabled": getattr(getattr(cfg, "gps", None), "base_drift_enabled", True),
                 "max_pan_speed": getattr(getattr(cfg, "gps", None), "max_pan_speed", 4),
                 "max_tilt_speed": getattr(getattr(cfg, "gps", None), "max_tilt_speed", 3),
+                "max_tilt_up_deg": getattr(getattr(cfg, "gps", None), "max_tilt_up_deg", 5.0),
             },
             "tracking": {
                 "mode": getattr(getattr(cfg, "tracking", None), "mode", "auto"),

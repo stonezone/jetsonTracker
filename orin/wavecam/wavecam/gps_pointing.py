@@ -34,6 +34,7 @@ class PointingTarget:
     pan_enc: float
     tilt_enc: float
     zoom_enc: Optional[float] = None   # None when zoom is not driven
+    clamped: bool = False              # True when the up-tilt clamp engaged (mis-surveyed base?)
 
 
 def distance_to_zoom_encoder(distance_m: float, curve: ZoomCurve) -> float:
@@ -55,16 +56,18 @@ def compute_target(base: GeoPoint, target: GeoPoint, pose: CameraPose,
 
     ``max_up_elev_deg`` clamps the commanded elevation: the surf subject is at sea level,
     so any large up-tilt is almost always a bad base altitude or GPS glitch (the "points
-    at the sky/ski" failure). Returns the clamp flag so callers can log when it engages.
+    at the sky/ski" failure). The returned ``PointingTarget.clamped`` is True when the
+    clamp engaged so callers can log a persistently-clamped aim (= mis-surveyed base).
     """
     lead = predict_lead(target, lead_s)
     bearing = bearing_deg(base.lat, base.lon, lead.lat, lead.lon)
     dist = haversine_m(base.lat, base.lon, lead.lat, lead.lon)
     pan_enc = pose.bearing_to_pan_encoder(bearing)
     elev = elevation_deg(base, lead, dist)
-    if elev > max_up_elev_deg:
+    clamped = elev > max_up_elev_deg
+    if clamped:
         elev = max_up_elev_deg
     tilt_enc = pose.elevation_to_tilt_encoder(elev)
     zoom_enc = distance_to_zoom_encoder(dist, zoom) if zoom is not None else None
-    return PointingTarget(bearing_deg=bearing, distance_m=dist,
-                          pan_enc=pan_enc, tilt_enc=tilt_enc, zoom_enc=zoom_enc)
+    return PointingTarget(bearing_deg=bearing, distance_m=dist, pan_enc=pan_enc,
+                          tilt_enc=tilt_enc, zoom_enc=zoom_enc, clamped=clamped)

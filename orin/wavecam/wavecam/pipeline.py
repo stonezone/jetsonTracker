@@ -562,6 +562,11 @@ class Pipeline(threading.Thread):
         max_up = float(getattr(gps_cfg, "max_tilt_up_deg", 5.0))
         pt = compute_target(base, target, self.pose, lead_s=0.65, zoom=zoom_curve,
                             max_up_elev_deg=max_up)
+        # Log only on transition so a persistently-clamped aim (likely a mis-surveyed base
+        # altitude) is visible without spamming every frame.
+        if pt.clamped and not getattr(self, "_tilt_clamped", False):
+            print(f"[pipeline] up-tilt clamp engaged at +{max_up:.1f} deg — check base height")
+        self._tilt_clamped = pt.clamped
         return PtzAbsoluteCommand(
             pan_enc=int(pt.pan_enc), tilt_enc=int(pt.tilt_enc),
             zoom_enc=int(pt.zoom_enc) if pt.zoom_enc is not None else None,

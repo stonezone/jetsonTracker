@@ -883,7 +883,10 @@ class CalibrationManager:
                         self.pipeline.pose.lat = base[0]
                         self.pipeline.pose.lon = base[1]
                         # Don't clobber an operator-surveyed (map_manual) altitude with the
-                        # noisy GPS fix (Calibration v2 no-clobber guard).
+                        # noisy GPS fix (Calibration v2 no-clobber guard). alt_manual is
+                        # cleared only by a later non-manual /location commit or a restart,
+                        # so to re-enable a GPS altitude mid-session, re-lock with an
+                        # averaged/live method (not this base_lock step).
                         if not getattr(self.pipeline.pose, "alt_manual", False):
                             self.pipeline.pose.alt_m = base[2]
             elif step == "tilt":
