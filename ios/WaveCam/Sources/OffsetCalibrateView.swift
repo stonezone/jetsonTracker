@@ -9,10 +9,13 @@ struct OffsetCalibrateView: View {
     @State private var model = OffsetCalibrateModel()
     let client: WaveCamClient
     let step3BearingDeg: Double?
+    /// Operator-entered base height from the location step (NOT the live GPS alt) — audit CV2-01.
+    let baseHeightM: Double
     let onDone: (WCCalibrationSessionState?) -> Void
     @State private var busy = false
     @State private var message: String?
     @State private var capturedOffset: Double?
+    @State private var killed = false
 
     /// Offset the capture will set = (base→tracker bearing) − the coarse step-3 heading.
     /// base→tracker bearing == status.gps.bearingDeg, so it previews before capture.
@@ -28,21 +31,32 @@ struct OffsetCalibrateView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Walk the tracker 50–100 m out with a stable fix, then return to base and frame it dead-center.")
-                .font(.caption).foregroundStyle(.secondary)
+        ScrollView {   // audit IOS-A3/PORT-1: scroll so landscape + keyboard don't clip controls
+            VStack(spacing: 12) {
+                // KILL stays reachable while this sheet covers the root chip (audit KILL-1).
+                EmergencyStopButton(style: .compact)
+                if killed {
+                    Label("KILL latched — Resume in the main view before capturing",
+                          systemImage: "exclamationmark.octagon.fill")
+                        .font(.footnote).foregroundStyle(WC.kill)
+                }
+                Text("Walk the tracker 50–100 m out with a stable fix, then return to base and frame it dead-center.")
+                    .font(.caption).foregroundStyle(.secondary)
 
-            qualityPanel
-            map.frame(minHeight: 220)
+                qualityPanel
+                map.frame(minHeight: 220)
 
-            if let o = capturedOffset ?? previewOffset {
-                offsetReadout(o)
+                if let o = capturedOffset ?? previewOffset {
+                    offsetReadout(o)
+                }
+
+                captureControls
+                if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
             }
-
-            captureControls
-            if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
+            .padding()
         }
-        .padding()
+        .environment(client)   // EmergencyStopButton resolves the client from the environment
+        .onAppear { model.baseHeightM = baseHeightM }
         .task { await pollStatus() }
     }
 
@@ -104,7 +118,7 @@ struct OffsetCalibrateView: View {
             }
         } label: { Text("Capture — re-anchor pan+tilt").frame(maxWidth: .infinity) }
             .buttonStyle(.borderedProminent)
-            .disabled(!model.canCapture || busy)
+            .disabled(!model.canCapture || busy || killed)
 
         Button("Skip — coarse mode (heading uncalibrated)") { onDone(nil) }
             .font(.footnote).foregroundStyle(.orange).disabled(busy)
@@ -121,11 +135,13 @@ struct OffsetCalibrateView: View {
         let s = client.status
         model.baseLat = s?.sensors?.base?.lat
         model.baseLon = s?.sensors?.base?.lon
-        if let h = s?.sensors?.base?.altM { model.baseHeightM = h }
+        // baseHeightM is the operator-entered value (set in onAppear), NOT the live GPS alt —
+        // the live base alt is the noisy value Calibration v2 exists to bypass (audit CV2-01).
         model.targetSats = s?.gps?.targetSats
         model.targetAgeSec = s?.gps?.targetAgeSec
         model.stale = s?.gps?.stale
         model.distanceM = s?.gps?.distanceM
         model.bearingDeg = s?.gps?.bearingDeg
+        killed = (s?.safety.killed == true)
     }
 }

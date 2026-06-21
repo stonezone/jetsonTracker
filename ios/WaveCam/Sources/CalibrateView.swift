@@ -25,6 +25,10 @@ struct CalibrateView: View {
     @State private var showingMap = false
     @State private var mapPurpose: MapPlacementModel.Mode = .base
     @State private var showingOffset = false
+    // Starting center for manual base placement when there's no live base fix (audit IOS-A1) —
+    // just the initial map center; the operator pans to the real tripod spot.
+    private static let fallbackMapLat = 21.6808
+    private static let fallbackMapLon = -158.0364
 
     // Heading capture sub-state
     @State private var headingPreviewPending = false   // preview shown, awaiting tap-accept
@@ -67,20 +71,30 @@ struct CalibrateView: View {
             await probeSessionEndpoint()
         }
         .sheet(isPresented: $showingMap) {
-            if let bla = client.status?.sensors?.base?.lat, let blo = client.status?.sensors?.base?.lon {
-                MapPlacementView(client: client, initialLat: bla, initialLon: blo, purpose: mapPurpose) { state in
+            let liveLat = client.status?.sensors?.base?.lat
+            let liveLon = client.status?.sensors?.base?.lon
+            // Base placement must work WITHOUT a base GPS fix — that's the whole point of
+            // placing it manually on the map (audit IOS-A1). Start at the live base if we
+            // have one, else a sensible center the operator pans from. Heading purposes
+            // still need the locked base to center on.
+            if mapPurpose == .base || (liveLat != nil && liveLon != nil) {
+                MapPlacementView(client: client,
+                                 initialLat: liveLat ?? Self.fallbackMapLat,
+                                 initialLon: liveLon ?? Self.fallbackMapLon,
+                                 purpose: mapPurpose) { state in
                     if let state { sessionState = state }
                     showingMap = false
                 }
             } else {
-                Text("No base GPS fix yet to center the map — use the GPS flow above, or wait for a base fix.")
+                Text("Lock the base location first so the heading map can center on it.")
                     .font(WCFont.body).foregroundStyle(WC.muted).padding()
             }
         }
         .sheet(isPresented: $showingOffset) {
             OffsetCalibrateView(client: client,
                                 step3BearingDeg: sessionState?.session?.headingLock?.bearingDeg
-                                    ?? sessionState?.referenceHeading) { state in
+                                    ?? sessionState?.referenceHeading,
+                                baseHeightM: sessionState?.session?.location?.altM ?? 2.0) { state in
                 if let state { sessionState = state }
                 showingOffset = false
             }

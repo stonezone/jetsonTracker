@@ -17,6 +17,8 @@ struct MapPlacementView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            // KILL stays reachable while this sheet covers the root chip (audit KILL-1).
+            EmergencyStopButton(style: .compact)
             if purpose != .base {
                 manualHeadingSection
                 Text("…or set heading on the map:").font(.caption2).foregroundStyle(.secondary)
@@ -37,6 +39,7 @@ struct MapPlacementView: View {
             if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
         }
         .padding()
+        .environment(client)   // EmergencyStopButton resolves the client from the environment
         .onAppear {
             model.mode = purpose
             // Capture the initial center immediately so confirm isn't gated on a first
