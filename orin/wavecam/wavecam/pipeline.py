@@ -559,7 +559,9 @@ class Pipeline(threading.Thread):
             max_enc=float(getattr(gps_cfg, "drive_zoom_max_enc", 16384.0)),
             max_frac=float(getattr(gps_cfg, "drive_zoom_max_frac", 0.6)),
         ) if drive_zoom else None
-        pt = compute_target(base, target, self.pose, lead_s=0.65, zoom=zoom_curve)
+        max_up = float(getattr(gps_cfg, "max_tilt_up_deg", 5.0))
+        pt = compute_target(base, target, self.pose, lead_s=0.65, zoom=zoom_curve,
+                            max_up_elev_deg=max_up)
         return PtzAbsoluteCommand(
             pan_enc=int(pt.pan_enc), tilt_enc=int(pt.tilt_enc),
             zoom_enc=int(pt.zoom_enc) if pt.zoom_enc is not None else None,

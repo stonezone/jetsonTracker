@@ -9,6 +9,31 @@ from wavecam.gps_pointing import ZoomCurve, compute_target, distance_to_zoom_enc
 CURVE = ZoomCurve(near_m=40.0, far_m=250.0, max_enc=16384.0, max_frac=0.85)
 
 
+def _tilt_pose(base_alt: float):
+    from wavecam.camera_pose import PRISUAL_TILT_ENC_PER_DEG
+    p = CameraPose(lat=21.6, lon=-158.0, alt_m=base_alt)
+    p.calibrate_pan_aim(enc=0.0, bearing_deg=0.0, enc_per_deg=14.4)
+    p.tilt_anchor_enc = 0.0
+    p.tilt_anchor_elev = 0.0
+    p.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
+    return p
+
+
+def test_compute_target_clamps_up_tilt():
+    # subject (1 m) far ABOVE a sunken base (-50 m) => large +elev that must clamp to +5 deg
+    base = GeoPoint(lat=21.6, lon=-158.0, alt_m=-50.0)
+    target = GeoPoint(lat=21.6009, lon=-158.0, alt_m=1.0)
+    pt = compute_target(base, target, _tilt_pose(-50.0), lead_s=0.0, max_up_elev_deg=5.0)
+    assert pt.tilt_enc <= 5.0 * 14.4 + 1e-6          # clamped at +5 deg
+
+
+def test_compute_target_down_tilt_unaffected_by_clamp():
+    base = GeoPoint(lat=21.6, lon=-158.0, alt_m=10.0)
+    target = GeoPoint(lat=21.6009, lon=-158.0, alt_m=1.0)   # below camera => down tilt
+    pt = compute_target(base, target, _tilt_pose(10.0), lead_s=0.0, max_up_elev_deg=5.0)
+    assert pt.tilt_enc < 0.0                         # unaffected, still looking down
+
+
 def test_zoom_curve_edges_and_clamp():
     assert distance_to_zoom_encoder(40.0, CURVE) == 0.0                  # near -> wide
     assert abs(distance_to_zoom_encoder(250.0, CURVE) - 0.85 * 16384) < 1e-6   # far -> tele cap
