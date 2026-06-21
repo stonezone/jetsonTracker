@@ -128,7 +128,10 @@ class CameraPose:
     def elevation_to_tilt_encoder(self, elev_deg: float) -> float:
         if self.tilt_enc_per_deg == 0.0:
             return self.tilt_anchor_enc  # uncalibrated => hold a fixed tilt
-        return self.tilt_anchor_enc + (elev_deg - self.tilt_anchor_elev) * self.tilt_enc_per_deg
+        enc = self.tilt_anchor_enc + (elev_deg - self.tilt_anchor_elev) * self.tilt_enc_per_deg
+        # Clamp to the measured mechanical tilt range so a bad base height / GPS-alt glitch
+        # can't drive the camera past the hard stops and hunt (audit TILT-DOWN-NO-CLAMP).
+        return max(float(PRISUAL_TILT_ENC_MIN), min(float(PRISUAL_TILT_ENC_MAX), enc))
 
     # --- persistence ---
     def save(self, path: str) -> None:

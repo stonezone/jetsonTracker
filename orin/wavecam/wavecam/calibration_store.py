@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Optional
@@ -38,6 +39,13 @@ class CalibrationStore:
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(doc, f, indent=2)
+        # Roll the previous good pose to a .bak before overwriting, so a botched field
+        # calibration (e.g. a wrong offset aim) is recoverable without SSH (audit C1).
+        try:
+            if os.path.exists(self.path):
+                shutil.copy2(self.path, self.path + ".bak")
+        except Exception as e:  # backup is best-effort; never block the save
+            print(f"[calibration_store] pose backup failed (non-fatal): {e}")
         os.replace(tmp, self.path)
 
     @classmethod

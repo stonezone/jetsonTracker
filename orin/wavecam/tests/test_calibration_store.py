@@ -12,6 +12,20 @@ sys.path.insert(0, os.path.dirname(__file__))
 from wavecam.calibration_store import CalibrationStore
 
 
+def test_save_rolls_previous_pose_to_bak(tmp_path):
+    # audit C1: a botched calibration must be recoverable — save() keeps the last-good .bak.
+    import json
+    p = str(tmp_path / "calibration.json")
+    s = CalibrationStore.load(p)
+    s.pose.calibrate_pan_aim(enc=100.0, bearing_deg=200.0, enc_per_deg=14.4)
+    s.set_step("heading", {"heading_deg": 200.0}); s.save()      # first good pose
+    s.pose.calibrate_pan_aim(enc=500.0, bearing_deg=10.0, enc_per_deg=14.4)
+    s.set_step("heading", {"heading_deg": 10.0}); s.save()       # overwrite with a 2nd pose
+    bak = json.load(open(p + ".bak"))
+    assert bak["reference_heading"] == 200.0                     # .bak holds the PREVIOUS pose
+    assert json.load(open(p))["reference_heading"] == 10.0       # live file is the new pose
+
+
 def test_reference_heading_survives_restart(tmp_path):
     p = str(tmp_path / "calibration.json")
     s = CalibrationStore.load(p)

@@ -110,3 +110,6 @@ def test_tilt_capture_constants_are_the_measured_truth():
     p.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
     assert abs(p.elevation_to_tilt_encoder(-30.0) - PRISUAL_TILT_ENC_MIN) < 1e-6
     assert abs(p.elevation_to_tilt_encoder(90.0) - PRISUAL_TILT_ENC_MAX) < 1e-6
+    # Beyond the mechanical stops, clamp (don't drive past the hard stop) — audit TILT-DOWN.
+    assert p.elevation_to_tilt_encoder(-60.0) == PRISUAL_TILT_ENC_MIN   # below down stop
+    assert p.elevation_to_tilt_encoder(120.0) == PRISUAL_TILT_ENC_MAX   # above up stop

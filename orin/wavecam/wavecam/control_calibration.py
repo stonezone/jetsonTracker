@@ -726,6 +726,12 @@ class CalibrationManager:
                 "Offset captured in memory but failed to write to disk.",
                 503,
             )
+        # Audit trail (C2): one structured line per offset so a confidently-wrong field
+        # calibration leaves a trace without needing live debugging.
+        print(f"[calibrate] offset_calibrate bearing={bearing:.2f} dist_m={distance_m:.1f} "
+              f"elev_cal={elev_cal:.2f} offset_deg={offset} base_h={base_h} "
+              f"warn={base_height_warning} pan_enc={pan_enc} tilt_enc={tilt_enc} "
+              f"src={_field(req, 'source', None)}")
         # Return the standard session-state response (so the iOS wizard advances + the
         # session-state decoder is happy) PLUS the offset summary as sibling fields.
         return JSONResponse({
