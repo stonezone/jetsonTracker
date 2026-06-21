@@ -67,3 +67,16 @@ targets:
       properties:
         com.apple.developer.healthkit: YES
         com.apple.developer.healthkit.access: []
+
+  WaveCamTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: WaveCam
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.stonezone.WaveCamTests
+        TARGETED_DEVICE_FAMILY: "1"
