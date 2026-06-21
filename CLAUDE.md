@@ -24,6 +24,15 @@ Claude OS is the durable cross-session memory for this project: the **code-forge
 
 Slash commands (`/claude-os-search`, `-remember`, `-save`, `-session`) auto-appear in the session skill list. Agent-OS (spec workflow: `/create-spec`, `/implement-spec`) is a separate, optional system.
 
+## Open work — `docs/TODOs/` (REVIEW AT SESSION START)
+
+**`docs/TODOs/` is the live to-do list of planned-but-unfinished work.** At the start of every session, **read the files in `docs/TODOs/`** to see what's outstanding before picking up new work. The rules (full version in `docs/TODOs/README.md`):
+
+- **Anything that needs doing gets a plan file here** — copy `docs/TODOs/_TEMPLATE.md` to `YYYY-MM-DD-short-slug.md`. This applies to fixes, refactors, follow-ups, investigations: if it's deferred, it's a plan in this folder.
+- **Every plan carries a `Created:` date and a `Status:` line**, and keeps a **running, dated worklog** (newest first) updated as the work proceeds — so any agent or Zack can resume it cold.
+- **When the work is complete and verified, DELETE the plan file.** The folder should only ever show *open* work; record any lasting lesson in a `.claude` memory or commit message before removing. (Backend/rig plans still need Zack assignment + a bus claim before execution — writing the plan is fine anytime.)
+- Specs live in `docs/superpowers/specs/`, point-in-time reviews in `docs/reviews/`, durable facts in `.claude` memory. `docs/TODOs/` is *only* the active plan list.
+
 ## Project-Specific Information
 
 ### Repository Structure
@@ -56,8 +65,8 @@ jetsonTracker/                 # master repo (product = WaveCam)
 
 ### Development Workflow
 
-- **Backend** (`orin/wavecam/`) is **Codex's primary lane**; **iOS** (`ios/WaveCam/`) is **Claude's lane**. **Claude may edit backend code when Zack assigns it** — claim the scope on the bus first to avoid colliding with Codex/DeepSeek.
-- **Deploy to the Orin** (rsync + restart `wavecam.service`): Codex/Zack, or **Claude when authorized** — the deployer **must claim the scope on the bus first** to avoid collisions. (KILL-reachable + supervise-only safety invariants always hold.)
+- **Claude is PRIMARY on both lanes** — backend (`orin/wavecam/`) and iOS (`ios/WaveCam/`). No per-task Zack assignment is required to edit backend code (standing grant 2026-06-21, supersedes the old Codex-lane gate; see `.claude` memory `backend-authority-grant`). Codex/other agents are optional reviewers. The bus is for **collision-avoidance only** (claim a scope *when another agent is actively working it*), not a permission gate.
+- **Deploy to the Orin** (rsync + restart `wavecam.service`): Claude is authorized standing. Always deploy via `deploy.sh` (stamps `/version`). The bus claim is collision-avoidance, not a gate. (KILL-reachable + supervise-only safety invariants ALWAYS hold — these are non-negotiable rails, not lane conventions.)
 - iOS build/install: `ios/WaveCam/build-device.sh` (git-stamped build numbers). Full recipe: see `.claude` memory `ios-app-build`.
 - SSH to the rig: `ssh orin` (zack@192.168.1.155).
 - "committed" != "deployed" — confirm the live deploy before telling Zack a feature is live.
@@ -152,7 +161,7 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - Don't create features without searching memories for existing patterns
 - Don't end a session without saving key learnings
 - Don't let the agent move the camera without the **operator ARM gate** + a reachable KILL; KILL stays human-only (never an agent tool)
-- Don't edit backend code or deploy to the Orin without Zack's assignment + a bus claim first (Codex's primary lane); don't `git push` to remote
+- Don't `git push` to `main`/`master` on your own initiative (hook + org policy block it); a feature-branch push needs an in-turn user request. Backend edits + `deploy.sh` deploys no longer need a per-task assignment (Claude is primary) — but never bypass `deploy.sh`, the KILL/supervise-only rails, or the explicit-staging rule.
 
 ## Gotchas (hard-won — 2026-06-05, expanded 2026-06-12)
 
