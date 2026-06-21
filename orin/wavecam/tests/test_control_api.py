@@ -951,9 +951,19 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert heading_state["confidence"] > 0.0
     assert abs(pipe.pose.bearing_to_pan_encoder(91.0) - 1014.4) < 0.01
 
-    validation = client.post(
+    # Re-sighting the SAME landmark (1° away) is refused — validating against the lock
+    # target passes trivially (M4 Part C independence gate).
+    near = client.post(
         "/api/v1/calibration/validation",
         json={"bearing_deg": 91.0, "distance_m": 250.0, "pan_enc": 1014.4},
+    )
+    assert near.status_code == 422
+    assert near.json()["code"] == "validation_target_not_independent"
+
+    # A genuinely independent landmark (15° away) validates.
+    validation = client.post(
+        "/api/v1/calibration/validation",
+        json={"bearing_deg": 105.0, "distance_m": 250.0, "pan_enc": 1216.0},
     )
     assert validation.status_code == 200
     assert validation.json()["calibration"]["session"]["validation"]["miss_deg"] == 0.0
@@ -1024,8 +1034,9 @@ def test_calibration_wizard_persists_to_disk_survives_restart():
     client.post("/api/v1/calibration/heading-lock", json={
         "method": "landmark", "operator_accepted": True, "bearing_deg": 90.0,
         "distance_m": 250.0, "pan_enc": 1000.0, "source": "test"})
+    # Validate against an independent landmark (≥10° from the lock — M4 Part C gate).
     client.post("/api/v1/calibration/validation",
-                json={"bearing_deg": 91.0, "distance_m": 250.0, "pan_enc": 1014.4})
+                json={"bearing_deg": 105.0, "distance_m": 250.0, "pan_enc": 1216.0})
     confirmed = client.post("/api/v1/calibration/validation/confirm",
                             json={"accepted": True, "source": "test"})
     assert confirmed.status_code == 200
@@ -2084,6 +2095,45 @@ def test_gps_fix_snapshot_computes_real_distance_and_bearing():
     assert 100 < snap["distance_m"] < 120
     assert -5 < snap["bearing_deg"] < 5           # due north ≈ 0°
     assert snap["stale"] is False                  # 1s age < 10s threshold
+
+
+def test_gps_fix_snapshot_prefers_latched_pose_over_live_base():
+    # M4 Part A: when a pose is latched, the displayed bearing/distance use the pose origin
+    # (where the camera points), not the noisy live base — so the HUD matches the pointing.
+    from wavecam.control_api import gps_fix_snapshot
+    from wavecam.gps_stub import NormalizedFix
+    from types import SimpleNamespace
+
+    class FakeGps:
+        def get_camera_position(self):
+            return (22.05, -158.0, 0.0)   # live base drifted 0.05° away
+        def get_camera_age(self, now=None):
+            return 2.0
+
+    fix = NormalizedFix(lat=22.001, lon=-158.0, course=0.0, speed=0.0, ts=1000.0, age_sec=1.0, src="lora")
+    pose = SimpleNamespace(lat=22.0, lon=-158.0)     # latched origin
+    snap = gps_fix_snapshot(fix, FakeGps(), pose=pose)
+    # ~111 m north of the POSE (22.0), not 0.049° south of the live base (22.05)
+    assert 100 < snap["distance_m"] < 120
+    assert -5 < snap["bearing_deg"] < 5              # due north from the pose
+    assert snap["base_age_sec"] == 2.0               # live-base freshness still reported
+
+
+def test_gps_fix_snapshot_falls_back_to_live_base_when_pose_unlatched():
+    from wavecam.control_api import gps_fix_snapshot
+    from wavecam.gps_stub import NormalizedFix
+    from types import SimpleNamespace
+
+    class FakeGps:
+        def get_camera_position(self):
+            return (22.0, -158.0, 0.0)
+        def get_camera_age(self, now=None):
+            return 2.0
+
+    fix = NormalizedFix(lat=22.001, lon=-158.0, course=0.0, speed=0.0, ts=1000.0, age_sec=1.0, src="lora")
+    pose = SimpleNamespace(lat=0.0, lon=0.0)          # not latched → fall back to live base
+    snap = gps_fix_snapshot(fix, FakeGps(), pose=pose)
+    assert 100 < snap["distance_m"] < 120
 
 
 def test_gps_fix_snapshot_falls_back_when_no_camera_position():
