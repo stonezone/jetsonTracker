@@ -1450,9 +1450,25 @@ final class WaveCamClient {
     // MARK: - Map-based placement (manual coords on satellite imagery; bypasses GPS noise)
 
     /// Request body for a manual map-placed base location (bypasses live-base averaging).
-    nonisolated static func mapLocationBody(lat: Double, lon: Double, errorRadiusM: Double, source: String) -> [String: Any] {
+    /// `altM` is the operator-entered base height above sea level (Calibration v2) — the
+    /// only real altitude input; the backend marks it manual so a later GPS lock can't
+    /// clobber it.
+    nonisolated static func mapLocationBody(lat: Double, lon: Double, errorRadiusM: Double,
+                                            source: String, altM: Double = 2.0) -> [String: Any] {
         ["method": "map_manual", "use_live_base": false,
-         "lat": lat, "lon": lon, "manual_error_radius_m": errorRadiusM, "source": source]
+         "lat": lat, "lon": lon, "alt_m": altM,
+         "manual_error_radius_m": errorRadiusM, "source": source]
+    }
+
+    /// Request body for the offset-calibrate aim (Calibration v2). `step3BearingDeg` is the
+    /// coarse heading so the backend can report how far off it was. pan/tilt encoders are
+    /// captured server-side at request time (operator holds the tracker framed).
+    nonisolated static func offsetCalibrateBody(targetLat: Double, targetLon: Double,
+                                                step3BearingDeg: Double?, source: String) -> [String: Any] {
+        var b: [String: Any] = ["operator_accepted": true,
+                                "target_lat": targetLat, "target_lon": targetLon, "source": source]
+        if let s = step3BearingDeg { b["step3_bearing_deg"] = s }
+        return b
     }
 
     /// Request body for look-at heading. `pan_enc` is intentionally OMITTED so the backend
@@ -1463,13 +1479,22 @@ final class WaveCamClient {
          "target_lat": targetLat, "target_lon": targetLon, "source": source]
     }
 
-    /// POST /api/v1/calibration/location — manual coords from the map crosshair.
+    /// POST /api/v1/calibration/location — manual coords from the map crosshair + base height.
     func calibrateLocationManual(lat: Double, lon: Double, errorRadiusM: Double,
-                                 source: String = "ios_native") async
+                                 altM: Double = 2.0, source: String = "ios_native") async
         -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
         guard mode == .live else { return .failure(.unavailable) }
         return await sendCalibrationSession("calibration/location",
-                                            body: Self.mapLocationBody(lat: lat, lon: lon, errorRadiusM: errorRadiusM, source: source))
+                                            body: Self.mapLocationBody(lat: lat, lon: lon, errorRadiusM: errorRadiusM, source: source, altM: altM))
+    }
+
+    /// POST /api/v1/calibration/offset — single tracker aim re-anchors pan+tilt (Calibration v2).
+    func calibrateOffset(targetLat: Double, targetLon: Double, step3BearingDeg: Double?,
+                         source: String = "ios_native") async
+        -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/offset",
+                                            body: Self.offsetCalibrateBody(targetLat: targetLat, targetLon: targetLon, step3BearingDeg: step3BearingDeg, source: source))
     }
 
     /// POST /api/v1/calibration/heading-lock — look-at point from the map (target coords).

@@ -22,4 +22,23 @@ final class CalibrationRequestTests: XCTestCase {
         let b = WaveCamClient.mapHeadingBody(targetLat: 21.6461, targetLon: -158.0501, operatorAccepted: false, source: "ios_native")
         XCTAssertEqual(b["operator_accepted"] as? Bool, false)
     }
+    func testMapLocationBodyCarriesAltitude() {
+        let b = WaveCamClient.mapLocationBody(lat: 21.6451, lon: -158.0501, errorRadiusM: 4,
+                                              source: "ios_native", altM: 2.0)
+        XCTAssertEqual(b["alt_m"] as? Double, 2.0)
+    }
+    func testOffsetBodyShape() {
+        let b = WaveCamClient.offsetCalibrateBody(targetLat: 21.6461, targetLon: -158.0501,
+                                                  step3BearingDeg: 180, source: "ios_native")
+        XCTAssertEqual(b["method"] == nil, true)         // offset route has no "method" field
+        XCTAssertEqual(b["operator_accepted"] as? Bool, true)
+        XCTAssertEqual(b["target_lat"] as? Double, 21.6461)
+        XCTAssertEqual(b["target_lon"] as? Double, -158.0501)
+        XCTAssertEqual(b["step3_bearing_deg"] as? Double, 180)
+    }
+    func testOffsetBodyOmitsStep3WhenNil() {
+        let b = WaveCamClient.offsetCalibrateBody(targetLat: 21.6461, targetLon: -158.0501,
+                                                  step3BearingDeg: nil, source: "ios_native")
+        XCTAssertNil(b["step3_bearing_deg"])
+    }
 }
