@@ -492,6 +492,9 @@ class CalibrationManager:
             self.pipeline.pose.lat = float(entry["lat"])
             self.pipeline.pose.lon = float(entry["lon"])
             self.pipeline.pose.alt_m = float(entry["alt_m"])
+            # Calibration v2: a manual (map_manual) altitude is operator-surveyed and must
+            # not be overwritten by a later GPS base-lock; an averaged/live lock clears it.
+            self.pipeline.pose.alt_manual = entry.get("model") == "manual_radius"
             self._session["location"] = entry
             self._session["valid"] = False
             self._session["confirmed"] = False
@@ -879,7 +882,10 @@ class CalibrationManager:
                     if base is not None:
                         self.pipeline.pose.lat = base[0]
                         self.pipeline.pose.lon = base[1]
-                        self.pipeline.pose.alt_m = base[2]
+                        # Don't clobber an operator-surveyed (map_manual) altitude with the
+                        # noisy GPS fix (Calibration v2 no-clobber guard).
+                        if not getattr(self.pipeline.pose, "alt_manual", False):
+                            self.pipeline.pose.alt_m = base[2]
             elif step == "tilt":
                 # P1: tilt calibration — single-point anchor (two-point deferred)
                 tilt_deg = values.get("tilt_deg")

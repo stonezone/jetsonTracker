@@ -54,6 +54,11 @@ class CameraPose:
         # BaseDriftMonitor flips base_locked to False only on CONFIRMED tripod drift
         # (Plan v3 Phase 1), so a transient drift never survives a restart.
         self.base_locked: bool = True
+        # Runtime-only (like base_locked; excluded from asdict(), never persisted): set
+        # True when the operator locks the base via map_manual so a later GPS base-lock
+        # does not clobber the surveyed altitude with a noisy GPS fix (Calibration v2).
+        # Every load() starts False; the v2 wizard re-locks via map_manual each session.
+        self.alt_manual: bool = False
 
     @property
     def calibrated(self) -> bool:
