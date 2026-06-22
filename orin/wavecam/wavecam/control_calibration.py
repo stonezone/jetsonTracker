@@ -593,14 +593,13 @@ class CalibrationManager:
         budget = _optional_float(_field(req, "max_uncertainty_deg")) or HEADING_DEFAULT_BUDGET_DEG
         uncertainty = self._estimate_heading_uncertainty(req, location, distance_m)
         confidence = _confidence(uncertainty, budget)
+        # The operator has explicitly accepted this heading (operator_accepted gate above),
+        # and on this rig the phone magnetometer is unusable near the motor (~22 µT) — so the
+        # uncertainty budget is ADVISORY, never a hard block. Record it + confidence for the
+        # UI; the operator's chosen heading (map twist / manual / GPS bearing) always commits.
         if uncertainty > budget:
-            return self._calibration_refusal(
-                "uncertainty_too_high",
-                "Estimated heading uncertainty exceeds the configured budget.",
-                uncertainty_deg=round(uncertainty, 3),
-                max_uncertainty_deg=budget,
-                confidence=confidence,
-            )
+            print(f"[calibrate] heading accepted over budget: unc={uncertainty:.2f} "
+                  f"budget={budget:.2f} conf={confidence:.2f} bearing={bearing:.1f}")
         with self._lock:
             self.pipeline.pose.calibrate_pan_aim(
                 enc=pan_enc,

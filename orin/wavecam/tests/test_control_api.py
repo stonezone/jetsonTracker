@@ -1052,7 +1052,7 @@ def test_calibration_wizard_persists_to_disk_survives_restart():
     assert "validation" in reloaded.steps
 
 
-def test_api_v1_calibrate_heading_refuses_bad_error_budget():
+def test_api_v1_calibrate_heading_commits_over_budget_as_advisory():
     client = make_client()
     pipe = client.app.state.pipeline
     assert pipe.owner.request("testbed") is True
@@ -1075,7 +1075,9 @@ def test_api_v1_calibrate_heading_refuses_bad_error_budget():
         json={"roll_deg": 0.0, "pitch_deg": 0.0},
     ).status_code == 200
 
-    refused = client.post(
+    # Over-budget heading now COMMITS — the operator explicitly accepted it and the phone
+    # magnetometer is unusable on this rig, so the uncertainty budget is advisory, not a block.
+    committed = client.post(
         "/api/v1/calibration/heading-lock",
         json={
             "method": "landmark",
@@ -1087,11 +1089,10 @@ def test_api_v1_calibrate_heading_refuses_bad_error_budget():
         },
     )
 
-    assert refused.status_code == 409
-    body = refused.json()
-    assert body["code"] == "uncertainty_too_high"
-    assert body["uncertainty_deg"] > 2.0
-    assert pipe.pose.calibrated is False
+    assert committed.status_code == 200, committed.json()
+    hl = committed.json()["calibration"]["session"]["heading_lock"]
+    assert hl["uncertainty_deg"] > 2.0   # recorded as advisory metadata, not refused
+    assert pipe.pose.calibrated is True  # committed despite over-budget uncertainty
 
 
 def test_heading_lock_no_longer_requires_level():
@@ -1128,11 +1129,10 @@ def test_heading_lock_no_longer_requires_level():
     assert state["level"] is None  # no level was ever captured
 
 
-def test_heading_lock_from_phone_compass_uses_reported_accuracy():
-    # Phone-compass source: the bearing is the phone magnetometer reading, so heading
-    # uncertainty IS the phone's heading_acc_deg (not GPS position geometry). A phone heading
-    # is a COARSE acquisition cue, so the default 2 deg budget rejects it and a lenient budget
-    # accepts it — and the recorded uncertainty tracks the phone accuracy.
+def test_heading_lock_from_phone_compass_records_reported_accuracy():
+    # Phone-compass source: uncertainty IS the phone's heading_acc_deg (not GPS geometry).
+    # The operator-accepted heading COMMITS regardless of the (advisory) budget — the phone
+    # mag is unusable on this rig — and the recorded uncertainty tracks the phone accuracy.
     client = make_client()
     pipe = client.app.state.pipeline
     assert pipe.owner.request("testbed") is True
@@ -1145,19 +1145,6 @@ def test_heading_lock_from_phone_compass_uses_reported_accuracy():
         json={"method": "manual_map_pin", "lat": 21.6, "lon": -158.0, "manual_error_radius_m": 3.0},
     ).status_code == 200
 
-    refused = client.post(
-        "/api/v1/calibration/heading-lock",
-        json={
-            "method": "phone",
-            "operator_accepted": True,
-            "bearing_deg": 207.0,
-            "heading_acc_deg": 18.0,
-            "pan_enc": 1000.0,
-        },
-    )
-    assert refused.status_code == 409
-    assert refused.json()["code"] == "uncertainty_too_high"
-
     accepted = client.post(
         "/api/v1/calibration/heading-lock",
         json={
@@ -1166,12 +1153,11 @@ def test_heading_lock_from_phone_compass_uses_reported_accuracy():
             "bearing_deg": 207.0,
             "heading_acc_deg": 18.0,
             "pan_enc": 1000.0,
-            "max_uncertainty_deg": 25.0,
         },
     )
-    assert accepted.status_code == 200, accepted.json()
+    assert accepted.status_code == 200, accepted.json()   # commits despite 18° accuracy
     hl = accepted.json()["calibration"]["session"]["heading_lock"]
-    assert 17.0 <= hl["uncertainty_deg"] <= 19.0  # ~quadrature(18, 0.5, 0.2)
+    assert 17.0 <= hl["uncertainty_deg"] <= 19.0  # ~quadrature(18, 0.5, 0.2), recorded advisory
     assert abs(pipe.pose.bearing_to_pan_encoder(208.0) - 1014.4) < 0.01
     assert pipe.owner.owner == "calibrate"
 
