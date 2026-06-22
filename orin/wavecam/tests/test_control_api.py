@@ -621,6 +621,48 @@ def test_api_v1_ptz_velocity_calibrate_aim_still_blocked_by_kill():
     assert resp.json()["code"] == "killed"
 
 
+def test_calibrate_aim_release_restores_calibrate_so_capture_continues():
+    # Sequence guard for the COR2 break: the v3 joystick aim takes over (calibrate->manual);
+    # while owner=manual every calibration step refuses calibrate_owner_lost. Releasing the
+    # stick (ptz/stop hold:false — what onStop now does) MUST restore owner=calibrate so
+    # Capture/Validate/Confirm still own the session. (Holding instead stranded owner=manual
+    # and killed the whole flow after the aim.)
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert client.post("/api/v1/calibration/session/start",
+                       json={"requested_owner": "manual", "takeover": True, "source": "test"}).status_code == 200
+    assert client.post("/api/v1/ptz/velocity",
+                       json={"requested_owner": "manual", "takeover": True, "pan": 0.3}).status_code == 200
+    assert pipe.owner.owner == "manual"
+    # owner=manual -> a calibration step refuses (the break being guarded)
+    refused = client.post("/api/v1/calibration/validation",
+                          json={"bearing_deg": 90.0, "distance_m": 250.0, "source": "test"})
+    assert refused.status_code == 409 and refused.json()["code"] == "calibrate_owner_lost"
+    # release restores calibrate
+    assert client.post("/api/v1/ptz/stop", json={"hold": False, "source": "test"}).status_code == 200
+    assert pipe.owner.owner == CALIBRATE
+    # owner gate now passes (no longer calibrate_owner_lost)
+    again = client.post("/api/v1/calibration/validation",
+                        json={"bearing_deg": 90.0, "distance_m": 250.0, "source": "test"})
+    assert again.json().get("code") != "calibrate_owner_lost"
+
+
+def test_calibrate_exit_releases_stranded_manual_owner():
+    # Defense-in-depth: if a calibrate-aim takeover left owner=manual (operator exited without
+    # releasing the stick), exit must drop to idle — never strand the rig in manual, which
+    # would block the arbiter from ever resuming autonomy (calibration_valid set but no track).
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert client.post("/api/v1/calibration/session/start",
+                       json={"requested_owner": "manual", "takeover": True, "source": "test"}).status_code == 200
+    assert client.post("/api/v1/ptz/velocity",
+                       json={"requested_owner": "manual", "takeover": True, "pan": 0.3}).status_code == 200
+    assert pipe.owner.owner == "manual"
+    assert client.post("/api/v1/calibration/session/exit", json={"source": "test"}).status_code == 200
+    assert pipe.owner.owner == "idle"
+
+
 def test_api_v1_ptz_stop_restores_autonomous_owner_after_takeover():
     client = make_client()
     pipe = client.app.state.pipeline

@@ -300,6 +300,14 @@ class CalibrationManager:
                         self.pipeline.owner.release(CALIBRATE)
                 else:
                     self.pipeline.owner.release(CALIBRATE)
+            elif self.pipeline.owner.owner == "manual":
+                # A calibrate-aim takeover (the v3 joystick) can leave owner=manual if the
+                # operator exits without releasing the stick. Exiting must NOT strand the rig
+                # in manual — that blocks the arbiter from ever resuming autonomy (no tracking).
+                # Drop to IDLE (clears the staged calibrate-restore) so the arbiter re-decides.
+                self.pipeline.ptz.stop()
+                self.pipeline.ptz.zoom("stop")
+                self._api.release_manual_owner(restore_autonomous=False)
             self._session["active"] = False
             self._session["ended_at_unix_ms"] = _now_ms()
             self._session["banner"] = self._calibration_banner(self._session)
