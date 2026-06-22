@@ -138,8 +138,11 @@ struct CalibrateScreenV3: View {
     private var locationHeightCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             cardTitle("1 · Location + height")
-            Text("Pan the map so the crosshair is on the real tripod spot.")
+            Text("Tap to drop on your phone's location, then pan so the crosshair sits on the real tripod spot.")
                 .font(.caption2).foregroundStyle(.secondary)
+            Button { usePhoneLocation() } label: {
+                Label("Center map on my phone", systemImage: "location.fill").frame(maxWidth: .infinity)
+            }.buttonStyle(.bordered).disabled(busy)
             Picker("Datum", selection: $datumSeaLevel) {
                 Text("Relative to base").tag(false)
                 Text("Above sea level").tag(true)
@@ -236,6 +239,25 @@ struct CalibrateScreenV3: View {
         let base = datumSeaLevel ? (Double(baseHeight) ?? 0) : 0
         let subj = Double(subjectHeight) ?? (datumSeaLevel ? 1 : -1)
         return String(format: "camera looks ≈%.0f° down at 100 m", -GeoMath.elevationDeg(baseAltM: base, distanceM: 100, subjectAltM: subj))
+    }
+
+    /// The phone's own GPS fix, as posted to the backend at 1 Hz by PhoneSensorPublisher
+    /// (independent of the base Wio). nil until Location is authorized + a fix lands.
+    private var phoneCoord: CLLocationCoordinate2D? {
+        guard let la = client.status?.sensors?.phone?.lat, let lo = client.status?.sensors?.phone?.lon else { return nil }
+        return CLLocationCoordinate2D(latitude: la, longitude: lo)
+    }
+
+    /// Quick-start that bypasses the base Wio: drop the crosshair on the phone's location,
+    /// then the operator drags to the exact tripod spot. onMapCameraChange keeps mapCenter
+    /// in sync, so "Set base location + height" commits wherever they end up.
+    private func usePhoneLocation() {
+        guard let c = phoneCoord else {
+            note = "No phone location yet — allow Location for WaveCam and give it a moment to get a fix."
+            return
+        }
+        mapCenter = c
+        camPos = .region(MKCoordinateRegion(center: c, latitudinalMeters: 150, longitudinalMeters: 150))
     }
 
     private func setLocationAndHeight() {
