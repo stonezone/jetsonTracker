@@ -1,9 +1,11 @@
 # End-to-end calibrate → GPS-pointing integration test
 
 - **Created:** 2026-06-22
-- **Status:** PLANNED
+- **Status:** IN PROGRESS — core delivered 2026-06-22 (`tests/test_calibrate_e2e_pointing.py`); residual below.
 - **Owner / lane:** Claude (backend tests — Claude primary; no rig needed)
-- **Severity / why:** HIGH — two shipped bugs (COR2 dead-aim, TECH5 tilt-bias) slipped past 600 unit tests because *nothing* exercises the full calibrate→pointing happy path. The next integration-level regression will ship silently too.
+- **Severity / why:** HIGH — two shipped bugs (COR2 dead-aim, TECH5 tilt-bias) slipped past 600 unit tests because *nothing* exercised the full calibrate→pointing happy path. The next integration-level regression will ship silently too.
+
+> **Update 2026-06-22:** `tests/test_calibrate_e2e_pointing.py` now walks the full manager-level calibration (location+`subject_alt_m` → heading → offset → validate → confirm) and asserts `valid ∧ confirmed` + `pose.calibrated` + the arbiter selects `gps_tracker` (fail-closed when invalid), plus a TECH5 anchor assertion with `subject_alt_m ≠ 1`. The HTTP ownership transitions through the aim takeover are locked in `test_control_api.py` (`test_calibrate_aim_release_restores_calibrate_so_capture_continues`, `test_calibrate_exit_releases_stranded_manual_owner`). **Residual:** (1) assert the actual `pipeline._gps_pointing_cmd` pan/tilt command after a full calibration (not just the arbiter *decision*); (2) a single HTTP `TestClient` walk of all 8 steps with `subject_alt_m` for full-path coverage; (3) the iOS test target is unrunnable locally (watch `AppIcon` simulator `actool` quirk) — its own gap.
 
 ## Problem
 
