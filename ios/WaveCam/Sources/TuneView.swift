@@ -48,6 +48,8 @@ struct TuneView: View {
     @State private var gpsStale: Double? = nil
     @State private var gpsGrace: Double? = nil
     @State private var gpsDriveZoom: Bool? = nil
+    @State private var gpsPanSpeed: Double? = nil
+    @State private var gpsTiltSpeed: Double? = nil
     // TRACKING MODE (feature-detected; appears once the GPS-only-mode backend is deployed)
     @State private var trackingModeAvailable = false
     @State private var trackingMode: String = "auto"
@@ -462,6 +464,8 @@ struct TuneView: View {
         if let v = gpsStale            { d["gps.stale_threshold_sec"]   = .double(v) }
         if let v = gpsGrace            { d["gps.grace_sec"]             = .double(v) }
         if let v = gpsDriveZoom        { d["gps.drive_zoom"]            = .bool(v) }
+        if let v = gpsPanSpeed         { d["gps.max_pan_speed"]         = .int(Int(v)) }
+        if let v = gpsTiltSpeed        { d["gps.max_tilt_speed"]        = .int(Int(v)) }
         return d
     }
 
@@ -469,6 +473,7 @@ struct TuneView: View {
 
     @ViewBuilder private var gpsCard: some View {
         let anyVisible = gpsBoost != nil || gpsStale != nil || gpsGrace != nil || gpsDriveZoom != nil
+            || gpsPanSpeed != nil || gpsTiltSpeed != nil
         if anyVisible {
             OperatorCard(title: "GPS TRACKING") {
                 if let b = gpsBoost {
@@ -491,6 +496,17 @@ struct TuneView: View {
                     if gpsBoost != nil || gpsStale != nil || gpsGrace != nil { OperatorDivider() }
                     toggleRow("GPS drives zoom", isOn: Binding(get: { dz }, set: { gpsDriveZoom = $0 }), key: "gps.drive_zoom")
                     tuneCaption("Zoom from GPS distance while GPS points the camera. Leave off until the zoom curve is field-tuned.")
+                }
+                if let p = gpsPanSpeed {
+                    OperatorDivider()
+                    sliderRow("GPS pan speed", value: Binding(get: { p }, set: { gpsPanSpeed = $0 }),
+                              range: 1...16, step: 1, readout: "\(Int(p))", key: "gps.max_pan_speed", isInt: true)
+                    tuneCaption("How fast GPS pointing slews the pan axis (vision uses up to 10). Low = smooth but laggy/undershoots a moving subject; high = snappier but can jitter on noisy GPS.")
+                }
+                if let t = gpsTiltSpeed {
+                    OperatorDivider()
+                    sliderRow("GPS tilt speed", value: Binding(get: { t }, set: { gpsTiltSpeed = $0 }),
+                              range: 1...12, step: 1, readout: "\(Int(t))", key: "gps.max_tilt_speed", isInt: true)
                 }
             }
         }
@@ -717,6 +733,8 @@ struct TuneView: View {
         gpsStale = cfg.current.gps?.staleThresholdSec
         gpsGrace = cfg.current.gps?.graceSec
         gpsDriveZoom = cfg.current.gps?.driveZoom
+        gpsPanSpeed = cfg.current.gps?.maxPanSpeed.map(Double.init)
+        gpsTiltSpeed = cfg.current.gps?.maxTiltSpeed.map(Double.init)
         colorMinArea = cfg.current.color.minArea
         colorMaxArea = cfg.current.color.maxArea
         morphKernel = cfg.current.color.morphKernel

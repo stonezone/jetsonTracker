@@ -312,6 +312,8 @@ struct WCConfig: Codable, Sendable {
             var staleThresholdSec: Double?
             var graceSec: Double?
             var driveZoom: Bool?
+            var maxPanSpeed: Int?
+            var maxTiltSpeed: Int?
         }
         struct Tracking: Codable, Sendable {
             var mode: String?   // "auto" | "gps_only" | "vision_only"
