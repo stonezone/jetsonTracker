@@ -38,7 +38,12 @@ class CameraPose:
     # Camera (beach tripod) geographic position.
     lat: float = 0.0
     lon: float = 0.0
-    alt_m: float = 0.0
+    alt_m: float = 0.0          # base/camera height, in the operator's chosen datum
+    # Subject (foiler/tracker) height in the SAME datum as alt_m — set by the operator in
+    # the heights step (Calibration v3). Tilt depression = atan2(subject_alt_m - alt_m, dist).
+    # Datum is the operator's choice: base-relative (alt_m=0, subject_alt_m=offset) or
+    # sea-level (both above sea level). Defaults 1 m for back-compat (a foiler on the water).
+    subject_alt_m: float = 1.0
     # Pan:  encoder = pan_anchor_enc + normalize_180(bearing - pan_anchor_bearing) * pan_enc_per_deg
     pan_anchor_enc: float = 0.0
     pan_anchor_bearing: float = 0.0

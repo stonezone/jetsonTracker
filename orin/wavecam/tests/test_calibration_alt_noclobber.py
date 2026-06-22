@@ -79,6 +79,16 @@ def test_base_lock_does_not_clobber_manual_alt():
     assert m.pipeline.pose.lat == 21.65             # lat/lon still updated from GPS
 
 
+def test_commit_location_sets_subject_alt():
+    # Calibration v3: the location lock carries the operator's subject height onto the pose.
+    m = _manager()
+    e = _manual_entry(2.0)
+    e["subject_alt_m"] = -1.0          # base-relative: tracker 1 m below the base
+    m._commit_location(e)
+    assert m.pipeline.pose.alt_m == 2.0
+    assert m.pipeline.pose.subject_alt_m == -1.0
+
+
 def test_base_lock_writes_alt_when_not_manual():
     m = _manager(gps_alt=13.0)
     m.pipeline.pose.alt_manual = False

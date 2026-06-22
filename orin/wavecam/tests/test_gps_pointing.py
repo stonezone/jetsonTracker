@@ -167,6 +167,26 @@ def test_gps_pointing_cmd_drive_zoom_true_gives_zoom_enc():
 
 # --- Calibration v2 Task 1: live subject altitude pinned to 1 m ----------------
 
+def test_gps_pointing_uses_pose_subject_alt():
+    # Calibration v3: live tilt uses the operator-set pose.subject_alt_m, not a hardcoded
+    # constant. Base-relative example: base=0, tracker 1 m below (on the ground) -> looks down.
+    import math
+    from wavecam.camera_pose import PRISUAL_TILT_ENC_PER_DEG
+    from wavecam.gps_geo import haversine_m
+    pipe = _make_pointing_pipeline(lat=21.6, lon=-158.0, alt_m=0.0)
+    pipe.pose.subject_alt_m = -1.0
+    pipe.pose.tilt_anchor_enc = 0.0
+    pipe.pose.tilt_anchor_elev = 0.0
+    pipe.pose.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
+    fix = NormalizedFix(lat=21.601, lon=-158.0, course=0.0, speed=0.0,
+                        ts=1000.0, age_sec=2.0, src="lora")
+    cmd = pipe._gps_pointing_cmd(fix, calibration_valid=True)
+    d = haversine_m(21.6, -158.0, 21.601, -158.0)
+    expected = int(math.degrees(math.atan2(-1.0 - 0.0, d)) * PRISUAL_TILT_ENC_PER_DEG)
+    assert cmd.tilt_enc == expected
+    assert cmd.tilt_enc < 0
+
+
 def test_gps_pointing_subject_treated_at_1m_gives_down_tilt():
     """The foiler is at sea level; the live target must use a fixed 1 m altitude
     (not the noisy tracker GPS alt, not 0). With an elevated base + calibrated tilt,

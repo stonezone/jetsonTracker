@@ -166,6 +166,7 @@ class CalibrationManager:
                     "lat": self.pipeline.pose.lat,
                     "lon": self.pipeline.pose.lon,
                     "alt_m": self.pipeline.pose.alt_m,
+                    "subject_alt_m": getattr(self.pipeline.pose, "subject_alt_m", 1.0),
                     "pan_enc_per_deg": self.pipeline.pose.pan_enc_per_deg,
                 }
             return state
@@ -339,6 +340,8 @@ class CalibrationManager:
                 "lat": lat,
                 "lon": lon,
                 "alt_m": manual_alt + (_optional_float(_field(req, "offset_up_m")) or 0.0),
+                # Calibration v3: subject height in the SAME datum as alt_m (operator-set).
+                "subject_alt_m": _optional_float(_field(req, "subject_alt_m")),
                 "error_radius_m": round(error_radius, 3),
                 "sample_count": 0,
                 "model": "manual_radius",
@@ -496,6 +499,10 @@ class CalibrationManager:
             self.pipeline.pose.lat = float(entry["lat"])
             self.pipeline.pose.lon = float(entry["lon"])
             self.pipeline.pose.alt_m = float(entry["alt_m"])
+            # Calibration v3: subject height in the same datum (None = keep current default).
+            subj = entry.get("subject_alt_m")
+            if subj is not None:
+                self.pipeline.pose.subject_alt_m = float(subj)
             # Calibration v2: a manual (map_manual) altitude is operator-surveyed and must
             # not be overwritten by a later GPS base-lock; an averaged/live lock clears it.
             self.pipeline.pose.alt_manual = entry.get("model") == "manual_radius"
