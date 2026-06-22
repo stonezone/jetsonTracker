@@ -421,7 +421,13 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("killed", "KILL is latched; resume before movement commands.")
         if req.requested_owner != "manual":
             return api.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
-        if not api.claim_manual(takeover=req.takeover):
+        # Aiming during an active CALIBRATE session (the v3 calibrate joystick): take over
+        # via the calibrate-aware path, which the plain manual claim refuses (CALIBRATE is
+        # not autonomous). Stages CALIBRATE for restore on release. KILL is checked above.
+        if api.pipeline.owner.owner == "calibrate" and req.takeover:
+            if not api.claim_manual_from_calibrate():
+                return api.refusal("owner_busy", "Cannot claim manual for calibrate aim.")
+        elif not api.claim_manual(takeover=req.takeover):
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
         api.send_manual_velocity(req)

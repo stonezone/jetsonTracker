@@ -576,6 +576,51 @@ def test_api_v1_ptz_velocity_requires_takeover_to_preempt_autonomous_owner():
     assert ("pan_tilt", 5, 1, PAN_RIGHT, TILT_STOP) in pipe.ptz.calls
 
 
+def test_api_v1_ptz_velocity_takes_over_calibrate_for_aim():
+    # COR2: the v3 single-screen calibrate joystick must be able to aim during an active
+    # CALIBRATE session. The plain manual claim refuses CALIBRATE (not autonomous), so the
+    # velocity endpoint routes through the calibrate-aware takeover, staging CALIBRATE for
+    # restore on release. Mirrors the standalone-capture takeover.
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request(CALIBRATE) is True
+
+    # No takeover → no implicit preemption of calibrate.
+    blocked = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "pan": 0.5, "tilt": 0.0},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "owner_busy"
+    assert pipe.owner.owner == CALIBRATE
+
+    # Operator deliberately aims (takeover) → calibrate→manual, velocity sent.
+    response = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "takeover": True, "pan": 0.5, "tilt": 0.0},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"]["ptz"]["owner"] == "manual"
+    assert pipe.owner.owner == "manual"
+    assert ("pan_tilt", 5, 1, PAN_RIGHT, TILT_STOP) in pipe.ptz.calls
+
+
+def test_api_v1_ptz_velocity_calibrate_aim_still_blocked_by_kill():
+    # KILL stays supreme — the calibrate-aim takeover path must not move under a kill.
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request(CALIBRATE) is True
+    pipe.owner.kill()
+    resp = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "takeover": True, "pan": 0.5, "tilt": 0.0},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "killed"
+
+
 def test_api_v1_ptz_stop_restores_autonomous_owner_after_takeover():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -886,10 +931,14 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert started.json()["calibration"]["active"] is True
     assert started.json()["calibration"]["banner"] == "CALIBRATE ACTIVE"
 
+    # Autonomy stays locked out during calibrate, and a manual command WITHOUT takeover
+    # is not allowed to preempt the session. (The operator CAN deliberately take over to
+    # aim — manual velocity with takeover:true — which is verified in
+    # test_api_v1_ptz_velocity_takes_over_calibrate_for_aim.)
     auto = client.post("/api/v1/ptz/auto", json={})
     manual = client.post(
         "/api/v1/ptz/velocity",
-        json={"requested_owner": "manual", "takeover": True, "pan": 0.4},
+        json={"requested_owner": "manual", "pan": 0.4},
     )
 
     assert auto.status_code == 409

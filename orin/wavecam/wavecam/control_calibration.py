@@ -687,7 +687,12 @@ class CalibrationManager:
             )
         pan_enc, tilt_enc = float(enc[0]), float(enc[1])
         base_h = float(location.get("alt_m", 0.0))
-        elev_cal = math.degrees(math.atan2(1.0 - base_h, distance_m))
+        # Anchor tilt at the operator's chosen subject height (set on the location lock),
+        # NOT a hardcoded 1 m: the runtime tilt command uses pose.subject_alt_m, so the
+        # anchor elevation must be computed from the same height or every commanded tilt
+        # is biased by atan2(subject_alt_m − 1, dist) (calibration v3).
+        subject_h = float(getattr(self.pipeline.pose, "subject_alt_m", 1.0))
+        elev_cal = math.degrees(math.atan2(subject_h - base_h, distance_m))
         base_height_warning = abs(elev_cal) > 30.0 and distance_m > 50.0
         step3 = _optional_float(_field(req, "step3_bearing_deg"))
         offset = None if step3 is None else round(normalize_180(bearing - step3), 3)
