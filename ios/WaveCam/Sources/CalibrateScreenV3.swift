@@ -186,7 +186,13 @@ struct CalibrateScreenV3: View {
                 Spacer()
                 JoystickPad(knobOffset: $knob, diameter: 150,
                             onCommand: { p, t in ptz.sendVelocity(pan: p, tilt: t, client: client) },
-                            onStop: { ptz.holdPTZ(client: client) })
+                            // RELEASE (not hold) on lift-off: the velocity takeover moved owner
+                            // calibrate→manual; releasing restores owner=calibrate (camera holds
+                            // the aim because the arbiter idles for calibrate), so Capture/Validate/
+                            // Confirm still own the session. holdPTZ would strand owner=manual →
+                            // every next calibration step refuses calibrate_owner_lost + exit can't
+                            // release → arbiter never resumes → no tracking.
+                            onStop: { ptz.releaseManualPTZ(client: client) })
                 Spacer()
             }
             Button { run { await client.calibrateOffset(targetLat: nil, targetLon: nil,
@@ -207,11 +213,11 @@ struct CalibrateScreenV3: View {
                                                                 distanceM: client.status?.gps?.distanceM) } } label: {
                     Text("Validate").frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered)
-                Button { run { await client.calibrateValidationConfirm(accepted: true) } } label: {
-                    Text("Confirm → VALID").frame(maxWidth: .infinity)
+                Button { confirmAndFinish() } label: {
+                    Text("Confirm & finish").frame(maxWidth: .infinity)
                 }.buttonStyle(.borderedProminent)
             }.disabled(busy || killed)
-            Text("Validate first (sight a check-point), then Confirm. The miss is advisory — Confirm always commits; it just shows aim accuracy.")
+            Text("Validate first (sight a check-point), then Confirm. The miss is advisory — Confirm always commits; it just shows aim accuracy. Confirm marks VALID and exits calibrate so GPS tracking can take over.")
                 .font(.caption2).foregroundStyle(.secondary)
         }.cardBG()
     }
@@ -265,6 +271,26 @@ struct CalibrateScreenV3: View {
         let subj = Double(subjectHeight) ?? (datumSeaLevel ? 1.0 : -1.0)
         let lat = mapCenter.latitude, lon = mapCenter.longitude
         run { await client.calibrateLocationManual(lat: lat, lon: lon, errorRadiusM: 5, altM: alt, subjectAltM: subj) }
+    }
+
+    /// Confirm marks VALID but leaves owner=calibrate (arbiter locked out); the session must
+    /// also EXIT to hand PTZ back so the arbiter can select gps_tracker. Chain them so
+    /// "Confirm" means done + tracking — otherwise the operator sees VALID and no tracking.
+    /// calibration_valid (valid ∧ confirmed) survives the exit, so tracking starts after it.
+    private func confirmAndFinish() {
+        guard !busy else { return }
+        Task {
+            busy = true; note = nil; defer { busy = false }
+            switch await client.calibrateValidationConfirm(accepted: true) {
+            case .success:
+                switch await client.calibrateSessionExit() {
+                case .success(let s): session = s
+                case .failure(let e): note = "Confirmed VALID, but exit failed — tap Exit to start tracking: \(e.localizedDescription)"
+                }
+            case .failure(let e):
+                note = "Failed: \(e.localizedDescription)"
+            }
+        }
     }
 
     private func run(_ op: @escaping () async -> Result<WCCalibrationSessionState, WaveCamCalibrationError>) {
