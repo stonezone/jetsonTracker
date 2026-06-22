@@ -1460,9 +1460,10 @@ final class WaveCamClient {
     /// only real altitude input; the backend marks it manual so a later GPS lock can't
     /// clobber it.
     nonisolated static func mapLocationBody(lat: Double, lon: Double, errorRadiusM: Double,
-                                            source: String, altM: Double = 2.0) -> [String: Any] {
+                                            source: String, altM: Double = 0.0,
+                                            subjectAltM: Double = 1.0) -> [String: Any] {
         ["method": "map_manual", "use_live_base": false,
-         "lat": lat, "lon": lon, "alt_m": altM,
+         "lat": lat, "lon": lon, "alt_m": altM, "subject_alt_m": subjectAltM,
          "manual_error_radius_m": errorRadiusM, "source": source]
     }
 
@@ -1485,13 +1486,15 @@ final class WaveCamClient {
          "target_lat": targetLat, "target_lon": targetLon, "source": source]
     }
 
-    /// POST /api/v1/calibration/location — manual coords from the map crosshair + base height.
+    /// POST /api/v1/calibration/location — manual coords + base height + subject height
+    /// (Calibration v3; both in the operator's chosen datum).
     func calibrateLocationManual(lat: Double, lon: Double, errorRadiusM: Double,
-                                 altM: Double = 2.0, source: String = "ios_native") async
+                                 altM: Double = 0.0, subjectAltM: Double = 1.0,
+                                 source: String = "ios_native") async
         -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
         guard mode == .live else { return .failure(.unavailable) }
         return await sendCalibrationSession("calibration/location",
-                                            body: Self.mapLocationBody(lat: lat, lon: lon, errorRadiusM: errorRadiusM, source: source, altM: altM))
+                                            body: Self.mapLocationBody(lat: lat, lon: lon, errorRadiusM: errorRadiusM, source: source, altM: altM, subjectAltM: subjectAltM))
     }
 
     /// POST /api/v1/calibration/offset — single tracker aim re-anchors pan+tilt (Calibration v2).
