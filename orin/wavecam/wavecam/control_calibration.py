@@ -773,33 +773,25 @@ class CalibrationManager:
                 "No fresh pan encoder is available for validation.",
                 503,
             )
-        # Independence gate (M4 Part C): the validation target must be separated from the
-        # heading-lock target — by pan motion OR bearing — or the miss is trivially ~0.
+        # Validation is ADVISORY (operator override): record the separation-from-lock and
+        # the miss so accuracy is VISIBLE, but never hard-block reaching VALID — the operator
+        # decides. The independence + miss-budget hard gates were stopping GPS tracking from
+        # ever turning on (calibration_valid gates the arbiter); removed per field direction.
         hl = self._session.get("heading_lock") or {}
-        lock_pan = _optional_float(hl.get("pan_enc"))
         lock_bearing = _optional_float(hl.get("bearing_deg"))
-        pan_sep = abs(pan_enc - lock_pan) / PRISUAL_PAN_ENC_PER_DEG if lock_pan is not None else None
         bearing_sep = abs(normalize_180(bearing - lock_bearing)) if lock_bearing is not None else None
-        independent = ((pan_sep is not None and pan_sep >= VALIDATION_MIN_SEPARATION_DEG)
-                       or (bearing_sep is not None and bearing_sep >= VALIDATION_MIN_SEPARATION_DEG))
-        if not independent:
-            return self._calibration_refusal(
-                "validation_target_not_independent",
-                f"Aim at a DIFFERENT landmark than the heading lock (≥{VALIDATION_MIN_SEPARATION_DEG:.0f}° away) — "
-                "re-sighting the same target passes validation trivially.",
-                422,
-                separation_deg=round(bearing_sep, 2) if bearing_sep is not None else None,
-            )
         predicted = self.pipeline.pose.pan_encoder_to_bearing(pan_enc)
         miss = abs(normalize_180((predicted or 0.0) - bearing))
         budget = _optional_float(_field(req, "max_miss_deg")) or VALIDATION_DEFAULT_BUDGET_DEG
-        accepted = miss <= budget
+        within_budget = miss <= budget
+        accepted = True   # advisory: confirm is always allowed; miss_deg shows the real accuracy
         entry = {
             "bearing_deg": round(bearing % 360.0, 6),
             "predicted_bearing_deg": None if predicted is None else round(predicted % 360.0, 6),
             "pan_enc": pan_enc,
             "miss_deg": round(miss, 3),
             "max_miss_deg": budget,
+            "within_budget": within_budget,
             "separation_deg": round(bearing_sep, 2) if bearing_sep is not None else None,
             "distance_m": None if distance_m is None else round(distance_m, 3),
             "accepted": accepted,
@@ -811,13 +803,6 @@ class CalibrationManager:
             self._session["valid"] = False
             self._session["confirmed"] = False
             persisted = self._persist_step("validation", entry)
-        if not accepted:
-            return self._calibration_refusal(
-                "validation_miss_too_large",
-                "Independent validation miss exceeds the configured budget.",
-                miss_deg=entry["miss_deg"],
-                max_miss_deg=budget,
-            )
         if not persisted:
             return self._calibration_refusal(
                 "calibration_persist_failed",

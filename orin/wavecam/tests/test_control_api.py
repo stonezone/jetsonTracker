@@ -951,23 +951,18 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert heading_state["confidence"] > 0.0
     assert abs(pipe.pose.bearing_to_pan_encoder(91.0) - 1014.4) < 0.01
 
-    # Re-sighting the SAME landmark (1° away) is refused — validating against the lock
-    # target passes trivially (M4 Part C independence gate).
-    near = client.post(
+    # Validation is advisory now (operator override): it always reaches a confirmable state
+    # and records the miss + within_budget so accuracy is visible, never a hard refusal.
+    validation = client.post(
         "/api/v1/calibration/validation",
         json={"bearing_deg": 91.0, "distance_m": 250.0, "pan_enc": 1014.4},
     )
-    assert near.status_code == 422
-    assert near.json()["code"] == "validation_target_not_independent"
-
-    # A genuinely independent landmark (15° away) validates.
-    validation = client.post(
-        "/api/v1/calibration/validation",
-        json={"bearing_deg": 105.0, "distance_m": 250.0, "pan_enc": 1216.0},
-    )
     assert validation.status_code == 200
-    assert validation.json()["calibration"]["session"]["validation"]["miss_deg"] == 0.0
-    assert validation.json()["calibration"]["valid"] is False
+    v = validation.json()["calibration"]["session"]["validation"]
+    assert v["miss_deg"] == 0.0
+    assert v["accepted"] is True
+    assert v["within_budget"] is True
+    assert validation.json()["calibration"]["valid"] is False  # not VALID until confirm
 
     confirmed = client.post(
         "/api/v1/calibration/validation/confirm",
