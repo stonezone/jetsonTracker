@@ -1590,6 +1590,19 @@ final class WaveCamClient {
         }
     }
 
+    /// GET the current calibration session state (active/banner/session). Lets the
+    /// single-screen view seed itself so the banner reflects an already-active session
+    /// (e.g. after navigating away and back) instead of showing IDLE. nil on error/404.
+    func calibrationSessionState() async -> WCCalibrationSessionState? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("calibration")
+            return try Self.decoder.decode(WCCalibrationSessionResponse.self, from: data).calibration
+        } catch {
+            return nil
+        }
+    }
+
     /// POST /api/v1/system/restart -- stops PTZ + restarts the vision service (confirm_moving).
     @discardableResult
     func systemRestart() async -> Bool {
