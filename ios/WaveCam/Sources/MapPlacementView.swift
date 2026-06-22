@@ -87,12 +87,14 @@ struct MapPlacementView: View {
             TextField("Lon", text: $model.manualLonText).keyboardType(.numbersAndPunctuation)
         }.textFieldStyle(.roundedBorder).font(.footnote)
         HStack {
-            Text("Base height (m)").font(.footnote)
+            Text("Cam ht above water/ground (m)").font(.footnote)
             TextField("m", value: $model.baseHeightM, format: .number)
-                .textFieldStyle(.roundedBorder).frame(width: 70).keyboardType(.numbersAndPunctuation)
+                .textFieldStyle(.roundedBorder).frame(width: 60).keyboardType(.numbersAndPunctuation)
             Text(String(format: "≈%.0f° down @100 m", -model.predictedDepressionDeg(atMeters: 100)))
                 .font(.caption2).foregroundStyle(.secondary)
         }
+        Text("How high the camera is above the surface the subject sits on (the water for surf; the ground for a tracker test) — NOT your altitude above sea level.")
+            .font(.caption2).foregroundStyle(.secondary)
     }
 
     @ViewBuilder private var controls: some View {

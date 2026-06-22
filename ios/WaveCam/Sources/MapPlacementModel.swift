@@ -21,9 +21,10 @@ final class MapPlacementModel {
     /// Last error radius computed from the live map zoom (the view updates this on region change).
     var lastErrorRadiusM = MapPlacementModel.radiusFloorM
 
-    /// Calibration v2: operator-entered base height above sea level (m). The only real
-    /// altitude input — target/subject are a fixed 1 m. Default 2 m (a beach tripod).
-    var baseHeightM: Double = 2.0
+    /// Calibration v2: how high the camera is above the SURFACE the subject sits on
+    /// (the water for surf; the ground for a tracker test) — NOT altitude above sea level.
+    /// Tilt depression is camera-vs-subject height only. Default ~1.5 m (tripod on the beach).
+    var baseHeightM: Double = 1.5
     /// Manual coordinate entry (alternative to dropping the pin). Decimal degrees.
     var manualLatText: String = ""
     var manualLonText: String = ""
