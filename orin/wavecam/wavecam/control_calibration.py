@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from .camera_pose import PRISUAL_PAN_ENC_PER_DEG, PRISUAL_TILT_ENC_PER_DEG
 from .control_utils import copy_optional_dict, make_request_id
 from .gps_geo import bearing_deg, haversine_m, normalize_180
+from .calibration_fit import fit_pan_offset
 from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 
 
@@ -99,6 +100,14 @@ class CalibrationManager:
         self._lock = lock
         self._api = api
         self._session = self._new_session()
+        # Multi-point offset refine: (pan_enc, bearing_deg) aim samples accumulated across
+        # repeated refine aims; a single-aim (replace) or reset clears it.
+        self._offset_samples: list[tuple[float, float]] = []
+
+    def reset_offset_samples(self) -> None:
+        """Clear the multi-point refine sample buffer (start the fit over)."""
+        with self._lock:
+            self._offset_samples = []
 
     def _new_session(self) -> dict:
         return {
@@ -704,9 +713,22 @@ class CalibrationManager:
         base_height_warning = abs(elev_cal) > 30.0 and distance_m > 50.0
         step3 = _optional_float(_field(req, "step3_bearing_deg"))
         offset = None if step3 is None else round(normalize_180(bearing - step3), 3)
+        mode = str(_field(req, "mode", "replace")).lower()
+        fit = None
         with self._lock:
-            self.pipeline.pose.calibrate_pan_aim(
-                enc=pan_enc, bearing_deg=bearing, enc_per_deg=PRISUAL_PAN_ENC_PER_DEG)
+            if mode == "accumulate":
+                # Multi-point refine: add this aim, refit the pan offset across ALL aims so
+                # per-aim GPS-bearing error averages out (scale stays the measured 14.4).
+                self._offset_samples.append((pan_enc, bearing))
+                fit = fit_pan_offset(self._offset_samples, PRISUAL_PAN_ENC_PER_DEG)
+                self.pipeline.pose.calibrate_pan_aim(
+                    enc=fit.anchor_enc, bearing_deg=fit.anchor_bearing_deg,
+                    enc_per_deg=PRISUAL_PAN_ENC_PER_DEG)
+            else:
+                # Single-aim (default): re-anchor from this one aim, reset accumulation.
+                self._offset_samples = []
+                self.pipeline.pose.calibrate_pan_aim(
+                    enc=pan_enc, bearing_deg=bearing, enc_per_deg=PRISUAL_PAN_ENC_PER_DEG)
             self.pipeline.pose.tilt_anchor_enc = tilt_enc
             self.pipeline.pose.tilt_anchor_elev = elev_cal
             self.pipeline.pose.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
@@ -753,7 +775,7 @@ class CalibrationManager:
               f"src={_field(req, 'source', None)}")
         # Return the standard session-state response (so the iOS wizard advances + the
         # session-state decoder is happy) PLUS the offset summary as sibling fields.
-        return JSONResponse({
+        response = {
             "ok": True,
             "request_id": make_request_id(),
             "revision": self._api.revision,
@@ -764,7 +786,12 @@ class CalibrationManager:
             "distance_m": round(distance_m, 3),
             "elev_cal_deg": round(elev_cal, 3),
             "base_height_warning": base_height_warning,
-        })
+        }
+        if fit is not None:
+            response["sample_count"] = fit.sample_count
+            response["rms_residual_deg"] = round(fit.rms_residual_deg, 3)
+            response["worst_residual_deg"] = round(fit.worst_residual_deg, 3)
+        return JSONResponse(response)
 
     def validate_heading(self, req) -> JSONResponse:
         refusal = self._require_active()

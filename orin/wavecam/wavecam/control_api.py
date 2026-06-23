@@ -202,6 +202,9 @@ class CalibrationOffsetRequest(CalibrationBaseRequest):
     target_lon: float | None = Field(default=None, ge=-180.0, le=180.0)
     # The coarse step-3 heading, so the response can report how far off it was.
     step3_bearing_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+    # "replace" (default) = single-aim re-anchor; "accumulate" = multi-point refine (adds
+    # this aim to the least-squares pan-offset fit). Unknown values fall back to replace.
+    mode: str = "replace"
 
 
 class CalibrationValidationRequest(CalibrationBaseRequest):
@@ -513,6 +516,12 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         response = api.offset_calibrate(req)
         api.bump_revision()
         return response
+
+    @app.post("/api/v1/calibration/offset/reset", dependencies=[Depends(require(PTZ))])
+    def calibration_offset_reset():
+        api.reset_offset_samples()
+        api.bump_revision()
+        return api.ok()
 
     @app.post("/api/v1/calibration/validation", dependencies=[Depends(require(PTZ))])
     def calibration_validation(req: CalibrationValidationRequest):
@@ -1077,6 +1086,9 @@ class ControlApiAdapter:
 
     def offset_calibrate(self, req: CalibrationOffsetRequest) -> JSONResponse:
         return self._calibration.offset_calibrate(req)
+
+    def reset_offset_samples(self) -> None:
+        self._calibration.reset_offset_samples()
 
     def validate_calibration_heading(self, req: CalibrationValidationRequest) -> JSONResponse:
         return self._calibration.validate_heading(req)
