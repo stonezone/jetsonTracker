@@ -10,19 +10,15 @@
 **Database**: None (embedded/IoT project)
 **Development Environment**: Local Mac + Jetson Orin (Codex/Zack deploy to the Orin)
 
-## Claude OS — project memory (USE THIS)
+## Memory — file index is PRIMARY; claude-os is a code-search sidecar
 
-Claude OS is the durable cross-session memory for this project: the **code-forge MCP** server at `http://localhost:8051` (start with `~/claude-os/start_all_services.sh` if the connector is down).
+**Durable cross-session memory lives in the file-based auto-memory at `~/.claude/projects/-Users-zackjordan-code-jetsonTracker/memory/`** — a hand-curated `MEMORY.md` index (auto-loaded into every session) pointing at one-fact-per-file `.md` memories. This is the **source of truth** for decisions, gotchas, and operational lessons. The dir is under its own git for rollback.
 
-**At session start and before architectural decisions, SEARCH the relevant KB** (`mcp__code-forge__search_knowledge_base`):
-- `JetsonTracker-project_memories` — decisions, incidents, operational lessons (primary)
-- `JetsonTracker-project_profile` — architecture & conventions
-- `JetsonTracker-project_index` — indexed repo context
-- `JetsonTracker-knowledge_docs` — project documentation
-
-**After solving something non-obvious, SAVE it** — `/claude-os-remember <insight>` or `mcp__code-forge__upload_document`. Verify drift-prone claims against the repo/live API, not stale KB text.
-
-Slash commands (`/claude-os-search`, `-remember`, `-save`, `-session`) auto-appear in the session skill list. Agent-OS (spec workflow: `/create-spec`, `/implement-spec`) is a separate, optional system.
+- **Recording a lesson:** write a `<slug>.md` fact file (frontmatter `name`/`description`/`metadata.type`) and add a one-line pointer to `MEMORY.md`. Enforced every conversation by hooks (`~/.claude/hooks/memory-currency-check.py`): SessionStart reports drift/staleness; **Stop blocks if the index has orphans or broken links**, so keep `MEMORY.md` in sync. Deep periodic cleanup: the `garden-maintain` skill.
+- **claude-os (code-forge MCP `http://localhost:8051`, start via `~/claude-os/start_all_services.sh`) is SECONDARY** — two uses only:
+  - `JetsonTracker-project_index` — semantic search over the codebase (`mcp__code-forge__search_knowledge_base`); refresh via `mcp__code-forge__index_semantic`.
+  - `JetsonTracker-project_memories` — optional cold archive for bulky/dated worklogs (`/claude-os-remember`, `mcp__code-forge__upload_document`).
+- The old `project_profile` + `knowledge_docs` + `code_structure` KBs were **DELETED 2026-06-22** (they held the superseded stepper-gimbal/watch-GPS architecture). Don't recreate them — the file memory + this CLAUDE.md are the live profile. Verify drift-prone claims against the repo/live API, not stale KB text.
 
 ## Open work — `docs/TODOs/` (REVIEW AT SESSION START)
 
@@ -162,6 +158,16 @@ See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
 - Don't end a session without saving key learnings
 - Don't let the agent move the camera without the **operator ARM gate** + a reachable KILL; KILL stays human-only (never an agent tool)
 - Don't `git push` to `main`/`master` on your own initiative (hook + org policy block it); a feature-branch push needs an in-turn user request. Backend edits + `deploy.sh` deploys no longer need a per-task assignment (Claude is primary) — but never bypass `deploy.sh`, the KILL/supervise-only rails, or the explicit-staging rule.
+
+## Verification discipline — hard-won 2026-06-22/23 (DO NOT repeat these)
+
+Specific failures from the calibration build that shipped broken builds to the rig + phone. Read before deploying/installing or saying "done".
+
+- **"Done" = observed working, never "it compiles/deploys/installs."** Say what was verified vs not. For a multi-step flow (CALIBRATE → aim → capture → validate → confirm → track; PTZ ownership), verify the WHOLE sequence, not just the step you changed. Canonical miss: *"verified the takeover, not the sequence after it"* — a velocity-takeover that passed in isolation made every later calibrate step refuse `calibrate_owner_lost` and stranded the rig in `manual`. Write/run the end-to-end test (or exercise on-device) BEFORE declaring ready or deploying. Unit/compile green ≠ feature works.
+- **The mission is the camera tracking the foiler — not clean code.** Don't let tech-debt / refactor / density / polish substitute for validating that tracking actually works. When accuracy/latency is unmeasured, MEASURE before building more features (the 12°-cal-vs-3°-FOV gap won't be closed by another refactor). Flag adjacent work; don't drift into it for a whole session.
+- **Replacing a hardcoded constant with a field: `grep` EVERY old usage repo-wide and update all sites.** `subject_alt_m` was added everywhere but `offset_calibrate` kept a hardcoded `1.0` (TECH5) → biased tilt. A new field/config that supersedes a literal is not done until the literal is gone everywhere it mattered.
+- **iOS UI changes need a visual check before "good."** Simulator builds are blocked by the watch `AppIcon` single-`universal`-1024 quirk (device/on-device builds are fine), so verify density/layout changes ON-DEVICE (screenshot/look) — never ship a UI change you haven't seen and call it good. `controlSize`/copy/spacing changes especially.
+- **Before `deploy.sh` / `wavecam.service` restart: check `/status.authority.calibration_valid`.** It's session-scoped — a restart DESTROYS the operator's hard-won VALID. If it's True (or you're mid-field-test), warn the operator first and minimize restarts. Repeated silent resets during field testing were a real, documented friction.
 
 ## Gotchas (hard-won — 2026-06-05, expanded 2026-06-12)
 
