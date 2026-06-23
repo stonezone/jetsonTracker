@@ -1392,11 +1392,15 @@ final class WaveCamClient {
     }
 
     /// POST /api/v1/calibration/session/exit
-    /// Releases the "calibrate" PTZ owner and restores prior mode.
-    func calibrateSessionExit(source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+    /// Releases the "calibrate" PTZ owner and restores prior mode. `confirm:false` (the default)
+    /// BAILS — the backend rolls the pose + camera_pose.json back to the session-entry snapshot,
+    /// so a partial/abandoned calibration never overwrites the previous good calibration, and the
+    /// menu can always be left (no "validation required" trap). Only "Confirm & finish" passes
+    /// `confirm:true` to COMMIT the new calibration.
+    func calibrateSessionExit(confirm: Bool = false, source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
         guard mode == .live else { return .failure(.unavailable) }
         return await sendCalibrationSession("calibration/session/exit", body: [
-            "confirm": true,
+            "confirm": confirm,
             "restore_prior": true,
             "source": source
         ])

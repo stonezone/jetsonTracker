@@ -279,7 +279,7 @@ struct CalibrateScreenV3: View {
             busy = true; note = nil; defer { busy = false }
             switch await client.calibrateValidationConfirm(accepted: true) {
             case .success:
-                switch await client.calibrateSessionExit() {
+                switch await client.calibrateSessionExit(confirm: true) {
                 case .success(let s): session = s
                 case .failure(let e): note = "Confirmed VALID, but exit failed — tap Exit to start tracking: \(e.localizedDescription)"
                 }
