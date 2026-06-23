@@ -45,6 +45,7 @@ HOT_CONFIG_KEYS = (
     "gps.stale_threshold_sec",
     "gps.drive_stale_sec",
     "gps.coast_on_no_fix_sec",
+    "gps.lead_s",
     "gps.grace_sec",
     "gps.lock_frames",
     "gps.drive_zoom",

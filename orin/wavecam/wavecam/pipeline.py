@@ -560,7 +560,8 @@ class Pipeline(threading.Thread):
             max_frac=float(getattr(gps_cfg, "drive_zoom_max_frac", 0.6)),
         ) if drive_zoom else None
         max_up = float(getattr(gps_cfg, "max_tilt_up_deg", 5.0))
-        pt = compute_target(base, target, self.pose, lead_s=0.65, zoom=zoom_curve,
+        lead_s = float(getattr(gps_cfg, "lead_s", 0.65))
+        pt = compute_target(base, target, self.pose, lead_s=lead_s, zoom=zoom_curve,
                             max_up_elev_deg=max_up)
         # Log only on transition so a persistently-clamped aim (likely a mis-surveyed base
         # altitude) is visible without spamming every frame.

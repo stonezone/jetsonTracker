@@ -174,6 +174,10 @@ class GpsCfg:
     # GPS-1: on an honest no-fix packet (wipeout / wave-trough blackout) coast on the
     # last good fix this long before dropping the aim. 0 = drop immediately.
     coast_on_no_fix_sec: float = 2.0
+    # Lead the moving subject along its course by this many seconds (GPS poll lag +
+    # prediction) when computing the pointing command. Hot so lead/latency can be A/B-tuned
+    # live during a field run — was a hardcoded 0.65 in the pipeline.
+    lead_s: float = 0.65
     # Calibration v2: clamp commanded up-tilt. The subject is at sea level, so a large
     # up-tilt is almost always a bad base altitude or GPS glitch ("points at the sky").
     max_tilt_up_deg: float = 5.0

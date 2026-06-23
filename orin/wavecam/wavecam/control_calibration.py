@@ -7,6 +7,7 @@ it can call refusal(), claim_manual(), revision, and status_snapshot().
 """
 from __future__ import annotations
 
+import copy
 import math
 import threading
 import time
@@ -103,11 +104,45 @@ class CalibrationManager:
         # Multi-point offset refine: (pan_enc, bearing_deg) aim samples accumulated across
         # repeated refine aims; a single-aim (replace) or reset clears it.
         self._offset_samples: list[tuple[float, float]] = []
+        # Transactional calibration: the pose + store state snapshotted at CALIBRATE entry, so
+        # a bail (confirm:false) exit rolls back. Wizard steps write through to the live pose
+        # AND persist, so without this a partial/abandoned calibration destroys the previous
+        # good calibration (field bug 2026-06-23). None = no active snapshot.
+        self._pose_snapshot: dict[str, Any] | None = None
 
     def reset_offset_samples(self) -> None:
         """Clear the multi-point refine sample buffer (start the fit over)."""
         with self._lock:
             self._offset_samples = []
+
+    def _snapshot_pose(self) -> None:
+        """Capture the live pose + persisted store metadata at CALIBRATE entry."""
+        self._pose_snapshot = {
+            "pose": copy.deepcopy(self.pipeline.pose),
+            "reference_heading": self._store.reference_heading,
+            "steps": copy.deepcopy(self._store.steps),
+            "fov_curve": list(getattr(self._store, "fov_curve", [])),
+            "updated_at_unix_ms": self._store.updated_at_unix_ms,
+        }
+
+    def _restore_pose_snapshot(self) -> None:
+        """Roll the live pose + store + camera_pose.json back to the entry snapshot (bail)."""
+        snap = self._pose_snapshot
+        if snap is None:
+            return
+        src = snap["pose"]
+        live = self.pipeline.pose
+        for field_name in type(live).__dataclass_fields__:
+            setattr(live, field_name, getattr(src, field_name))
+        # Runtime-only flags (excluded from the dataclass fields but mutated by steps —
+        # alt_manual is set on a map_manual location lock).
+        live.alt_manual = getattr(src, "alt_manual", False)
+        live.base_locked = getattr(src, "base_locked", True)
+        self._store.reference_heading = snap["reference_heading"]
+        self._store.steps = copy.deepcopy(snap["steps"])
+        self._store.fov_curve = list(snap["fov_curve"])
+        self._store.updated_at_unix_ms = snap["updated_at_unix_ms"]
+        self._store.save()
 
     def _new_session(self) -> dict:
         return {
@@ -283,6 +318,9 @@ class CalibrationManager:
                     "banner": "CALIBRATE ACTIVE",
                 }
             )
+            # Snapshot now — the pose still holds the prior good calibration; every wizard
+            # step from here writes through + persists, and a bail exit must restore this.
+            self._snapshot_pose()
             self.pipeline.state.set_status(state="CALIBRATE", cmd="stop")
         return self.calibration_ok()
 
@@ -295,6 +333,11 @@ class CalibrationManager:
                 "Validation must pass and be confirmed before confirm=true exit.",
             )
         with self._lock:
+            # Bail (confirm:false) discards the in-session changes: roll the pose +
+            # camera_pose.json back to the entry snapshot so a partial/abandoned calibration
+            # never overwrites the previous good calibration. Confirm keeps the new values.
+            if not confirm:
+                self._restore_pose_snapshot()
             previous_owner = self._session.get("previous_owner")
             if self.pipeline.owner.owner == CALIBRATE:
                 self.pipeline.ptz.stop()
@@ -320,6 +363,7 @@ class CalibrationManager:
             self._session["active"] = False
             self._session["ended_at_unix_ms"] = _now_ms()
             self._session["banner"] = self._calibration_banner(self._session)
+            self._pose_snapshot = None
             self.pipeline.state.set_status(state="SEARCHING", cmd="stop")
         return self.calibration_ok()
 
@@ -328,6 +372,10 @@ class CalibrationManager:
             if self.pipeline.owner.owner == CALIBRATE:
                 self.pipeline.owner.release(CALIBRATE)
             if self._session.get("active"):
+                # A cancelled session is never confirmed — roll the pose back like a bail so a
+                # KILL mid-calibration can't leave the live pose half-overwritten.
+                self._restore_pose_snapshot()
+                self._pose_snapshot = None
                 self._session["active"] = False
                 self._session["ended_at_unix_ms"] = _now_ms()
                 self._session["valid"] = False
