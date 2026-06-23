@@ -747,6 +747,10 @@ class CalibrationManager:
                 "source": _field(req, "source", None),
                 "captured_at_unix_ms": _now_ms(),
             }
+            if fit is not None:
+                entry["sample_count"] = fit.sample_count
+                entry["rms_residual_deg"] = round(fit.rms_residual_deg, 3)
+                entry["worst_residual_deg"] = round(fit.worst_residual_deg, 3)
             self._session["heading_lock"] = entry
             self._session["validation"] = None
             self._session["valid"] = False

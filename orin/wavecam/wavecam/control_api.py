@@ -454,7 +454,13 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
                 api.schedule_zoom_deadman(req.deadman_ms)
             api.bump_revision()
             return api.ok()
-        if not api.claim_manual(takeover=req.takeover):
+        # Zoom during an active CALIBRATE session (the v3 aim-on-Live flow): take over via the
+        # calibrate-aware path, which the plain manual claim refuses (CALIBRATE is not
+        # autonomous). Stages CALIBRATE for restore on release. KILL is checked above.
+        if api.pipeline.owner.owner == "calibrate" and req.takeover:
+            if not api.claim_manual_from_calibrate():
+                return api.refusal("owner_busy", "Cannot claim manual for calibrate zoom.")
+        elif not api.claim_manual(takeover=req.takeover):
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
         api.send_manual_zoom_velocity(req.value, req.deadman_ms)

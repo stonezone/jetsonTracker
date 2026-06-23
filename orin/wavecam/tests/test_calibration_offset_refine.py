@@ -24,6 +24,10 @@ def test_accumulate_grows_samples_and_reports_residual():
     assert b2["ok"] is True
     assert b2["sample_count"] == 2
     assert m.pipeline.pose.calibrated is True                # multi-point fit applied
+    # the refine summary also rides in the session state (so the iOS readout re-renders)
+    hl = m._session["heading_lock"]
+    assert hl["sample_count"] == 2
+    assert "rms_residual_deg" in hl
 
 
 def test_replace_mode_clears_the_sample_buffer():

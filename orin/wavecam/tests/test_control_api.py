@@ -621,6 +621,39 @@ def test_api_v1_ptz_velocity_calibrate_aim_still_blocked_by_kill():
     assert resp.json()["code"] == "killed"
 
 
+def test_api_v1_ptz_zoom_takes_over_calibrate_for_aim():
+    # Zoom during an active CALIBRATE session (the aim-on-Live flow) must take over via the
+    # calibrate-aware path — the plain manual claim refuses CALIBRATE. Mirrors the velocity
+    # COR2 fix so the operator can zoom to frame a distant tracker while calibrating.
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request(CALIBRATE) is True
+
+    blocked = client.post("/api/v1/ptz/zoom",
+                          json={"requested_owner": "manual", "mode": "velocity", "value": 0.5})
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "owner_busy"
+    assert pipe.owner.owner == CALIBRATE
+
+    resp = client.post("/api/v1/ptz/zoom",
+                       json={"requested_owner": "manual", "mode": "velocity", "value": 0.5, "takeover": True})
+    assert resp.status_code == 200
+    assert pipe.owner.owner == "manual"
+
+
+def test_api_v1_ptz_zoom_calibrate_still_blocked_by_kill():
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request(CALIBRATE) is True
+    pipe.owner.kill()
+    resp = client.post("/api/v1/ptz/zoom",
+                       json={"requested_owner": "manual", "mode": "velocity", "value": 0.5, "takeover": True})
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "killed"
+
+
 def test_calibrate_aim_release_restores_calibrate_so_capture_continues():
     # Sequence guard for the COR2 break: the v3 joystick aim takes over (calibrate->manual);
     # while owner=manual every calibration step refuses calibrate_owner_lost. Releasing the
