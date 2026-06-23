@@ -740,7 +740,7 @@
           <a class="button primary" href="#start">Start sequence</a>
           <a class="button" href="#troubleshooting">Recover a bad lock</a>
         </div>
-        <div class="hero-note">Current app tabs: Live, PTZ, Calibrate, Tune, Tools, Connect. Watch app tabs: Status/Tracking, Record Session. Tune exposes hot config; Calibrate sets camera location + heading.</div>
+        <div class="hero-note">Current app tabs: Live (includes PTZ), Calibrate, Tools (includes Tune), Connect, Media. Watch app tabs: Status/Tracking, Record Session. Tune exposes hot config; Calibrate sets camera location + heading.</div>
       </div>
 
       <div class="rig-scene reveal" aria-label="WaveCam rig illustration">
@@ -867,13 +867,14 @@
           <div class="flow-lane">
             <div class="step"><div><strong>Location lock.</strong><span>Averages the base Wio GPS fix to set camera lat/lon/alt. Needs a clear sky fix and the base Wio off the Orin USB rail during acquisition.</span></div></div>
             <div class="step"><div><strong>Level.</strong><span>Hold the camera level (tilt at horizontal). Sets the tilt reference.</span></div></div>
-            <div class="step"><div><strong>Heading.</strong><span>Aim the camera at a stationary target at least 50 m away. This maps pan offset to GPS bearing. Driveway headings aimed at closer targets will be coarse — that is expected for a close-range shakedown.</span></div></div>
-            <div class="step"><div><strong>Validate &rarr; Confirm.</strong><span>Only after confirm does <code>authority.calibration_valid</code> become true and GPS authority unlock.</span></div></div>
+            <div class="step"><div><strong>Heading.</strong><span>Set the heading (operator-entered; the rig&rsquo;s phone magnetometer is unusable near the motor). This maps pan offset to GPS bearing.</span></div></div>
+            <div class="step"><div><strong>Aim on the Live tab.</strong><span>Use the Live feed and zoom to aim the camera at a stationary target at least 50 m away, then tap <strong>Capture</strong>. Repeat <strong>Capture</strong> at several targets and tap <strong>Refine</strong> to fit a least-squares offset across the points. Driveway aims at closer targets will be coarse — that is expected for a close-range shakedown.</span></div></div>
+            <div class="step"><div><strong>Validate &rarr; Confirm.</strong><span>Only after confirm does <code>authority.calibration_valid</code> become true and GPS authority unlock. This flag is <strong>session-scoped</strong> — restarting wavecam.service resets it, so re-validate after any restart.</span></div></div>
           </div>
 
           <dl class="state-board">
             <div class="state-row"><dt>base_locked</dt><dd>True once the base GPS has a stable fix. Drift monitoring starts here.</dd></div>
-            <div class="state-row"><dt>calibration_valid</dt><dd>True only after validate &rarr; confirm. GPS pointing is refused until this is true.</dd></div>
+            <div class="state-row"><dt>calibration_valid</dt><dd>True only after validate &rarr; confirm. GPS pointing is refused until this is true. Session-scoped — a wavecam.service restart resets it to false.</dd></div>
             <div class="state-row"><dt>base_drift_state</dt><dd><code>unknown &rarr; locked &rarr; suspect &rarr; unlocked</code>. Only <code>unlocked</code> withholds GPS authority.</dd></div>
             <div class="state-row"><dt>Re-do</dt><dd>Any tripod nudge, relocation, or questionable GPS pointing requires a fresh CALIBRATE.</dd></div>
           </dl>
@@ -1139,6 +1140,10 @@
           <div class="panel">
             <h3>Persistent config</h3>
             <p>Use the YAML path for defaults that should survive service restart. Hot config is for live testing without restart; it validates the full patch before mutation, rejects stale <code>revision</code>, and rejects <code>persist:true</code>.</p>
+          </div>
+          <div class="panel">
+            <h3>Ask Claude agent</h3>
+            <p>The Orin web UI includes an <strong>ASK CLAUDE</strong> chat that can inspect status and advise. By default the agent is supervise-only and cannot move the camera. An operator <strong>ARM</strong> toggle (default OFF, auto-expires) grants it a short window to act via the control API. KILL is human-only, supreme, and disarms the agent.</p>
           </div>
           <div class="panel">
             <h3>Scheduled restart</h3>

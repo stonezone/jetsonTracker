@@ -409,7 +409,7 @@ python3 firmware/direct-lora/tools/read_base.py</code>
             <tbody>
               <tr><td><b>Camera feed</b></td><td>Feed is live and delivering &gt;10 FPS to the app.</td><td>Check camera power and the LAN cable. Restart <code>wavecam.service</code> if the camera was powered on after the service started.</td></tr>
               <tr><td><b>GPS ingest</b></td><td>The Orin&rsquo;s serial reader is getting data from the base Wio.</td><td>Check <code>wavecam.service</code> is running. If Ingest shows DOWN, restart the service &mdash; do not touch the Wios.</td></tr>
-              <tr><td><b>Remote tracker</b></td><td>A LoRa packet from your remote Wio arrived within the last 120 s.</td><td>Power-cycle the remote Wio; confirm both are on <code>SHORT_FAST</code> preset. Give it 60 s after power-on for the mesh to link.</td></tr>
+              <tr><td><b>Remote tracker</b></td><td>A LoRa packet from your remote Wio arrived within the last 120 s.</td><td>Power-cycle the remote Wio if not heard. Give it 60 s after power-on to acquire a GPS fix and establish the LoRa link.</td></tr>
               <tr><td><b>Base GPS fix</b></td><td>The base Wio has a valid GPS fix.</td><td>Move the tripod to open sky. Cold-start takes 2&ndash;5 min. If it never comes, run <code>verify_wios.sh</code> on the base.</td></tr>
             </tbody>
           </table>
@@ -811,7 +811,7 @@ python3 firmware/direct-lora/tools/read_base.py</code>
             <div class="ctrl-what">Age (seconds) at which a remote GPS fix is considered too stale for pointing. Range: 1&ndash;120 s. Code default 10 s; the rig runs <b>45 s</b> (field test 2026-06-11: the remote broadcasts every 2 s while moving but only every 10 s standing still &mdash; the exact reacquire pose &mdash; so 10 s starved GPS of usable windows).</div>
             <div class="ctrl-meta">
               <div class="adj"><b>Raise</b><span>Tolerates slower updates (partial sky, weak LoRa day).</span></div>
-              <div class="adj"><b>Lower</b><span>Demand fresh fixes; GPS cues cut out faster when the mesh lags.</span></div>
+              <div class="adj"><b>Lower</b><span>Demand fresh fixes; GPS cues cut out faster when the LoRa link has latency.</span></div>
             </div>
           </div>
 

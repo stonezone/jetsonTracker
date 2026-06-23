@@ -138,17 +138,9 @@ python3 .agent-collab/bin/collab.py claim-open --from claude --scope <path> --mo
 - iOS must work in **both portrait and landscape** (tripod-bracket mount)
 - Confirm the live deploy before telling Zack a feature is "live"
 
-## Coding Standards
+## Coding standards · architecture · practices
 
-See `.claude/CODING_STANDARDS.md` for detailed coding standards.
-
-## Architecture
-
-See `.claude/ARCHITECTURE.md` for system architecture overview.
-
-## Development Practices
-
-See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
+No separate `.claude/*.md` standards files exist (the old pointers were dead). The substance lives here: coding standards = org policy (`/Library/Application Support/ClaudeCode/CLAUDE.md`) + the user's global `~/.claude/CLAUDE.md`; architecture = the Repository Structure / Hardware / GPS / Live System Map sections above + the `.claude` memories; practices = the Development Workflow + Verification discipline sections above.
 
 ## DO NOT
 

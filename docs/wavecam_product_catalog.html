@@ -920,6 +920,15 @@
               <h3>Safety by ownership</h3>
               <p>Only one tracking mode owns camera movement at a time. Manual override and emergency stop controls stay explicit and visible.</p>
             </article>
+
+            <article class="feature">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M5 20a7 7 0 0 1 14 0M9 11h.01M15 11h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <h3>On-demand agent advisor</h3>
+              <p>Ask the on-device agent for help from the dashboard — it inspects status and advises by default. An operator ARM toggle (off by default, auto-expiring) can grant it supervised control to act through the control API. KILL is human-only and always disarms it.</p>
+            </article>
           </div>
         </div>
       </section>
@@ -956,7 +965,7 @@
               </article>
               <article class="system-card">
                 <h3>Operator surface</h3>
-                <p>The phone dashboard keeps setup and operation out of the terminal: preview, camera movement, follow mode, health, recording, and status.</p>
+                <p>The native iOS app keeps setup and operation out of the terminal across five tabs — Live (preview, camera movement, and follow controls, now merged with the old PTZ tab), Calibrate, Tools, Connect, and Media — covering preview, camera movement, follow mode, health, recording, and status. A watchOS companion rides along.</p>
                 <div class="chip-row">
                   <span class="chip dark">Preview</span>
                   <span class="chip dark">PTZ nudge</span>
@@ -986,7 +995,7 @@
             </article>
             <article class="step">
               <h3>Calibrate view</h3>
-              <p>Aim at the waterline, center the rider target, tune orange cue if needed, then lock the starting pose for stop/restore.</p>
+              <p>Single-screen flow: set location + height (base-relative or sea-level datum), set heading by hand (the phone magnetometer is unusable near the motor), then aim on the Live feed and Capture or multi-point Refine (least-squares offset) before Validate and Confirm. Calibration validity is session-scoped and resets on a service restart.</p>
             </article>
             <article class="step">
               <h3>Start follow</h3>
@@ -1037,7 +1046,7 @@
               </div>
               <div class="stack-row">
                 <b>Compute</b>
-                <span>Jetson Orin Nano running YOLO11n TensorRT at 30+ FPS. Tracking loop, health checks, dashboard, media control, and GPS ingest on one device.</span>
+                <span>Jetson Orin Nano running YOLO11n TensorRT, with the full tracking loop (detection through camera command) cycling at 30+ FPS. Tracking loop, health checks, dashboard, media control, and GPS ingest on one device.</span>
               </div>
               <div class="stack-row">
                 <b>Vision</b>
@@ -1099,7 +1108,7 @@
             <article class="deployment-card">
               <span class="status-pill test">2</span>
               <h3>Driveway shakedown</h3>
-              <p>Verify CALIBRATE mode (base lock, heading at ≥50m, tilt level, FOV anchor). Confirm KILL stops motion, manual nudge works, tracking.mode toggles, and /status authority section shows correct gate inputs.</p>
+              <p>Walk the calibration flow (location + height with a chosen datum, operator-set heading, live aiming, multi-point refine, validation) and confirm it commits. Confirm KILL stops motion, manual nudge works, tracking.mode toggles, and /status authority section shows correct gate inputs.</p>
             </article>
             <article class="deployment-card">
               <span class="status-pill plan">3</span>

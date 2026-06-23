@@ -51,15 +51,31 @@ Movement authority is centralized on the Orin. KILL/resume, manual PTZ, auto
 tracking, home, zoom, and deadman behavior must route through the backend owner
 model instead of side-channel camera commands.
 
+Claude is primary on both lanes — the backend (`orin/wavecam`) and the iOS app
+(`ios/WaveCam`). Other agents (Codex / DeepSeek / Kimi) are optional reviewers; the
+`.agent-collab/` bus is for collision-avoidance, not a permission gate.
+
 ## Active Features
 
 - FastAPI control API on `:8088` (and via Cloudflare at `wavecam.freddieland.com`).
-- Native iOS operator app + bundled watchOS companion (WaveCamWatch).
+- Native iOS operator app (5 tabs: Live / Calibrate / Tools / Connect / Media; the
+  former separate PTZ tab is now merged into Live) + bundled watchOS companion (WaveCamWatch).
 - YOLO11n TensorRT person detection.
 - HSV orange/red color cue and person/color fusion.
 - Direct-LoRa Wio GPS for coarse pointing and vision reacquisition.
-- PTZ pan/tilt/zoom over RAW VISCA UDP.
+- PTZ pan/tilt/zoom over RAW VISCA UDP. Pan/tilt scale = `14.4` counts/deg (measured).
 - `tracking.mode` selector: `auto`, `gps_only`, `vision_only`.
+- Calibrate mode (v3 single-screen flow): location + height (datum: base-relative or
+  sea-level) -> heading (operator-set; the rig's phone magnetometer is unusable near the
+  motor) -> aim on the Live tab (feed + zoom) -> Capture / multi-point Refine (least-squares
+  offset) -> Validate -> Confirm. `calibration_valid` is session-scoped: a service restart
+  resets it.
+- On-demand agent subsystem (part of `wavecam.service`, not a daemon): an advisor that
+  shells out to the Claude Code CLI (`claude -p`, default provider; alternates DeepSeek /
+  GLM / Kimi) plus an operator-ARM-gated, supervise-only acting-agent, via
+  `POST /api/v1/agent/{chat,summon}`. The ARM toggle defaults OFF (TTL 600 s); the agent
+  only moves the camera while ARMed, and unarmed it can only inspect/advise. KILL is
+  human-only, supreme, and disarms it.
 - Cinematic Zoom feature-detected through `GET /api/v1/config`.
 - Hot config patching for tuning controls (persisted to `config.local.yaml`).
 - Presets, logs, guide, guide assets, media list/download/delete.
@@ -145,11 +161,16 @@ curl -s http://<orin>:8088/guide
 ```
 
 Current surfaces include status, config, hot config, system restart, PTZ movement,
-zoom, home, KILL/resume, owner/deadman behavior, media list/download/delete,
+zoom, home, KILL/resume, owner/deadman behavior, calibration session/location/level/
+heading-lock/validation, agent chat/summon, media list/download/delete,
 record start/stop, presets, logs, guide, and guide assets.
 
 Use `GET /api/v1/config` as the authoritative source for supported features,
 hot keys, and restart-only keys. Do not infer support from stale documentation.
+
+Safety invariants (always hold): KILL is human-only and supreme (never an agent
+capability; it disarms the agent and stops motion); the agent is supervise-only by
+default; deploy only via `deploy.sh`.
 
 ## Recording Contract
 
