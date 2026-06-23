@@ -65,6 +65,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "enabled": getattr(getattr(cfg, "gps", None), "enabled", False),
                 "stale_threshold_sec": getattr(getattr(cfg, "gps", None), "stale_threshold_sec", 10.0),
                 "coast_on_no_fix_sec": getattr(getattr(cfg, "gps", None), "coast_on_no_fix_sec", 2.0),
+                "lead_s": getattr(getattr(cfg, "gps", None), "lead_s", 0.65),
                 "grace_sec": getattr(getattr(cfg, "gps", None), "grace_sec", 1.0),
                 "lock_frames": getattr(getattr(cfg, "gps", None), "lock_frames", 5),
                 "drive_zoom": getattr(getattr(cfg, "gps", None), "drive_zoom", False),

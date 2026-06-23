@@ -254,6 +254,19 @@ def test_gps_lead_s_from_overlay(tmp_path):
     assert cfg.gps.lead_s == 1.2
 
 
+def test_config_endpoint_exposes_gps_lead_s(tmp_path):
+    """The /config payload must surface gps.lead_s (the iOS Tune slider / web page feature-detect
+    off it). The gps dict is a hand-built subset, so a new hot key is invisible until added here."""
+    p = tmp_path / "config.yaml"
+    p.write_text("gps:\n  enabled: true\n")
+    pipe = DummyPipeline()
+    pipe.cfg.source_path = str(p)
+    client = TestClient(build_app(pipe))
+    resp = client.get("/api/v1/config")
+    assert resp.status_code == 200
+    assert resp.json()["current"]["gps"]["lead_s"] == 0.65
+
+
 def test_gps_lead_s_hot_key_persists_to_overlay(tmp_path):
     """POST config/hot {gps.lead_s} must apply (ok:true) and persist to the overlay —
     i.e. it is a registered hot key, not an unknown key the endpoint rejects."""
