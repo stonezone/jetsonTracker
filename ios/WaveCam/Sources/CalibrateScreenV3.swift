@@ -3,9 +3,9 @@ import MapKit
 
 /// Calibration v3 — ONE screen. Pinned Exit + KILL (never covered), an always-on map of
 /// base + tracker, and the flow inline (no modal sheets, no hard blockers): set
-/// location+height+heading, aim the camera at the tracker with the embedded joystick,
-/// capture the offset, validate, confirm → tracking. A Settings disclosure re-edits the
-/// pose afterward. Self-contained: drives the calibration endpoints directly.
+/// location+height+heading, aim on the Live tab (feed + zoom), capture/refine the offset,
+/// validate, confirm → tracking. A Settings disclosure re-edits the pose afterward.
+/// Self-contained: drives the calibration endpoints directly.
 struct CalibrateScreenV3: View {
     @Environment(WaveCamClient.self) private var client
     @State private var session: WCCalibrationSessionState?
@@ -30,8 +30,8 @@ struct CalibrateScreenV3: View {
             header                          // pinned — Exit + KILL never scroll away
             if let note { noteBar(note) }   // errors prominent under the header, not buried at the bottom
             ScrollView {
-                VStack(spacing: 14) {
-                    mapPanel.frame(height: 240)
+                VStack(spacing: 10) {
+                    mapPanel.frame(height: 200)
                     if active {
                         locationHeightCard
                         headingCard
@@ -42,7 +42,8 @@ struct CalibrateScreenV3: View {
                         enterCard
                     }
                 }
-                .padding(16)
+                .padding(12)
+                .controlSize(.small)   // denser buttons/pickers/fields throughout the workflow
             }
             .scrollIndicators(.hidden)
         }
@@ -126,8 +127,8 @@ struct CalibrateScreenV3: View {
     // MARK: cards
     private var enterCard: some View {
         VStack(spacing: 10) {
-            Text("Start a calibration session to set location, height, heading, and the tracker offset.")
-                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text("Set location, heading, and tracker offset.")
+                .font(.caption).foregroundStyle(.secondary)
             Button { run { await client.calibrateSessionStart() } } label: {
                 Text("Enter CALIBRATE").frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).disabled(busy)
@@ -135,37 +136,33 @@ struct CalibrateScreenV3: View {
     }
 
     private var locationHeightCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             cardTitle("1 · Location + height")
-            Text("Tap to drop on your phone's location, then pan so the crosshair sits on the real tripod spot.")
-                .font(.caption2).foregroundStyle(.secondary)
             Button { usePhoneLocation() } label: {
                 Label("Center map on my phone", systemImage: "location.fill").frame(maxWidth: .infinity)
             }.buttonStyle(.bordered).disabled(busy)
+            Text("Crosshair = tripod spot.").font(.caption2).foregroundStyle(.secondary)
             Picker("Datum", selection: $datumSeaLevel) {
-                Text("Relative to base").tag(false)
-                Text("Above sea level").tag(true)
+                Text("vs base").tag(false)
+                Text("sea level").tag(true)
             }.pickerStyle(.segmented)
             if datumSeaLevel {
-                heightField("Base height (ASL m)", $baseHeight)
-                heightField("Tracker height (ASL m)", $subjectHeight)
+                heightField("Base (ASL m)", $baseHeight)
+                heightField("Tracker (ASL m)", $subjectHeight)
             } else {
-                Text("Base = 0. Enter the tracker's height relative to the base (e.g. −1 if the camera is 1 m up and the tracker's on the ground).")
-                    .font(.caption2).foregroundStyle(.secondary)
                 heightField("Tracker vs base (m)", $subjectHeight)
             }
             Text(depressionHint).font(.caption2).foregroundStyle(.secondary)
             Button { setLocationAndHeight() } label: {
-                Text("Set base location + height").frame(maxWidth: .infinity)
+                Text("Set location + height").frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent).disabled(busy || killed)
         }.cardBG()
     }
 
     private var headingCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             cardTitle("2 · Heading")
-            Text("Slide to the camera's forward bearing, or type it from a compass/nav. (GPS bearing to the tracker is shown above.)")
-                .font(.caption2).foregroundStyle(.secondary)
+            Text("Camera's forward bearing.").font(.caption2).foregroundStyle(.secondary)
             HStack {
                 Slider(value: $headingDeg, in: 0...360, step: 1)
                 Text(String(format: "%.0f°", headingDeg)).font(.footnote).frame(width: 44)
@@ -177,9 +174,9 @@ struct CalibrateScreenV3: View {
     }
 
     private var aimCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            cardTitle("3 · Aim at the tracker + capture")
-            Text("Aim on the Live tab (full view + zoom) — tracker dead-center, ideally 50+ m out — then return here and Capture. Refine +1 averages extra aims from new spots to tighten accuracy.")
+        VStack(alignment: .leading, spacing: 6) {
+            cardTitle("3 · Aim + capture")
+            Text("Aim on Live (view + zoom, 50+ m), then Capture. Refine +1 from new spots to tighten.")
                 .font(.caption2).foregroundStyle(.secondary)
             if showRefine, let hl = session?.session?.headingLock, let n = hl.sampleCount {
                 Text("refined: \(n) aim\(n == 1 ? "" : "s") · residual \(hl.rmsResidualDeg.map { String(format: "%.1f°", $0) } ?? "—")")
@@ -202,7 +199,7 @@ struct CalibrateScreenV3: View {
     }
 
     private var validateCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             cardTitle("4 · Validate + confirm")
             if let v = session?.session?.validation, let miss = v.missDeg {
                 Text(String(format: "last miss: %.1f°", miss)).font(.caption2).foregroundStyle(.secondary)
@@ -216,15 +213,15 @@ struct CalibrateScreenV3: View {
                     Text("Confirm & finish").frame(maxWidth: .infinity)
                 }.buttonStyle(.borderedProminent)
             }.disabled(busy || killed)
-            Text("Validate first (sight a check-point), then Confirm. The miss is advisory — Confirm always commits; it just shows aim accuracy. Confirm marks VALID and exits calibrate so GPS tracking can take over.")
+            Text("Validate a check-point, then Confirm — commits VALID + exits to GPS tracking.")
                 .font(.caption2).foregroundStyle(.secondary)
         }.cardBG()
     }
 
     private var settingsDisclosure: some View {
         DisclosureGroup(isExpanded: $showSettings) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Re-apply the location + height above (e.g. after moving the tripod) or re-set the heading. Changes reload live.")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Re-apply after moving the tripod. Reloads live.")
                     .font(.caption2).foregroundStyle(.secondary)
                 Button { setLocationAndHeight() } label: {
                     Text("Re-apply location + height").frame(maxWidth: .infinity)
@@ -243,7 +240,7 @@ struct CalibrateScreenV3: View {
         // backend's pose.subject_alt_m − pose.alt_m). Mixing datums is the −63° dive trap.
         let base = datumSeaLevel ? (Double(baseHeight) ?? 0) : 0
         let subj = Double(subjectHeight) ?? (datumSeaLevel ? 1 : -1)
-        return String(format: "camera looks ≈%.0f° down at 100 m", -GeoMath.elevationDeg(baseAltM: base, distanceM: 100, subjectAltM: subj))
+        return String(format: "≈%.0f° down @100 m", -GeoMath.elevationDeg(baseAltM: base, distanceM: 100, subjectAltM: subj))
     }
 
     /// The phone's own GPS fix, as posted to the backend at 1 Hz by PhoneSensorPublisher
@@ -339,7 +336,7 @@ struct CalibrateScreenV3: View {
 
 private extension View {
     func cardBG() -> some View {
-        self.padding(12)
+        self.padding(10)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.1)))
     }
