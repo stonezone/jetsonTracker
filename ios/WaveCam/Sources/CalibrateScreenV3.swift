@@ -8,11 +8,10 @@ import MapKit
 /// pose afterward. Self-contained: drives the calibration endpoints directly.
 struct CalibrateScreenV3: View {
     @Environment(WaveCamClient.self) private var client
-    @State private var ptz = PTZManualController()
-    @State private var knob: CGSize = .zero
     @State private var session: WCCalibrationSessionState?
     @State private var busy = false
     @State private var note: String?
+    @State private var showRefine = false   // in a multi-point refine sequence (show the readout)
 
     @State private var camPos: MapCameraPosition = .automatic
     @State private var mapCenter = CLLocationCoordinate2D(latitude: 21.6808, longitude: -158.0364)
@@ -180,25 +179,25 @@ struct CalibrateScreenV3: View {
     private var aimCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             cardTitle("3 · Aim at the tracker + capture")
-            Text("Use the joystick to put the tracker dead-center (50+ m out), then capture — it sets the pan+tilt offset from the tracker's GPS.")
+            Text("Aim on the Live tab (full view + zoom) — tracker dead-center, ideally 50+ m out — then return here and Capture. Refine +1 averages extra aims from new spots to tighten accuracy.")
                 .font(.caption2).foregroundStyle(.secondary)
-            HStack {
-                Spacer()
-                JoystickPad(knobOffset: $knob, diameter: 150,
-                            onCommand: { p, t in ptz.sendVelocity(pan: p, tilt: t, client: client) },
-                            // RELEASE (not hold) on lift-off: the velocity takeover moved owner
-                            // calibrate→manual; releasing restores owner=calibrate (camera holds
-                            // the aim because the arbiter idles for calibrate), so Capture/Validate/
-                            // Confirm still own the session. holdPTZ would strand owner=manual →
-                            // every next calibration step refuses calibrate_owner_lost + exit can't
-                            // release → arbiter never resumes → no tracking.
-                            onStop: { ptz.releaseManualPTZ(client: client) })
-                Spacer()
+            if showRefine, let hl = session?.session?.headingLock, let n = hl.sampleCount {
+                Text("refined: \(n) aim\(n == 1 ? "" : "s") · residual \(hl.rmsResidualDeg.map { String(format: "%.1f°", $0) } ?? "—")")
+                    .font(.caption2.weight(.semibold)).foregroundStyle(WC.ok)
             }
-            Button { run { await client.calibrateOffset(targetLat: nil, targetLon: nil,
-                                                         step3BearingDeg: headingDeg) } } label: {
-                Text("Capture offset (re-anchor pan+tilt)").frame(maxWidth: .infinity)
-            }.buttonStyle(.borderedProminent).disabled(busy || killed)
+            HStack {
+                Button { captureOffset() } label: {
+                    Text("Capture").frame(maxWidth: .infinity)
+                }.buttonStyle(.borderedProminent)
+                Button { refineOffset() } label: {
+                    Text("Refine +1").frame(maxWidth: .infinity)
+                }.buttonStyle(.bordered)
+            }.disabled(busy || killed)
+            if showRefine {
+                Button { resetRefine() } label: {
+                    Text("Reset refine").frame(maxWidth: .infinity)
+                }.buttonStyle(.plain).font(.caption2).foregroundStyle(WC.muted).disabled(busy)
+            }
         }.cardBG()
     }
 
@@ -290,6 +289,27 @@ struct CalibrateScreenV3: View {
             case .failure(let e):
                 note = "Failed: \(e.localizedDescription)"
             }
+        }
+    }
+
+    // Capture = single baseline aim (clears refine accumulation). Refine = add this aim to the
+    // multi-point least-squares fit. Aim on the Live tab first; the camera holds where it points.
+    private func captureOffset() {
+        showRefine = false
+        run { await client.calibrateOffset(step3BearingDeg: headingDeg, mode: "replace") }
+    }
+
+    private func refineOffset() {
+        showRefine = true
+        run { await client.calibrateOffset(step3BearingDeg: headingDeg, mode: "accumulate") }
+    }
+
+    private func resetRefine() {
+        guard !busy else { return }
+        showRefine = false
+        Task {
+            busy = true; note = nil; defer { busy = false }
+            _ = await client.calibrateOffsetReset()
         }
     }
 

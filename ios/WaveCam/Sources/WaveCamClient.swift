@@ -471,6 +471,11 @@ struct WCCalHeadingLockEntry: Codable, Sendable {
     // can show the backend's authoritative values, not the iOS preview (audit IOS-A2).
     var offsetDeg: Double?
     var baseHeightWarning: Bool?
+    // Multi-point refine (mode=accumulate): the running least-squares fit summary, so the
+    // aim step can show "samples N · residual X.X°". nil for a single-aim (replace) offset.
+    var sampleCount: Int?
+    var rmsResidualDeg: Double?
+    var worstResidualDeg: Double?
 }
 
 extension WCCalHeadingLockEntry {
@@ -485,6 +490,9 @@ extension WCCalHeadingLockEntry {
         method = try c.decodeIfPresent(String.self, forKey: .method)
         offsetDeg = try c.decodeIfPresent(Double.self, forKey: .offsetDeg)
         baseHeightWarning = try c.decodeIfPresent(Bool.self, forKey: .baseHeightWarning)
+        sampleCount = try c.decodeIfPresent(Int.self, forKey: .sampleCount)
+        rmsResidualDeg = try c.decodeIfPresent(Double.self, forKey: .rmsResidualDeg)
+        worstResidualDeg = try c.decodeIfPresent(Double.self, forKey: .worstResidualDeg)
     }
 }
 
@@ -1473,8 +1481,8 @@ final class WaveCamClient {
     /// coarse heading so the backend can report how far off it was. pan/tilt encoders are
     /// captured server-side at request time (operator holds the tracker framed).
     nonisolated static func offsetCalibrateBody(targetLat: Double?, targetLon: Double?,
-                                                step3BearingDeg: Double?, source: String) -> [String: Any] {
-        var b: [String: Any] = ["operator_accepted": true, "source": source]
+                                                step3BearingDeg: Double?, mode: String, source: String) -> [String: Any] {
+        var b: [String: Any] = ["operator_accepted": true, "mode": mode, "source": source]
         if let la = targetLat, let lo = targetLon { b["target_lat"] = la; b["target_lon"] = lo }
         if let s = step3BearingDeg { b["step3_bearing_deg"] = s }
         return b   // omit coords => backend uses its own live tracker fix
@@ -1499,14 +1507,23 @@ final class WaveCamClient {
                                             body: Self.mapLocationBody(lat: lat, lon: lon, errorRadiusM: errorRadiusM, source: source, altM: altM, subjectAltM: subjectAltM))
     }
 
-    /// POST /api/v1/calibration/offset — single tracker aim re-anchors pan+tilt (Calibration v2).
-    /// Omitting target coords lets the backend use its own live tracker fix.
+    /// POST /api/v1/calibration/offset — tracker aim re-anchors pan+tilt.
+    /// `mode`: "replace" = single-aim baseline (clears refine samples); "accumulate" = add this
+    /// aim to the multi-point least-squares refine. Omitting target coords uses the live fix.
     func calibrateOffset(targetLat: Double? = nil, targetLon: Double? = nil, step3BearingDeg: Double?,
-                         source: String = "ios_native") async
+                         mode: String = "replace", source: String = "ios_native") async
         -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
-        guard mode == .live else { return .failure(.unavailable) }
+        guard self.mode == .live else { return .failure(.unavailable) }
         return await sendCalibrationSession("calibration/offset",
-                                            body: Self.offsetCalibrateBody(targetLat: targetLat, targetLon: targetLon, step3BearingDeg: step3BearingDeg, source: source))
+                                            body: Self.offsetCalibrateBody(targetLat: targetLat, targetLon: targetLon, step3BearingDeg: step3BearingDeg, mode: mode, source: source))
+    }
+
+    /// POST /api/v1/calibration/offset/reset — clear the multi-point refine sample buffer.
+    @discardableResult
+    func calibrateOffsetReset() async -> Bool {
+        guard mode == .live else { return false }
+        do { _ = try await post("calibration/offset/reset", body: ["source": "ios_native"]); return true }
+        catch { return false }
     }
 
     /// POST /api/v1/calibration/heading-lock — look-at point from the map (target coords).

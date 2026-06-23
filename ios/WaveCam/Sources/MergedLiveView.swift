@@ -174,6 +174,18 @@ struct MergedLiveView: View {
             .padding(WCSpace.md)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
+            // CALIBRATE cue — while a calibrate session owns the camera, remind the operator
+            // they're aiming for calibration and to return to the Calibrate tab to Capture.
+            if client.status?.ptz.owner == "calibrate" {
+                Text("CALIBRATE · aim at the tracker, then return to Calibrate → Capture")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(WC.warn, in: Capsule())
+                    .padding(.top, 56)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+
             // Error/refusal toast — bottom, above joystick row
             GlassToast(message: $toastMessage)
         }
