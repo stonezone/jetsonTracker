@@ -43,8 +43,39 @@ In the calibrate aim step (or a dedicated "Refine" disclosure): after the first 
 - Optional + additive: must not change the single-aim/manual-heading/validate/confirm paths or the KILL/owner rails.
 - Not auto-collecting (that's the separate vision-assisted walk-calibration); this is operator-driven, one aim per tap.
 
-## Open questions
-1. Scale correction — ship fixed-only, or include the bounded ≥3-sample scale regression behind an "advanced" toggle?
-2. Sample cap / decay — cap at N most-recent, or keep all session samples?
-3. UI home — inline in the aim step, or a separate "Refine" tab so the primary flow stays minimal?
-4. Auto-flag vs auto-drop outliers.
+## Open questions — RESOLVED 2026-06-22
+1. Scale correction → **fixed-only** (the 14.4 is hard-stop-measured; don't let GPS noise move it). No scale-regression toggle in v1.
+2. Sample cap → **keep all session samples** (a Reset clears). Soft cap deferred.
+3. UI home → **inline in the aim step** (keeps the single-screen flow; no separate tab).
+4. Outliers → **reset-only** in v1 (discard-last deferred); the residual readout surfaces a bad aim.
+
+## v1 delivery — approved UX design (2026-06-22)
+
+**Aiming = the Live tab (full feed + 20× zoom + joystick), not an embedded view.** The
+calibrate aim step (step 3) drops the embedded viewless joystick. To aim, the operator
+opens the **Live** tab (the best surface for spotting a distant tracker), frames it,
+returns to Calibrate, and captures. While a calibrate session is active, the Live tab
+shows a compact banner — *"CALIBRATE — aim at the tracker, then return to Calibrate to
+Capture"* — read from `status.calibration.active` (no tab-selection plumbing; guidance-only
+in v1, auto-switch is a trivial follow-up).
+
+**Aim-step controls (the core interaction):**
+- **Capture offset** — single baseline aim (`mode=replace`; clears refine samples). First aim or "start over."
+- **Refine +1** — adds the current aim as a sample (`mode=accumulate`); aim again from a different spot/distance to tighten. Shows **"samples N · residual X.X°"**.
+- **Reset refine** — clears samples.
+
+**Backend zoom-takeover (TDD):** mirror the COR2 velocity fix on `/api/v1/ptz/zoom` — when
+`owner==calibrate` and `takeover`, route through `claim_manual_from_calibrate` so zoom works
+during calibrate (today refused); KILL still blocks; releases back to calibrate. Endpoint
+test + API-contract snapshot update.
+
+**iOS client:** `calibrateOffset` gains a `mode` param; add `calibrateOffsetReset()`.
+
+**Out of scope (still required to prove sufficiency, tracked separately):** tab auto-switch,
+discard-last, and — critically — **lead/latency tuning + a framing success metric + a
+measurement run**. This UI *enables* refinement; a field measurement confirms it actually
+closes the ~3° FOV gap at range.
+
+**Follow-up (separate pass):** calibrate-tab density/simplification (fewer words, smaller
+buttons, free space) via swiftui-expert + frontend-design + anti-vibe, done after this
+rework so the final layout is what gets simplified.
