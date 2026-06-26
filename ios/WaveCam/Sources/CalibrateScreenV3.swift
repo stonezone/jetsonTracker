@@ -16,7 +16,9 @@ struct CalibrateScreenV3: View {
     @State private var camPos: MapCameraPosition = .automatic
     @State private var mapCenter = CLLocationCoordinate2D(latitude: 21.6808, longitude: -158.0364)
     @State private var headingDeg: Double = 0
-    @State private var cameraHeightFt = "0"         // camera height above the water (ft); foiler = water = 0
+    @State private var datumSeaLevel = false        // false = relative-to-base (the common case)
+    @State private var baseAslM = "0"               // sea-level mode: base height above sea level (m)
+    @State private var trackerVsBaseM = "0"         // base-relative mode: tracker offset (m, − if below)
     @State private var showSettings = false
 
     private var active: Bool { session?.active == true }
@@ -140,7 +142,15 @@ struct CalibrateScreenV3: View {
                 Label("Center map on my phone", systemImage: "location.fill").frame(maxWidth: .infinity)
             }.buttonStyle(.bordered).disabled(busy)
             Text("Crosshair = tripod spot.").font(.caption2).foregroundStyle(.secondary)
-            heightField("Camera height above water (ft)", $cameraHeightFt)
+            Picker("Datum", selection: $datumSeaLevel) {
+                Text("vs base").tag(false)
+                Text("sea level").tag(true)
+            }.pickerStyle(.segmented)
+            if datumSeaLevel {
+                heightField("Base above sea level (m)", $baseAslM)
+            } else {
+                heightField("Tracker vs base (m, − if below)", $trackerVsBaseM)
+            }
             Text(depressionHint).font(.caption2).foregroundStyle(.secondary)
             Button { setLocationAndHeight() } label: {
                 Text("Set location + height").frame(maxWidth: .infinity)
@@ -222,14 +232,25 @@ struct CalibrateScreenV3: View {
     }
 
     // MARK: helpers
+    /// (alt_m, subject_alt_m) for the chosen datum, both feeding the backend's tilt depression
+    /// atan2(subject_alt_m − alt_m, dist) identically. Sea level: operator enters base ASL, the
+    /// foiler's tracker sits ~1 m above the water (+1 ASL). Base-relative: base = 0, operator
+    /// enters the tracker offset — NEGATIVE when filming from above (lanai/cliff/bridge).
+    private var heightPose: (altM: Double, subjectAltM: Double) {
+        datumSeaLevel ? (Double(baseAslM) ?? 0, 1.0) : (0.0, Double(trackerVsBaseM) ?? 0)
+    }
+
+    private func tiltLabel(_ down: Double) -> String {
+        down >= 0 ? String(format: "%.0f° down", down) : String(format: "%.0f° UP", -down)
+    }
+
     private var depressionHint: String {
-        // The foiler is on the water (subject = 0); the only unknown is the camera's height above
-        // it. Down-tilt = atan2(0 − camHeight, dist) (matches the backend's subject_alt_m − alt_m).
-        // The height delta dominates UP CLOSE and is ~nil offshore, so preview a near range too.
-        let camM = (Double(cameraHeightFt) ?? 0) * 0.3048
-        let at15 = -GeoMath.elevationDeg(baseAltM: camM, distanceM: 15, subjectAltM: 0)
-        let at100 = -GeoMath.elevationDeg(baseAltM: camM, distanceM: 100, subjectAltM: 0)
-        return String(format: "≈%.0f° down @15 m · %.0f° @100 m", at15, at100)
+        // Down-tilt = atan2(subject − base, dist). The height delta dominates UP CLOSE and is ~nil
+        // offshore, so preview a near range too. "UP" here flags a wrong sign/value — catch it now.
+        let p = heightPose
+        let at15 = -GeoMath.elevationDeg(baseAltM: p.altM, distanceM: 15, subjectAltM: p.subjectAltM)
+        let at100 = -GeoMath.elevationDeg(baseAltM: p.altM, distanceM: 100, subjectAltM: p.subjectAltM)
+        return "≈\(tiltLabel(at15)) @15 m · \(tiltLabel(at100)) @100 m"
     }
 
     /// The phone's own GPS fix, as posted to the backend at 1 Hz by PhoneSensorPublisher
@@ -252,11 +273,11 @@ struct CalibrateScreenV3: View {
     }
 
     private func setLocationAndHeight() {
-        // Camera height above the water → alt_m (meters); subject fixed at the water = 0, so the
-        // backend's depression atan2(subject_alt_m − alt_m, dist) = atan2(−camHeight, dist) (down).
-        let altM = (Double(cameraHeightFt) ?? 0) * 0.3048
+        // Commit the datum-resolved (alt_m, subject_alt_m) — see heightPose. Both modes write the
+        // same two pose fields the GPS tilt reads; the datum only changes how you enter them.
+        let p = heightPose
         let lat = mapCenter.latitude, lon = mapCenter.longitude
-        run { await client.calibrateLocationManual(lat: lat, lon: lon, errorRadiusM: 5, altM: altM, subjectAltM: 0) }
+        run { await client.calibrateLocationManual(lat: lat, lon: lon, errorRadiusM: 5, altM: p.altM, subjectAltM: p.subjectAltM) }
     }
 
     /// Confirm marks VALID but leaves owner=calibrate (arbiter locked out); the session must
