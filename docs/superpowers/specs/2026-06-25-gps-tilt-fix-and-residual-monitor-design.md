@@ -33,12 +33,15 @@ Replace the datum picker + base/tracker height fields with **one intuitive field
 - Keep the existing live preview (`CalibrateScreenV3.swift:237-243`) but show it at a **near distance where it matters**, e.g. "≈17° down @15 m" (and optionally @100 m), so a wrong entry is visible before committing.
 - `commitLocation` sends `calibrateLocationManual(... altM: <feet·0.3048>, subjectAltM: 0.0)` (`WaveCamClient.swift:1505`, unchanged signature).
 
-**Decisions flagged for review:**
-1. **Units = feet** (matches "15 ft"). Stored internally as meters. (Easy to switch to meters or add a ft/m toggle.)
-2. **Drop the datum picker entirely** (vs hide it behind an "advanced" disclosure). Recommendation: drop it — the foiler-on-water model is fully general for the mission; re-add later only if a non-water reference target is ever needed. YAGNI.
+**Decisions (resolved with operator, 2026-06-25 — supersedes the single-field draft above):**
+Keep the **datum picker** but reduce each mode to **one meaningful field**, both resolving to the same two pose fields:
+- **Sea level:** enter base height ASL; tracker hardcoded **+1** (foiler ~1 m above the water). → `alt_m = base ASL`, `subject_alt_m = 1.0`.
+- **Relative to base** (the 9-in-10 case): enter the tracker offset, **± (negative when filming from above** — lanai/cliff/bridge). → `alt_m = 0`, `subject_alt_m = offset`.
+- **Units = meters** (operator's examples −5 / +1; matches the old fields + backend native).
+- Preview reads `≈N° down/UP @15 m · @100 m` — "UP" glares when the sign is wrong (the fat-finger that caused the field bug). Shipped build 603 (`12c4235`); `heightPose` resolves the datum so preview + commit can't diverge.
 
-### Files
-- `ios/WaveCam/Sources/CalibrateScreenV3.swift` — the "1 · Location + height" card: remove `datumSeaLevel` picker + `baseHeight`/dual fields; add one "Camera height above water (ft)" field; update `downTiltPreview` to a near distance; `commitLocation` → `altM = feet·0.3048, subjectAltM = 0`.
+### Files (as shipped)
+- `ios/WaveCam/Sources/CalibrateScreenV3.swift` — the "1 · Location + height" card: datum picker → one field per mode; `heightPose` resolves `(alt_m, subject_alt_m)` for both the preview and the commit; `depressionHint` shows down/UP @15 m + @100 m.
 - No backend change. No `xcodegen` (no files added/removed).
 
 ### Test / verification
