@@ -65,6 +65,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "enabled": getattr(getattr(cfg, "gps", None), "enabled", False),
                 "stale_threshold_sec": getattr(getattr(cfg, "gps", None), "stale_threshold_sec", 10.0),
                 "coast_on_no_fix_sec": getattr(getattr(cfg, "gps", None), "coast_on_no_fix_sec", 2.0),
+                "lead_s": getattr(getattr(cfg, "gps", None), "lead_s", 0.65),
                 "grace_sec": getattr(getattr(cfg, "gps", None), "grace_sec", 1.0),
                 "lock_frames": getattr(getattr(cfg, "gps", None), "lock_frames", 5),
                 "drive_zoom": getattr(getattr(cfg, "gps", None), "drive_zoom", False),
@@ -75,6 +76,7 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "base_drift_enabled": getattr(getattr(cfg, "gps", None), "base_drift_enabled", True),
                 "max_pan_speed": getattr(getattr(cfg, "gps", None), "max_pan_speed", 4),
                 "max_tilt_speed": getattr(getattr(cfg, "gps", None), "max_tilt_speed", 3),
+                "max_tilt_up_deg": getattr(getattr(cfg, "gps", None), "max_tilt_up_deg", 5.0),
             },
             "tracking": {
                 "mode": getattr(getattr(cfg, "tracking", None), "mode", "auto"),
@@ -156,7 +158,8 @@ def build_status_snapshot(pipeline, revision: int, media: dict | None = None) ->
         "authority": build_authority(pipeline),
         "ptz": build_ptz(legacy, pipeline),
         "tracking": {**build_tracking(legacy),
-                     "detector_loaded": getattr(pipeline, "detector", None) is not None},
+                     "detector_loaded": getattr(pipeline, "detector", None) is not None,
+                     "gps_vision_residual": getattr(pipeline, "_gps_vision_residual", None)},
         "gps": build_gps(pipeline, legacy),
         "calibration": build_calibration(pipeline),
         "media": media if media is not None else unknown_media(),
@@ -311,11 +314,12 @@ def gps_snapshot_source(pipeline, legacy: dict, threshold: float = 10.0):
     if callable(get_fix):
         fix = get_fix()
         if fix is not None:
-            return gps_fix_snapshot(fix, gps, threshold=threshold)
+            return gps_fix_snapshot(fix, gps, threshold=threshold,
+                                    pose=getattr(pipeline, "pose", None))
     return None
 
 
-def gps_fix_snapshot(fix, gps=None, threshold: float = 10.0) -> dict | None:
+def gps_fix_snapshot(fix, gps=None, threshold: float = 10.0, pose=None) -> dict | None:
     if fix is None:
         return None
     from .gps_meshtastic import bearing_deg, haversine_m
@@ -326,23 +330,28 @@ def gps_fix_snapshot(fix, gps=None, threshold: float = 10.0) -> dict | None:
         "target_age_sec": target_age,
     }
 
-    # Compute camera→target distance and bearing when both positions are available
+    # Camera origin for the displayed distance/bearing: prefer the LATCHED calibration
+    # pose so the HUD bearing matches where the camera actually points (the pose drives
+    # pointing). Fall back to the live base fix when the pose isn't latched yet (M4 Part A).
+    cam_pos = None
+    if pose is not None and (getattr(pose, "lat", 0.0) != 0.0 or getattr(pose, "lon", 0.0) != 0.0):
+        cam_pos = (pose.lat, pose.lon)
+    base_age = None
     if gps is not None:
         cam = getattr(gps, "get_camera_position", None)
         cam_age = getattr(gps, "get_camera_age", None)
-        if callable(cam) and callable(cam_age):
+        if cam_pos is None and callable(cam):
             cam_pos = cam()
+        if callable(cam_age):
             base_age = cam_age()
-            if cam_pos is not None:
-                dist = haversine_m(cam_pos[0], cam_pos[1], fix.lat, fix.lon)
-                bearing = bearing_deg(cam_pos[0], cam_pos[1], fix.lat, fix.lon)
-                snapshot["distance_m"] = round(dist, 1)
-                snapshot["bearing_deg"] = round(bearing, 1)
-                snapshot["base_age_sec"] = round(base_age, 1) if base_age is not None else None
-                snapshot["stale"] = (
-                    target_age is not None and target_age > threshold
-                )
-                return snapshot
+    if cam_pos is not None:
+        dist = haversine_m(cam_pos[0], cam_pos[1], fix.lat, fix.lon)
+        bearing = bearing_deg(cam_pos[0], cam_pos[1], fix.lat, fix.lon)
+        snapshot["distance_m"] = round(dist, 1)
+        snapshot["bearing_deg"] = round(bearing, 1)
+        snapshot["base_age_sec"] = round(base_age, 1) if base_age is not None else None
+        snapshot["stale"] = target_age is not None and target_age > threshold
+        return snapshot
 
     # Fallback: no camera position yet — bearing is null (fix.course is the
     # remote's heading-of-travel, not a camera→target bearing)

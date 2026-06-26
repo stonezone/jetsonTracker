@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveCam (jetsonTracker) — Correctness Review</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a21; --panel2:#1c212b; --ink:#e7e9ee; --dim:#9aa3b2;
+    --crit:#ff5c5c; --high:#ff9f43; --med:#ffd166; --low:#8ab4ff; --ok:#7ee787;
+    --line:#2a313d; --code-bg:#0b0d11; --tag:#3a4150;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 120px}
+  header h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}
+  header .sub{color:var(--dim);font-size:14px;margin-bottom:22px}
+  .counts{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0 8px}
+  .count{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center}
+  .count .n{font-size:30px;font-weight:700;line-height:1}
+  .count .l{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+  .c-crit .n{color:var(--crit)} .c-high .n{color:var(--high)} .c-med .n{color:var(--med)} .c-low .n{color:var(--low)} .c-ok .n{color:var(--ok)}
+  .meta{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;color:var(--dim);font-size:13px;margin-top:14px}
+  .meta b{color:var(--ink)}
+  h2.section{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:34px 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px}
+  .finding{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .f-crit{border-left-color:var(--crit)} .f-high{border-left-color:var(--high)} .f-med{border-left-color:var(--med)} .f-low{border-left-color:var(--low)}
+  .fhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .sev{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:999px}
+  .sev-crit{background:rgba(255,92,92,.16);color:var(--crit)}
+  .sev-high{background:rgba(255,159,67,.16);color:var(--high)}
+  .sev-med{background:rgba(255,209,102,.15);color:var(--med)}
+  .sev-low{background:rgba(138,180,255,.14);color:var(--low)}
+  .ftitle{font-weight:600;font-size:15.5px}
+  .loc{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:#79c0ff;background:var(--code-bg);padding:2px 7px;border-radius:6px;border:1px solid var(--line)}
+  .row{margin:6px 0}
+  .row .k{color:var(--dim);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;margin-right:6px;font-weight:600}
+  .nv{display:inline-block;font-size:11px;color:var(--med);border:1px dashed var(--med);border-radius:5px;padding:1px 6px;margin-left:6px}
+  pre{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#c9d1d9;margin:8px 0 0}
+  pre .c{color:#6a737d}
+  .clean{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:10px;padding:14px 18px;color:var(--dim)}
+  .clean b{color:var(--ok)}
+  a.top{color:var(--dim);text-decoration:none;font-size:12px;float:right}
+  footer{color:var(--dim);font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>WaveCam (jetsonTracker) — Correctness Review</h1>
+  <div class="sub">Backend (<code>orin/wavecam</code>) + iOS (<code>ios/WaveCam</code>) · reviewed for correctness, not style · 6 parallel deep-review passes over the real source files</div>
+  <div class="counts">
+    <div class="count c-crit"><div class="n">0</div><div class="l">Critical</div></div>
+    <div class="count c-high"><div class="n">7</div><div class="l">High</div></div>
+    <div class="count c-med"><div class="n">22</div><div class="l">Medium</div></div>
+    <div class="count c-low"><div class="n">13</div><div class="l">Low</div></div>
+  </div>
+  <div class="meta">
+    <b>Scope:</b> ~12.6k Python LOC + ~10k Swift LOC, active runtime only (archived/legacy excluded).<br>
+    <b>Method:</b> findings grounded in code actually read and cited as <code>file:line</code>. Items dependent on runtime/timing behavior I could not execute statically are tagged <span class="nv">needs verification</span> rather than asserted as bugs. No code was changed.
+  </div>
+</header>
+
+<h2 class="section">High severity</h2>
+
+<div class="finding f-high">
+  <div class="fhead"><span class="sev sev-high">High</span><span class="ftitle">CALIBRATE takeover is non-atomic — the OWN-1 race <code>transition()</code> was built to close</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_calibration.py:249-254</span></div>
+  <div class="row"><span class="k">what</span>Unlike <code>claim_manual</code> (which uses <code>owner.transition()</code> for an atomic handoff at <code>control_ptz.py:58</code>), CALIBRATE's takeover does <code>release(current_owner)</code> then a separate locked <code>request(CALIBRATE)</code>. Between the two, owner is IDLE and a concurrent manual velocity request (or the pipeline's own vision-reclaim) can seize the PTZ.</div>
+  <div class="row"><span class="k">why</span>The original owner is already released and PTZ stopped, so an operator nudge takes over mid-calibration on a halted camera while the session reports "could not claim PTZ." This is exactly the race the atomic primitive exists to prevent.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># control_calibration.py start_session — atomic CALIBRATE handoff</span>
+self.pipeline.ptz.stop()
+self.pipeline.ptz.zoom("stop")
+if not self.pipeline.owner.transition(current_owner, CALIBRATE):
+    return self._calibration_refusal(
+        "owner_busy", "Could not claim PTZ for CALIBRATE (owner changed).")</pre>
+</div>
+
+<div class="finding f-high">
+  <div class="fhead"><span class="sev sev-high">High</span><span class="ftitle">CALIBRATE exit restore of <code>previous_owner</code> is non-atomic — races the live vision loop</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_calibration.py:281-290</span></div>
+  <div class="row"><span class="k">what</span>After releasing CALIBRATE (owner → IDLE), <code>request(previous_owner)</code> runs as a second locked step. The pipeline frame loop (~10–30 FPS) calls <code>owner.transition(_curr,"vision_follow"/"gps_tracker")</code>; with owner=IDLE in the window it can seize the PTZ, then the restore <code>request()</code> fails and two writers disagree on ownership.</div>
+  <div class="row"><span class="k">why</span>CALIBRATE exit is operator-triggered and races the live vision loop. Use the same atomic primitive.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># control_calibration.py exit_session</span>
+with self._lock:
+    previous_owner = self._session.get("previous_owner")
+    if self.pipeline.owner.owner == CALIBRATE:
+        self.pipeline.ptz.stop()
+        self.pipeline.ptz.zoom("stop")
+        if (restore_prior and previous_owner in AUTONOMOUS
+                and not self.pipeline.owner.killed):
+            if not self.pipeline.owner.transition(CALIBRATE, previous_owner):
+                self.pipeline.owner.release(CALIBRATE)
+        else:
+            self.pipeline.owner.release(CALIBRATE)</pre>
+</div>
+
+<div class="finding f-high">
+  <div class="fhead"><span class="sev sev-high">High</span><span class="ftitle">Recorder has no thread-safety — concurrent API calls race on <code>_proc</code> / segment paths</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/recorder.py:56-113, 115-137</span></div>
+  <div class="row"><span class="k">what</span><code>start()</code>, <code>stop()</code>, <code>status()</code> mutate/read <code>_proc</code>, <code>_active_segment_prefix</code>, <code>_active_segment_pattern</code> with no lock. They run on FastAPI request threads via <code>MediaAdapter</code> (<code>control_media.py:39,48,53</code>) and the KILL path via <code>stop_for_safety()</code> (117). A <code>GET /media/status</code> racing a <code>POST /media/stop</code> observes torn state.</div>
+  <div class="row"><span class="k">why</span>Every other shared-state component (<code>SharedState</code>, <code>HealthRegistry</code>, <code>SensorHub</code>, <code>FrameGrabber</code>, <code>PtzState</code>, <code>PtzOwner</code>) carries a <code>threading.Lock</code>. The Recorder is the outlier and handles a subprocess + file paths — exactly where torn reads produce orphaned ffmpeg processes or wrong operator answers.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>import threading
+<span class="c"># __init__</span>
+self._lock = threading.Lock()
+
+def start(self, segment_seconds=None) -> dict:
+    with self._lock:
+        ...  <span class="c"># existing body</span>
+def stop(self) -> dict:
+    with self._lock:
+        ...
+def status(self) -> dict:
+    with self._lock:
+        ...</pre>
+</div>
+
+<div class="finding f-high">
+  <div class="fhead"><span class="sev sev-high">High</span><span class="ftitle"><code>recorder.status()</code> can raise <code>FileNotFoundError</code> on concurrent segment deletion</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/recorder.py:121-122</span></div>
+  <div class="row"><span class="k">what</span><code>sum(path.stat().st_size for path in segments)</code> stats each path after a glob. If a segment is deleted between glob and stat (retention sweep, rollover, manual cleanup) it raises and propagates unhandled. <code>control_media.py:63-66</code> already wraps <code>path.stat()</code> in <code>try/except OSError</code> — the same guard is missing here.</div>
+  <div class="row"><span class="k">why</span><code>/media/status</code> is polled by the iOS app and the web UI; a rollover concurrent with a poll intermittently 500s the status check on a recorder actively writing to <code>/data/recordings</code>.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>total_bytes = 0
+for path in segments:
+    try:
+        total_bytes += path.stat().st_size
+    except FileNotFoundError:
+        continue</pre>
+</div>
+
+<div class="finding f-high">
+  <div class="fhead"><span class="sev sev-high">High</span><span class="ftitle">KILL optimistic latch cleared on ambiguous transport timeout — false "not killed" on the safety signal</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/WaveCamClient.swift:1100-1107</span></div>
+  <div class="row"><span class="k">what</span><code>kill()</code> clears <code>optimisticKilled = false</code> on <b>any</b> catch, including <code>.timedOut</code> and <code>.networkConnectionLost</code>. On tether→Wi-Fi the kill POST can time out after the server received it but the response was lost — the client cannot tell. The subsequent <code>refresh()</code> may land before the backend marks <code>killed=true</code>, so the UI shows the rig as NOT KILLED in a window where the camera may still be moving.</div>
+  <div class="row"><span class="k">why</span><code>effectiveKilled</code> drives the kill overlay. Clearing it on ambiguous errors is the one path a false-negative on KILL can appear — <code>.timedOut</code>/<code>.networkConnectionLost</code> are "uncertain," not "failed."</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>} catch let error as URLError
+    where [.timedOut, .networkConnectionLost, .notConnectedToInternet].contains(error.code) {
+    <span class="c">// Ambiguous: server may have received the kill. Keep the latch latched</span>
+    <span class="c">// until refresh() confirms killed==true or a later resume().</span>
+    lastCommandError = "Safety stop not confirmed by Orin (transport uncertain): \(error.localizedDescription)"
+    <span class="c">// intentionally do NOT clear optimisticKilled / killInFlight</span>
+} catch {
+    lastCommandError = "Safety stop not confirmed by Orin: \(error.localizedDescription)"
+    optimisticKilled = false
+    killInFlight = false
+}</pre>
+</div>
+
+<div class="finding f-high">
+  <div class="fhead"><span class="sev sev-high">High</span><span class="ftitle">AgentView diagnostics poll loop leaks when the view disappears mid-poll</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/AgentView.swift:106-117</span></div>
+  <div class="row"><span class="k">what</span><code>summonDiagnostics()</code> spawns an unstructured <code>Task</code> that polls <code>client.agentReport()</code> in a <code>for _ in 0..&lt;45</code> loop (~90s) with no cancellation check. Leaving the tab or backgrounding keeps the loop running, keeps overwriting <code>requestState</code>/<code>report</code> on a dismissed view, and burns battery/data; the eventual <code>.failed("Timed out…")</code> can flash on screen after the user moved on.</div>
+  <div class="row"><span class="k">why</span>Other views bound to long loops at least gate on view lifecycle. This one has no early exit on teardown.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>@State private var pollTask: Task&lt;Void, Never&gt;?
+
+private func summonDiagnostics() {
+    pollTask?.cancel()
+    pollTask = Task { await summonDiagnosticsRequest() }
+}
+<span class="c">// inside the loop:</span>
+for _ in 0..&lt;45 {
+    if Task.isCancelled { return }
+    try? await Task.sleep(for: .seconds(2))
+    if Task.isCancelled { return }
+    ...
+}
+<span class="c">// view:</span>
+.onDisappear { pollTask?.cancel() }</pre>
+</div>
+
+<div class="finding f-high">
+  <div class="fhead"><span class="sev sev-high">High</span><span class="ftitle"><code>estimator.predict_output</code> tilt target is biased by base altitude (synthetic sea-level target)</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/estimator.py:448-452</span></div>
+  <div class="row"><span class="k">what</span>The synthetic target is built at the <i>camera's own</i> lat/lon but forced to <code>alt_m=0</code>, so elevation becomes <code>atan2(0 - pose.alt_m, dist_m)</code> — a fixed downward tilt proportional to base altitude (sign also inverted), independent of where the subject actually is. Horizontal aim (<code>pan_enc_would</code>) uses the estimate; the tilt does not.</div>
+  <div class="row"><span class="k">why</span>The shadow log advertises <code>tilt_enc_would</code> as "the tilt the estimator would command." If the estimator is flipped live (the stated plan), the tilt target will be systematically wrong.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># Subject on the water ≈ camera altitude for a beach tripod filming offshore.</span>
+target_alt = self._pose.alt_m
+elev = elevation_deg(
+    GeoPoint(lat=self._pose.lat, lon=self._pose.lon, alt_m=self._pose.alt_m),
+    GeoPoint(lat=self._pose.lat, lon=self._pose.lon, alt_m=target_alt),
+    dist_m,
+)</pre>
+</div>
+
+<h2 class="section">Medium severity</h2>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>claim_manual_from_calibrate</code> non-atomic, inconsistent with its own sibling's SAFE-2 fix</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_ptz.py:77-85</span></div>
+  <div class="row"><span class="k">what</span><code>claim_manual</code> (53-58) uses <code>transition()</code> to close the OWN-1 gap and documents it; <code>claim_manual_from_calibrate</code> uses the two-step <code>release(CALIBRATE)</code>+<code>request("manual")</code> it warns against. On failure it tries to restore CALIBRATE, but if the pipeline grabbed the PTZ in the window, CALIBRATE is permanently lost.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>with self._lock:
+    if self.pipeline.owner.owner != CALIBRATE:
+        return False
+    self.pipeline.ptz.stop()
+    self.pipeline.ptz.zoom("stop")
+    if not self.pipeline.owner.transition(CALIBRATE, "manual"):
+        return False
+    self._restore_owner_after_manual = CALIBRATE
+    return True</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle">VISCA <code>inquire_*</code> recv loop not under lock — cross-thread socket corruption</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/ptz_visca.py:114-181</span></div>
+  <div class="row"><span class="k">what</span>Docstrings acknowledge the recv loop runs without the lock as a "tracked follow-up." <code>PtzState._poll_once</code> (10 Hz background thread) and the CALIBRATE capture endpoint (request thread) both call <code>inquire_pan_tilt</code>; concurrent calls interleave: thread A's <code>_drain()</code> swallows thread B's reply, or A's <code>recvfrom</code> consumes B's ACK. The "freshest frame supersedes" sweep only mitigates within one call.</div>
+  <div class="row"><span class="k">why</span>Produces corrupt encoder reads. PtzState is caught by the plausibility gate, but the CALIBRATE capture endpoint reads encoders directly to compute calibration constants — a corrupt read there corrupts the calibration.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>def inquire_pan_tilt(self):
+    with self._lock:
+        self._drain_locked()
+        self._sock.sendto(bytes([self.addr, 0x09, 0x06, 0x12, 0xFF]),
+                           (self.ip, self.port))
+        <span class="c"># ... recv loop under same lock (timeout=0.3 bounds it; 10 Hz won't starve)</span></pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>supervisor.restart_systemd_unit</code> is unguarded — observe-only contract rests on callers</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/supervisor.py:115-127</span></div>
+  <div class="row"><span class="k">what</span>The module docstring says the supervisor is observe-only and the control API "may use the narrow restart helper after its own auth/confirmation/PTZ-stop gates." But <code>restart_systemd_unit</code> is an unconditional <code>Popen</code> with no guard. <span class="nv">needs verification</span> that every caller stops PTZ + confirms first.</div>
+  <div class="row"><span class="k">why</span>Restarting <code>wavecam.service</code> mid-session drops the vision loop, PTZ owner state, and any CALIBRATE session, leaving the camera in its last-commanded state.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>def restart_systemd_unit(unit: str = "wavecam.service", *, ptz_stopped: bool = False) -> None:
+    """Restart wavecam.service. Caller MUST have already issued ptz.stop()."""
+    if unit != "wavecam.service":
+        raise ValueError("Only wavecam.service restart is supported.")
+    if not ptz_stopped:
+        raise RuntimeError("PTZ must be stopped before service restart.")
+    ...  <span class="c"># rest unchanged</span></pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle">Covariance update uses diagonal only — <code>P</code> drifts non-symmetric / non-PSD</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/estimator.py:429-432</span></div>
+  <div class="row"><span class="k">what</span>The update does <code>P[i][j] -= K[i] * h[j] * P[j][j]</code> (diagonal for every column). The Joseph form requires <code>K[i] * (h·P[:,j])</code> — the full column. Off-diagonal covariances are updated with wrong values; <code>P</code> is not guaranteed symmetric/PSD.</div>
+  <div class="row"><span class="k">why</span>Over many ticks <code>bearing_std_deg</code> (reads <code>P[0][0]</code>,<code>P[1][1]</code>) can drift and gain <code>K</code> can go erratic. Shadow-only today; corrupts the fusion if flipped live.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># P -= K * (h @ P) — full row, not just the diagonal</span>
+hP = [sum(h[k] * self._P[k][j] for k in range(4)) for j in range(4)]
+for i in range(4):
+    for j in range(4):
+        self._P[i][j] -= K[i] * hP[j]</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle">Two-point pan calibration allows an inverted (negative) scale</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/camera_pose.py:79-87</span></div>
+  <div class="row"><span class="k">what</span><code>pan_enc_per_deg = (enc2 - enc1) / dbear</code> with no sign guard. If the two captures are inconsistent (encoder increasing while bearing decreases), the scale is negative and <code>bearing_to_pan_encoder</code> then maps increasing bearing to <i>decreasing</i> encoder — every GPS slew commands the wrong way around. The Prisual pan envelope is unidirectional, so a negative scale is never physically correct.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>def calibrate_pan_two_point(self, enc1, bearing1, enc2, bearing2):
+    dbear = normalize_180(bearing2 - bearing1)
+    if abs(dbear) &lt; 1e-6:
+        raise ValueError("pan calibration points have ~equal bearing")
+    scale = (enc2 - enc1) / dbear
+    if scale &lt;= 0:
+        raise ValueError(f"pan scale non-positive ({scale:.3f} enc/deg) — re-capture panning in the +bearing direction.")
+    self.pan_enc_per_deg = scale
+    self.pan_anchor_enc = enc1
+    self.pan_anchor_bearing = bearing1</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>predict_lead</code> speed gate too low — amplifies GPS course jitter when subject is stationary</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/gps_geo.py:60-73</span></div>
+  <div class="row"><span class="k">what</span>The guard rejects <code>speed_mps &lt; 0.1</code> but a slowly drifting fix (0.1–0.5 m/s, typical jitter when the surfer is idle on the board) with a noisy <code>course_deg</code> is still projected forward — e.g. speed 0.3 m/s, dt 0.65 s, course bouncing ±90° → ±0.2 m phantom lead per fix feeding the bearing/pan math.</div>
+  <div class="row"><span class="k">why</span>The function's stated goal is to "avoid amplifying GPS jitter into a phantom heading," but the gate checks speed only. Induces per-fix pan wobble for the surf use case. <span class="nv">needs verification</span> on live course-variance data.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># 0.1–0.5 m/s is typically GPS jitter when the subject is stationary; a paddling</span>
+<span class="c"># surfer is faster, so 0.5 m/s (~1 knot) preserves lead for genuine motion.</span>
+if point.speed_mps is None or point.course_deg is None:
+    return point
+if point.speed_mps &lt; 0.5 or dt_s &lt;= 0:
+    return point</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>bearing_std</code> Jacobian clamp mismatch near the origin</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/estimator.py:457-461</span></div>
+  <div class="row"><span class="k">what</span><code>r2 = max(e*e+n*n, 1.0)</code> clamps the denominator but the <code>n</code>/<code>e</code> factors are not clamped, so within 1 m of base the Jacobian is computed with a mismatched (too-large) variance — a discontinuity in the reported uncertainty.</div>
+  <div class="row"><span class="k">why</span>Only affects the logged <code>bearing_std_deg</code>; the <code>r &lt; 1.0</code> guard in the update path already prevents near-origin vision updates, so steady state (50–300 m) is unaffected.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>r2 = e*e + n*n
+if r2 &lt; 1.0:
+    bearing_std_deg = float("inf")  <span class="c"># not directionally valid</span>
+else:
+    var_brg_rad = (n / r2) ** 2 * P_ee + (e / r2) ** 2 * P_nn
+    bearing_std_deg = math.degrees(math.sqrt(max(0.0, var_brg_rad)))</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>PointingVerifier</code> retry budget not reset when a new issuer commands the same target</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/pointing_verifier.py:56-60</span></div>
+  <div class="row"><span class="k">what</span>Identical re-commands preserve <code>_retry_count</code> (intended to bound GPS-loop retries), but it conflates "GPS loop re-issuing" with "a new authority issuing the same target after the previous gave up." In the second case the operator expects a fresh verify cycle and instead gets an immediate give-up. <span class="nv">needs verification</span> of intended semantics.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>def record_move(self, pan_enc, tilt_enc, t=None, *, force_reset=False):
+    new_target = (pan_enc, tilt_enc)
+    if new_target != self._target or force_reset:
+        self._retry_count = 0
+    self._target = new_target
+    self._issue_t = t if t is not None else time.time()</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle">Hot-config keys apply &amp; persist but are invisible in <code>/config</code> (broken round-trip)</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_config.py:153-155 vs control_utils.py:20-85 vs control_snapshots.py</span></div>
+  <div class="row"><span class="k">what</span><code>estimator.use_vision_range</code>, <code>estimator.subject_height_m</code>, <code>estimator.r_range_frac</code> are in the <code>apply_hot_key</code> setter dict (so they apply &amp; persist), but missing from <code>HOT_CONFIG_KEYS</code> and the snapshot's <code>estimator</code> block. <code>current_preset_values()</code> traverses the snapshot and returns <code>None</code> for them, so they're silently dropped from any <code>capture_current</code> preset.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># control_utils.py — add to HOT_CONFIG_KEYS after "estimator.log_every_n":</span>
+    "estimator.use_vision_range",
+    "estimator.subject_height_m",
+    "estimator.r_range_frac",
+
+<span class="c"># control_snapshots.py — add to the estimator block:</span>
+    "use_vision_range": getattr(getattr(cfg, "estimator", None), "use_vision_range", False),
+    "subject_height_m": getattr(getattr(cfg, "estimator", None), "subject_height_m", 1.0),
+    "r_range_frac":     getattr(getattr(cfg, "estimator", None), "r_range_frac", 0.3),</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>fusion.match_dist_scale</code> / <code>fusion.gps_roi_enabled</code> advertised but not in the snapshot</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_utils.py:38,43 vs control_snapshots.py:53-63</span></div>
+  <div class="row"><span class="k">what</span>Both are in <code>HOT_CONFIG_KEYS</code> with working setters, but <code>build_config_snapshot</code>'s fusion block omits them while exposing <code>gps_boost</code>/<code>gps_boost_radius_frac</code>/<code>gps_bearing_cue_enabled</code>. Same broken round-trip: apply succeeds, persists to <code>config.local.yaml</code>, but <code>/config.current.fusion</code> never reflects it and the Tune card can't display live state.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># control_snapshots.py — add to the fusion block:</span>
+    "match_dist_scale": getattr(cfg.fusion, "match_dist_scale", False),
+    "gps_roi_enabled":  getattr(cfg.fusion, "gps_roi_enabled", False),</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>POST /sensors/phone</code> guarded by READ — a viewer-role token can mutate sensor state</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_api.py:761,779,784</span></div>
+  <div class="row"><span class="k">what</span>The phone-sensor ingest routes (HTTP POST + WebSocket) use <code>require(READ)</code>. The <code>viewer</code> role (<code>auth.py:38</code>) is scoped to <code>{READ}</code> only. A viewer-token holder can push phone telemetry into <code>SensorHub.ingest()</code>, which feeds the heading-drift monitor and the at-rig gate.</div>
+  <div class="row"><span class="k">why</span>If auth is ever enabled with a restricted viewer token, that holder can inject crafted heading/GPS samples that corrupt the sensor snapshot and trip <code>anchor_suspect</code>. The permission should match the mutation.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># use CONFIG (or a dedicated INGEST action) instead of READ for both routes:</span>
+@app.post("/api/v1/sensors/phone", dependencies=[Depends(require(CONFIG))])</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>ShadowWriter.write()</code> after <code>close()</code> raises <code>ValueError</code>, not <code>OSError</code> → zombie rig path</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/shadow_writer.py:18-22 ; pipeline.py:876-877</span></div>
+  <div class="row"><span class="k">what</span><code>_shadow_write()</code> wraps <code>self._shadow_writer.write(record)</code> in <code>except OSError</code>, but writing a closed file raises <code>ValueError</code> (not an <code>OSError</code> subclass). If the shutdown path races the vision loop and <code>_shadow_write</code> fires after <code>close()</code>, the <code>ValueError</code> escapes — the pipeline thread dies while the API still answers.</div>
+  <div class="row"><span class="k">why</span>CLAUDE.md flags "zombie rigs" (API up, vision loop dead) as the project's #1 incident class. This is a latent path to exactly that.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># pipeline.py:876 — broaden the except:</span>
+except (OSError, ValueError) as e:
+    ...</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>Recorder.start()</code> reports <code>ok:True</code> when ffmpeg fails to start</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/recorder.py:76-80</span></div>
+  <div class="row"><span class="k">what</span>When ffmpeg exits immediately, <code>start()</code> returns <code>{"ok": True, "started": False, "error": ...}</code>. Operators check <code>result["ok"]</code> and see success; the nested <code>started</code> field must be checked separately — contradicting <code>ok</code>'s meaning everywhere else in the codebase.</div>
+  <div class="row"><span class="k">why</span>A silently-failed recording means lost footage of a session. ffmpeg's actual error is devnull'd (line 177) and never surfaced.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>if self._proc.poll() is not None:
+    self._proc = None
+    return {"ok": False, "started": False,
+            "error": "ffmpeg exited immediately (check RTSP source and path)"}</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>PtzState._outlier</code> never initialized in <code>__init__</code></span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/ptz_state.py:141</span></div>
+  <div class="row"><span class="k">what</span><code>_poll_once</code> reads <code>getattr(self,"_outlier",None)</code> but <code>_outlier</code> is only ever assigned inside the plausibility branch — never in <code>__init__</code>. The <code>getattr</code> default papers over the first read, but <code>stop()</code>/<code>start()</code> cycles don't re-run <code>__init__</code>, so a stale <code>_outlier</code> from before a KILL can survive and suppress the first post-resume sample. Correctness depends on the non-outlier path always clearing it.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># in __init__, after self._ts:</span>
+self._outlier: Optional[Tuple[int, int]] = None</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>release_manual_owner</code> stores an autonomous owner for restore then never restores it (dead store)</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_ptz.py:88-106 (store at 165)</span></div>
+  <div class="row"><span class="k">what</span><code>hold_manual_owner</code> stores <code>current_owner</code> from <code>AUTONOMOUS</code> into <code>_restore_owner_after_manual</code>, but <code>release_manual_owner</code> only restores it when it's CALIBRATE — autonomous owners are cleared (line 93) and never used. A STOP-PTZ hold that displaced <code>vision_follow</code> leaves the PTZ idle until the arbiter re-locks rather than restoring it. <span class="nv">needs verification</span> whether "always re-earn" is intended.</div>
+  <div class="row"><span class="k">fix</span> (if re-earn is intended — remove the dead store)</div>
+<pre><span class="c"># control_ptz.py hold_manual_owner lines 163-167</span>
+if current_owner in AUTONOMOUS:
+    if not self.pipeline.owner.transition(current_owner, "manual"):
+        return
+    <span class="c"># Don't stage autonomous owners for restore — the arbiter re-decides.</span>
+    self._manual_held = True
+    return</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle">Watch <code>post()</code> treats any 2xx as success — silent <code>ok:false</code> refusals shown as success on the watch</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources-Watch/WatchClient.swift:186-191</span></div>
+  <div class="row"><span class="k">what</span>The watch POST helper returns <code>true</code> for any 200–299 without inspecting the body. The backend returns <code>200 {ok:false, code:"owner_busy"}</code> for refused commands (the known "silent 200" gotcha). The iOS app handles this in <code>applyControlResponse</code>; the watch does not, so <code>resume</code>/<code>media/record/*</code> report success when refused.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>guard let http = resp as? HTTPURLResponse, (200..&lt;300).contains(http.statusCode) else {
+    return false
+}
+<span class="c">// Surface silent 200 refusals: ok:false means the server rejected it.</span>
+if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+   (obj["ok"] as? Bool) == false {
+    return false
+}
+resolvedBase = base
+return true</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>ForEach</code> on <code>WCEvent</code> with synthesized <code>id</code> can collide (undefined SwiftUI diffing)</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/SessionLogView.swift:88 ; WaveCamClient.swift:763-766</span></div>
+  <div class="row"><span class="k">what</span><code>WCEvent.id = "\(t)-\(kind)"</code>. Two events sharing the same float timestamp AND kind produce identical ids; <code>ForEach(events.reversed())</code> relies on <code>Identifiable</code>, so duplicates mis-diff (wrong row reuse, missing dividers). The backend can legitimately emit same-ms same-kind events in one poll batch.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># simplest: index-based identity for display</span>
+ForEach(Array(events.reversed().enumerated()), id: \.offset) { _, event in
+    EventRow(event: event)
+}</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>downloadMedia</code> deletes the existing local copy before a move that can fail (re-download data loss)</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/WaveCamClient.swift:1867-1868</span></div>
+  <div class="row"><span class="k">what</span><code>try? FileManager.default.removeItem(at: dest)</code> deletes a previously-downloaded copy before <code>moveItem(at: tempURL, to: dest)</code>. If <code>moveItem</code> then fails (disk full, sandbox), the user has lost the old copy AND doesn't have the new one.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># Move-then-swap: stage, then atomically replace — never delete the good copy first.</span>
+let staging = dest.appendingPathExtension("partial")
+try? FileManager.default.removeItem(at: staging)
+try FileManager.default.moveItem(at: tempURL, to: staging)
+if FileManager.default.fileExists(atPath: dest.path) {
+    _ = try? FileManager.default.replaceItemAt(dest, withItemAt: staging)
+} else {
+    try FileManager.default.moveItem(at: staging, to: dest)
+}
+return dest</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>PhoneSensorSocket</code> has no connect-handshake timeout — stuck CONNECTING on a dead subnet</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/PhoneSensorSocket.swift:64-80, 84-94</span></div>
+  <div class="row"><span class="k">what</span><code>connect()</code> creates the ws task and starts <code>receiveLoop()</code>. If <code>didOpenWithProtocol</code> never fires (firewall/blackhole SYN), <code>URLRequest.timeoutInterval=10</code> is not reliably honored by <code>URLSessionWebSocketTask</code> for the handshake phase, and there's no scheduled reconnect if neither didOpen nor a receive-failure fires. <span class="nv">needs verification</span> whether <code>receive()</code> reliably fails within ~10s when unreachable.</div>
+  <div class="row"><span class="k">why</span>On a flaky beach hotspot the socket can sit in CONNECTING forever; the 1 Hz publisher's <code>send()</code> no-ops and sensors stop after <code>sensorIdleGrace</code>.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre><span class="c"># watchdog independent of receive:</span>
+connectWatchdog?.cancel()
+let wd = DispatchWorkItem { [weak self] in self?.handleDropIfStillConnecting() }
+connectWatchdog = wd
+DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: wd)
+<span class="c"># and cancel it inside urlSession(_:didOpenWithProtocol:) before setting connected=true</span></pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>TuneView</code> preset apply leaves <code>send()</code> live during the re-load await</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/TuneView.swift:405-411 ; load() at 665-727</span></div>
+  <div class="row"><span class="k">what</span><code>applyPreset</code> sets <code>loaded = false</code> AFTER <code>appliedPresetValues = result.applied</code> but BEFORE <code>await load()</code>. Between the preset POST returning and <code>load()</code> flipping <code>loaded=false</code> there's an await gap where <code>send()</code> is still live — a slider touch can push a value that <code>load()</code> then overwrites (flicker + transient config contradicting the preset). <span class="nv">needs verification</span> on-device.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>if result.ok {
+    activePresetName = name
+    appliedPresetValues = result.applied
+    loaded = false            <span class="c"># gate input BEFORE the await</span>
+    await load()
+    ...
+}</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>AgentChatView</code> provider picker decouples from <code>agentChatProvider</code> when the advertised list shrinks</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/AgentChatView.swift:18-21, 53-59</span></div>
+  <div class="row"><span class="k">what</span><code>providerOptions</code> filters against the advertised <code>providers</code>. If the previously-selected provider (in-memory at <code>WaveCamClient.swift:967</code>) isn't in the new list, the <code>Picker</code> has no matching tag: the menu shows the first option but <code>agentChatProvider</code> still holds the invisible value, so the next <code>send</code> uses a provider not in the UI. <span class="nv">needs verification</span> on provider-list stability across sessions.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>.onAppear {
+    if !providerOptions.contains(client.agentChatProvider) {
+        client.agentChatProvider = providerOptions.first ?? .claudeCode
+    }
+}</pre>
+</div>
+
+<div class="finding f-med">
+  <div class="fhead"><span class="sev sev-med">Medium</span><span class="ftitle"><code>PTZManualController.syncCommandState</code> can flip to <code>.auto</code> mid-joystick-drag</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/PTZManualController.swift:169-178 ; MergedLiveView.swift:52-53</span></div>
+  <div class="row"><span class="k">what</span><code>syncCommandState</code> guards on <code>isPending</code> but not <code>.manual</code>. If the operator is actively dragging and a 1 Hz poll reports <code>owner=tracker</code> (the manual deadman could elapse mid-drag if frames stutter), the auto-IN path at 171-172 runs unconditionally — the UI flips to "auto active" for one tick and the drag's velocity may fight the tracker. <span class="nv">needs verification</span> that the backend can hand owner back while a manual deadman is alive.</div>
+  <div class="row"><span class="k">fix</span></div>
+<pre>if client.owner.isAutonomousPTZOwner {
+    if commandState != .manual { commandState = .auto }
+} else if backendHeldStop(client: client) {
+    commandState = .held
+} else if commandState == .auto || commandState == .held {
+    commandState = .idle
+}</pre>
+</div>
+
+<h2 class="section">Low severity</h2>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>BaseDriftMonitor</code> trend fit fragile to non-monotonic timestamps (NTP/sleep)</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/base_drift.py:101-166</span></div>
+  <div class="row"><span class="k">what/why</span>Linear slope over <code>x=s.t</code> assumes a consistent monotonic clock. A backwards step (NTP correction, laptop sleep) makes <code>denom=Σ(x-x̄)²</code> still positive but the slope sign/size wrong — potentially masking drift or false-triggering <code>unlocked</code>. 10-sample window means one bad timestamp is significant.</div>
+<pre>def update(self, lat, lon, alt_m, t, *, ...):
+    ...
+    if self._samples and t &lt; self._samples[-1].t:
+        self._samples.clear()  <span class="c"># non-monotonic clock — restart the window</span>
+    self._samples.append(BaseDriftSample(lat, lon, alt_m, t))</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>compute_bearing_cue</code> off-screen gate too loose — <code>cx</code> can land far outside the frame</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/gps_bearing_cue.py:82-89</span></div>
+  <div class="row"><span class="k">what/why</span>Within the tolerance band <code>cx = frame_w/2 + bearing_error * px_per_deg</code> can reach <code>frame_w + max_offscreen_deg * px_per_deg</code> — e.g. tele hfov 5°, 1080 px wide → px_per_deg 216 → cx up to 2700 px. A cue center 2700 px into a 1080-px frame never matches any blob within <code>radius_px</code>, defeating the cue.</div>
+<pre><span class="c"># clamp cx so near-edge cues bias toward the edge instead of off-frame:</span>
+cx = max(0.0, min(float(frame_w), frame_w / 2.0 + bearing_error * px_per_deg))</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>lock_base_position</code> silently averages poor fixes as a fallback</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/camera_pose.py:140-144</span></div>
+  <div class="row"><span class="k">what/why</span>If no fix meets <code>max_h_acc_m</code>, it falls back to averaging ALL fixes (the rejected ones). A bad base silently corrupts every subsequent bearing computation and the caller can't tell.</div>
+<pre>good = [(la, lo, al) for (la, lo, al, acc) in fixes if acc is not None and acc &lt;= max_h_acc_m]
+if not good:
+    return None  <span class="c"># surface "no fix met the bar" rather than averaging garbage</span>
+n = len(good)
+return (sum(g[0] for g in good)/n, sum(g[1] for g in good)/n, sum(g[2] for g in good)/n)</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>fusion</code> retains stale <code>_ema</code> during grace window after lock loss</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/fusion.py:226-237</span></div>
+  <div class="row"><span class="k">what/why</span>When <code>raw_xy is None</code> within <code>lost_grace_sec</code> but <code>_locked</code> is already False, the state falls through to SEARCHING with <code>target_xy=None</code> (correct externally) but <code>_ema</code> is NOT cleared — so <code>_select</code>'s continuity still prefers candidates near the stale position. Bounded (cleared after grace elapses), but can latch the search onto the last-known area instead of genuinely re-acquiring. <span class="nv">needs verification</span> of intended re-acquisition behavior.</div>
+<pre>else:
+    state, out_xy = "SEARCHING", None
+    if not coasting or not self._locked:
+        self._locked = False
+        self._ema = None</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>apply_hot_config</code> two-loop (dry-run then apply) not atomic</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_config.py:34-46</span></div>
+  <div class="row"><span class="k">what/why</span>Validates all keys (dry-run), checks fusion hysteresis, then re-applies — no lock held across the two loops. A concurrent <code>/config/hot</code> patch to the complementary fusion threshold between dry-run and apply could create an inverted pair that already passed the check.</div>
+<pre>def apply_hot_config(self, patch: dict[str, Any]) -> JSONResponse | None:
+    with self._api._lock:  <span class="c"># RLock — safe if setters re-enter</span>
+        for key, value in patch.items():
+            refusal = self.apply_hot_key(key, value, dry_run=True)
+            if refusal is not None:
+                return refusal
+        refusal = self._check_fusion_hysteresis(patch)
+        if refusal is not None:
+            return refusal
+        for key, value in patch.items():
+            refusal = self.apply_hot_key(key, value, dry_run=False)
+            if refusal is not None:
+                return refusal
+    return None</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>calibration_state.base_locked</code> uses <code>(lat != 0.0 or lon != 0.0)</code> — falsy at (0,0)</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/control_calibration.py:148-149</span></div>
+  <div class="row"><span class="k">what/why</span>Conflates "uninitialized" (default 0,0) with "locked at 0,0." <code>CameraPose</code> already has a <code>.calibrated</code> flag used two lines above for <code>gps_calibrated</code> — use it instead.</div>
+<pre>"base_locked": self.pipeline.pose.calibrated,</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>_run_claude_cli</code> redacts the OAuth token on failure but returns <code>stdout</code> unredacted on success</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/agent_session.py:121-126</span></div>
+  <div class="row"><span class="k">what/why</span>If the CLI ever echoes the token in stdout on a successful (exit-0) run — verbose/debug mode — it would flow through <code>json.loads(out)</code> → the <code>/agent/chat</code> reply body. Defense-in-depth; the CLI isn't expected to echo it, but the asymmetry is a gap.</div>
+<pre>token = env.get("CLAUDE_CODE_OAUTH_TOKEN")
+stdout = proc.stdout
+if token and token in stdout:
+    stdout = stdout.replace(token, "&lt;redacted&gt;")
+if proc.returncode != 0:
+    ...
+return stdout</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>pipeline._frame_i</code> never increments when the detector is disabled — estimator-init throttle defeated</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/pipeline.py:636-637, 649</span></div>
+  <div class="row"><span class="k">what/why</span><code>_frame_i += 1</code> is inside <code>if self.detector is not None</code>. When YOLO fails to load (documented path), <code>_frame_i</code> stays 0 and <code>0 % 120 == 0</code> every frame, so <code>_maybe_init_estimator()</code> runs every iteration instead of every 120th. It no-ops cheaply, but the throttle is defeated exactly in the degraded state.</div>
+<pre>self._frame_i += 1  <span class="c"># move outside the detector guard</span>
+if self.detector is not None:
+    run_yolo = (self._frame_i % max(1, self.cfg.detector.every_n)) == 0
+    ...</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>PtzState</code> has no staleness enforcement — a dead poller returns stale encoders indefinitely</span></div>
+  <div class="row"><span class="loc">orin/wavecam/wavecam/ptz_state.py:87-93</span></div>
+  <div class="row"><span class="k">what/why</span><code>latest()</code> returns encoders with <code>age_sec</code> but no internal gate. <code>ZOOM_FRESH_SEC</code> (line 67) is defined but never enforced. Callers (<code>_gps_cue</code>, <code>_estimator_shadow_tick</code>) read <code>latest()</code> without checking <code>is_alive()</code>; a dead poller would feed frozen pan/tilt/zoom to GPS pointing and the estimator. Low because the health registry surfaces the dead poller at <code>/health</code>.</div>
+<pre><span class="c"># gate callers on the poller being alive, or have latest() return None past ZOOM_FRESH_SEC:</span>
+def latest(self):
+    snap = self._snapshot()
+    if not self.is_alive() or snap.age_sec &gt; ZOOM_FRESH_SEC:
+        return None
+    return snap</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle">HealthKit authorization error path mislabeled as "denied" on the watch</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources-Watch/WatchSessionRecorder.swift:101-113</span></div>
+  <div class="row"><span class="k">what/why</span><code>requestAuthorization</code> ignores the <code>err</code> parameter; a framework error shows "HealthKit denied," sending the operator down the wrong remediation path (privacy toggle vs. framework error / reboot).</div>
+<pre>healthStore.requestAuthorization(toShare: [workoutType], read: []) { [weak self] ok, err in
+    DispatchQueue.main.async {
+        guard let self, self.startPending else { return }
+        if let err {
+            self.startPending = false
+            self.statusMessage = "HealthKit error: \(err.localizedDescription)"
+            return
+        }
+        ...
+    }
+}</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle">Watch GPS samples dropped in the ~1s window between workout-start and the <code>.running</code> callback</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources-Watch/WatchSessionRecorder.swift:116-142, 237-240</span></div>
+  <div class="row"><span class="k">what/why</span><code>didUpdateLocations</code> gates on <code>isRecording</code>, which stays false until <code>workoutSession(_:didChangeTo:from:)</code> fires <code>.running</code>. Motion samples (via <code>writeMotionSample</code>) are NOT gated — an inconsistency. The first 0.5–2s of GPS of every session is lost; session files feed the offline estimator shadow scoring, biasing the paddling-out segment.</div>
+<pre><span class="c"># gate on the file being open instead of isRecording:</span>
+guard let self, self.fileHandle != nil else { return }</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>PhoneSensorPublisher</code> touches <code>@MainActor</code> state from non-isolated CoreMotion closures (Swift 6 smell)</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/PhoneSensorPublisher.swift:152-155, 183-200</span></div>
+  <div class="row"><span class="k">what/why</span><code>startRelativeAltitudeUpdates(to:.main)</code> / <code>startDeviceMotionUpdates(to:.main)</code> take non-isolated <code>@Sendable</code> closures that write <code>@MainActor</code> stored properties. Compiles under <code>SWIFT_VERSION=5.0</code> (project.yml); runtime-safe because the closures dispatch on <code>.main</code>, but a Swift 6 / strict-concurrency move or a refactor to a non-main queue would be a genuine race.</div>
+<pre>altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, _ in
+    guard let data else { return }
+    Task { @MainActor [weak self] in self?.latestBaroRelM = data.relativeAltitude.doubleValue }
+}</pre>
+</div>
+
+<div class="finding f-low">
+  <div class="fhead"><span class="sev sev-low">Low</span><span class="ftitle"><code>releaseManualPTZ</code> retry can fire up to 3 stop POSTs after the controller tears down (benign)</span></div>
+  <div class="row"><span class="loc">ios/WaveCam/Sources/PTZManualController.swift:76-82</span></div>
+  <div class="row"><span class="k">what/why</span>The release-stop retry uses <code>[weak self]</code> but the continuation's <code>Task { await client.ptzStop(...) }</code> outlives the controller (client is the environment object). Up to 3 idempotent stops can land after navigation — harmless, flagged as a lifecycle leak only.</div>
+<pre><span class="c"># no functional fix required; gate on a deinit flag if you want strictness</span></pre>
+</div>
+
+<h2 class="section">Verified clean (explicitly checked, no findings)</h2>
+<div class="clean">
+  <p><b>Backend math:</b> the 14.4 counts/deg pan/tilt constants are consistent across both axes and measured; <code>haversine_m</code>/<code>bearing_deg</code> correct; <code>normalize_180</code> handles the −180 boundary correctly; <code>_enu_from_gps</code> ↔ <code>_bearing_from_enu</code> are proper inverses; <code>elevation_deg</code> has a zero-distance guard; HSV red wraparound uses two OR'd bands (correct); bbox math/clamping and empty-detection div-by-zero are guarded.</p>
+  <p><b>Congestion / safety invariants:</b> <code>PtzOwner.transition()</code> is an atomic CAS under RLock; KILL supremacy, the DISABLE-PTZ latch (<code>tracking.enabled</code>), the STOP-PTZ sticky hold, the deadman generation guards, and the <code>tracking.mode</code> gate logic are correct; the arbiter hysteresis and GPS→STOP-on-data-loss short-circuit resolve correctly.</p>
+  <p><b>Vision loop:</b> no blocking I/O on the 30+FPS loop (GPS reads are non-blocking cached snapshots; YOLO throttled; encoding in-memory); JPEG snapshot encoded from the fresh frame (cv2-capture-freeze gotcha avoided); file-handle cleanup in <code>finally</code>; fusion has no NaN path (<code>MATCH_DIST_SCALE_REF_H</code> hardcoded non-zero; <code>math.hypot</code>); <code>PointingVerifier</code> KILL double-check prevents resend.</p>
+  <p><b>API security:</b> media download/delete path is correctly sandboxed (<code>.resolve()</code>+<code>relative_to</code>, no path traversal); WebSocket malformed frames are dropped without tearing the connection; the <code>ok:false</code> silent-refusal pattern is consistently surfaced as non-200 where it matters.</p>
+  <p><b>iOS:</b> KILL/EmergencyStop is ungated and present on every tab via <code>TopBar</code> (the latch overlay covering it is intentional — motion is already stopped in the latched state); ARM re-arm correctly no-ops after KILL; every config-driven control feature-detects against <code>cfg.supported.*</code>; no force-unwraps in reviewed files; <code>NSMotionUsageDescription</code> IS present (<code>Info.plist:34</code>), so the CMAltimeter gotcha does not apply; no <code>.convertFromSnakeCase</code>+snake_case <code>CodingKeys</code> conflict (explicitly guarded at <code>WaveCamClient.swift:118-123,739-742</code>; the one struct with <code>CodingKeys</code> uses single-word keys).</p>
+</div>
+
+<footer>
+  Generated by a static correctness review (GLM-5.2 in Claude Code). 6 parallel deep-review agents over the active runtime source; findings deduplicated and grounded in cited <code>file:line</code>. Items the reviewer could not execute statically are tagged <span class="nv">needs verification</span>. No code was changed.
+</footer>
+</div>
+</body>
+</html>

@@ -34,6 +34,7 @@ class PointingTarget:
     pan_enc: float
     tilt_enc: float
     zoom_enc: Optional[float] = None   # None when zoom is not driven
+    clamped: bool = False              # True when the up-tilt clamp engaged (mis-surveyed base?)
 
 
 def distance_to_zoom_encoder(distance_m: float, curve: ZoomCurve) -> float:
@@ -44,20 +45,29 @@ def distance_to_zoom_encoder(distance_m: float, curve: ZoomCurve) -> float:
 
 
 def compute_target(base: GeoPoint, target: GeoPoint, pose: CameraPose,
-                   lead_s: float = 0.65, zoom: Optional[ZoomCurve] = None) -> PointingTarget:
+                   lead_s: float = 0.65, zoom: Optional[ZoomCurve] = None,
+                   max_up_elev_deg: float = 5.0) -> PointingTarget:
     """Desired pan/tilt/zoom encoders to frame the subject.
 
     Leads the target by ``lead_s`` (GPS poll lag + prediction) along its course, then
     maps the resulting bearing/elevation/distance through the calibrated pose. Requires
     a pan-calibrated pose (raises via ``bearing_to_pan_encoder`` otherwise). ``zoom=None``
     leaves ``zoom_enc`` unset (zoom not driven this call).
+
+    ``max_up_elev_deg`` clamps the commanded elevation: the surf subject is at sea level,
+    so any large up-tilt is almost always a bad base altitude or GPS glitch (the "points
+    at the sky/ski" failure). The returned ``PointingTarget.clamped`` is True when the
+    clamp engaged so callers can log a persistently-clamped aim (= mis-surveyed base).
     """
     lead = predict_lead(target, lead_s)
     bearing = bearing_deg(base.lat, base.lon, lead.lat, lead.lon)
     dist = haversine_m(base.lat, base.lon, lead.lat, lead.lon)
     pan_enc = pose.bearing_to_pan_encoder(bearing)
     elev = elevation_deg(base, lead, dist)
+    clamped = elev > max_up_elev_deg
+    if clamped:
+        elev = max_up_elev_deg
     tilt_enc = pose.elevation_to_tilt_encoder(elev)
     zoom_enc = distance_to_zoom_encoder(dist, zoom) if zoom is not None else None
-    return PointingTarget(bearing_deg=bearing, distance_m=dist,
-                          pan_enc=pan_enc, tilt_enc=tilt_enc, zoom_enc=zoom_enc)
+    return PointingTarget(bearing_deg=bearing, distance_m=dist, pan_enc=pan_enc,
+                          tilt_enc=tilt_enc, zoom_enc=zoom_enc, clamped=clamped)

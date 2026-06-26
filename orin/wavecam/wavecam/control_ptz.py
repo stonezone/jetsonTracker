@@ -74,16 +74,13 @@ class PtzDispatcher:
                 return False
             self.pipeline.ptz.stop()
             self.pipeline.ptz.zoom("stop")
-            if not self.pipeline.owner.release(CALIBRATE):
+            # Atomic handoff (SAFE-2 parity): one locked CALIBRATE→manual transition so
+            # the pipeline can't seize the PTZ in a transient-IDLE window. On failure the
+            # owner is unchanged (CALIBRATE still held) — no manual restore needed.
+            if not self.pipeline.owner.transition(CALIBRATE, "manual"):
                 return False
             self._restore_owner_after_manual = CALIBRATE
-            if self.pipeline.owner.request("manual"):
-                return True
-            # Could not claim manual after releasing calibrate — restore the session.
-            self._restore_owner_after_manual = None
-            if not self.pipeline.owner.killed:
-                self.pipeline.owner.request(CALIBRATE)
-            return False
+            return True
 
     def release_manual_owner(self, restore_autonomous: bool = True) -> None:
         with self._lock:

@@ -87,3 +87,22 @@ def compute_bearing_cue(
     cy = frame_h / 2.0
     radius_px = max(min_radius_px, min(max_radius_px, bearing_uncertainty_deg * px_per_deg))
     return BearingCue(cx=cx, cy=cy, radius_px=radius_px)
+
+
+def bearing_residual(
+    target_bearing_deg: float,
+    current_bearing_deg: float,
+    vision_target_x_frac: float,
+    fov_curve: List[Tuple[int, float]],
+    zoom_enc: int,
+    frame_w: int,
+) -> Tuple[float, float]:
+    """Angular disagreement (deg) + pixel offset between where VISION sees the subject
+    (``vision_target_x_frac`` in [0,1], 0.5 = frame center) and where GPS says it is
+    (``target_bearing_deg``). 0 = perfect agreement. Observe-only measurement of the
+    GPS-vs-vision pointing gap (the cal-vs-FOV gap) — pure, never feeds pointing/fusion."""
+    hfov = _fov_at_zoom(fov_curve, zoom_enc)
+    vision_bearing = current_bearing_deg + (vision_target_x_frac - 0.5) * hfov
+    deg = normalize_180(vision_bearing - target_bearing_deg)
+    px = deg * (frame_w / hfov) if hfov > 0 else 0.0
+    return deg, px

@@ -7,6 +7,7 @@ it can call refusal(), claim_manual(), revision, and status_snapshot().
 """
 from __future__ import annotations
 
+import copy
 import math
 import threading
 import time
@@ -14,9 +15,10 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 
-from .camera_pose import PRISUAL_PAN_ENC_PER_DEG
+from .camera_pose import PRISUAL_PAN_ENC_PER_DEG, PRISUAL_TILT_ENC_PER_DEG
 from .control_utils import copy_optional_dict, make_request_id
 from .gps_geo import bearing_deg, haversine_m, normalize_180
+from .calibration_fit import fit_pan_offset
 from .ptz_owner import AUTONOMOUS, CALIBRATE, IDLE
 
 
@@ -28,6 +30,10 @@ LOCATION_DEFAULT_UERE_M = 5.0
 LOCATION_WARMUP_SEC = 60.0
 HEADING_DEFAULT_BUDGET_DEG = 2.0
 VALIDATION_DEFAULT_BUDGET_DEG = 2.0
+# A validation must aim at a target separated from the heading lock by at least this
+# much (pan moved OR bearing differs) — otherwise re-sighting the SAME landmark yields
+# miss≈0 trivially and the "VALID" badge is meaningless (M4 Part C, the tautology gap).
+VALIDATION_MIN_SEPARATION_DEG = 10.0
 
 
 def _now_ms() -> int:
@@ -95,6 +101,48 @@ class CalibrationManager:
         self._lock = lock
         self._api = api
         self._session = self._new_session()
+        # Multi-point offset refine: (pan_enc, bearing_deg) aim samples accumulated across
+        # repeated refine aims; a single-aim (replace) or reset clears it.
+        self._offset_samples: list[tuple[float, float]] = []
+        # Transactional calibration: the pose + store state snapshotted at CALIBRATE entry, so
+        # a bail (confirm:false) exit rolls back. Wizard steps write through to the live pose
+        # AND persist, so without this a partial/abandoned calibration destroys the previous
+        # good calibration (field bug 2026-06-23). None = no active snapshot.
+        self._pose_snapshot: dict[str, Any] | None = None
+
+    def reset_offset_samples(self) -> None:
+        """Clear the multi-point refine sample buffer (start the fit over)."""
+        with self._lock:
+            self._offset_samples = []
+
+    def _snapshot_pose(self) -> None:
+        """Capture the live pose + persisted store metadata at CALIBRATE entry."""
+        self._pose_snapshot = {
+            "pose": copy.deepcopy(self.pipeline.pose),
+            "reference_heading": self._store.reference_heading,
+            "steps": copy.deepcopy(self._store.steps),
+            "fov_curve": list(getattr(self._store, "fov_curve", [])),
+            "updated_at_unix_ms": self._store.updated_at_unix_ms,
+        }
+
+    def _restore_pose_snapshot(self) -> None:
+        """Roll the live pose + store + camera_pose.json back to the entry snapshot (bail)."""
+        snap = self._pose_snapshot
+        if snap is None:
+            return
+        src = snap["pose"]
+        live = self.pipeline.pose
+        for field_name in type(live).__dataclass_fields__:
+            setattr(live, field_name, getattr(src, field_name))
+        # Runtime-only flags (excluded from the dataclass fields but mutated by steps —
+        # alt_manual is set on a map_manual location lock).
+        live.alt_manual = getattr(src, "alt_manual", False)
+        live.base_locked = getattr(src, "base_locked", True)
+        self._store.reference_heading = snap["reference_heading"]
+        self._store.steps = copy.deepcopy(snap["steps"])
+        self._store.fov_curve = list(snap["fov_curve"])
+        self._store.updated_at_unix_ms = snap["updated_at_unix_ms"]
+        self._store.save()
 
     def _new_session(self) -> dict:
         return {
@@ -162,6 +210,7 @@ class CalibrationManager:
                     "lat": self.pipeline.pose.lat,
                     "lon": self.pipeline.pose.lon,
                     "alt_m": self.pipeline.pose.alt_m,
+                    "subject_alt_m": getattr(self.pipeline.pose, "subject_alt_m", 1.0),
                     "pan_enc_per_deg": self.pipeline.pose.pan_enc_per_deg,
                 }
             return state
@@ -246,12 +295,16 @@ class CalibrationManager:
                 self._api.reset_restore_owner()
                 self.pipeline.ptz.stop()
                 self.pipeline.ptz.zoom("stop")
-                if not self.pipeline.owner.release(current_owner):
+                # Atomic handoff (closes the OWN-1 race the SAFE-2 fix used for
+                # claim_manual): one locked release+grant so the pipeline vision loop
+                # can't seize the PTZ in a transient-IDLE window between release and
+                # request. transition() refuses if the owner moved underneath us.
+                if not self.pipeline.owner.transition(current_owner, CALIBRATE):
                     return self._calibration_refusal(
                         "owner_busy",
-                        "Could not release current PTZ owner for CALIBRATE.",
+                        "Could not claim PTZ for CALIBRATE (owner changed).",
                     )
-            if not self.pipeline.owner.request(CALIBRATE):
+            elif not self.pipeline.owner.request(CALIBRATE):
                 return self._calibration_refusal(
                     "owner_busy",
                     "Could not claim PTZ for CALIBRATE.",
@@ -265,6 +318,9 @@ class CalibrationManager:
                     "banner": "CALIBRATE ACTIVE",
                 }
             )
+            # Snapshot now — the pose still holds the prior good calibration; every wizard
+            # step from here writes through + persists, and a bail exit must restore this.
+            self._snapshot_pose()
             self.pipeline.state.set_status(state="CALIBRATE", cmd="stop")
         return self.calibration_ok()
 
@@ -277,17 +333,38 @@ class CalibrationManager:
                 "Validation must pass and be confirmed before confirm=true exit.",
             )
         with self._lock:
+            # Bail (confirm:false) discards the in-session changes: roll the pose +
+            # camera_pose.json back to the entry snapshot so a partial/abandoned calibration
+            # never overwrites the previous good calibration. Confirm keeps the new values.
+            if not confirm:
+                self._restore_pose_snapshot()
             previous_owner = self._session.get("previous_owner")
             if self.pipeline.owner.owner == CALIBRATE:
                 self.pipeline.ptz.stop()
                 self.pipeline.ptz.zoom("stop")
-                self.pipeline.owner.release(CALIBRATE)
+                # Atomic restore: hand CALIBRATE → the prior autonomous owner in one
+                # locked step so the pipeline vision loop can't seize the PTZ in a
+                # transient-IDLE window (then leave two writers disagreeing). If there's
+                # no autonomous owner to restore, just release to IDLE.
+                if (restore_prior and previous_owner in AUTONOMOUS
+                        and not self.pipeline.owner.killed):
+                    if not self.pipeline.owner.transition(CALIBRATE, previous_owner):
+                        self.pipeline.owner.release(CALIBRATE)
+                else:
+                    self.pipeline.owner.release(CALIBRATE)
+            elif self.pipeline.owner.owner == "manual":
+                # A calibrate-aim takeover (the v3 joystick) can leave owner=manual if the
+                # operator exits without releasing the stick. Exiting must NOT strand the rig
+                # in manual — that blocks the arbiter from ever resuming autonomy (no tracking).
+                # Drop to IDLE (clears the staged calibrate-restore) so the arbiter re-decides.
+                self.pipeline.ptz.stop()
+                self.pipeline.ptz.zoom("stop")
+                self._api.release_manual_owner(restore_autonomous=False)
             self._session["active"] = False
             self._session["ended_at_unix_ms"] = _now_ms()
             self._session["banner"] = self._calibration_banner(self._session)
+            self._pose_snapshot = None
             self.pipeline.state.set_status(state="SEARCHING", cmd="stop")
-            if restore_prior and previous_owner in AUTONOMOUS and not self.pipeline.owner.killed:
-                self.pipeline.owner.request(previous_owner)
         return self.calibration_ok()
 
     def cancel_session(self, reason: str = "cancelled") -> None:
@@ -295,6 +372,10 @@ class CalibrationManager:
             if self.pipeline.owner.owner == CALIBRATE:
                 self.pipeline.owner.release(CALIBRATE)
             if self._session.get("active"):
+                # A cancelled session is never confirmed — roll the pose back like a bail so a
+                # KILL mid-calibration can't leave the live pose half-overwritten.
+                self._restore_pose_snapshot()
+                self._pose_snapshot = None
                 self._session["active"] = False
                 self._session["ended_at_unix_ms"] = _now_ms()
                 self._session["valid"] = False
@@ -324,6 +405,8 @@ class CalibrationManager:
                 "lat": lat,
                 "lon": lon,
                 "alt_m": manual_alt + (_optional_float(_field(req, "offset_up_m")) or 0.0),
+                # Calibration v3: subject height in the SAME datum as alt_m (operator-set).
+                "subject_alt_m": _optional_float(_field(req, "subject_alt_m")),
                 "error_radius_m": round(error_radius, 3),
                 "sample_count": 0,
                 "model": "manual_radius",
@@ -481,6 +564,13 @@ class CalibrationManager:
             self.pipeline.pose.lat = float(entry["lat"])
             self.pipeline.pose.lon = float(entry["lon"])
             self.pipeline.pose.alt_m = float(entry["alt_m"])
+            # Calibration v3: subject height in the same datum (None = keep current default).
+            subj = entry.get("subject_alt_m")
+            if subj is not None:
+                self.pipeline.pose.subject_alt_m = float(subj)
+            # Calibration v2: a manual (map_manual) altitude is operator-surveyed and must
+            # not be overwritten by a later GPS base-lock; an averaged/live lock clears it.
+            self.pipeline.pose.alt_manual = entry.get("model") == "manual_radius"
             self._session["location"] = entry
             self._session["valid"] = False
             self._session["confirmed"] = False
@@ -575,14 +665,13 @@ class CalibrationManager:
         budget = _optional_float(_field(req, "max_uncertainty_deg")) or HEADING_DEFAULT_BUDGET_DEG
         uncertainty = self._estimate_heading_uncertainty(req, location, distance_m)
         confidence = _confidence(uncertainty, budget)
+        # The operator has explicitly accepted this heading (operator_accepted gate above),
+        # and on this rig the phone magnetometer is unusable near the motor (~22 µT) — so the
+        # uncertainty budget is ADVISORY, never a hard block. Record it + confidence for the
+        # UI; the operator's chosen heading (map twist / manual / GPS bearing) always commits.
         if uncertainty > budget:
-            return self._calibration_refusal(
-                "uncertainty_too_high",
-                "Estimated heading uncertainty exceeds the configured budget.",
-                uncertainty_deg=round(uncertainty, 3),
-                max_uncertainty_deg=budget,
-                confidence=confidence,
-            )
+            print(f"[calibrate] heading accepted over budget: unc={uncertainty:.2f} "
+                  f"budget={budget:.2f} conf={confidence:.2f} bearing={bearing:.1f}")
         with self._lock:
             self.pipeline.pose.calibrate_pan_aim(
                 enc=pan_enc,
@@ -618,6 +707,144 @@ class CalibrationManager:
             )
         return self.calibration_ok()
 
+    def offset_calibrate(self, req) -> JSONResponse:
+        """Calibration v2: one physical aim at the tracker's stable GPS re-anchors BOTH
+        axes. The operator frames the tracker (known lat/lon) dead-centre; we read the
+        live pan+tilt encoders, derive the true bearing+distance from base→tracker GPS,
+        and set the pan anchor (calibrate_pan_aim) AND the full tilt anchor (all three
+        fields — the scale too, or elevation_to_tilt_encoder would freeze). Reports the
+        offset vs the coarse step-3 heading and a base-height sanity warning."""
+        refusal = self._require_active()
+        if refusal is not None:
+            return refusal
+        if not bool(_field(req, "operator_accepted", False)):
+            return self._calibration_refusal(
+                "operator_accept_required",
+                "Offset calibration requires explicit operator acceptance of the aim.",
+            )
+        location = self._session.get("location")
+        if not location:
+            return self._calibration_refusal(
+                "location_required",
+                "Lock camera location before the offset aim.",
+            )
+        bearing, distance_m = self._resolve_bearing(req, location)
+        if bearing is None or distance_m is None:
+            # No operator-supplied target → use the backend's own live tracker fix (the
+            # authoritative position; the tracker is stationary during calibration).
+            gps = getattr(self.pipeline, "gps", None)
+            fix = gps.get_fix() if gps is not None else None
+            if fix is not None:
+                bearing = bearing_deg(float(location["lat"]), float(location["lon"]), fix.lat, fix.lon)
+                distance_m = haversine_m(float(location["lat"]), float(location["lon"]), fix.lat, fix.lon)
+        if bearing is None or distance_m is None:
+            return self._calibration_refusal(
+                "bearing_required",
+                "No tracker fix available — send target_lat/target_lon or wait for a live tracker fix.",
+                422,
+            )
+        enc = self._current_encoder()
+        if enc is None:
+            return self._calibration_refusal(
+                "encoder_unavailable",
+                "No fresh pan/tilt encoder is available for the offset aim.",
+                503,
+            )
+        pan_enc, tilt_enc = float(enc[0]), float(enc[1])
+        base_h = float(location.get("alt_m", 0.0))
+        # Anchor tilt at the operator's chosen subject height (set on the location lock),
+        # NOT a hardcoded 1 m: the runtime tilt command uses pose.subject_alt_m, so the
+        # anchor elevation must be computed from the same height or every commanded tilt
+        # is biased by atan2(subject_alt_m − 1, dist) (calibration v3).
+        subject_h = float(getattr(self.pipeline.pose, "subject_alt_m", 1.0))
+        elev_cal = math.degrees(math.atan2(subject_h - base_h, distance_m))
+        base_height_warning = abs(elev_cal) > 30.0 and distance_m > 50.0
+        step3 = _optional_float(_field(req, "step3_bearing_deg"))
+        offset = None if step3 is None else round(normalize_180(bearing - step3), 3)
+        mode = str(_field(req, "mode", "replace")).lower()
+        fit = None
+        with self._lock:
+            if mode == "accumulate":
+                # Multi-point refine: add this aim, refit the pan offset across ALL aims so
+                # per-aim GPS-bearing error averages out (scale stays the measured 14.4).
+                self._offset_samples.append((pan_enc, bearing))
+                fit = fit_pan_offset(self._offset_samples, PRISUAL_PAN_ENC_PER_DEG)
+                self.pipeline.pose.calibrate_pan_aim(
+                    enc=fit.anchor_enc, bearing_deg=fit.anchor_bearing_deg,
+                    enc_per_deg=PRISUAL_PAN_ENC_PER_DEG)
+            else:
+                # Single-aim (default): re-anchor from this one aim, reset accumulation.
+                self._offset_samples = []
+                self.pipeline.pose.calibrate_pan_aim(
+                    enc=pan_enc, bearing_deg=bearing, enc_per_deg=PRISUAL_PAN_ENC_PER_DEG)
+            self.pipeline.pose.tilt_anchor_enc = tilt_enc
+            self.pipeline.pose.tilt_anchor_elev = elev_cal
+            self.pipeline.pose.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
+            entry = {
+                "bearing_deg": round(bearing % 360.0, 6),
+                "heading_deg": round(bearing % 360.0, 6),
+                "pan_enc": pan_enc,
+                "tilt_enc": tilt_enc,
+                "pan_enc_per_deg": PRISUAL_PAN_ENC_PER_DEG,
+                "tilt_enc_per_deg": PRISUAL_TILT_ENC_PER_DEG,
+                "tilt_anchor_elev": round(elev_cal, 4),
+                "distance_m": round(distance_m, 3),
+                "offset_deg": offset,
+                "base_height_warning": base_height_warning,
+                "method": "offset_aim",
+                "source": _field(req, "source", None),
+                "captured_at_unix_ms": _now_ms(),
+            }
+            if fit is not None:
+                entry["sample_count"] = fit.sample_count
+                entry["rms_residual_deg"] = round(fit.rms_residual_deg, 3)
+                entry["worst_residual_deg"] = round(fit.worst_residual_deg, 3)
+            self._session["heading_lock"] = entry
+            self._session["validation"] = None
+            self._session["valid"] = False
+            self._session["confirmed"] = False
+            # Persist the heading step: set_step maps heading_deg -> reference_heading and
+            # save() serialises asdict(pose) — which now carries the pan AND tilt anchors —
+            # so a restart restores the full calibration (CAL-1). Also log the tilt step
+            # for the calibration_state display.
+            persisted = self._persist_step("heading", entry)
+            persisted = self._persist_step("tilt", {
+                "tilt_deg": round(elev_cal, 4),
+                "tilt_enc": tilt_enc,
+                "tilt_enc_per_deg": PRISUAL_TILT_ENC_PER_DEG,
+            }) and persisted
+        if not persisted:
+            return self._calibration_refusal(
+                "calibration_persist_failed",
+                "Offset captured in memory but failed to write to disk.",
+                503,
+            )
+        # Audit trail (C2): one structured line per offset so a confidently-wrong field
+        # calibration leaves a trace without needing live debugging.
+        print(f"[calibrate] offset_calibrate bearing={bearing:.2f} dist_m={distance_m:.1f} "
+              f"elev_cal={elev_cal:.2f} offset_deg={offset} base_h={base_h} "
+              f"warn={base_height_warning} pan_enc={pan_enc} tilt_enc={tilt_enc} "
+              f"src={_field(req, 'source', None)}")
+        # Return the standard session-state response (so the iOS wizard advances + the
+        # session-state decoder is happy) PLUS the offset summary as sibling fields.
+        response = {
+            "ok": True,
+            "request_id": make_request_id(),
+            "revision": self._api.revision,
+            "calibration": self.calibration_state(),
+            "status": self._api.status_snapshot(),
+            "offset_deg": offset,
+            "bearing_deg": round(bearing % 360.0, 6),
+            "distance_m": round(distance_m, 3),
+            "elev_cal_deg": round(elev_cal, 3),
+            "base_height_warning": base_height_warning,
+        }
+        if fit is not None:
+            response["sample_count"] = fit.sample_count
+            response["rms_residual_deg"] = round(fit.rms_residual_deg, 3)
+            response["worst_residual_deg"] = round(fit.worst_residual_deg, 3)
+        return JSONResponse(response)
+
     def validate_heading(self, req) -> JSONResponse:
         refusal = self._require_active()
         if refusal is not None:
@@ -645,16 +872,26 @@ class CalibrationManager:
                 "No fresh pan encoder is available for validation.",
                 503,
             )
+        # Validation is ADVISORY (operator override): record the separation-from-lock and
+        # the miss so accuracy is VISIBLE, but never hard-block reaching VALID — the operator
+        # decides. The independence + miss-budget hard gates were stopping GPS tracking from
+        # ever turning on (calibration_valid gates the arbiter); removed per field direction.
+        hl = self._session.get("heading_lock") or {}
+        lock_bearing = _optional_float(hl.get("bearing_deg"))
+        bearing_sep = abs(normalize_180(bearing - lock_bearing)) if lock_bearing is not None else None
         predicted = self.pipeline.pose.pan_encoder_to_bearing(pan_enc)
         miss = abs(normalize_180((predicted or 0.0) - bearing))
         budget = _optional_float(_field(req, "max_miss_deg")) or VALIDATION_DEFAULT_BUDGET_DEG
-        accepted = miss <= budget
+        within_budget = miss <= budget
+        accepted = True   # advisory: confirm is always allowed; miss_deg shows the real accuracy
         entry = {
             "bearing_deg": round(bearing % 360.0, 6),
             "predicted_bearing_deg": None if predicted is None else round(predicted % 360.0, 6),
             "pan_enc": pan_enc,
             "miss_deg": round(miss, 3),
             "max_miss_deg": budget,
+            "within_budget": within_budget,
+            "separation_deg": round(bearing_sep, 2) if bearing_sep is not None else None,
             "distance_m": None if distance_m is None else round(distance_m, 3),
             "accepted": accepted,
             "source": _field(req, "source", None),
@@ -665,13 +902,6 @@ class CalibrationManager:
             self._session["valid"] = False
             self._session["confirmed"] = False
             persisted = self._persist_step("validation", entry)
-        if not accepted:
-            return self._calibration_refusal(
-                "validation_miss_too_large",
-                "Independent validation miss exceeds the configured budget.",
-                miss_deg=entry["miss_deg"],
-                max_miss_deg=budget,
-            )
         if not persisted:
             return self._calibration_refusal(
                 "calibration_persist_failed",
@@ -868,7 +1098,13 @@ class CalibrationManager:
                     if base is not None:
                         self.pipeline.pose.lat = base[0]
                         self.pipeline.pose.lon = base[1]
-                        self.pipeline.pose.alt_m = base[2]
+                        # Don't clobber an operator-surveyed (map_manual) altitude with the
+                        # noisy GPS fix (Calibration v2 no-clobber guard). alt_manual is
+                        # cleared only by a later non-manual /location commit or a restart,
+                        # so to re-enable a GPS altitude mid-session, re-lock with an
+                        # averaged/live method (not this base_lock step).
+                        if not getattr(self.pipeline.pose, "alt_manual", False):
+                            self.pipeline.pose.alt_m = base[2]
             elif step == "tilt":
                 # P1: tilt calibration — single-point anchor (two-point deferred)
                 tilt_deg = values.get("tilt_deg")

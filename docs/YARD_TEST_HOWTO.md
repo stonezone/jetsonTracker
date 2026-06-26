@@ -5,8 +5,8 @@
 
 Validate the vision-only follow loop. This test uses the Prisual PTZ camera,
 YOLO person detection, and the orange/red HSV color cue. GPS is left off or set to
-`tracking.mode: vision_only` so the test is purely vision-driven. The Apple Watch
-and direct-LoRa GPS are not involved in this test.
+`tracking.mode: vision_only` so the test is purely vision-driven. Direct-LoRa GPS is
+not involved in this test. (The Apple-Watch GPS relay is retired/superseded.)
 
 ## Preflight
 

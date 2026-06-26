@@ -183,6 +183,22 @@ def test_vision_only_mode_never_uses_gps():
     assert d.search_roi is None
 
 
+def test_vision_only_stays_idle_on_stale_capture_even_with_viable_gps():
+    # ARB-VISIONONLY-GPS: a wedged grabber must NOT hand GPS authority in vision_only.
+    a = TrackingArbiter(mode="vision_only")
+    d = a.decide(_vision(True, 0.9), gps_fresh=True, gps_calibrated=True, base_locked=True,
+                 now_sec=0.0, calibration_valid=True, capture_ok=False)
+    assert d.owner == "idle"
+
+
+def test_auto_falls_back_to_gps_on_stale_capture():
+    # Zombie-rig guard preserved for auto: stale frames + viable GPS → gps_tracker.
+    a = TrackingArbiter(mode="auto")
+    d = a.decide(_vision(True, 0.9), gps_fresh=True, gps_calibrated=True, base_locked=True,
+                 now_sec=0.0, calibration_valid=True, capture_ok=False)
+    assert d.owner == "gps_tracker"
+
+
 def test_vision_only_mode_allows_vision_after_lock_hysteresis():
     a = TrackingArbiter(lock_frames=1, mode="vision_only")
 

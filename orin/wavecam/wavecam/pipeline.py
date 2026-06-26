@@ -16,7 +16,7 @@ from .color_detector import ColorDetector
 from .controller import VisualServo, STOP_CMD, PtzAbsoluteCommand
 from .fusion import Fusion
 from .gps_geo import GeoPoint, bearing_deg
-from .gps_bearing_cue import compute_bearing_cue
+from .gps_bearing_cue import bearing_residual, compute_bearing_cue
 from .gps_pointing import compute_target, ZoomCurve
 from .overlay import annotate
 from .detector import class_label as _detector_class_label
@@ -215,6 +215,11 @@ class Pipeline(threading.Thread):
         self._base_drift_latched_at: Optional[tuple] = None
         self._base_drift_last_result = None
         self._last_gps_cue = None
+        # Part B (observe-only): GPS↔vision bearing residual published in /status. None unless a
+        # fresh GPS fix AND a vision lock coexist. Read-only — never feeds pointing/fusion.
+        self._gps_vision_residual: Optional[dict] = None
+        self._gvr_n = 0
+        self._gvr_absmax = 0.0
 
     def kill(self, on: bool = True, reason: str | None = None):
         self.state.killed = on
@@ -492,6 +497,34 @@ class Pipeline(threading.Thread):
         self._last_gps_cue = (round(cue.cx, 1), round(cue.cy, 1), round(cue.radius_px, 1))
         return out
 
+    def _compute_gps_vision_residual(self, fr, gps_fix, gps_fresh: bool, w: int, h: int):
+        """Observe-only (Part B): the angular gap (deg/px) between where vision locked and where
+        GPS says the subject is, when BOTH a fresh fix and a vision lock exist; None otherwise.
+        Read-only — published in /status for the field cal-vs-FOV measurement; it never feeds
+        pointing, fusion, or the arbiter."""
+        if not (gps_fresh and getattr(fr, "locked", False)
+                and self.pose.calibrated and self.pose.has_base):
+            return None
+        if gps_fix is None or fr.target_xy is None:
+            return None
+        fov_curve = getattr(getattr(self, "_store", None), "fov_curve", None) or []
+        if not fov_curve:
+            return None
+        enc = self.ptz_state.latest()[0] if self.ptz_state is not None else None
+        if enc is None:
+            return None
+        cur_bearing = self.pose.pan_encoder_to_bearing(enc[0])
+        if cur_bearing is None:
+            return None
+        zoom_enc = self.ptz_state.latest_zoom()[0] if self.ptz_state is not None else None
+        gps_bearing = bearing_deg(self.pose.lat, self.pose.lon, gps_fix.lat, gps_fix.lon)
+        deg, px = bearing_residual(gps_bearing, cur_bearing, float(fr.target_xy[0]),
+                                   fov_curve, int(zoom_enc or 0), int(w))
+        self._gvr_n += 1
+        self._gvr_absmax = max(self._gvr_absmax, abs(deg))
+        return {"deg": round(deg, 2), "px": round(px, 1),
+                "n": self._gvr_n, "abs_max_deg": round(self._gvr_absmax, 2)}
+
     def _update_base_drift(self, now: float):
         """Observer: run the base-drift monitor (throttled) and update
         pose.base_locked. Returns the latest BaseDriftResult, or None if not run
@@ -547,7 +580,11 @@ class Pipeline(threading.Thread):
             return None
         gps_cfg = self.cfg.gps
         drive_zoom = getattr(gps_cfg, "drive_zoom", False)
+        # Subject height comes from the operator-set pose (Calibration v3), in the same
+        # datum as the base alt_m — NOT the tracker's noisy GPS altitude. Tilt depression =
+        # atan2(subject_alt_m - alt_m, dist). (Base-relative: alt_m=0; sea-level: both ASL.)
         target = GeoPoint(lat=fix.lat, lon=fix.lon,
+                          alt_m=getattr(self.pose, "subject_alt_m", 1.0),
                           speed_mps=fix.speed, course_deg=fix.course)
         zoom_curve = ZoomCurve(
             near_m=float(getattr(gps_cfg, "drive_zoom_near_m", 40.0)),
@@ -555,7 +592,15 @@ class Pipeline(threading.Thread):
             max_enc=float(getattr(gps_cfg, "drive_zoom_max_enc", 16384.0)),
             max_frac=float(getattr(gps_cfg, "drive_zoom_max_frac", 0.6)),
         ) if drive_zoom else None
-        pt = compute_target(base, target, self.pose, lead_s=0.65, zoom=zoom_curve)
+        max_up = float(getattr(gps_cfg, "max_tilt_up_deg", 5.0))
+        lead_s = float(getattr(gps_cfg, "lead_s", 0.65))
+        pt = compute_target(base, target, self.pose, lead_s=lead_s, zoom=zoom_curve,
+                            max_up_elev_deg=max_up)
+        # Log only on transition so a persistently-clamped aim (likely a mis-surveyed base
+        # altitude) is visible without spamming every frame.
+        if pt.clamped and not getattr(self, "_tilt_clamped", False):
+            print(f"[pipeline] up-tilt clamp engaged at +{max_up:.1f} deg — check base height")
+        self._tilt_clamped = pt.clamped
         return PtzAbsoluteCommand(
             pan_enc=int(pt.pan_enc), tilt_enc=int(pt.tilt_enc),
             zoom_enc=int(pt.zoom_enc) if pt.zoom_enc is not None else None,
@@ -691,6 +736,7 @@ class Pipeline(threading.Thread):
                 self._send_zoom("stop")
                 zoom_cmd = "hold"
                 self._arbiter_state = "restarting" if self._restarting else "killed"
+                self._gps_vision_residual = None
             else:
                 cmd = self.servo.compute(fr.target_xy, (w, h))
                 zoom_cmd = None
@@ -744,6 +790,10 @@ class Pipeline(threading.Thread):
                     "gps_age_sec": round(gps_fix.age_sec, 2) if gps_fix is not None else None,
                     "ts": time.time(),
                 }
+                # Part B (observe-only): measure the GPS↔vision bearing gap when both a fresh
+                # fix and a vision lock exist. Read-only — never alters pointing/fusion/arbiter.
+                self._gps_vision_residual = self._compute_gps_vision_residual(
+                    fr, gps_fix, gps_fresh, w, h)
                 # Stash search_roi for next frame's YOLO crop (gps_roi_enabled flag gates use)
                 self._prev_search_roi = decision.search_roi
 

@@ -312,6 +312,8 @@ struct WCConfig: Codable, Sendable {
             var staleThresholdSec: Double?
             var graceSec: Double?
             var driveZoom: Bool?
+            var maxPanSpeed: Int?
+            var maxTiltSpeed: Int?
         }
         struct Tracking: Codable, Sendable {
             var mode: String?   // "auto" | "gps_only" | "vision_only"
@@ -465,6 +467,15 @@ struct WCCalHeadingLockEntry: Codable, Sendable {
     var uncertaintyDeg: Double?
     var confidence: Double?
     var method: String?
+    // Offset-calibrate (Calibration v2) carries these in the heading_lock entry so the UI
+    // can show the backend's authoritative values, not the iOS preview (audit IOS-A2).
+    var offsetDeg: Double?
+    var baseHeightWarning: Bool?
+    // Multi-point refine (mode=accumulate): the running least-squares fit summary, so the
+    // aim step can show "samples N · residual X.X°". nil for a single-aim (replace) offset.
+    var sampleCount: Int?
+    var rmsResidualDeg: Double?
+    var worstResidualDeg: Double?
 }
 
 extension WCCalHeadingLockEntry {
@@ -477,6 +488,11 @@ extension WCCalHeadingLockEntry {
         uncertaintyDeg = try c.decodeIfPresent(Double.self, forKey: .uncertaintyDeg)
         confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
         method = try c.decodeIfPresent(String.self, forKey: .method)
+        offsetDeg = try c.decodeIfPresent(Double.self, forKey: .offsetDeg)
+        baseHeightWarning = try c.decodeIfPresent(Bool.self, forKey: .baseHeightWarning)
+        sampleCount = try c.decodeIfPresent(Int.self, forKey: .sampleCount)
+        rmsResidualDeg = try c.decodeIfPresent(Double.self, forKey: .rmsResidualDeg)
+        worstResidualDeg = try c.decodeIfPresent(Double.self, forKey: .worstResidualDeg)
     }
 }
 
@@ -1376,11 +1392,15 @@ final class WaveCamClient {
     }
 
     /// POST /api/v1/calibration/session/exit
-    /// Releases the "calibrate" PTZ owner and restores prior mode.
-    func calibrateSessionExit(source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+    /// Releases the "calibrate" PTZ owner and restores prior mode. `confirm:false` (the default)
+    /// BAILS — the backend rolls the pose + camera_pose.json back to the session-entry snapshot,
+    /// so a partial/abandoned calibration never overwrites the previous good calibration, and the
+    /// menu can always be left (no "validation required" trap). Only "Confirm & finish" passes
+    /// `confirm:true` to COMMIT the new calibration.
+    func calibrateSessionExit(confirm: Bool = false, source: String = "ios_native") async -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
         guard mode == .live else { return .failure(.unavailable) }
         return await sendCalibrationSession("calibration/session/exit", body: [
-            "confirm": true,
+            "confirm": confirm,
             "restore_prior": true,
             "source": source
         ])
@@ -1445,6 +1465,79 @@ final class WaveCamClient {
         ]
         if let d = distanceM { body["distance_m"] = d }
         return await sendCalibrationSession("calibration/heading-lock", body: body)
+    }
+
+    // MARK: - Map-based placement (manual coords on satellite imagery; bypasses GPS noise)
+
+    /// Request body for a manual map-placed base location (bypasses live-base averaging).
+    /// `altM` is the operator-entered base height above sea level (Calibration v2) — the
+    /// only real altitude input; the backend marks it manual so a later GPS lock can't
+    /// clobber it.
+    nonisolated static func mapLocationBody(lat: Double, lon: Double, errorRadiusM: Double,
+                                            source: String, altM: Double = 0.0,
+                                            subjectAltM: Double = 1.0) -> [String: Any] {
+        ["method": "map_manual", "use_live_base": false,
+         "lat": lat, "lon": lon, "alt_m": altM, "subject_alt_m": subjectAltM,
+         "manual_error_radius_m": errorRadiusM, "source": source]
+    }
+
+    /// Request body for the offset-calibrate aim (Calibration v2). `step3BearingDeg` is the
+    /// coarse heading so the backend can report how far off it was. pan/tilt encoders are
+    /// captured server-side at request time (operator holds the tracker framed).
+    nonisolated static func offsetCalibrateBody(targetLat: Double?, targetLon: Double?,
+                                                step3BearingDeg: Double?, mode: String, source: String) -> [String: Any] {
+        var b: [String: Any] = ["operator_accepted": true, "mode": mode, "source": source]
+        if let la = targetLat, let lo = targetLon { b["target_lat"] = la; b["target_lon"] = lo }
+        if let s = step3BearingDeg { b["step3_bearing_deg"] = s }
+        return b   // omit coords => backend uses its own live tracker fix
+    }
+
+    /// Request body for look-at heading. `pan_enc` is intentionally OMITTED so the backend
+    /// captures the live encoder at request time (review finding V1) — the operator keeps the
+    /// camera aimed at the look-at landmark through the request.
+    nonisolated static func mapHeadingBody(targetLat: Double, targetLon: Double, operatorAccepted: Bool, source: String) -> [String: Any] {
+        ["method": "map_lookat", "operator_accepted": operatorAccepted,
+         "target_lat": targetLat, "target_lon": targetLon, "source": source]
+    }
+
+    /// POST /api/v1/calibration/location — manual coords + base height + subject height
+    /// (Calibration v3; both in the operator's chosen datum).
+    func calibrateLocationManual(lat: Double, lon: Double, errorRadiusM: Double,
+                                 altM: Double = 0.0, subjectAltM: Double = 1.0,
+                                 source: String = "ios_native") async
+        -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/location",
+                                            body: Self.mapLocationBody(lat: lat, lon: lon, errorRadiusM: errorRadiusM, source: source, altM: altM, subjectAltM: subjectAltM))
+    }
+
+    /// POST /api/v1/calibration/offset — tracker aim re-anchors pan+tilt.
+    /// `mode`: "replace" = single-aim baseline (clears refine samples); "accumulate" = add this
+    /// aim to the multi-point least-squares refine. Omitting target coords uses the live fix.
+    func calibrateOffset(targetLat: Double? = nil, targetLon: Double? = nil, step3BearingDeg: Double?,
+                         mode: String = "replace", source: String = "ios_native") async
+        -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard self.mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/offset",
+                                            body: Self.offsetCalibrateBody(targetLat: targetLat, targetLon: targetLon, step3BearingDeg: step3BearingDeg, mode: mode, source: source))
+    }
+
+    /// POST /api/v1/calibration/offset/reset — clear the multi-point refine sample buffer.
+    @discardableResult
+    func calibrateOffsetReset() async -> Bool {
+        guard mode == .live else { return false }
+        do { _ = try await post("calibration/offset/reset", body: ["source": "ios_native"]); return true }
+        catch { return false }
+    }
+
+    /// POST /api/v1/calibration/heading-lock — look-at point from the map (target coords).
+    /// `preview: true` probes (operator_accepted:false); `false` locks.
+    func calibrateMapHeading(preview: Bool, targetLat: Double, targetLon: Double,
+                             source: String = "ios_native") async
+        -> Result<WCCalibrationSessionState, WaveCamCalibrationError> {
+        guard mode == .live else { return .failure(.unavailable) }
+        return await sendCalibrationSession("calibration/heading-lock",
+                                            body: Self.mapHeadingBody(targetLat: targetLat, targetLon: targetLon, operatorAccepted: !preview, source: source))
     }
 
     /// POST /api/v1/calibration/validation
@@ -1515,6 +1608,19 @@ final class WaveCamClient {
             return response.calibration?.banner != nil
         } catch let error as WaveCamAPIError where error.statusCode == 404 {
             return false
+        } catch {
+            return nil
+        }
+    }
+
+    /// GET the current calibration session state (active/banner/session). Lets the
+    /// single-screen view seed itself so the banner reflects an already-active session
+    /// (e.g. after navigating away and back) instead of showing IDLE. nil on error/404.
+    func calibrationSessionState() async -> WCCalibrationSessionState? {
+        guard mode == .live else { return nil }
+        do {
+            let data = try await getWithFallback("calibration")
+            return try Self.decoder.decode(WCCalibrationSessionResponse.self, from: data).calibration
         } catch {
             return nil
         }

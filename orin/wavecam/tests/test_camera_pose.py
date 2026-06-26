@@ -38,6 +38,14 @@ def test_pan_two_point_rejects_equal_bearings():
         CameraPose().calibrate_pan_two_point(0.0, 90.0, 100.0, 90.0)
 
 
+def test_pan_two_point_rejects_negative_scale():
+    # GLM A4: encoder DECREASING while bearing increases → negative enc/deg, which
+    # would slew every GPS aim backwards. Reject at capture time.
+    with pytest.raises(ValueError, match="non-positive"):
+        CameraPose().calibrate_pan_two_point(enc1=1447.0, bearing1=90.0,
+                                             enc2=1000.0, bearing2=190.0)
+
+
 def test_tilt_uncalibrated_holds_anchor_calibrated_maps():
     p = CameraPose(tilt_anchor_enc=500.0)
     assert p.elevation_to_tilt_encoder(5.0) == 500.0                  # uncalibrated -> hold
@@ -102,3 +110,6 @@ def test_tilt_capture_constants_are_the_measured_truth():
     p.tilt_enc_per_deg = PRISUAL_TILT_ENC_PER_DEG
     assert abs(p.elevation_to_tilt_encoder(-30.0) - PRISUAL_TILT_ENC_MIN) < 1e-6
     assert abs(p.elevation_to_tilt_encoder(90.0) - PRISUAL_TILT_ENC_MAX) < 1e-6
+    # Beyond the mechanical stops, clamp (don't drive past the hard stop) — audit TILT-DOWN.
+    assert p.elevation_to_tilt_encoder(-60.0) == PRISUAL_TILT_ENC_MIN   # below down stop
+    assert p.elevation_to_tilt_encoder(120.0) == PRISUAL_TILT_ENC_MAX   # above up stop

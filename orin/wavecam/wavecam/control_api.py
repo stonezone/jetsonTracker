@@ -195,6 +195,18 @@ class CalibrationHeadingLockRequest(CalibrationBaseRequest):
     heading_acc_deg: float | None = Field(default=None, ge=0.0, le=360.0)
 
 
+class CalibrationOffsetRequest(CalibrationBaseRequest):
+    # Calibration v2: single aim at the tracker's stable GPS re-anchors pan+tilt.
+    operator_accepted: bool = False
+    target_lat: float | None = Field(default=None, ge=-90.0, le=90.0)
+    target_lon: float | None = Field(default=None, ge=-180.0, le=180.0)
+    # The coarse step-3 heading, so the response can report how far off it was.
+    step3_bearing_deg: float | None = Field(default=None, ge=0.0, le=360.0)
+    # "replace" (default) = single-aim re-anchor; "accumulate" = multi-point refine (adds
+    # this aim to the least-squares pan-offset fit). Unknown values fall back to replace.
+    mode: str = "replace"
+
+
 class CalibrationValidationRequest(CalibrationBaseRequest):
     bearing_deg: float | None = Field(default=None, ge=0.0, le=360.0)
     target_lat: float | None = Field(default=None, ge=-90.0, le=90.0)
@@ -324,6 +336,15 @@ def register_guide_routes(app: FastAPI) -> None:
             return JSONResponse({"ok": False, "code": "guide_asset_not_found"}, status_code=404)
         return FileResponse(path)
 
+    @app.get("/docs/{name}.html", dependencies=[Depends(require(READ))])
+    def docs_html(name: str):
+        """Serve a docs/*.html page (e.g. the yard-test checklist) to the phone on the
+        same network as the app. Traversal-guarded + scoped to docs/, .html only."""
+        path = find_docs_html(name)
+        if path is None:
+            return JSONResponse({"ok": False, "code": "doc_not_found"}, status_code=404)
+        return FileResponse(path, media_type="text/html")
+
 
 def register_status_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.get("/api/v1/status", dependencies=[Depends(require(READ))])
@@ -403,7 +424,13 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return api.refusal("killed", "KILL is latched; resume before movement commands.")
         if req.requested_owner != "manual":
             return api.refusal("invalid_request", "Only requested_owner=manual is accepted in v1.", 422)
-        if not api.claim_manual(takeover=req.takeover):
+        # Aiming during an active CALIBRATE session (the v3 calibrate joystick): take over
+        # via the calibrate-aware path, which the plain manual claim refuses (CALIBRATE is
+        # not autonomous). Stages CALIBRATE for restore on release. KILL is checked above.
+        if api.pipeline.owner.owner == "calibrate" and req.takeover:
+            if not api.claim_manual_from_calibrate():
+                return api.refusal("owner_busy", "Cannot claim manual for calibrate aim.")
+        elif not api.claim_manual(takeover=req.takeover):
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
         api.send_manual_velocity(req)
@@ -427,7 +454,13 @@ def register_ptz_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
                 api.schedule_zoom_deadman(req.deadman_ms)
             api.bump_revision()
             return api.ok()
-        if not api.claim_manual(takeover=req.takeover):
+        # Zoom during an active CALIBRATE session (the v3 aim-on-Live flow): take over via the
+        # calibrate-aware path, which the plain manual claim refuses (CALIBRATE is not
+        # autonomous). Stages CALIBRATE for restore on release. KILL is checked above.
+        if api.pipeline.owner.owner == "calibrate" and req.takeover:
+            if not api.claim_manual_from_calibrate():
+                return api.refusal("owner_busy", "Cannot claim manual for calibrate zoom.")
+        elif not api.claim_manual(takeover=req.takeover):
             return api.refusal("owner_busy", "Another PTZ owner holds the camera.")
 
         api.send_manual_zoom_velocity(req.value, req.deadman_ms)
@@ -483,6 +516,18 @@ def register_calibration_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         response = api.lock_calibration_heading(req)
         api.bump_revision()
         return response
+
+    @app.post("/api/v1/calibration/offset", dependencies=[Depends(require(PTZ))])
+    def calibration_offset(req: CalibrationOffsetRequest):
+        response = api.offset_calibrate(req)
+        api.bump_revision()
+        return response
+
+    @app.post("/api/v1/calibration/offset/reset", dependencies=[Depends(require(PTZ))])
+    def calibration_offset_reset():
+        api.reset_offset_samples()
+        api.bump_revision()
+        return api.ok()
 
     @app.post("/api/v1/calibration/validation", dependencies=[Depends(require(PTZ))])
     def calibration_validation(req: CalibrationValidationRequest):
@@ -1045,6 +1090,12 @@ class ControlApiAdapter:
     def lock_calibration_heading(self, req: CalibrationHeadingLockRequest) -> JSONResponse:
         return self._calibration.heading_lock(req)
 
+    def offset_calibrate(self, req: CalibrationOffsetRequest) -> JSONResponse:
+        return self._calibration.offset_calibrate(req)
+
+    def reset_offset_samples(self) -> None:
+        self._calibration.reset_offset_samples()
+
     def validate_calibration_heading(self, req: CalibrationValidationRequest) -> JSONResponse:
         return self._calibration.validate_heading(req)
 
@@ -1240,5 +1291,19 @@ def find_guide_asset(asset_path: str) -> Path | None:
         asset_root = (root / GUIDE_ASSET_DIR).resolve()
         path = (asset_root / requested).resolve()
         if path.is_file() and path.is_relative_to(asset_root):
+            return path
+    return None
+
+
+def find_docs_html(name: str) -> Path | None:
+    """Resolve docs/<name>.html under a guide root. `name` is a single path segment
+    (no slashes, no dots) — the route already strips the .html suffix — so traversal
+    is impossible, but we re-verify containment after resolve() anyway."""
+    if not name or "/" in name or "\\" in name or "." in name:
+        return None
+    for root in guide_root_candidates():
+        docs_root = root.resolve()
+        path = (docs_root / f"{name}.html").resolve()
+        if path.is_file() and path.is_relative_to(docs_root):
             return path
     return None

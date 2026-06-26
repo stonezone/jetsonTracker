@@ -114,6 +114,7 @@ class ConfigManager:
             "gps.stale_threshold_sec": lambda: self.apply_gps_float("stale_threshold_sec", value, 1.0, 120.0, dry_run=dry_run),
             "gps.drive_stale_sec": lambda: self.apply_gps_float("drive_stale_sec", value, 1.0, 60.0, dry_run=dry_run),
             "gps.coast_on_no_fix_sec": lambda: self.apply_gps_coast(value, dry_run=dry_run),
+            "gps.lead_s": lambda: self.apply_gps_float("lead_s", value, 0.0, 3.0, dry_run=dry_run),
             "gps.grace_sec": lambda: self.apply_gps_float("grace_sec", value, 0.1, 10.0, dry_run=dry_run),
             "gps.lock_frames": lambda: self.apply_gps_int("lock_frames", value, 1, 30, dry_run=dry_run),
             "gps.drive_zoom": lambda: self.apply_gps_bool("drive_zoom", value, dry_run=dry_run),

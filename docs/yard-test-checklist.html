@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>WaveCam — Yard Test Checklist</title>
+<style>
+  :root{
+    --bg:#070b0f; --panel:#121b24; --panel2:#16212c; --line:#1f2d3a;
+    --txt:#e9eff4; --muted:#8a99a6; --faint:#5b6873;
+    --ok:#37d6c2; --warn:#ffb020; --kill:#ff3b30; --brand:#ff6a1f; --accent:#36d1c4;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:env(safe-area-inset-top) 0 64px}
+  .wrap{max-width:680px;margin:0 auto;padding:16px}
+  h1{font-size:22px;margin:8px 0 2px;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:6px}
+  .bar{display:flex;align-items:center;gap:10px;margin:12px 0 4px}
+  .bar .pct{font-size:13px;color:var(--accent);font-variant-numeric:tabular-nums}
+  .track{flex:1;height:8px;background:var(--panel2);border-radius:5px;overflow:hidden}
+  .fill{height:100%;background:var(--accent);width:0;transition:width .2s}
+  button.reset{background:none;border:1px solid var(--line);color:var(--muted);
+    border-radius:8px;padding:6px 10px;font-size:12px}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    margin:14px 0;overflow:hidden}
+  .head{display:flex;align-items:center;gap:8px;padding:14px 16px;cursor:pointer;user-select:none}
+  .head h2{font-size:16px;margin:0;flex:1}
+  .head .tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;
+    padding:3px 7px;border-radius:5px;border:1px solid currentColor}
+  .tag.req{color:var(--ok)} .tag.opt{color:var(--muted)} .tag.safe{color:var(--kill)}
+  .tag.beach{color:var(--warn)}
+  .chev{color:var(--faint);transition:transform .15s;font-size:13px}
+  section.collapsed .chev{transform:rotate(-90deg)}
+  section.collapsed .body{display:none}
+  .body{padding:0 16px 8px}
+  .note{background:var(--panel2);border-left:3px solid var(--accent);border-radius:6px;
+    padding:9px 12px;margin:8px 0;font-size:13.5px;color:var(--txt)}
+  .note.warn{border-left-color:var(--warn)} .note.kill{border-left-color:var(--kill)}
+  label.item{display:flex;gap:12px;align-items:flex-start;padding:12px 4px;
+    border-top:1px solid var(--line);cursor:pointer}
+  label.item:first-of-type{border-top:none}
+  label.item input{appearance:none;-webkit-appearance:none;flex:0 0 26px;height:26px;margin:0;
+    border:2px solid var(--faint);border-radius:7px;background:transparent;position:relative;transition:.12s}
+  label.item input:checked{background:var(--ok);border-color:var(--ok)}
+  label.item input:checked::after{content:"✓";position:absolute;inset:0;display:flex;
+    align-items:center;justify-content:center;color:#06241f;font-weight:900;font-size:16px}
+  label.item input:checked + .txt{color:var(--faint);text-decoration:line-through;text-decoration-color:var(--faint)}
+  .txt{flex:1;font-size:15px;padding-top:1px}
+  .txt b{color:var(--accent)}
+  .txt .why{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;text-decoration:none!important}
+  code{background:#0d141b;padding:1px 5px;border-radius:4px;font-size:13px;color:#cfe9e4}
+  .kbd{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+    padding:1px 6px;font-size:13px;font-weight:600}
+  .foot{color:var(--faint);font-size:12px;margin-top:20px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>WaveCam — Yard Test</h1>
+  <div class="sub">Tap items to check them off — progress saves on this phone. Generated 2026-06-20 · rig build <code>cc3f255</code> · app build 536.</div>
+
+  <div class="bar">
+    <div class="track"><div class="fill" id="fill"></div></div>
+    <span class="pct" id="pct">0%</span>
+    <button class="reset" onclick="resetAll()">Reset</button>
+  </div>
+
+  <div class="note">Goal today: <b>prove vision tracking</b> (camera follows your orange rashguard). That needs no GPS and no valid calibration. GPS calibration is optional and yard-limited — see that section.</div>
+
+  <!-- ───────── PREFLIGHT ───────── -->
+  <section>
+    <div class="head"><h2>1 · Before you leave</h2><span class="tag req">Do</span><span class="chev">▼</span></div>
+    <div class="body">
+      <label class="item"><input type="checkbox"><span class="txt">Orange rashguard on (or held) <span class="why">It's the color cue — preset is set to <code>orange</code>. No orange = nothing to lock onto.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Phone unlocked, WaveCam app open, <b>Connect</b> tab shows build <b>536</b> <span class="why">Older builds won't have the fixed chat / reordered Tune.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Rig powered, camera + Orin on the same network as your phone <span class="why">USB tether is most reliable in the field; Wi-Fi hotspot is the fallback.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Tripod stable, camera roughly aimed at the test area <span class="why">It only tracks what it can see — give it a clear view of where you'll walk.</span></span></label>
+    </div>
+  </section>
+
+  <!-- ───────── CONNECT + HEALTH ───────── -->
+  <section>
+    <div class="head"><h2>2 · Connect &amp; confirm alive</h2><span class="tag req">Do</span><span class="chev">▼</span></div>
+    <div class="body">
+      <label class="item"><input type="checkbox"><span class="txt">App connects — <b>Live</b> tab shows the video feed <span class="why">No feed = camera link down. Try Tune → Service → Restart, or re-seat the tether.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">HUD shows <b>FPS ~28–30</b> <span class="why">Turn on Tune → Display → "Show debug HUD" if you don't see it. fps 0 while it should be running = zombie; restart the service.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">State reads <b>SEARCHING</b> (not KILLED) <span class="why">If KILLED, hit Resume. It boots un-killed; a leftover KILL blocks all motion.</span></span></label>
+    </div>
+  </section>
+
+  <!-- ───────── SAFETY FIRST ───────── -->
+  <section>
+    <div class="head"><h2>3 · Safety check (do this first!)</h2><span class="tag safe">KILL</span><span class="chev">▼</span></div>
+    <div class="body">
+      <div class="note kill">Prove the stop works <b>before</b> you let it move. KILL is human-only and supreme — it always wins.</div>
+      <label class="item"><input type="checkbox"><span class="txt">Press <b>KILL / Emergency Stop</b> → camera motion stops, state → <b>KILLED</b> <span class="why">It's reachable on every screen. This is your panic button all day.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Press <b>Resume</b> → state returns to SEARCHING <span class="why">Confirms you can recover after a stop.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Joystick test: nudge PTZ manually (Live tab), confirm the camera moves the way you push <span class="why">Verifies the camera link + that pan/tilt aren't inverted. STOP-PTZ holds an aim.</span></span></label>
+    </div>
+  </section>
+
+  <!-- ───────── VISION TRACKING (PRIMARY) ───────── -->
+  <section>
+    <div class="head"><h2>4 · Vision tracking test ★</h2><span class="tag req">Main</span><span class="chev">▼</span></div>
+    <div class="body">
+      <div class="note">This is the real goal. No GPS or calibration needed — vision drives the camera straight off the color+person lock.</div>
+      <label class="item"><input type="checkbox"><span class="txt">Tune → <b>Tracking</b> → "Autonomous tracking" is <b>ON</b> <span class="why">Off = DISABLE-PTZ (manual-hold only); the camera won't take over.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Tune → Tracking → <b>Source = Vision-only</b> for this test <span class="why">Rules out GPS entirely — pure vision tracking. (Auto also works but mixes in GPS, which is dark right now.)</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Optional: Tune → Display → <b>Show detection mask</b> ON <span class="why">The mask lights up on orange — instant proof the color cue sees you. Turn off after.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Walk into frame in orange → HUD shows <b>C</b> (color) then <b>LOCK</b>, owner → <b>vision_follow</b> <span class="why">C-Y means color seen; LOCK means it committed. If it sees color but won't lock, lower Tune → Lock → Lock threshold a notch.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Walk side to side / toward / away → <b>camera follows you</b> <span class="why">The whole point. Watch for smooth follow vs jitter or overshoot.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Step out of frame → it holds briefly then returns to SEARCHING <span class="why">Confirms it doesn't chase ghosts when you're gone.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">If it locks onto something that ISN'T you (a cone, a car) → note it, raise Lock threshold or turn ON "Require YOLO person" <span class="why">Yard clutter can false-lock; the beach is cleaner.</span></span></label>
+    </div>
+  </section>
+
+  <!-- ───────── TUNING FEEL ───────── -->
+  <section class="collapsed">
+    <div class="head"><h2>5 · Dial in the feel</h2><span class="tag opt">Optional</span><span class="chev">▼</span></div>
+    <div class="body">
+      <div class="note">Tune cards now read top-to-bottom in pipeline order, same as the in-app guide. All hot — apply live, no restart.</div>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Jittery / overshoots</b> → Motion: lower Max pan/tilt speed, or raise Deadband <span class="why">Calmer follow.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Laggy to catch up</b> → Motion: raise speed, or raise Feed-forward gain <span class="why">Snappier.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Loses you in turns/occlusion</b> → Lock: lower Unlock threshold <span class="why">Holds the lock through spray/occlusion.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Happy with a setup? Save it as a <b>Preset</b> <span class="why">Recall it at the beach.</span></span></label>
+    </div>
+  </section>
+
+  <!-- ───────── FOV SWEEP ───────── -->
+  <section class="collapsed">
+    <div class="head"><h2>6 · FOV sweep (zoom curve)</h2><span class="tag opt">Yard-OK</span><span class="chev">▼</span></div>
+    <div class="body">
+      <div class="note">Lens-only, <b>location-independent</b> — safe to do in the yard and it carries to the beach. The rig currently has only 1 FOV point; a real curve makes cinematic zoom size you correctly.</div>
+      <label class="item"><input type="checkbox"><span class="txt">Calibrate tab → FOV sweep tool → step zoom from wide to tele, capturing a few points <span class="why">Each point pairs a zoom level with its measured field-of-view.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Confirm several FOV entries are saved <span class="why">More points = smoother zoom framing. This survives restart.</span></span></label>
+    </div>
+  </section>
+
+  <!-- ───────── CALIBRATION (CAVEATED) ───────── -->
+  <section class="collapsed">
+    <div class="head"><h2>7 · GPS calibration</h2><span class="tag beach">Beach &gt; Yard</span><span class="chev">▼</span></div>
+    <div class="body">
+      <div class="note warn"><b>Read first.</b> Two reasons this is limited in the yard:<br>1) <b>GPS is dark right now</b> (no base fix) — the location lock needs the base Wio acquiring on battery, outside, away from the Orin's USB. Without a fix it will refuse with <code>gps_stale</code>.<br>2) <b>Heading needs a stationary target ≥50 m away</b> — at ~10 m the GPS-bearing error is ~27°. If your yard lacks a 50 m+ sightline, the heading won't be trustworthy.<br>Also: calibrating here <b>overwrites your North Shore calibration</b> (21.645, −158.050). Only do it if you mean to.</div>
+      <label class="item"><input type="checkbox"><span class="txt">Base Wio powered on <b>battery</b>, outside, has a fix (sats &gt; 0) before you start <span class="why">Host RF noise from the Orin's USB rail can drown the GPS → 0 sats. Acquire on battery, then plug USB data.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Calibrate tab → <b>Start session</b> (locks the arbiter so it can't fight you) <span class="why">Owner becomes "calibrate"; KILL still cancels it.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Location</b> lock — accept the averaged base fix <span class="why">If it refuses (gps_stale), the base has no current fix; fix that first.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Heading</b> — aim at a stationary target ≥50 m out, accept the preview <span class="why">A far fence, pole, or landmark. Close targets = bad heading.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Validate</b> → aim at a second known point, confirm the miss is small → <b>Confirm</b> <span class="why">Banner goes VALID. Now persists across restart (just fixed). Without confirm it stays INVALID.</span></span></label>
+    </div>
+  </section>
+
+  <!-- ───────── ASK CLAUDE ───────── -->
+  <section class="collapsed">
+    <div class="head"><h2>8 · Ask Claude (optional helper)</h2><span class="tag opt">Optional</span><span class="chev">▼</span></div>
+    <div class="body">
+      <label class="item"><input type="checkbox"><span class="txt">Agent tab → <b>Ask Claude</b> → full-screen chat <span class="why">Ask "why won't it lock?" or "what's my GPS status?" — it reads the live rig. Provider defaults to Claude.</span></span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Read-only by default; the <b>arm toggle</b> lets it act — leave OFF unless you want it changing settings <span class="why">KILL always disarms it. Supervise-only.</span></span></label>
+    </div>
+  </section>
+
+  <!-- ───────── TROUBLESHOOT ───────── -->
+  <section class="collapsed">
+    <div class="head"><h2>Troubleshooting</h2><span class="tag opt">Ref</span><span class="chev">▼</span></div>
+    <div class="body">
+      <label class="item"><input type="checkbox"><span class="txt"><b>App says "Orin unreachable"</b> → it auto-tries tether then Wi-Fi. Check the tether cable; confirm phone + rig on the same network.</span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Feed up but fps 0 / won't track</b> → Tune → Service → Restart WaveCam (~15 s outage). Vision loop was wedged.</span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Camera fights your manual aim</b> → STOP PTZ (sticky hold), or turn Autonomous tracking OFF, or use Calibrate mode.</span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>Sees orange but won't lock</b> → lower Lock threshold; make sure you fill enough of the frame.</span></label>
+      <label class="item"><input type="checkbox"><span class="txt"><b>GPS won't calibrate</b> → base Wio needs a fix on battery first. Vision tracking works without GPS — fall back to that.</span></label>
+    </div>
+  </section>
+
+  <!-- ───────── REPORT BACK ───────── -->
+  <section>
+    <div class="head"><h2>After: what to tell Claude</h2><span class="tag req">Note</span><span class="chev">▼</span></div>
+    <div class="body">
+      <div class="note">Jot answers as you go — these decide the next fixes:</div>
+      <label class="item"><input type="checkbox"><span class="txt">Did it <b>lock</b> onto you in orange? How fast?</span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Did the camera <b>follow smoothly</b>, or jitter / overshoot / lag?</span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Any <b>false locks</b> (tracked the wrong thing)? On what?</span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Which <b>Tune values</b> felt best (speed / deadband / thresholds)?</span></label>
+      <label class="item"><input type="checkbox"><span class="txt">Did GPS get a fix? Did calibration reach VALID?</span></label>
+    </div>
+  </section>
+
+  <div class="foot">KILL is always reachable and always wins. Have fun — this is the fun part.</div>
+</div>
+
+<script>
+  const KEY = "wavecam-yard-2026-06-20";
+  const boxes = [...document.querySelectorAll('input[type=checkbox]')];
+  boxes.forEach((b,i)=>b.dataset.k = i);
+  function save(){ localStorage.setItem(KEY, JSON.stringify(boxes.map(b=>b.checked))); }
+  function load(){ try{ const s=JSON.parse(localStorage.getItem(KEY)||"[]"); boxes.forEach((b,i)=>b.checked=!!s[i]); }catch(e){} }
+  function prog(){ const n=boxes.filter(b=>b.checked).length; const p=Math.round(100*n/boxes.length);
+    document.getElementById('fill').style.width=p+"%"; document.getElementById('pct').textContent=p+"%"; }
+  boxes.forEach(b=>b.addEventListener('change',()=>{save();prog();}));
+  document.querySelectorAll('.head').forEach(h=>h.addEventListener('click',()=>h.parentElement.classList.toggle('collapsed')));
+  function resetAll(){ if(confirm("Clear all checkmarks?")){ boxes.forEach(b=>b.checked=false); save(); prog(); } }
+  window.resetAll = resetAll;
+  load(); prog();
+</script>
+</body>
+</html>

@@ -12,8 +12,10 @@
 #include "../common/gps_l76k.h"
 #include "../common/packet.h"
 #include "../common/radio_config.h"
+#include "../common/watchdog.h"
 
 SX1262 radio = new Module(SX126X_CS, SX126X_DIO1, SX126X_RESET, SX126X_BUSY);
+static bool radio_ok = false;
 
 // The base is a Wio Tracker L1 too — it has its own L76K. That fix is the
 // CAMERA/tripod reference position: the Orin's base_lock calibration reads it,
@@ -58,14 +60,17 @@ void setup() {
                            RADIO_SYNC_WORD, RADIO_TX_DBM, RADIO_PREAMBLE,
                            SX126X_DIO3_TCXO_VOLTAGE);
   radio.setDio2AsRfSwitch(true);
-  if (st != RADIOLIB_ERR_NONE) {
-    while (true) {
-      Serial.printf("{\"err\":\"radio_init\",\"code\":%d}\n", st);
-      delay(1000);
-    }
+  radio_ok = (st == RADIOLIB_ERR_NONE);
+  if (!radio_ok) {
+    // F2: do NOT dead-loop on a radio fault — that also kills the base's own GPS,
+    // which the Orin needs as the camera reference position. Log once and fall
+    // through to GPS bring-up so base-position reporting still works (the WDT will
+    // reset us if the fault is transient and a reboot would re-init the radio).
+    Serial.printf("{\"err\":\"radio_init\",\"code\":%d,\"note\":\"continuing GPS-only\"}\n", st);
+  } else {
+    radio.setPacketReceivedAction(on_rx);
+    arm_receive("setup");
   }
-  radio.setPacketReceivedAction(on_rx);
-  arm_receive("setup");
 
   // Base's own GPS = the camera reference position. 1 Hz (stationary tripod).
   pinMode(PIN_GPS_STANDBY, OUTPUT);
@@ -74,6 +79,7 @@ void setup() {
   l76k_init(Serial1, Serial, GPS_BAUDRATE, 1000);
 
   Serial.println("{\"info\":\"base up, listening + base GPS\"}");
+  wdt_start();   // F1: arm the watchdog after slow init; fed once per loop()
 }
 
 // Accumulate the base's own fix while valid + good HDOP (running mean, so the
@@ -118,6 +124,7 @@ static void emit_base_position() {
 }
 
 void loop() {
+  wdt_feed();   // F1: pet the watchdog each pass (loop is non-blocking)
   // LED as a serial-free link indicator (USB-CDC enumeration is broken in
   // this build — see spec; the bootloader's USB works, the app's doesn't).
   // FAST blink = receiving packets within the last 1.5s (link is live);

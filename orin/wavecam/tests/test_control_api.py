@@ -576,6 +576,126 @@ def test_api_v1_ptz_velocity_requires_takeover_to_preempt_autonomous_owner():
     assert ("pan_tilt", 5, 1, PAN_RIGHT, TILT_STOP) in pipe.ptz.calls
 
 
+def test_api_v1_ptz_velocity_takes_over_calibrate_for_aim():
+    # COR2: the v3 single-screen calibrate joystick must be able to aim during an active
+    # CALIBRATE session. The plain manual claim refuses CALIBRATE (not autonomous), so the
+    # velocity endpoint routes through the calibrate-aware takeover, staging CALIBRATE for
+    # restore on release. Mirrors the standalone-capture takeover.
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request(CALIBRATE) is True
+
+    # No takeover → no implicit preemption of calibrate.
+    blocked = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "pan": 0.5, "tilt": 0.0},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "owner_busy"
+    assert pipe.owner.owner == CALIBRATE
+
+    # Operator deliberately aims (takeover) → calibrate→manual, velocity sent.
+    response = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "takeover": True, "pan": 0.5, "tilt": 0.0},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"]["ptz"]["owner"] == "manual"
+    assert pipe.owner.owner == "manual"
+    assert ("pan_tilt", 5, 1, PAN_RIGHT, TILT_STOP) in pipe.ptz.calls
+
+
+def test_api_v1_ptz_velocity_calibrate_aim_still_blocked_by_kill():
+    # KILL stays supreme — the calibrate-aim takeover path must not move under a kill.
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request(CALIBRATE) is True
+    pipe.owner.kill()
+    resp = client.post(
+        "/api/v1/ptz/velocity",
+        json={"requested_owner": "manual", "takeover": True, "pan": 0.5, "tilt": 0.0},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "killed"
+
+
+def test_api_v1_ptz_zoom_takes_over_calibrate_for_aim():
+    # Zoom during an active CALIBRATE session (the aim-on-Live flow) must take over via the
+    # calibrate-aware path — the plain manual claim refuses CALIBRATE. Mirrors the velocity
+    # COR2 fix so the operator can zoom to frame a distant tracker while calibrating.
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request(CALIBRATE) is True
+
+    blocked = client.post("/api/v1/ptz/zoom",
+                          json={"requested_owner": "manual", "mode": "velocity", "value": 0.5})
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "owner_busy"
+    assert pipe.owner.owner == CALIBRATE
+
+    resp = client.post("/api/v1/ptz/zoom",
+                       json={"requested_owner": "manual", "mode": "velocity", "value": 0.5, "takeover": True})
+    assert resp.status_code == 200
+    assert pipe.owner.owner == "manual"
+
+
+def test_api_v1_ptz_zoom_calibrate_still_blocked_by_kill():
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request(CALIBRATE) is True
+    pipe.owner.kill()
+    resp = client.post("/api/v1/ptz/zoom",
+                       json={"requested_owner": "manual", "mode": "velocity", "value": 0.5, "takeover": True})
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "killed"
+
+
+def test_calibrate_aim_release_restores_calibrate_so_capture_continues():
+    # Sequence guard for the COR2 break: the v3 joystick aim takes over (calibrate->manual);
+    # while owner=manual every calibration step refuses calibrate_owner_lost. Releasing the
+    # stick (ptz/stop hold:false — what onStop now does) MUST restore owner=calibrate so
+    # Capture/Validate/Confirm still own the session. (Holding instead stranded owner=manual
+    # and killed the whole flow after the aim.)
+    from wavecam.ptz_owner import CALIBRATE
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert client.post("/api/v1/calibration/session/start",
+                       json={"requested_owner": "manual", "takeover": True, "source": "test"}).status_code == 200
+    assert client.post("/api/v1/ptz/velocity",
+                       json={"requested_owner": "manual", "takeover": True, "pan": 0.3}).status_code == 200
+    assert pipe.owner.owner == "manual"
+    # owner=manual -> a calibration step refuses (the break being guarded)
+    refused = client.post("/api/v1/calibration/validation",
+                          json={"bearing_deg": 90.0, "distance_m": 250.0, "source": "test"})
+    assert refused.status_code == 409 and refused.json()["code"] == "calibrate_owner_lost"
+    # release restores calibrate
+    assert client.post("/api/v1/ptz/stop", json={"hold": False, "source": "test"}).status_code == 200
+    assert pipe.owner.owner == CALIBRATE
+    # owner gate now passes (no longer calibrate_owner_lost)
+    again = client.post("/api/v1/calibration/validation",
+                        json={"bearing_deg": 90.0, "distance_m": 250.0, "source": "test"})
+    assert again.json().get("code") != "calibrate_owner_lost"
+
+
+def test_calibrate_exit_releases_stranded_manual_owner():
+    # Defense-in-depth: if a calibrate-aim takeover left owner=manual (operator exited without
+    # releasing the stick), exit must drop to idle — never strand the rig in manual, which
+    # would block the arbiter from ever resuming autonomy (calibration_valid set but no track).
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert client.post("/api/v1/calibration/session/start",
+                       json={"requested_owner": "manual", "takeover": True, "source": "test"}).status_code == 200
+    assert client.post("/api/v1/ptz/velocity",
+                       json={"requested_owner": "manual", "takeover": True, "pan": 0.3}).status_code == 200
+    assert pipe.owner.owner == "manual"
+    assert client.post("/api/v1/calibration/session/exit", json={"source": "test"}).status_code == 200
+    assert pipe.owner.owner == "idle"
+
+
 def test_api_v1_ptz_stop_restores_autonomous_owner_after_takeover():
     client = make_client()
     pipe = client.app.state.pipeline
@@ -886,10 +1006,14 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert started.json()["calibration"]["active"] is True
     assert started.json()["calibration"]["banner"] == "CALIBRATE ACTIVE"
 
+    # Autonomy stays locked out during calibrate, and a manual command WITHOUT takeover
+    # is not allowed to preempt the session. (The operator CAN deliberately take over to
+    # aim — manual velocity with takeover:true — which is verified in
+    # test_api_v1_ptz_velocity_takes_over_calibrate_for_aim.)
     auto = client.post("/api/v1/ptz/auto", json={})
     manual = client.post(
         "/api/v1/ptz/velocity",
-        json={"requested_owner": "manual", "takeover": True, "pan": 0.4},
+        json={"requested_owner": "manual", "pan": 0.4},
     )
 
     assert auto.status_code == 409
@@ -951,13 +1075,18 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert heading_state["confidence"] > 0.0
     assert abs(pipe.pose.bearing_to_pan_encoder(91.0) - 1014.4) < 0.01
 
+    # Validation is advisory now (operator override): it always reaches a confirmable state
+    # and records the miss + within_budget so accuracy is visible, never a hard refusal.
     validation = client.post(
         "/api/v1/calibration/validation",
         json={"bearing_deg": 91.0, "distance_m": 250.0, "pan_enc": 1014.4},
     )
     assert validation.status_code == 200
-    assert validation.json()["calibration"]["session"]["validation"]["miss_deg"] == 0.0
-    assert validation.json()["calibration"]["valid"] is False
+    v = validation.json()["calibration"]["session"]["validation"]
+    assert v["miss_deg"] == 0.0
+    assert v["accepted"] is True
+    assert v["within_budget"] is True
+    assert validation.json()["calibration"]["valid"] is False  # not VALID until confirm
 
     confirmed = client.post(
         "/api/v1/calibration/validation/confirm",
@@ -975,6 +1104,28 @@ def test_api_v1_calibrate_session_locks_ptz_and_requires_validation():
     assert exited.json()["calibration"]["active"] is False
     assert exited.json()["calibration"]["banner"] == "VALID"
     assert pipe.owner.owner == "testbed"
+
+
+def test_calibrate_start_and_exit_atomic_with_autonomous_owner():
+    # GLM A1/A2: starting CALIBRATE over an AUTONOMOUS owner uses owner.transition()
+    # (atomic, no transient-IDLE window), and exit restores that owner atomically.
+    client = make_client()
+    pipe = client.app.state.pipeline
+    assert pipe.owner.request("gps_tracker") is True
+
+    started = client.post(
+        "/api/v1/calibration/session/start",
+        json={"requested_owner": "manual", "takeover": True, "source": "test"},
+    )
+    assert started.status_code == 200
+    assert pipe.owner.owner == "calibrate"
+
+    exited = client.post(
+        "/api/v1/calibration/session/exit",
+        json={"confirm": False, "restore_prior": True, "source": "test"},
+    )
+    assert exited.status_code == 200
+    assert pipe.owner.owner == "gps_tracker"   # atomically restored, not left IDLE
 
 
 def test_calibration_wizard_persists_to_disk_survives_restart():
@@ -1002,8 +1153,9 @@ def test_calibration_wizard_persists_to_disk_survives_restart():
     client.post("/api/v1/calibration/heading-lock", json={
         "method": "landmark", "operator_accepted": True, "bearing_deg": 90.0,
         "distance_m": 250.0, "pan_enc": 1000.0, "source": "test"})
+    # Validate against an independent landmark (≥10° from the lock — M4 Part C gate).
     client.post("/api/v1/calibration/validation",
-                json={"bearing_deg": 91.0, "distance_m": 250.0, "pan_enc": 1014.4})
+                json={"bearing_deg": 105.0, "distance_m": 250.0, "pan_enc": 1216.0})
     confirmed = client.post("/api/v1/calibration/validation/confirm",
                             json={"accepted": True, "source": "test"})
     assert confirmed.status_code == 200
@@ -1019,7 +1171,7 @@ def test_calibration_wizard_persists_to_disk_survives_restart():
     assert "validation" in reloaded.steps
 
 
-def test_api_v1_calibrate_heading_refuses_bad_error_budget():
+def test_api_v1_calibrate_heading_commits_over_budget_as_advisory():
     client = make_client()
     pipe = client.app.state.pipeline
     assert pipe.owner.request("testbed") is True
@@ -1042,7 +1194,9 @@ def test_api_v1_calibrate_heading_refuses_bad_error_budget():
         json={"roll_deg": 0.0, "pitch_deg": 0.0},
     ).status_code == 200
 
-    refused = client.post(
+    # Over-budget heading now COMMITS — the operator explicitly accepted it and the phone
+    # magnetometer is unusable on this rig, so the uncertainty budget is advisory, not a block.
+    committed = client.post(
         "/api/v1/calibration/heading-lock",
         json={
             "method": "landmark",
@@ -1054,11 +1208,10 @@ def test_api_v1_calibrate_heading_refuses_bad_error_budget():
         },
     )
 
-    assert refused.status_code == 409
-    body = refused.json()
-    assert body["code"] == "uncertainty_too_high"
-    assert body["uncertainty_deg"] > 2.0
-    assert pipe.pose.calibrated is False
+    assert committed.status_code == 200, committed.json()
+    hl = committed.json()["calibration"]["session"]["heading_lock"]
+    assert hl["uncertainty_deg"] > 2.0   # recorded as advisory metadata, not refused
+    assert pipe.pose.calibrated is True  # committed despite over-budget uncertainty
 
 
 def test_heading_lock_no_longer_requires_level():
@@ -1095,11 +1248,10 @@ def test_heading_lock_no_longer_requires_level():
     assert state["level"] is None  # no level was ever captured
 
 
-def test_heading_lock_from_phone_compass_uses_reported_accuracy():
-    # Phone-compass source: the bearing is the phone magnetometer reading, so heading
-    # uncertainty IS the phone's heading_acc_deg (not GPS position geometry). A phone heading
-    # is a COARSE acquisition cue, so the default 2 deg budget rejects it and a lenient budget
-    # accepts it — and the recorded uncertainty tracks the phone accuracy.
+def test_heading_lock_from_phone_compass_records_reported_accuracy():
+    # Phone-compass source: uncertainty IS the phone's heading_acc_deg (not GPS geometry).
+    # The operator-accepted heading COMMITS regardless of the (advisory) budget — the phone
+    # mag is unusable on this rig — and the recorded uncertainty tracks the phone accuracy.
     client = make_client()
     pipe = client.app.state.pipeline
     assert pipe.owner.request("testbed") is True
@@ -1112,19 +1264,6 @@ def test_heading_lock_from_phone_compass_uses_reported_accuracy():
         json={"method": "manual_map_pin", "lat": 21.6, "lon": -158.0, "manual_error_radius_m": 3.0},
     ).status_code == 200
 
-    refused = client.post(
-        "/api/v1/calibration/heading-lock",
-        json={
-            "method": "phone",
-            "operator_accepted": True,
-            "bearing_deg": 207.0,
-            "heading_acc_deg": 18.0,
-            "pan_enc": 1000.0,
-        },
-    )
-    assert refused.status_code == 409
-    assert refused.json()["code"] == "uncertainty_too_high"
-
     accepted = client.post(
         "/api/v1/calibration/heading-lock",
         json={
@@ -1133,12 +1272,11 @@ def test_heading_lock_from_phone_compass_uses_reported_accuracy():
             "bearing_deg": 207.0,
             "heading_acc_deg": 18.0,
             "pan_enc": 1000.0,
-            "max_uncertainty_deg": 25.0,
         },
     )
-    assert accepted.status_code == 200, accepted.json()
+    assert accepted.status_code == 200, accepted.json()   # commits despite 18° accuracy
     hl = accepted.json()["calibration"]["session"]["heading_lock"]
-    assert 17.0 <= hl["uncertainty_deg"] <= 19.0  # ~quadrature(18, 0.5, 0.2)
+    assert 17.0 <= hl["uncertainty_deg"] <= 19.0  # ~quadrature(18, 0.5, 0.2), recorded advisory
     assert abs(pipe.pose.bearing_to_pan_encoder(208.0) - 1014.4) < 0.01
     assert pipe.owner.owner == "calibrate"
 
@@ -1964,6 +2102,26 @@ def test_guide_route_missing_and_traversal_return_404(tmp_path, monkeypatch):
     assert traversal.json()["code"] == "guide_asset_not_found"
 
 
+def test_docs_html_route_serves_and_guards(tmp_path, monkeypatch):
+    docs = tmp_path / "docs"
+    docs.mkdir(parents=True)
+    (docs / "yard-test-checklist.html").write_text("<!doctype html><title>Yard</title>")
+    (tmp_path / "secret.txt").write_text("secret")
+    monkeypatch.setenv("WAVECAM_GUIDE_ROOT", str(docs))
+    client = make_client()
+
+    ok = client.get("/docs/yard-test-checklist.html")
+    assert ok.status_code == 200
+    assert ok.headers["content-type"].startswith("text/html")
+    assert b"Yard" in ok.content
+
+    missing = client.get("/docs/nope.html")
+    assert missing.status_code == 404 and missing.json()["code"] == "doc_not_found"
+
+    # A name with a dot/slash can't reach a sibling file — route + guard reject it.
+    assert client.get("/docs/..%2Fsecret.html").status_code == 404
+
+
 if __name__ == "__main__":
     test_api_v1_status_maps_legacy_state_to_release_contract()
     test_api_v1_status_reports_pipeline_gps_snapshot_when_available()
@@ -2042,6 +2200,45 @@ def test_gps_fix_snapshot_computes_real_distance_and_bearing():
     assert 100 < snap["distance_m"] < 120
     assert -5 < snap["bearing_deg"] < 5           # due north ≈ 0°
     assert snap["stale"] is False                  # 1s age < 10s threshold
+
+
+def test_gps_fix_snapshot_prefers_latched_pose_over_live_base():
+    # M4 Part A: when a pose is latched, the displayed bearing/distance use the pose origin
+    # (where the camera points), not the noisy live base — so the HUD matches the pointing.
+    from wavecam.control_api import gps_fix_snapshot
+    from wavecam.gps_stub import NormalizedFix
+    from types import SimpleNamespace
+
+    class FakeGps:
+        def get_camera_position(self):
+            return (22.05, -158.0, 0.0)   # live base drifted 0.05° away
+        def get_camera_age(self, now=None):
+            return 2.0
+
+    fix = NormalizedFix(lat=22.001, lon=-158.0, course=0.0, speed=0.0, ts=1000.0, age_sec=1.0, src="lora")
+    pose = SimpleNamespace(lat=22.0, lon=-158.0)     # latched origin
+    snap = gps_fix_snapshot(fix, FakeGps(), pose=pose)
+    # ~111 m north of the POSE (22.0), not 0.049° south of the live base (22.05)
+    assert 100 < snap["distance_m"] < 120
+    assert -5 < snap["bearing_deg"] < 5              # due north from the pose
+    assert snap["base_age_sec"] == 2.0               # live-base freshness still reported
+
+
+def test_gps_fix_snapshot_falls_back_to_live_base_when_pose_unlatched():
+    from wavecam.control_api import gps_fix_snapshot
+    from wavecam.gps_stub import NormalizedFix
+    from types import SimpleNamespace
+
+    class FakeGps:
+        def get_camera_position(self):
+            return (22.0, -158.0, 0.0)
+        def get_camera_age(self, now=None):
+            return 2.0
+
+    fix = NormalizedFix(lat=22.001, lon=-158.0, course=0.0, speed=0.0, ts=1000.0, age_sec=1.0, src="lora")
+    pose = SimpleNamespace(lat=0.0, lon=0.0)          # not latched → fall back to live base
+    snap = gps_fix_snapshot(fix, FakeGps(), pose=pose)
+    assert 100 < snap["distance_m"] < 120
 
 
 def test_gps_fix_snapshot_falls_back_when_no_camera_position():

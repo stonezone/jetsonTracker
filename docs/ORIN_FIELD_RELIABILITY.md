@@ -59,9 +59,17 @@ do not assume the Orin is enforcing `172.20.10.8` locally.
 
 ## Step 4 — service vs host
 
-If the host pings but `:8088` is dead → the `wavecam.service` is down (Codex/Zack lane: restart it
-via `ssh orin` + `systemctl restart wavecam.service`; **Claude never touches the Orin runtime**).
+If the host pings but `:8088` is dead → the `wavecam.service` is down. Claude is the primary
+deployment path via `deploy.sh` (which also restarts the service); for a manual restart, `ssh orin`
++ `systemctl restart wavecam.service` is the secondary fallback. The KILL-reachable + supervise-only
+rails always hold.
 If the host doesn't ping at all → it's a network/power/reboot issue, not the service.
+
+> **A service restart resets session-scoped state.** `calibration_valid` is session-scoped — a
+> `wavecam.service` restart (including via `deploy.sh`) destroys the operator's VALID calibration,
+> so re-validate after any restart and minimize restarts mid-field-test. KILL stays human-only and
+> supreme; the on-demand acting-agent is supervise-only and only moves the camera while the operator
+> ARM toggle is on (default OFF, TTL 600 s, disarmed by KILL).
 
 ## Step 5 — verify recovery
 
@@ -70,6 +78,10 @@ ping -c2 192.168.1.155
 curl -s -o /dev/null -w "%{http_code}\n" --max-time 6 http://192.168.1.155:8088/api/v1/status   # expect 200
 curl -s -o /dev/null -w "%{http_code}\n" --max-time 6 http://192.168.1.155:8088/guide            # expect 200
 ```
+
+> Once `:8088` answers, the on-demand agent advisor is reachable for in-field debugging/advice via
+> `POST /api/v1/agent/{chat,summon}` (also the "ASK CLAUDE" chat on the `:8088` web page). It only
+> inspects and advises unless the operator ARM toggle is on; KILL is human-only and supreme.
 
 ## Open: reboot/flap root cause (unconfirmed)
 

@@ -235,6 +235,57 @@ def test_load_config_keeps_valid_fusion_hysteresis(tmp_path):
     assert cfg.fusion.unlock_threshold == 0.4
 
 
+# ---------------------------------------------------------------------------
+# gps.lead_s — GPS-pointing lead time, promoted from a hardcoded 0.65 to a hot key
+# so lead/latency can be A/B-tuned live during a field measurement run.
+# ---------------------------------------------------------------------------
+
+def test_gpscfg_lead_s_default_is_065():
+    """Default preserves the prior hardcoded behavior (pipeline.py used lead_s=0.65)."""
+    assert GpsCfg().lead_s == 0.65
+
+
+def test_gps_lead_s_from_overlay(tmp_path):
+    y = tmp_path / "config.yaml"
+    y.write_text("gps:\n  enabled: true\n")
+    ov = tmp_path / "config.local.yaml"
+    ov.write_text("gps:\n  lead_s: 1.2\n")
+    cfg = load_config(str(y))
+    assert cfg.gps.lead_s == 1.2
+
+
+def test_config_endpoint_exposes_gps_lead_s(tmp_path):
+    """The /config payload must surface gps.lead_s (the iOS Tune slider / web page feature-detect
+    off it). The gps dict is a hand-built subset, so a new hot key is invisible until added here."""
+    p = tmp_path / "config.yaml"
+    p.write_text("gps:\n  enabled: true\n")
+    pipe = DummyPipeline()
+    pipe.cfg.source_path = str(p)
+    client = TestClient(build_app(pipe))
+    resp = client.get("/api/v1/config")
+    assert resp.status_code == 200
+    assert resp.json()["current"]["gps"]["lead_s"] == 0.65
+
+
+def test_gps_lead_s_hot_key_persists_to_overlay(tmp_path):
+    """POST config/hot {gps.lead_s} must apply (ok:true) and persist to the overlay —
+    i.e. it is a registered hot key, not an unknown key the endpoint rejects."""
+    p = tmp_path / "config.yaml"
+    p.write_text("gps:\n  enabled: true\n")
+
+    pipe = DummyPipeline()
+    pipe.cfg.source_path = str(p)
+
+    client = TestClient(build_app(pipe))
+    resp = client.post("/api/v1/config/hot", json={"patch": {"gps.lead_s": 0.9}})
+    assert resp.status_code == 200, resp.json()
+    assert resp.json().get("ok") is True, resp.json()
+    assert pipe.cfg.gps.lead_s == 0.9
+
+    overlay = tmp_path / "config.local.yaml"
+    assert yaml.safe_load(overlay.read_text())["gps"]["lead_s"] == 0.9
+
+
 def test_inverted_hysteresis_via_overlay_resets_to_defaults(tmp_path, capsys):
     """An overlay that introduces an inverted fusion pair must also be caught and reset.
     The hysteresis guard runs AFTER the overlay merge."""

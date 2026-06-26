@@ -15,6 +15,7 @@
 #include "../common/gps_l76k.h"
 #include "../common/packet.h"
 #include "../common/radio_config.h"
+#include "../common/watchdog.h"
 
 // SX1262 wiring from variant.h: CS=D4 DIO1=D1 RESET=D2 BUSY=D3; RXEN on a
 // GPIO (SX126X_RXEN), TX gated by DIO2 (SX126X_DIO2_AS_RF_SWITCH); a 1.8V
@@ -36,6 +37,9 @@ static uint32_t min_tx_interval_ms = RADIO_MIN_TX_INTERVAL_MS;
 // L76K's cadence look worse than it is — fatal to honest 5 Hz measurement.
 static volatile bool tx_done = false;
 static bool tx_busy = false;
+// F3: a missed sent-IRQ (tx_done never fires) would latch tx_busy forever and
+// silence the beacon. Force-clear it if a TX hasn't completed within this long.
+static uint32_t tx_timeout_ms = 1000;
 
 // A fix older than this is not vouched for as the subject's current position.
 static const uint32_t FIX_FRESH_MS = 2000;
@@ -61,9 +65,9 @@ void setup() {
   Serial.begin(115200);   // USB debug
   pinMode(STATUS_LED, OUTPUT);
 
-  // GNSS: wake from standby, then full PMTK bring-up (baud 57600, RMC+GGA
-  // only, rate matched to the beacon, clamped to the L76K's 5 Hz floor).
-  // Re-runs every boot by design: PMTK251/220 revert on cold restart.
+  // GNSS: wake from standby, then L76K bring-up. The L76K speaks CASIC/PCAS at a
+  // FIXED 9600 baud (NOT MTK/PMTK, NOT 57600) — see gps_l76k.h for the root-cause
+  // note. Re-runs every boot by design (config reverts on cold restart). (F4)
   pinMode(PIN_GPS_STANDBY, OUTPUT);
   digitalWrite(PIN_GPS_STANDBY, HIGH);
   delay(300);
@@ -91,9 +95,11 @@ void setup() {
   // compile-time RADIO_MIN_TX_INTERVAL_MS.
   uint32_t toa_ms = radio.getTimeOnAir(PKT_LEN) / 1000;
   min_tx_interval_ms = max(min_tx_interval_ms, toa_ms * 3);
+  tx_timeout_ms = max((uint32_t)1000, toa_ms * 4);   // F3: well above real airtime
   Serial.printf("[tracker] radio up; toa=%lums min_tx=%lums beacon=%dms\n",
                 (unsigned long)toa_ms, (unsigned long)min_tx_interval_ms,
                 BEACON_INTERVAL_MS);
+  wdt_start();   // F1: arm the watchdog after slow init; fed once per loop()
 }
 
 static void fill_packet() {
@@ -152,6 +158,7 @@ static void log_gps_cadence() {
 }
 
 void loop() {
+  wdt_feed();   // F1: pet the watchdog each pass (loop is non-blocking)
   // Pump the GPS UART EVERY iteration, including throughout a background TX.
   while (Serial1.available()) gps.encode(Serial1.read());
   log_gps_cadence();
@@ -161,6 +168,12 @@ void loop() {
     tx_done = false;
     if (radio.finishTransmit() != RADIOLIB_ERR_NONE) tx_fail++;
     tx_busy = false;
+  } else if (tx_busy && (millis() - last_tx_ms) > tx_timeout_ms) {
+    // F3: sent-IRQ never arrived — recover so the beacon doesn't go permanently silent.
+    radio.standby();
+    tx_busy = false;
+    tx_fail++;
+    Serial.println("[tracker] tx timeout — forced standby");
   }
 
   // LED: heartbeat while a fresh fix is flowing, solid while GNSS is stale.

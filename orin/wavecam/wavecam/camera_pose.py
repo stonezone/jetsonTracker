@@ -38,7 +38,12 @@ class CameraPose:
     # Camera (beach tripod) geographic position.
     lat: float = 0.0
     lon: float = 0.0
-    alt_m: float = 0.0
+    alt_m: float = 0.0          # base/camera height, in the operator's chosen datum
+    # Subject (foiler/tracker) height in the SAME datum as alt_m — set by the operator in
+    # the heights step (Calibration v3). Tilt depression = atan2(subject_alt_m - alt_m, dist).
+    # Datum is the operator's choice: base-relative (alt_m=0, subject_alt_m=offset) or
+    # sea-level (both above sea level). Defaults 1 m for back-compat (a foiler on the water).
+    subject_alt_m: float = 1.0
     # Pan:  encoder = pan_anchor_enc + normalize_180(bearing - pan_anchor_bearing) * pan_enc_per_deg
     pan_anchor_enc: float = 0.0
     pan_anchor_bearing: float = 0.0
@@ -54,6 +59,11 @@ class CameraPose:
         # BaseDriftMonitor flips base_locked to False only on CONFIRMED tripod drift
         # (Plan v3 Phase 1), so a transient drift never survives a restart.
         self.base_locked: bool = True
+        # Runtime-only (like base_locked; excluded from asdict(), never persisted): set
+        # True when the operator locks the base via map_manual so a later GPS base-lock
+        # does not clobber the surveyed altitude with a noisy GPS fix (Calibration v2).
+        # Every load() starts False; the v2 wizard re-locks via map_manual each session.
+        self.alt_manual: bool = False
 
     @property
     def calibrated(self) -> bool:
@@ -82,7 +92,16 @@ class CameraPose:
         dbear = normalize_180(bearing2 - bearing1)
         if abs(dbear) < 1e-6:
             raise ValueError("pan calibration points have ~equal bearing")
-        self.pan_enc_per_deg = (enc2 - enc1) / dbear
+        scale = (enc2 - enc1) / dbear
+        # Prisual pan is unidirectional: encoder must increase with bearing. A
+        # non-positive scale means the two captures were inconsistent (encoder and
+        # bearing moved opposite ways) — every later GPS slew would then command the
+        # wrong direction. Reject it at capture time rather than ship a backwards rig.
+        if scale <= 0:
+            raise ValueError(
+                f"pan scale non-positive ({scale:.3f} enc/deg) — "
+                "re-capture panning in the +bearing direction.")
+        self.pan_enc_per_deg = scale
         self.pan_anchor_enc = enc1
         self.pan_anchor_bearing = bearing1
 
@@ -114,7 +133,10 @@ class CameraPose:
     def elevation_to_tilt_encoder(self, elev_deg: float) -> float:
         if self.tilt_enc_per_deg == 0.0:
             return self.tilt_anchor_enc  # uncalibrated => hold a fixed tilt
-        return self.tilt_anchor_enc + (elev_deg - self.tilt_anchor_elev) * self.tilt_enc_per_deg
+        enc = self.tilt_anchor_enc + (elev_deg - self.tilt_anchor_elev) * self.tilt_enc_per_deg
+        # Clamp to the measured mechanical tilt range so a bad base height / GPS-alt glitch
+        # can't drive the camera past the hard stops and hunt (audit TILT-DOWN-NO-CLAMP).
+        return max(float(PRISUAL_TILT_ENC_MIN), min(float(PRISUAL_TILT_ENC_MAX), enc))
 
     # --- persistence ---
     def save(self, path: str) -> None:

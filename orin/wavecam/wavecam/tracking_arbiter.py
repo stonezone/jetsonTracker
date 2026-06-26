@@ -107,7 +107,12 @@ class TrackingArbiter:
             self._consecutive_locked = 0
             self._last_locked_time = None
             gps_viable = (gps_fresh and gps_calibrated and base_locked and calibration_valid)
-            owner = "gps_tracker" if (self.enabled and gps_viable) else "idle"
+            # vision_only must NEVER fall back to GPS — the operator chose it to forbid the
+            # false-GPS hijack. Only `auto` may take GPS on stale frames. gps_only never
+            # enters this block (exempted by the guard above) and falls through to normal
+            # GPS pointing below (ARB-VISIONONLY-GPS).
+            allow_gps = self.enabled and gps_viable and self._tracking_mode() == "auto"
+            owner = "gps_tracker" if allow_gps else "idle"
             self._last_owner = owner
             roi = (0.5, 0.5, 0.5, 0.5) if owner == "gps_tracker" else None
             return ArbiterDecision(owner=owner, search_roi=roi)

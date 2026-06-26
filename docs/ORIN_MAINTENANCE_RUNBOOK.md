@@ -3,7 +3,11 @@
 
 ## Current Validated State
 
-Validated read-only on 2026-06-01.
+Validated read-only on 2026-06-01; currency-reviewed 2026-06-23. Note: the boot-path
+and microSD rows below predate the 2026-06-11 microSD failure — the rig now boots
+**pure NVMe via systemd-boot** (see "Boot Architecture & Recovery (2026-06-11)"). The
+live detector was swapped yolov8n → **YOLO11n TensorRT** on 2026-06-15
+(`/data/projects/gimbal/models/yolo11n.engine`).
 
 | Item | Current value |
 |---|---|
@@ -12,7 +16,7 @@ Validated read-only on 2026-06-01.
 | Root filesystem | `/dev/nvme0n1p1`, ext4, label `NVME_ROOT`, mounted at `/` |
 | Data filesystem | `/dev/nvme0n1p2`, ext4, label `NVME_DATA`, mounted at `/data` |
 | NVMe model | WDC WDS500G2B0C-00PXH0, 465.8 GB |
-| microSD | `mmcblk0`, 58.9 GB, still present |
+| microSD | original 64 GB card **DIED 2026-06-11** mid-migration; rig boots pure NVMe via systemd-boot. WAVEBOOT spare SD (Boot000A) is the tested fallback only — no persistent microSD dependency for normal operation |
 | EFI boot partition | `mmcblk0p10`, vfat, mounted at `/boot/efi` |
 | Python | 3.10.12 |
 | OpenCV | 4.12.0 |
@@ -22,7 +26,7 @@ Validated read-only on 2026-06-01.
 | TensorRT | 10.3.0.30 + CUDA 12.5 packages |
 | FFmpeg | 4.4.2 |
 | GStreamer | 1.20.3 |
-| Codex CLI | 0.135.0 at `/home/zack/.local/bin/codex` |
+| Agent CLI provider | Claude Code CLI (`claude -p`) on the operator's Claude subscription (default `claude_code`; alts deepseek/glm/kimi) — drives the on-demand agent subsystem |
 
 ## Boot Dependency Recon
 
@@ -52,7 +56,7 @@ Current WaveCam runtime expectation:
 - `dashboard.service`: stopped/disabled legacy `:8080` dashboard
 - `gps-server.service`: stopped/disabled legacy `:8765` Watch/iPhone/Cloudflare GPS relay
 - `cloudflared.service`: optional; only needed for remote access via `wavecam.freddieland.com`
-- `wavecam` reads GPS from the base Wio over USB serial (`DirectRadioGps`) using the custom `firmware/direct-lora/` firmware
+- `wavecam` reads GPS from the base Wio over USB serial (`DirectRadioGps`) using the custom `firmware/direct-lora/` firmware (2× SeeedStudio Wio Tracker L1 Lite — base on the Orin USB, remote on the subject; beacon ~2 Hz). This direct-LoRa path **superseded Meshtastic, dropped 2026-06-14**; any Meshtastic interval/preset/nodeDB guidance is obsolete.
 
 Current package state:
 
@@ -203,7 +207,7 @@ Feasibility:
 | In-place NVMe ESP conversion | 4/10 | Bench-only | Requires shrinking `/data` or repartitioning NVMe. Reversible if SD is preserved, but boot behavior must be proven. |
 | Fresh SDK Manager/initrd NVMe flash | 7/10 | Bench-only | Cleaner Jetson-supported route, but requires backup/restore and recovery-mode host workflow. |
 | Use microSD as video export card | 8/10 after boot is independent | Blocked by EFI dependency | Once boot no longer needs microSD, mount it only for copied recordings. |
-| Codex CLI on Orin | 8/10 | Installed | Official installer failed; direct official release asset worked with SHA-256 verification. |
+| Claude CLI agent-subsystem integration | 8/10 | Installed | On-demand advisor shells out to `claude -p` on the operator's Claude subscription (`POST /api/v1/agent/{chat,summon}`). Use a login shell on the Orin if `claude` is not found. |
 
 ## Safe Update Plan
 
@@ -454,20 +458,23 @@ manually.
 - NVIDIA Jetson Linux flashing support, NVMe boot section: https://docs.nvidia.com/jetson/archives/r36.3/DeveloperGuide/SD/FlashingSupport.html#flashing-to-an-nvme-drive
 - NVIDIA Jetson Linux UEFI boot order notes: https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Bootloader/UEFI.html#overriding-the-default-boot-order-during-flashing
 
-## Codex CLI Notes
+## Agent Subsystem Notes
 
-Official install command failed on the Orin because the 0.135.0 installer looked for a package checksum
-entry that was absent from the published package checksum manifest. The direct official release asset
-worked:
+The agent subsystem is an **on-demand** feature of `wavecam.service` (not a separate daemon). It
+shells out to the **Claude Code CLI** (`claude -p`) running on the operator's Claude subscription
+(default provider `claude_code`; alternates deepseek/glm/kimi), reached via `POST /api/v1/agent/{chat,summon}`.
 
-- Asset: `codex-aarch64-unknown-linux-musl.tar.gz`
-- Version: 0.135.0
-- Verified SHA-256: `568bce1d593ef25ffdf5549369a8606085652294646a5c4961547a894ea2f76d`
-- Installed binary: `/home/zack/.local/bin/codex`
-- Verified: `codex-cli 0.135.0`
+It runs in two modes:
 
-Use a login shell on the Orin if `codex` is not found:
+- **Advisor (default):** inspect/advise only. It can read status and answer questions but cannot move
+  the camera.
+- **Acting-agent (operator-ARM-gated, supervise-only):** an operator-only ARM toggle (default OFF,
+  TTL 600 s, KILL-disarmed) grants it a shell to act via the control API. It only moves the camera
+  when ARMed; it never moves the camera unattended. **KILL is human-only + supreme** — it is never an
+  agent capability and it disarms the agent + stops motion.
+
+Use a login shell on the Orin if `claude` is not found:
 
 ```bash
-bash -lc 'codex --version'
+bash -lc 'claude --version'
 ```
