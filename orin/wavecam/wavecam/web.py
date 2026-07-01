@@ -513,13 +513,20 @@ def build_app(pipeline) -> FastAPI:
 
     def _frames():
         boundary = b"--frame\r\n"
-        while True:
-            jpg = pipeline.state.get_jpeg()
-            if jpg is None:
-                time.sleep(0.05)
-                continue
-            yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
-            time.sleep(0.03)
+        # M7: count live MJPEG readers so the pipeline can skip annotate+encode
+        # when nobody is watching. finally fires on client disconnect
+        # (GeneratorExit when StreamingResponse closes the generator).
+        pipeline.state.preview_client_add()
+        try:
+            while True:
+                jpg = pipeline.state.get_jpeg()
+                if jpg is None:
+                    time.sleep(0.05)
+                    continue
+                yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
+                time.sleep(0.03)
+        finally:
+            pipeline.state.preview_client_remove()
 
     # AUTH-1: gate the legacy read routes like the /api/v1 reads, so enabling auth is
     # all-or-nothing instead of leaving the console's data routes open. No-op while auth

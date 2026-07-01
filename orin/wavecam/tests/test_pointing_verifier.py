@@ -68,7 +68,9 @@ def test_second_miss_logs_but_does_not_retry():
     v.record_move(pan_enc=1000, tilt_enc=-100, t=t_issue)
     v.tick()           # first miss → retry
     ptz._calls.clear()
-    v.record_move(pan_enc=1000, tilt_enc=-100, t=time.time() - VERIFY_DELAY_SEC - 0.1)
+    # H7: re-recording the SAME pending target is a no-op, so backdate the
+    # retry's settle clock directly to reach the second verify.
+    v._issue_t = time.time() - VERIFY_DELAY_SEC - 0.1
     v.tick()           # second miss → log only
     assert not ptz._calls
     miss_events = [d for k, d in ev._recorded if k == "pointing_miss"]

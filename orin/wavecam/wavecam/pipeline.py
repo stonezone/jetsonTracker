@@ -24,10 +24,14 @@ from .detector import class_label as _detector_class_label
 
 def _cls_label(cfg) -> str:
     return _detector_class_label(getattr(cfg.detector, "person_class", 0))
-from .ptz_owner import PtzOwner
+from .ptz_owner import AUTONOMOUS, PtzOwner
 from .tracking_arbiter import TrackingArbiter
 
 DEFAULT_STOP_RESEND_INTERVAL_SEC = 0.25
+# H7: absolute moves re-send only on target change, plus this keepalive. Must be
+# >> VERIFY_DELAY_SEC (0.5 s) or record_move() starves the PointingVerifier; the
+# old command_min_interval resend (20 Hz) kept it permanently starved.
+ABS_CMD_KEEPALIVE_SEC = 2.5
 # Frames must advance within this budget or capture is "stale" — a wedged grabber
 # hands back the same non-None frame forever (ZOMBIE-1). Generous vs the ~35fps
 # loop so a momentary hiccup doesn't drop vision authority.
@@ -91,6 +95,10 @@ class SharedState:
         self.killed = False
         self.show_mask = True
         self.show_hud = True
+        # M7: live MJPEG readers. The web layer bumps this on stream open/close;
+        # the pipeline skips annotate+encode at zero (recording reads RTSP
+        # directly, never these JPEGs).
+        self.preview_clients = 0
 
     def set_jpeg(self, b: bytes):
         with self.lock:
@@ -99,6 +107,18 @@ class SharedState:
     def get_jpeg(self) -> Optional[bytes]:
         with self.lock:
             return self.jpeg
+
+    def preview_client_add(self):
+        with self.lock:
+            self.preview_clients += 1
+
+    def preview_client_remove(self):
+        with self.lock:
+            self.preview_clients = max(0, self.preview_clients - 1)
+
+    def preview_client_count(self) -> int:
+        with self.lock:
+            return self.preview_clients
 
     def set_status(self, **kw):
         with self.lock:
@@ -139,11 +159,11 @@ class Pipeline(threading.Thread):
                 print(f"[pipeline] YOLO disabled (load failed): {e}")
                 self._detector_load_error = str(e)
 
-        # P1: GPS coarse-pointing handoff
+        # P1: GPS coarse-pointing handoff (staleness is gated here in the
+        # pipeline via gps.drive_stale_sec before decide() is called)
         self.arbiter = TrackingArbiter(
             lock_frames=getattr(cfg.gps, "lock_frames", 5),
             grace_sec=getattr(cfg.gps, "grace_sec", 1.0),
-            max_gps_age_sec=getattr(cfg.gps, "drive_stale_sec", 8.0),
             mode=getattr(getattr(cfg, "tracking", None), "mode", "auto"),
             enabled=getattr(getattr(cfg, "tracking", None), "enabled", True),
         )
@@ -179,6 +199,15 @@ class Pipeline(threading.Thread):
         self._last_abs_cmd_key = None
         self._last_abs_cmd_time = 0.0
         self._arbiter_state = "idle"
+        # C1: one-shot latch — stop sent for the current video dropout
+        self._no_video_stopped = False
+        # M1: dedupe estimator GPS fusion — the reader hands back the same
+        # cached fix until the next ~1 Hz LoRa packet
+        self._last_gps_fix_ts: Optional[float] = None
+        # M2: (valid, confirmed) calibration gate, refreshed at <=1 Hz so the
+        # vision thread doesn't take the control-API lock every frame
+        self._calib_gate: tuple = (False, False)
+        self._calib_gate_at = 0.0
 
         self._stop = threading.Event()
         self._last_cmd_key = None
@@ -244,6 +273,10 @@ class Pipeline(threading.Thread):
         """Rate-limited, de-duped VISCA send. STOP always allowed through."""
         if not self.cfg.ptz.enabled:
             return
+        # L10: a loop iteration already past the killed check must not emit a
+        # moving command after KILL's ptz.stop(). Stops stay allowed.
+        if self.owner.killed and not cmd.is_stop:
+            return
         now = time.time()
         key = cmd.key()
         changed = key != self._last_cmd_key
@@ -292,8 +325,16 @@ class Pipeline(threading.Thread):
 
             _gps_fix = self.gps.get_fix() if self.gps else None
             if _gps_fix is not None:
-                self.estimator.update_gps(_gps_fix, now=t0)
-                _gps_updated = True
+                # M1: the reader returns the SAME cached fix until the next
+                # ~1 Hz packet; re-fusing it every frame collapsed covariance
+                # between fixes. Only fuse when the fix timestamp advances
+                # (no-ts fakes/sources keep the old per-tick behavior).
+                _fix_ts = getattr(_gps_fix, "ts", None)
+                if _fix_ts is None or _fix_ts != getattr(self, "_last_gps_fix_ts", None):
+                    self.estimator.update_gps(_gps_fix, now=t0)
+                    _gps_updated = True
+                    if _fix_ts is not None:
+                        self._last_gps_fix_ts = _fix_ts
 
             # One zoom read per tick. None = no fresh zoom (poller outage or
             # pre-first-reply); consumers decide their own fallback.
@@ -302,16 +343,17 @@ class Pipeline(threading.Thread):
             _fresh_zoom = _z if (_z is not None and _z_age is not None
                                  and _z_age < ZOOM_FRESH_SEC) else None
 
-            # Vision update: only when locked and encoder data is fresh
-            if fr.locked and fr.target_xy is not None:
+            # Vision update: only when locked and encoder AND zoom are fresh.
+            # M3: the old wide-FOV (zoom_enc=0) fallback turned a ~0.85 deg
+            # offset at tele into a ~14 deg observation with a falsely tight R
+            # — one poller hiccup could yank the state tens of metres.
+            if fr.locked and fr.target_xy is not None and _fresh_zoom is not None:
                 _enc, _enc_age = self.ptz_state.latest()
                 if _enc is not None and (_enc_age is None or _enc_age < 0.5):
-                    # Bearing tolerates a wide-FOV fallback: the innovation is
-                    # bounded by FOV/2 and this matches pre-zoom-plumb behavior.
                     self.estimator.update_vision(
                         pan_enc=_enc[0],
                         pixel_cx=fr.target_xy[0], frame_w=w,
-                        zoom_enc=_fresh_zoom if _fresh_zoom is not None else 0,
+                        zoom_enc=_fresh_zoom,
                         now=t0,
                     )
                     _vision_updated = True
@@ -417,6 +459,8 @@ class Pipeline(threading.Thread):
             return
         direction = direction if direction in ("tele", "wide") and speed > 0 else "stop"
         speed = int(speed) if direction != "stop" else 0
+        if self.owner.killed and direction != "stop":
+            return  # L10: no moving zoom after KILL; stops stay allowed
         now = time.time()
         key = (direction, speed)
         changed = key != getattr(self, "_last_zoom_key", None)
@@ -435,13 +479,21 @@ class Pipeline(threading.Thread):
         return getattr(self, "_last_zoom_key", None) not in (None, ("stop", 0))
 
     def _send_absolute_cmd(self, cmd):
-        """Rate-limited, de-duped absolute pan/tilt/zoom for GPS mode."""
+        """De-duped absolute pan/tilt/zoom for GPS mode.
+
+        H7: sends only on target CHANGE plus a slow keepalive — resending an
+        identical move at command_min_interval (20 Hz) reset the verifier's
+        settle clock on every send, so verify-and-resend could never fire in
+        exactly the mode it was built for (and re-triggered the camera's
+        motion profile mid-settle)."""
         if not self.cfg.ptz.enabled:
             return
+        if self.owner.killed:
+            return  # L10: absolute moves are never stops
         now = time.time()
         key = cmd.key()
         changed = key != self._last_abs_cmd_key
-        due = (now - self._last_abs_cmd_time) >= self.cfg.ptz.command_min_interval
+        due = (now - self._last_abs_cmd_time) >= ABS_CMD_KEEPALIVE_SEC
         if changed or due:
             gps_cfg = self.cfg.gps
             self.ptz.pan_tilt_absolute(
@@ -454,6 +506,42 @@ class Pipeline(threading.Thread):
             self._pointing_verifier.record_move(pan_enc=cmd.pan_enc, tilt_enc=cmd.tilt_enc)
             self._last_abs_cmd_key = key
             self._last_abs_cmd_time = now
+
+    def _servo_hfov(self) -> tuple:
+        """H8: (current_hfov_deg, widest_hfov_deg) for servo gain-scheduling,
+        or (None, None) when no calibrated FOV curve exists (legacy behavior).
+        A stale zoom cache falls back to the widest FOV — conservative: full
+        legacy gains and the unscaled deadzone."""
+        fov_curve = getattr(getattr(self, "_store", None), "fov_curve", None) or []
+        if not fov_curve:
+            return None, None
+        from .estimator import _fov_at_zoom
+        from .ptz_state import ZOOM_FRESH_SEC
+        wide = max(f for _, f in fov_curve)
+        z, z_age = self.ptz_state.latest_zoom()
+        if z is None or z_age is None or z_age >= ZOOM_FRESH_SEC:
+            return wide, wide
+        return _fov_at_zoom(fov_curve, int(z)), wide
+
+    def _stop_for_no_video(self) -> None:
+        """C1: a dropout mid-slew must not leave the camera running at its last
+        VISCA velocity into the hard stop until video returns or a human KILLs.
+        One-shot per dropout (the NO_VIDEO branch runs at 10 Hz); only fires
+        while an autonomous owner holds the camera — a manual/calibrate aim is
+        not ours to stop. _last_cmd_key resets so the first post-recovery
+        command always sends."""
+        if self._no_video_stopped:
+            return
+        if not self.cfg.ptz.enabled or self.owner.owner not in AUTONOMOUS:
+            return
+        self.ptz.stop()
+        self.ptz.zoom("stop")
+        self._last_cmd_key = None
+        self._last_cmd_time = time.time()
+        self._last_zoom_key = ("stop", 0)
+        self._last_zoom_time = time.time()
+        self._no_video_stopped = True
+        self.events.record("no_video_stop", {"owner": self.owner.owner})
 
     def _gps_cue(self, w: int, h: int):
         """Fusion GPS cue while gps_tracker owns. Bearing-projected onto the frame
@@ -470,16 +558,24 @@ class Pipeline(threading.Thread):
         fix = self.gps.get_fix()
         fov_curve = getattr(getattr(self, "_store", None), "fov_curve", None) or []
         ptz_state = getattr(self, "ptz_state", None)
-        enc = ptz_state.latest()[0] if ptz_state is not None else None
-        if fix is None or not fov_curve or enc is None:
+        if fix is None or not fov_curve or ptz_state is None:
+            return center
+        # L9: same freshness gates as the estimator path — a wedged poller's old
+        # encoder/wide-FOV px-per-deg would mislocate the boost region, which can
+        # boost the WRONG blob across the lock threshold. Stale -> center cue.
+        from .ptz_state import ZOOM_FRESH_SEC
+        enc, enc_age = ptz_state.latest()
+        if enc is None or (enc_age is not None and enc_age >= 0.5):
+            return center
+        zoom_enc, zoom_age = ptz_state.latest_zoom()
+        if zoom_enc is None or zoom_age is None or zoom_age >= ZOOM_FRESH_SEC:
             return center
         cur_bearing = self.pose.pan_encoder_to_bearing(enc[0])
         if cur_bearing is None:
             return center
         tgt_bearing = bearing_deg(self.pose.lat, self.pose.lon, fix.lat, fix.lon)
-        zoom_enc = ptz_state.latest_zoom()[0] if ptz_state is not None else None
         cue = compute_bearing_cue(
-            tgt_bearing, cur_bearing, fov_curve, int(zoom_enc or 0), int(w), int(h),
+            tgt_bearing, cur_bearing, fov_curve, int(zoom_enc), int(w), int(h),
             bearing_uncertainty_deg=float(
                 getattr(self.cfg.fusion, "gps_bearing_cue_uncertainty_deg", 5.0)),
             max_offscreen_deg=float(
@@ -555,7 +651,16 @@ class Pipeline(threading.Thread):
             max_enc=float(getattr(gps_cfg, "drive_zoom_max_enc", 16384.0)),
             max_frac=float(getattr(gps_cfg, "drive_zoom_max_frac", 0.6)),
         ) if drive_zoom else None
-        pt = compute_target(base, target, self.pose, lead_s=0.65, zoom=zoom_curve)
+        # H6: lead by the fix's actual age plus a margin (LoRa poll lag +
+        # prediction), capped to bound course-extrapolation error — a fixed
+        # 0.65 s lead on an 8 s-old fix aimed ~60 m behind an 8 m/s foiler.
+        # predict_lead keeps its >=0.1 m/s speed gate.
+        lead_s = min(
+            float(getattr(fix, "age_sec", 0.0) or 0.0)
+            + float(getattr(gps_cfg, "lead_margin_s", 0.65)),
+            float(getattr(gps_cfg, "lead_cap_s", 4.0)),
+        )
+        pt = compute_target(base, target, self.pose, lead_s=lead_s, zoom=zoom_curve)
         return PtzAbsoluteCommand(
             pan_enc=int(pt.pan_enc), tilt_enc=int(pt.tilt_enc),
             zoom_enc=int(pt.zoom_enc) if pt.zoom_enc is not None else None,
@@ -613,8 +718,10 @@ class Pipeline(threading.Thread):
             frame = self.grab.read()
             if frame is None:
                 self.state.set_status(state="NO_VIDEO", connected=self.grab.connected)
+                self._stop_for_no_video()   # C1: no runaway PTZ on video dropout
                 time.sleep(0.1)
                 continue
+            self._no_video_stopped = False  # video back — re-arm the C1 one-shot
 
             # Zombie-rig guard (ZOMBIE-1): a wedged grabber keeps handing back the
             # SAME non-None frame, so this loop runs fusion on a frozen image while
@@ -663,7 +770,16 @@ class Pipeline(threading.Thread):
                     except Exception as e:  # pragma: no cover
                         print(f"[pipeline] YOLO inference error: {e}")
                 if (t0 - self._last_boxes_time) <= self.cfg.detector.box_ttl_sec:
-                    persons = self._last_boxes
+                    # M5: cached boxes live in image coordinates with no motion
+                    # compensation — if a moving pan/tilt command has been sent
+                    # since they were captured, the scene has shifted under them
+                    # and they'd confirm phantoms, so skip the reuse. Boxes from
+                    # THIS frame always pass (any cmd predates their capture).
+                    _panning = (self._last_cmd_key is not None
+                                and self._last_cmd_key != STOP_CMD.key()
+                                and self._last_cmd_time >= self._last_boxes_time)
+                    if not _panning:
+                        persons = self._last_boxes
             self.health.beat("detector", {"enabled": self.detector is not None})
 
             # P2: GPS-cue boost — when gps_tracker owned last frame the camera is
@@ -692,7 +808,11 @@ class Pipeline(threading.Thread):
                 zoom_cmd = "hold"
                 self._arbiter_state = "restarting" if self._restarting else "killed"
             else:
-                cmd = self.servo.compute(fr.target_xy, (w, h))
+                # H8: gain-schedule the servo by the current FOV (None = no
+                # calibrated curve -> legacy FOV-independent behavior).
+                _hfov, _hfov_ref = self._servo_hfov()
+                cmd = self.servo.compute(fr.target_xy, (w, h),
+                                         hfov_deg=_hfov, hfov_ref_deg=_hfov_ref)
                 zoom_cmd = None
                 abs_cmd = None
 
@@ -710,9 +830,15 @@ class Pipeline(threading.Thread):
                 # C2 (safety, audit 2026-06-13): GPS may drive ONLY when the CURRENT
                 # CALIBRATE session is valid AND confirmed. Persisted pose.calibrated/
                 # has_base survive restart, cancel, and KILL, so they are NOT sufficient.
-                _calib = (self.calibration_status()
-                          if callable(getattr(self, "calibration_status", None)) else {})
-                calibration_valid = bool(_calib.get("valid")) and bool(_calib.get("confirmed"))
+                # M2: calibration_status() takes the control-API lock and builds a
+                # ~20-key dict — at 35 fps that lock contention could stall the
+                # vision loop, so cache (valid, confirmed) and refresh at <=1 Hz.
+                if t0 - self._calib_gate_at >= 1.0:
+                    _calib = (self.calibration_status()
+                              if callable(getattr(self, "calibration_status", None)) else {})
+                    self._calib_gate = (bool(_calib.get("valid")), bool(_calib.get("confirmed")))
+                    self._calib_gate_at = t0
+                calibration_valid = self._calib_gate[0] and self._calib_gate[1]
                 # Sync arbiter hysteresis params from cfg so hot-config takes effect.
                 self.arbiter.lock_frames = int(getattr(self.cfg.gps, "lock_frames",
                                                        self.arbiter.lock_frames))
@@ -795,32 +921,35 @@ class Pipeline(threading.Thread):
                         self.owner.release(_curr)
                     self._send_cmd(STOP_CMD)
 
-            # render
-            hud = {
-                "fps": fps,
-                "ptz": "ON" if self.cfg.ptz.enabled else "off",
-                "killed": self.state.killed,
-            }
-            annotated = (
-                annotate(
-                    frame,
-                    mask,
-                    blobs,
-                    persons or [],
-                    fr,
-                    cmd,
-                    self.cfg.ptz,
-                    hud,
-                    person_label=_cls_label(self.cfg),
-                    show_mask=self.state.show_mask,
+            # render — pure observability. M7: skip annotate+encode entirely when
+            # no MJPEG client is connected (the normal field state); recording
+            # reads RTSP directly and never consumes these JPEGs.
+            if self.state.preview_client_count() > 0:
+                hud = {
+                    "fps": fps,
+                    "ptz": "ON" if self.cfg.ptz.enabled else "off",
+                    "killed": self.state.killed,
+                }
+                annotated = (
+                    annotate(
+                        frame,
+                        mask,
+                        blobs,
+                        persons or [],
+                        fr,
+                        cmd,
+                        self.cfg.ptz,
+                        hud,
+                        person_label=_cls_label(self.cfg),
+                        show_mask=self.state.show_mask,
+                    )
+                    if self.state.show_hud
+                    else frame
                 )
-                if self.state.show_hud
-                else frame
-            )
-            ok, buf = cv2.imencode(".jpg", annotated,
-                                   [cv2.IMWRITE_JPEG_QUALITY, self.cfg.web.jpeg_quality])
-            if ok:
-                self.state.set_jpeg(buf.tobytes())
+                ok, buf = cv2.imencode(".jpg", annotated,
+                                       [cv2.IMWRITE_JPEG_QUALITY, self.cfg.web.jpeg_quality])
+                if ok:
+                    self.state.set_jpeg(buf.tobytes())
 
             self.state.set_status(
                 state=("KILLED" if self.state.killed else fr.state),

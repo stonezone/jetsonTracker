@@ -13,6 +13,7 @@ from .controller import PtzCommand
 from .ptz_visca import PAN_RIGHT, TILT_DOWN
 
 _GREEN = (80, 230, 120)
+_TINT: Optional[np.ndarray] = None  # reused mask-tint buffer (pipeline thread only, M7)
 _AMBER = (40, 180, 255)
 _CYAN = (220, 210, 60)
 _RED = (60, 60, 255)
@@ -28,9 +29,15 @@ def annotate(frame: np.ndarray, mask: Optional[np.ndarray], blobs: List[Blob],
     h, w = out.shape[:2]
 
     if show_mask and mask is not None:
-        tint = np.zeros_like(out)
-        tint[mask > 0] = (0, 90, 160)
-        out = cv2.addWeighted(out, 1.0, tint, 0.45, 0)
+        # Reuse one tint buffer across frames — a fresh np.zeros_like at 35 fps
+        # was pure allocation churn in the render budget (M7).
+        global _TINT
+        if _TINT is None or _TINT.shape != out.shape or _TINT.dtype != out.dtype:
+            _TINT = np.zeros_like(out)
+        else:
+            _TINT[:] = 0
+        _TINT[mask > 0] = (0, 90, 160)
+        out = cv2.addWeighted(out, 1.0, _TINT, 0.45, 0)
 
     for b in blobs:
         x, y, bw, bh = b.bbox

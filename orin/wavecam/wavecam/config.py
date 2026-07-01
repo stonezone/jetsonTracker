@@ -105,7 +105,10 @@ class DetectorCfg:
     imgsz: int = 640
     person_class: int = 0
     every_n: int = 3
-    box_ttl_sec: float = 0.6
+    # 0.2 s (was 0.6): cached boxes are reused in image coordinates with no motion
+    # compensation — a 10 deg/s pan shifts the scene hundreds of px in 0.6 s, so
+    # stale boxes confirm phantoms during slews (audit 2026-07-01 M5).
+    box_ttl_sec: float = 0.2
     # Phase-2 (v3): persistent tracker. None = plain predict (current behavior).
     # "bytetrack.yaml" | "botsort.yaml" enable YOLO tracking (fail-open if missing).
     # Restart-required (the tracker is bound to the model instance).
@@ -174,6 +177,11 @@ class GpsCfg:
     # GPS-1: on an honest no-fix packet (wipeout / wave-trough blackout) coast on the
     # last good fix this long before dropping the aim. 0 = drop immediately.
     coast_on_no_fix_sec: float = 2.0
+    # H6 (audit 2026-07-01): pointing leads the target by fix.age_sec + lead_margin_s
+    # so an old-but-driveable fix aims where the subject IS, not where it was.
+    # lead_cap_s bounds course-extrapolation error on very old fixes.
+    lead_margin_s: float = 0.65
+    lead_cap_s: float = 4.0
     # P2: GPS-driven zoom (off by default — untuned; enable when ready)
     drive_zoom: bool = False
     # Phase-4 (v3): GPS-driven zoom curve params (used only when drive_zoom=True +

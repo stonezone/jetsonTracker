@@ -52,11 +52,15 @@ class VisualServo:
         self._last = None      # last (ex, ey) image error, for feed-forward lead
         self._zoom_recovery_active = False
 
-    def _map_speed(self, err_abs: float, max_speed: int) -> int:
-        dz = self.cfg.deadzone
+    def _map_speed(self, err_abs: float, max_speed: int,
+                   dz: Optional[float] = None, fov_scale: float = 1.0) -> int:
+        dz = self.cfg.deadzone if dz is None else dz
         span = max(1e-6, 1.0 - dz)
         frac = max(0.0, min(1.0, (err_abs - dz) / span))
         spd = self.cfg.min_speed + (max_speed - self.cfg.min_speed) * frac
+        # H8: at tele the same normalized error spans fewer degrees, so scale the
+        # commanded speed by hfov/hfov_ref (1.0 at wide = tuning unchanged).
+        spd *= fov_scale
         return int(round(max(self.cfg.min_speed, min(max_speed, spd))))
 
     def _lead(self, ex: float, ey: float) -> Tuple[float, float]:
@@ -78,11 +82,26 @@ class VisualServo:
         return ex + lead_x, ey + lead_y
 
     def compute(self, target_xy: Optional[Tuple[float, float]],
-                frame_wh: Tuple[int, int]) -> PtzCommand:
-        """Return the velocity command to center target_xy. None target -> STOP."""
+                frame_wh: Tuple[int, int],
+                hfov_deg: Optional[float] = None,
+                hfov_ref_deg: Optional[float] = None) -> PtzCommand:
+        """Return the velocity command to center target_xy. None target -> STOP.
+
+        H8 FOV gain-scheduling: when hfov_deg/hfov_ref_deg are given (ref = the
+        WIDEST calibrated FOV), speed scales down by hfov/hfov_ref and the
+        deadzone becomes degree-denominated — cfg.deadzone is interpreted as
+        normalized-at-wide, so the same *angular* deadzone covers a larger frame
+        fraction at tele (stops the limit-cycle hunt at 20x). At the reference
+        FOV (or with either arg None) behavior is identical to the legacy path.
+        """
         if target_xy is None:
             self._last = None
             return STOP_CMD
+
+        fov_scale = 1.0
+        if hfov_deg is not None and hfov_ref_deg is not None and hfov_ref_deg > 0:
+            fov_scale = max(1e-3, min(1.0, float(hfov_deg) / float(hfov_ref_deg)))
+        dz = self.cfg.deadzone / fov_scale   # constant in degrees across zoom
 
         w, h = frame_wh
         ex = (target_xy[0] - w / 2.0) / (w / 2.0)   # -1 (left) .. +1 (right)
@@ -97,14 +116,16 @@ class VisualServo:
         pan_dir, tilt_dir = PAN_STOP, TILT_STOP
         pan_speed = tilt_speed = self.cfg.min_speed
 
-        if abs(ex) > self.cfg.deadzone:
+        if abs(ex) > dz:
             pan_dir = PAN_RIGHT if ex > 0 else PAN_LEFT
-            pan_speed = self._map_speed(abs(ex), self.cfg.max_pan_speed)
+            pan_speed = self._map_speed(abs(ex), self.cfg.max_pan_speed,
+                                        dz=dz, fov_scale=fov_scale)
 
-        if abs(ey) > self.cfg.deadzone:
+        if abs(ey) > dz:
             # image y grows downward: target below center -> tilt down
             tilt_dir = TILT_DOWN if ey > 0 else TILT_UP
-            tilt_speed = self._map_speed(abs(ey), self.cfg.max_tilt_speed)
+            tilt_speed = self._map_speed(abs(ey), self.cfg.max_tilt_speed,
+                                         dz=dz, fov_scale=fov_scale)
 
         if pan_dir == PAN_STOP and tilt_dir == TILT_STOP:
             return STOP_CMD

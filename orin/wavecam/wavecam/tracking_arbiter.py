@@ -27,7 +27,6 @@ class ArbiterDecision:
 # Handoff config (tuned for surf filming at 50-300m)
 DEFAULT_LOCK_FRAMES = 5       # K consecutive locked → hand to vision
 DEFAULT_GRACE_SEC = 1.0       # unlock grace before falling back to GPS
-DEFAULT_MAX_GPS_AGE_SEC = 10.0  # GPS considered stale beyond this
 
 
 class TrackingArbiter:
@@ -46,12 +45,13 @@ class TrackingArbiter:
     def __init__(self,
                  lock_frames: int = DEFAULT_LOCK_FRAMES,
                  grace_sec: float = DEFAULT_GRACE_SEC,
-                 max_gps_age_sec: float = DEFAULT_MAX_GPS_AGE_SEC,
                  mode: str = "auto",
                  enabled: bool = True):
+        # NOTE: staleness lives in the CALLER's gps_fresh input (pipeline gates
+        # on gps.drive_stale_sec); the old max_gps_age_sec field was never read
+        # here (audit 2026-07-01 L12).
         self.lock_frames = lock_frames
         self.grace_sec = grace_sec
-        self.max_gps_age_sec = max_gps_age_sec
         self.mode = mode
         # Operator "DISABLE PTZ" latch (tracking.enabled). False = autonomous
         # tracking never claims the camera, so a manual aim holds until re-enabled.
@@ -85,7 +85,7 @@ class TrackingArbiter:
 
         Args:
             vision: FusionResult from this frame.
-            gps_fresh: True if GPS target_age < max_gps_age_sec.
+            gps_fresh: True if GPS target_age < gps.drive_stale_sec (caller-gated).
             gps_calibrated: True if CameraPose is calibrated (pan_enc_per_deg ≠ 0).
             base_locked: True if base GPS has a current fix (camera position known).
             now_sec: monotonic time for grace-window tracking.

@@ -211,22 +211,27 @@ class Fusion:
 
         raw_xy, bbox, person_bbox, conf, matched = self._select(blobs, persons, gps_cue_px)
 
+        # H5 (audit 2026-07-01): the dropout grace must be evaluated BEFORE the
+        # unlock threshold, or a single blank frame (conf==0 < unlock) unlocks
+        # instantly and COASTING is dead code. A weak *candidate* still unlocks
+        # immediately; only a MISSING candidate rides the grace window.
+        has_candidate = raw_xy is not None and conf > 0
+        coasting = (not has_candidate) and self._ema is not None and \
+                   (now - self._last_seen) <= self.cfg.lost_grace_sec
+
         if conf >= self.cfg.lock_threshold:
             self._locked = True
-        elif conf < self.cfg.unlock_threshold:
+        elif conf < self.cfg.unlock_threshold and (has_candidate or not coasting):
             self._locked = False
 
-        if raw_xy is not None and conf > 0:
+        if has_candidate:
             self._last_seen = now
             a = self.cfg.ema_alpha
             self._ema = raw_xy if self._ema is None else \
                 (a * raw_xy[0] + (1 - a) * self._ema[0],
                  a * raw_xy[1] + (1 - a) * self._ema[1])
 
-        coasting = (raw_xy is None or conf == 0) and self._ema is not None and \
-                   (now - self._last_seen) <= self.cfg.lost_grace_sec
-
-        if raw_xy is not None and conf > 0 and self._locked:
+        if has_candidate and self._locked:
             state, out_xy = "TRACKING", self._ema
         elif coasting and self._locked:
             state, out_xy = "COASTING", self._ema
@@ -235,6 +240,9 @@ class Fusion:
             if not coasting:
                 self._locked = False
                 self._ema = None
+                # M6: a stale ByteTrack id must not outlive the lock — after a
+                # long dropout the recycled id could steal the next acquisition.
+                self._last_track_id = None
 
         return FusionResult(
             target_xy=out_xy,
