@@ -609,14 +609,16 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/tune", dependencies=[Depends(require(CONFIG))])
     def tune(t: Tune):
+        # L5 (audit 2026-07-01): route through the SAME apply+persist path as
+        # /api/v1/config/hot. Previously /tune applied hot config in memory only
+        # (no persist_hot_values call) so identical keys set via /tune silently
+        # reverted on the next restart while the same keys via /config/hot
+        # survived — a contradictory, surprising contract for two UIs tuning the
+        # same live values.
         patch = tune_patch(t)
         if not patch:
             return {"ok": True}
-        refusal = app.state.control_api.apply_hot_config(patch)
-        if refusal is not None:
-            return refusal
-        app.state.control_api.bump_revision()
-        return {"ok": True, "patch": patch}
+        return app.state.control_api.apply_and_persist_hot_patch(patch)
 
     register_control_api(app, pipeline, _frames)
 

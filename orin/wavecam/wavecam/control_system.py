@@ -70,19 +70,27 @@ class SystemManager:
     # ------------------------------------------------------------------
 
     def request_service_restart(self, req) -> JSONResponse:
-        if self.restart_pending:
-            return self._api.refusal(
-                "restart_pending",
-                "A WaveCam restart request is already pending.",
-            )
-        if self.restart_requires_confirmation() and not req.confirm_moving:
-            return self._api.refusal(
-                "restart_confirmation_required",
-                "Camera control is active; retry with confirm_moving=true to stop PTZ and restart.",
-            )
-        self._api.prepare_for_restart()
-        self.schedule_service_restart(req.delay_seconds)
-        self._api.bump_revision()
+        # L7 (audit 2026-07-01): the pending-check and the schedule (which flips
+        # _restart_pending back on) used to happen under SEPARATE lock
+        # acquisitions, so two concurrent /system/restart posts could both
+        # observe restart_pending=False and both schedule a timer -> double
+        # restart. self._lock is an RLock (shared with the adapter), so holding
+        # it across the whole check+prepare+schedule is safe against the
+        # reentrant calls inside prepare_for_restart/schedule_service_restart.
+        with self._lock:
+            if self._restart_pending:
+                return self._api.refusal(
+                    "restart_pending",
+                    "A WaveCam restart request is already pending.",
+                )
+            if self.restart_requires_confirmation() and not req.confirm_moving:
+                return self._api.refusal(
+                    "restart_confirmation_required",
+                    "Camera control is active; retry with confirm_moving=true to stop PTZ and restart.",
+                )
+            self._api.prepare_for_restart()
+            self.schedule_service_restart(req.delay_seconds)
+            self._api.bump_revision()
         return JSONResponse(
             {
                 "ok": True,
@@ -127,9 +135,8 @@ class SystemManager:
 
     def request_agent_chat(self, message: str, provider: str = "claude_code") -> JSONResponse:
         if not self._agent_enabled or self._agent_session is None:
-            return JSONResponse(
-                {"ok": False, "code": "agent_disabled",
-                 "message": "Interactive agent is not enabled on this rig."}
+            return self._api.refusal(
+                "agent_disabled", "Interactive agent is not enabled on this rig.", 409,
             )
         msg = normalized_text(message, "", 4000)
         prov = normalized_text(provider, "claude_code", 24)
@@ -138,9 +145,7 @@ class SystemManager:
         try:
             result = self._agent_session.chat(msg, status_text, armed=armed, provider=prov)
         except Exception as exc:  # surface as a failed turn; the session is preserved
-            return JSONResponse(
-                {"ok": False, "code": "agent_error", "message": str(exc)[:200]}
-            )
+            return self._api.refusal("agent_error", str(exc)[:200], 502)
         self._audit_agent_turn(armed)
         # Re-read arm state AFTER the (long) turn — a KILL mid-request must not be
         # masked by the pre-turn 'armed' capture, or the client would re-arm itself.
@@ -177,7 +182,9 @@ class SystemManager:
 
     def request_agent_arm(self, armed: bool) -> JSONResponse:
         if not self._agent_enabled or self._agent_arm is None:
-            return JSONResponse({"ok": False, "code": "agent_disabled"})
+            return self._api.refusal(
+                "agent_disabled", "Interactive agent is not enabled on this rig.", 409,
+            )
         if armed:
             self._agent_arm.arm()
         else:
@@ -185,9 +192,15 @@ class SystemManager:
         return JSONResponse({"ok": True, "armed": self._agent_arm.can_act()})
 
     def agent_kill(self) -> None:
-        """KILL path hook — supervise-only floor: KILL disarms the agent."""
+        """KILL path hook — supervise-only floor: KILL disarms the agent AND
+        terminates any in-flight armed turn (H1, audit 2026-07-01). Before this,
+        agent_kill() only flipped ArmState — an already-running claude -p with a
+        bypassPermissions Bash tool kept its shell alive for up to the 120s
+        request timeout after the operator hit KILL."""
         if self._agent_arm is not None:
             self._agent_arm.kill()
+        if self._agent_session is not None:
+            self._agent_session.terminate()
 
     def agent_resume(self) -> None:
         """RESUME path hook — clear the agent KILL latch so it can be re-armed.

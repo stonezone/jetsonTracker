@@ -9,10 +9,13 @@ permits the endpoint's action class.
 Tokens are read from a LOCAL JSON file (path via ``$WAVECAM_AUTH_FILE``) only --
 no network or internet dependency, so auth works in the field with no uplink.
 
-Availability note: a missing or unreadable auth file yields a DISABLED config
-(fail-open). On a private camera LAN, operator lockout is a worse failure mode than
-an open local port; tighten to fail-closed if the threat model ever includes the
-local network.
+Availability note: NO auth file configured (``$WAVECAM_AUTH_FILE`` unset) yields a
+DISABLED config (fail-open) -- on a private camera LAN, operator lockout is a worse
+failure mode than an open local port. But once an operator has gone to the trouble
+of SETTING ``$WAVECAM_AUTH_FILE``, a missing/unreadable/malformed file at that path
+fails CLOSED (raises at install time, refusing to boot): silently falling back to
+open auth there would be a config typo away from serving an unauthenticated agent
+shell to the LAN (audit 2026-07-01 C2) with no boot-time signal that it happened.
 """
 from __future__ import annotations
 
@@ -61,18 +64,35 @@ class AuthError(Exception):
 
 
 def load_auth(path: str | None = None) -> AuthConfig:
-    """Load auth from a local JSON file; missing/unreadable -> disabled (fail-open).
+    """Load auth from a local JSON file.
+
+    No path configured at all (neither *path* nor ``$WAVECAM_AUTH_FILE``) ->
+    disabled (fail-open); this is the unconfigured/dev-bringup case.
+
+    A path IS configured but the file is missing/unreadable/invalid JSON ->
+    raises ``RuntimeError`` (fail CLOSED). An operator who set
+    ``$WAVECAM_AUTH_FILE`` intended auth to be enforced; silently degrading to
+    open auth on a typo'd path or a corrupted file is the worse failure mode
+    (audit 2026-07-01 C2/M17) -- the service should refuse to boot instead.
 
     File shape: ``{"enabled": true, "tokens": {"<token>": "operator", ...}}``
     """
-    path = path or os.environ.get("WAVECAM_AUTH_FILE")
-    if not path or not os.path.exists(path):
+    configured_path = path or os.environ.get("WAVECAM_AUTH_FILE")
+    if not configured_path:
         return AuthConfig()
+    if not os.path.exists(configured_path):
+        raise RuntimeError(
+            f"WAVECAM_AUTH_FILE is set to {configured_path!r} but the file does not "
+            "exist; refusing to start with auth silently disabled."
+        )
     try:
-        with open(path, encoding="utf-8") as fh:
+        with open(configured_path, encoding="utf-8") as fh:
             data = json.load(fh)
-    except (OSError, ValueError):
-        return AuthConfig()
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"WAVECAM_AUTH_FILE {configured_path!r} could not be read/parsed "
+            f"({exc}); refusing to start with auth silently disabled."
+        ) from exc
     tokens = {str(k): str(v) for k, v in dict(data.get("tokens", {})).items()}
     return AuthConfig(enabled=bool(data.get("enabled", True)), tokens=tokens)
 
@@ -129,8 +149,18 @@ def websocket_authorized(websocket: WebSocket, action: str = READ) -> bool:
 
 
 def install_auth(app: FastAPI, path: str | None = None) -> None:
-    """Load auth config onto app.state and register the AuthError -> JSON handler."""
-    app.state.auth = load_auth(path)
+    """Load auth config onto app.state and register the AuthError -> JSON handler.
+
+    Logs the resulting auth state loudly at boot (C2) -- an operator staring at
+    the service log should never have to guess whether the LAN port is open.
+    """
+    auth = load_auth(path)
+    app.state.auth = auth
+    if auth.enabled:
+        print(f"[auth] ENABLED — {len(auth.tokens)} token(s) configured.")
+    else:
+        print("[auth] DISABLED — every request is accepted with no bearer token "
+              "(open on the LAN/tether). Set WAVECAM_AUTH_FILE to enable.")
 
     @app.exception_handler(AuthError)
     async def _auth_error_handler(_: Request, exc: AuthError) -> JSONResponse:

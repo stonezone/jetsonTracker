@@ -64,18 +64,16 @@ class ConfigManager:
         return None
 
     def validate_hot_config_request(self, req) -> JSONResponse | None:
-        if req.persist:
-            return self._api.refusal(
-                "invalid_request",
-                "persist=true is not supported by hot config in v1.",
-                422,
-            )
-        if req.revision is not None and req.revision != self._api.revision:
-            return self._api.refusal(
-                "revision_conflict",
-                "Hot config revision is stale; refresh /api/v1/config and retry.",
-                409,
-            )
+        # L5 (audit 2026-07-01): hot config ALWAYS persists (to config.local.yaml);
+        # persist was previously refused as unsupported while persistence happened
+        # unconditionally anyway — a contradictory contract. req.persist is now a
+        # documented no-op: accepted regardless of value, changes nothing, because
+        # every successful hot-config apply already persists.
+        #
+        # The revision check itself now happens under api._lock in
+        # apply_and_persist_hot_patch (L7 — closes the TOCTOU where two concurrent
+        # requests could both pass a stale-revision check here and then interleave
+        # writes); this method no longer duplicates that check.
         return None
 
     def apply_hot_key(self, key: str, value: Any, dry_run: bool = False) -> JSONResponse | None:

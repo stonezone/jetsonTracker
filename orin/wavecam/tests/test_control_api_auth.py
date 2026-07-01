@@ -285,8 +285,9 @@ def test_agent_is_read_only_in_v1():
     assert summon_blocked.status_code == 403
 
 
-def test_load_auth_missing_file_disabled(tmp_path):
-    assert load_auth(str(tmp_path / "nope.json")).enabled is False
+def test_load_auth_no_path_configured_disabled():
+    # Neither an explicit path nor $WAVECAM_AUTH_FILE set -> open/dev-bringup default.
+    assert load_auth(None).enabled is False
 
 
 def test_load_auth_reads_tokens(tmp_path):
@@ -297,7 +298,16 @@ def test_load_auth_reads_tokens(tmp_path):
     assert cfg.role_for("x") == "operator"
 
 
-def test_load_auth_malformed_fails_open(tmp_path):
+def test_load_auth_configured_but_missing_fails_closed(tmp_path):
+    # C2/M17: once a path IS configured, a missing file must raise, not fail open.
+    import pytest
+    with pytest.raises(RuntimeError, match="does not exist"):
+        load_auth(str(tmp_path / "nope.json"))
+
+
+def test_load_auth_configured_but_malformed_fails_closed(tmp_path):
+    import pytest
     p = tmp_path / "bad.json"
     p.write_text("{ not json")
-    assert load_auth(str(p)).enabled is False
+    with pytest.raises(RuntimeError, match="could not be read/parsed"):
+        load_auth(str(p))

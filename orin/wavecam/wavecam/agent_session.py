@@ -8,8 +8,10 @@ mutating tool runs.
 """
 from __future__ import annotations
 
+import inspect
 import json
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -37,13 +39,24 @@ AGENT_SYSTEM_PROMPT = (
     "You are the WaveCam onboard assistant running on the Jetson Orin rig that auto-films a "
     "foil-surfer. The control API is at http://localhost:8088/api/v1 (status, config/hot, ptz, "
     "calibration, system/restart, logs, gps). When ARMED you may act by calling it with curl via "
-    "the Bash tool — always check the JSON for ok:true, because refusals are HTTP 200 with ok:false. "
+    "the Bash tool — always check the JSON for ok:true; a refusal is a non-2xx status with "
+    "ok:false, code, and message (the agent chat/arm/summon routes are the same shape). "
     "HARD RULES you must never break: (1) the operator's KILL / Emergency Stop is human-only — never "
-    "POST /safety/kill or /safety/resume, and never try to disable, bypass, or re-arm around them. "
+    "POST /safety/kill or /safety/resume, and never try to disable, bypass, or re-arm around them; "
+    "never POST /system/restart either — a restart is a service-level action outside your scope. "
     "(2) The camera is supervise-only: move it (ptz/* or calibration/*) only when the operator "
     "explicitly asks this turn, and remember it always yields to a manual aim and to KILL. "
     "(3) Prefer reversible config tuning; describe any risky or hard-to-undo step before doing it. "
     "When NOT armed you have no shell and can only inspect and advise. Keep replies concise and concrete."
+)
+
+# H1 defense-in-depth: forbidden actions the agent must never invoke even while armed,
+# restated here (not just prose in the prompt) so future acting-tool gating can check
+# a request path against this list mechanically.
+AGENT_FORBIDDEN_PATHS = (
+    "/safety/kill",
+    "/safety/resume",
+    "/system/restart",
 )
 
 
@@ -110,20 +123,58 @@ class ArmState:
             return {"armed": self._armed_unlocked(), "killed": self._killed, "ttl_sec": self._ttl}
 
 
-def _run_claude_cli(argv: list[str], env: dict, stdin_text: str, timeout: float) -> str:
-    """Run the claude CLI with the prompt on stdin. Module-level so tests inject a fake."""
+def _kill_process_group(proc: subprocess.Popen) -> None:
     try:
-        proc = subprocess.run(argv, env=env, input=stdin_text,
-                              capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"claude CLI timed out after {int(timeout)}s")
+        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()   # fallback: at least kill the direct child
+        except Exception:
+            pass
+
+
+def _run_claude_cli(argv: list[str], env: dict, stdin_text: str, timeout: float,
+                    session: "Optional[AgentSession]" = None) -> str:
+    """Run the claude CLI with the prompt on stdin. Module-level so tests inject
+    a fake (``monkeypatch.setattr(agent_session, "_run_claude_cli", fake)``) —
+    ``AgentSession.chat`` looks this name up at call time via the module
+    namespace, so a monkeypatched replacement is always honored even though
+    this is also the default (real) runner.
+
+    H1 (audit 2026-07-01): launches the CLI in its OWN process group
+    (``start_new_session=True``) so a KILL can SIGKILL the whole group rather
+    than merely flipping ArmState while an armed turn's Bash tool keeps
+    running. When *session* is given, the Popen handle is stashed on
+    ``session._proc`` for the duration of the call so ``session.terminate()``
+    can reach it from another thread (the request that handles /safety/kill).
+    """
+    proc = subprocess.Popen(
+        argv, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, start_new_session=True,
+    )
+    if session is not None:
+        with session._proc_lock:
+            session._proc = proc
+    try:
+        try:
+            out, err = proc.communicate(input=stdin_text, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(proc)
+            proc.communicate()  # reap after kill, avoid a zombie
+            raise RuntimeError(f"claude CLI timed out after {int(timeout)}s")
+    finally:
+        if session is not None:
+            with session._proc_lock:
+                if session._proc is proc:
+                    session._proc = None
     if proc.returncode != 0:
-        msg = (proc.stderr or proc.stdout or "").strip()[:300]
+        msg = (err or out or "").strip()[:300]
         token = env.get("CLAUDE_CODE_OAUTH_TOKEN")
         if token and token in msg:   # never surface the OAuth token, even on a crash dump
             msg = msg.replace(token, "<redacted>")
         raise RuntimeError(f"claude exited {proc.returncode}: {msg[:200]}")
-    return proc.stdout
+    return out
 
 
 def _load_keys(keys_path: str) -> dict:
@@ -147,10 +198,19 @@ class AgentSession:
 
     keys_path: str
     cli_path: str = CLAUDE_CLI_PATH
-    run: Optional[Callable[..., str]] = None   # defaults to module _run_claude_cli, resolved at call time
+    run: Optional[Callable[..., str]] = None   # test seam; None -> module _run_claude_cli (real path)
     # session_id is keyed per provider — a Claude conversation can't --resume under
     # DeepSeek, so each provider threads its own session.
     _session_ids: dict = field(default_factory=dict)
+    # H1: per-provider lock serializing _session_ids read/resume/write (M15) —
+    # two concurrent chat turns on the same provider must not both --resume the
+    # same session_id and race the last-writer-wins update.
+    _session_lock: threading.Lock = field(default_factory=threading.Lock)
+    # H1: the currently in-flight child process (real runner only), so agent_kill()
+    # can SIGKILL its process group. None when no turn is running or the injected
+    # test runner is in use (fakes have no real OS process to track).
+    _proc: Optional[subprocess.Popen] = field(default=None, repr=False, compare=False)
+    _proc_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def _provider_env(self, provider: str) -> dict:
         """Env for the claude subprocess. claude_code → subscription OAuth token;
@@ -170,8 +230,34 @@ class AgentSession:
         env["ANTHROPIC_MODEL"] = model
         return env
 
+    def terminate(self) -> bool:
+        """H1: SIGKILL the in-flight child's process group, if any. Called from
+        agent_kill() so KILL actually stops a running armed turn's Bash tool
+        instead of merely flipping ArmState while the subprocess runs on.
+        Returns True if a process was signaled. A no-op (returns False) when
+        no real subprocess is tracked — either nothing is running, or the
+        injected test seam (self.run) is in use, which has no OS process for
+        us to reach."""
+        with self._proc_lock:
+            proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return False
+        _kill_process_group(proc)
+        return True
+
     def chat(self, message: str, status_text: str, armed: bool = False,
              provider: str = DEFAULT_PROVIDER) -> dict:
+        # M15: serialize per-provider session-id read/resume/write. Two concurrent
+        # turns on the same provider must not both --resume the same session_id
+        # (the CLI can fork/error, and last-writer-wins would silently drop one
+        # branch's conversation context) — hold the lock for the WHOLE turn
+        # (argv build through session_id write), not just the dict access, or a
+        # second turn could still read a stale sid between our read and write.
+        with self._session_lock:
+            return self._chat_locked(message, status_text, armed=armed, provider=provider)
+
+    def _chat_locked(self, message: str, status_text: str, armed: bool,
+                      provider: str) -> dict:
         env = self._provider_env(provider)
         argv = [self.cli_path, "--output-format", "json",
                 "--append-system-prompt", AGENT_SYSTEM_PROMPT]
@@ -188,8 +274,24 @@ class AgentSession:
             argv += ["--disallowedTools", "Bash", "Edit", "Write"]
         argv += ["-p"]
         prompt = f"Live system status:\n{status_text}\n\nOperator: {message}"
-        runner = self.run if self.run is not None else _run_claude_cli
-        out = runner(argv, env, prompt, REQUEST_TIMEOUT_SEC)
+        if self.run is not None:
+            out = self.run(argv, env, prompt, REQUEST_TIMEOUT_SEC)
+        else:
+            # Module-level (not module-import-time-captured) lookup so tests that
+            # monkeypatch agent_session._run_claude_cli are honored. The real
+            # implementation additionally accepts ``session=`` (H1 process-group
+            # tracking) but a plain 4-arg fake (existing tests) doesn't -- inspect
+            # rather than try/except so a genuine TypeError raised BY a correctly
+            # invoked fake still propagates instead of being swallowed here.
+            runner = _run_claude_cli
+            try:
+                accepts_session = "session" in inspect.signature(runner).parameters
+            except (TypeError, ValueError):
+                accepts_session = False
+            if accepts_session:
+                out = runner(argv, env, prompt, REQUEST_TIMEOUT_SEC, session=self)
+            else:
+                out = runner(argv, env, prompt, REQUEST_TIMEOUT_SEC)
         try:
             data = json.loads(out)
         except (json.JSONDecodeError, ValueError):
