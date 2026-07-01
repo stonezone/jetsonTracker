@@ -65,6 +65,9 @@ final class WatchClient {
 
     private(set) var snapshot = WatchSnapshot.offline
     private(set) var online   = false
+    /// H13: true when the last STOP could not be confirmed by the rig (POST failed on
+    /// every route). Cleared on a confirmed kill (poll sees killed) or a successful resume.
+    private(set) var stopNotConfirmed = false
 
     private var pollTask: Task<Void, Never>?
     private var resolvedBase: URL?
@@ -95,12 +98,18 @@ final class WatchClient {
     // MARK: commands
 
     func kill() async {
-        await post("safety/kill", body: ["reason": "operator", "source": "watch"])
+        // H13: kill is idempotent — allow timeout failover, and SURFACE a failed STOP
+        // instead of discarding the Bool (the operator must know the rig may still move).
+        let ok = await post("safety/kill", body: ["reason": "operator", "source": "watch"],
+                            allowTimeoutFailover: true)
+        stopNotConfirmed = !ok
         await poll()
     }
 
     func resume() async {
-        await post("safety/resume", body: ["source": "watch"])
+        let ok = await post("safety/resume", body: ["source": "watch"],
+                            allowTimeoutFailover: true)
+        if ok { stopNotConfirmed = false }
         await poll()
     }
 
@@ -126,6 +135,8 @@ final class WatchClient {
                 gpsStale: s.gps?.stale,
                 readerAlive: s.gps?.readerAlive
             )
+            // H13: the rig confirms it is killed — the unconfirmed-STOP warning is stale.
+            if snapshot.killed { stopNotConfirmed = false }
         } catch {
             online = false
             snapshot = .offline
@@ -169,9 +180,17 @@ final class WatchClient {
     }
 
     /// Fire-and-forget POST. Uses the already-resolved base if known; otherwise tries tether first.
+    /// `allowTimeoutFailover`: idempotent safety endpoints (kill/resume) opt in — an ABSENT
+    /// tether subnet fails as .timedOut (same blackhole the GET path above documents), so
+    /// without it the Wi-Fi retry never happens and a STOP dies silently (H13). Keep it
+    /// false for non-idempotent POSTs (record toggle) so a command is never double-applied.
     @discardableResult
-    private func post(_ path: String, body: [String: Any]) async -> Bool {
+    private func post(_ path: String, body: [String: Any], allowTimeoutFailover: Bool = false) async -> Bool {
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return false }
+        var failoverCodes: [URLError.Code] = [.cannotConnectToHost, .cannotFindHost, .dnsLookupFailed]
+        if allowTimeoutFailover {
+            failoverCodes += [.timedOut, .networkConnectionLost]
+        }
         let candidates = routeCandidates(preferred: resolvedBase)
         for base in candidates {
             do {
@@ -189,8 +208,7 @@ final class WatchClient {
                 }
                 resolvedBase = base
                 return true
-            } catch let ue as URLError
-                where [.cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(ue.code) {
+            } catch let ue as URLError where failoverCodes.contains(ue.code) {
                 resolvedBase = nil
                 continue
             } catch {

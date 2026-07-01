@@ -38,11 +38,14 @@ struct SessionLogView: View {
 
     // MARK: - Data
 
+    /// L15: hard cap on the local ring — pollNew appends forever at 5 s cadence.
+    private static let maxEvents = 500
+
     @MainActor
     private func fullRefresh() async {
         isLoading = true
         if let fetched = await client.events(since: 0) {
-            events = fetched
+            events = Array(fetched.suffix(Self.maxEvents))
             sinceCursor = fetched.last?.t ?? 0
         }
         isLoading = false
@@ -51,8 +54,15 @@ struct SessionLogView: View {
     @MainActor
     private func pollNew() async {
         guard let fetched = await client.events(since: sinceCursor), !fetched.isEmpty else { return }
-        events.append(contentsOf: fetched)
-        sinceCursor = fetched.last?.t ?? sinceCursor
+        // L15: the backend `since` filter is inclusive, so the cursor event comes back
+        // every poll — re-appending it duplicates WCEvent.id ("t-kind") in the ForEach.
+        let fresh = fetched.filter { ($0.t ?? 0) > sinceCursor }
+        guard !fresh.isEmpty else { return }
+        events.append(contentsOf: fresh)
+        if events.count > Self.maxEvents {
+            events.removeFirst(events.count - Self.maxEvents)   // drop oldest
+        }
+        sinceCursor = fresh.last?.t ?? sinceCursor
     }
 }
 

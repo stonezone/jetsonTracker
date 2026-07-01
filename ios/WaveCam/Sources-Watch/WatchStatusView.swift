@@ -15,7 +15,14 @@ struct WatchStatusView: View {
             Color.black.ignoresSafeArea()
 
             if !client.online {
-                offlineView
+                VStack(spacing: 8) {
+                    if client.stopNotConfirmed {
+                        stopNotConfirmedBanner
+                    }
+                    offlineView
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
             } else {
                 VStack(spacing: 6) {
                     stateRow
@@ -25,6 +32,9 @@ struct WatchStatusView: View {
                         gpsRow
                     }
                     Spacer(minLength: 2)
+                    if client.stopNotConfirmed {
+                        stopNotConfirmedBanner
+                    }
                     if snap.killed {
                         resumeButton
                     } else {
@@ -125,6 +135,20 @@ struct WatchStatusView: View {
                     .foregroundStyle(alive ? .green : .orange)
             }
         }
+    }
+
+    /// H13: shown when the last STOP could not be confirmed by the rig — the camera
+    /// may still be moving. Cleared when a poll confirms killed or a resume succeeds.
+    private var stopNotConfirmedBanner: some View {
+        Text("STOP NOT CONFIRMED")
+            .font(.system(size: 10, weight: .black, design: .monospaced))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .background(Color.red.opacity(0.85))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
     }
 
     /// Large red Emergency Stop button

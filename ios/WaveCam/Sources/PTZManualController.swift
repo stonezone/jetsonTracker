@@ -40,9 +40,16 @@ final class PTZManualController {
 
     private let velocityRepeatIntervalNs: UInt64 = 300_000_000
     private let zoomRepeatIntervalNs: UInt64 = 300_000_000
+    /// H12: minimum spacing between drag-driven sends. Every DragGesture tick used to
+    /// spawn a POST — a 2 s stick drag fired 100+ concurrent, unordered requests.
+    private let sendMinInterval: TimeInterval = 0.1
 
     private var velocityRepeatTask: Task<Void, Never>?
     private var zoomRepeatTask: Task<Void, Never>?
+    private var lastVelocitySendAt = Date.distantPast
+    private var pendingVelocityFlushTask: Task<Void, Never>?
+    private var lastZoomSendAt = Date.distantPast
+    private var pendingZoomFlushTask: Task<Void, Never>?
 
     // MARK: joystick
 
@@ -52,12 +59,47 @@ final class PTZManualController {
         let isActive = pan != 0 || tilt != 0
         if isActive { refusalText = nil }
         commandState = isActive ? .manual : .idle
-        Task { await client.ptzVelocity(pan: pan, tilt: tilt) }
-        if isActive {
-            startVelocityRepeat(client: client)
-        } else {
+        if !isActive {
+            // Zero/stop ALWAYS bypasses the throttle — a release-stop must never wait
+            // behind a coalescing window.
+            cancelPendingVelocityFlush()
+            lastVelocitySendAt = Date()
+            Task { await client.ptzVelocity(pan: 0, tilt: 0) }
             stopVelocityRepeat()
+            return
         }
+        throttledVelocitySend(client: client)
+        startVelocityRepeat(client: client)
+    }
+
+    /// H12: send now if >=100 ms since the last send; otherwise remember the latest
+    /// pan/tilt (already stored on self) and flush it when the interval elapses.
+    private func throttledVelocitySend(client: WaveCamClient) {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastVelocitySendAt)
+        if elapsed >= sendMinInterval {
+            cancelPendingVelocityFlush()
+            lastVelocitySendAt = now
+            let (p, t) = (pan, tilt)
+            Task { await client.ptzVelocity(pan: p, tilt: t) }
+            return
+        }
+        guard pendingVelocityFlushTask == nil else { return }   // latest value flushes anyway
+        let delayNs = UInt64(max(0, sendMinInterval - elapsed) * 1_000_000_000)
+        pendingVelocityFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delayNs)
+            guard let self, !Task.isCancelled else { return }
+            self.pendingVelocityFlushTask = nil
+            // A release (pan/tilt zero) already sent its own immediate stop.
+            guard self.pan != 0 || self.tilt != 0 else { return }
+            self.lastVelocitySendAt = Date()
+            await client.ptzVelocity(pan: self.pan, tilt: self.tilt)
+        }
+    }
+
+    private func cancelPendingVelocityFlush() {
+        pendingVelocityFlushTask?.cancel()
+        pendingVelocityFlushTask = nil
     }
 
     func releaseManualPTZ(client: WaveCamClient) {
@@ -146,16 +188,52 @@ final class PTZManualController {
         zoomRepeatTask = nil
         zoomCommand = value
         if value != 0 { commandState = .manual }
-        Task { await client.zoom(value) }
-        guard value != 0 else { return }
+        if value == 0 {
+            // Zero/stop ALWAYS bypasses the throttle (see sendVelocity).
+            cancelPendingZoomFlush()
+            lastZoomSendAt = Date()
+            Task { await client.zoom(0) }
+            return
+        }
+        throttledZoomSend(client: client)
         zoomRepeatTask = Task { @MainActor [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: self.zoomRepeatIntervalNs)
                 guard !Task.isCancelled else { return }
+                self.lastZoomSendAt = Date()
                 await client.zoom(self.zoomCommand)
             }
         }
+    }
+
+    /// H12: throttle slider-driven zoom sends exactly like joystick velocity.
+    private func throttledZoomSend(client: WaveCamClient) {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastZoomSendAt)
+        if elapsed >= sendMinInterval {
+            cancelPendingZoomFlush()
+            lastZoomSendAt = now
+            let z = zoomCommand
+            Task { await client.zoom(z) }
+            return
+        }
+        guard pendingZoomFlushTask == nil else { return }   // latest value flushes anyway
+        let delayNs = UInt64(max(0, sendMinInterval - elapsed) * 1_000_000_000)
+        pendingZoomFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delayNs)
+            guard let self, !Task.isCancelled else { return }
+            self.pendingZoomFlushTask = nil
+            // A zoom stop already sent its own immediate zero.
+            guard self.zoomCommand != 0 else { return }
+            self.lastZoomSendAt = Date()
+            await client.zoom(self.zoomCommand)
+        }
+    }
+
+    private func cancelPendingZoomFlush() {
+        pendingZoomFlushTask?.cancel()
+        pendingZoomFlushTask = nil
     }
 
     func stopZoomCommand(client: WaveCamClient) {
@@ -202,6 +280,7 @@ final class PTZManualController {
                     self.velocityRepeatTask = nil
                     return
                 }
+                self.lastVelocitySendAt = Date()
                 await client.ptzVelocity(pan: self.pan, tilt: self.tilt)
             }
         }
@@ -210,13 +289,18 @@ final class PTZManualController {
     private func stopVelocityRepeat() {
         velocityRepeatTask?.cancel()
         velocityRepeatTask = nil
+        // A queued coalesced send must not fire after the stick is released/stopped.
+        cancelPendingVelocityFlush()
     }
 
     private func resetZoomCommand(sendStop: Bool, client: WaveCamClient) {
         zoomRepeatTask?.cancel()
         zoomRepeatTask = nil
+        cancelPendingZoomFlush()
         zoomCommand = 0
         if sendStop {
+            // Stop bypasses the throttle — sent immediately.
+            lastZoomSendAt = Date()
             Task { await client.zoom(0) }
         }
     }
