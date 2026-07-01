@@ -7,6 +7,22 @@ Baseline: 575 backend tests pass (`python3 -m pytest -q` from repo root), mypy g
 Rules: run the backend suite after every wave; stage files explicitly (never `git add -A`);
 "committed != deployed" — nothing here touches the live rig until Zack/Codex deploys.
 
+## COMPLETION STATUS — 2026-07-01 (all 5 waves implemented, committed, pushed)
+Backend suite now **690 pass** (was 575; +115 new tests), **mypy gate clean**. Commits on
+`claude/project-audit-findings-0tqcfz` (signed):
+- Wave 1 tracking core — `8b22d30` (C1, H5-H8, M1-M7, L1/L9/L10/L12, M22)
+- Wave 2 GPS/calibration/config — `5dc9168` (M8-M14, M21, L2, L3)
+- Wave 3 control API/agent/safety — `b4757d5` (C2, H1, M15, M16, L4-L7)
+- Wave 4 ops/CI/firmware/docs — `370ffcd` (H2-H4, H9, M8-fw, H14, M23, M24, L16, L17)
+- Wave 5 iOS — `9391c79` (H10-H13, M18-M20, L13-L15)
+
+**Verification still required before "live" (code is committed, NOT deployed):**
+- [MAC] Wave 5 iOS: `xcodegen generate && ./build-device.sh` must BUILD SUCCEEDED, then device install + on-device checks (KILL reachable, joystick feel, agent-chat 30s turn, watch STOP failover, Tune loads on a partial /config).
+- [RIG] Wave 4 firmware: flash both Wios, confirm base emits raw_lat/raw_lon + spd_ok/crs_ok and BaseDriftMonitor now catches a bump; Wave 3 agent-subprocess KILL + auth-fail-closed boot behavior; Wave 1/2 tracking behavior on a live target incl. the LOCKED-state fps check; deploy via rsync + service restart (Codex/Zack lane).
+- [RIG][LATER] still deferred: KILL-latch disk persistence (H2), stream-scoped tokens (L8),
+  VISCA inquiry transaction lock (L11). Tracked in the "Deferred / tracked" section below.
+- [CI] the new ios-build / firmware-build workflows (H14) need their first run to confirm they pass.
+
 ## Status legend
 - [DONE-2026-07-01] applied on this branch by Claude
 - [MAC] needs a Mac: `cd ios/WaveCam && xcodegen generate && ./build-device.sh` must succeed before install
