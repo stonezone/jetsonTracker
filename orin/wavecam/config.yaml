@@ -51,9 +51,10 @@ color:
   morph_kernel: 5        # open/close kernel size to clean the mask
 
 detector:
-  # YOLO26 person validator. .engine (TensorRT, fast) preferred; .pt works too.
+  # YOLO11 person validator. .engine (TensorRT, fast) preferred; .pt works too.
+  # (yolo26n is NOT usable on the rig's ultralytics 8.3.233 — audit 2026-07-01 M21.)
   enabled: true
-  model: "yolo26n.pt"    # or "yolo26n.engine" once built on-device
+  model: "yolo11n.pt"    # or "yolo11n.engine" once built on-device
   conf: 0.35
   imgsz: 640
   person_class: 0        # COCO 'person'

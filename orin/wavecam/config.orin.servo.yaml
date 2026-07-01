@@ -55,7 +55,9 @@ detector:
   imgsz: 640
   person_class: 0
   every_n: 3
-  box_ttl_sec: 0.6
+  # 0.2 (was 0.6): reused boxes carry no motion compensation and confirm
+  # phantoms during pans (audit 2026-07-01 M5/Wave-1 follow-up).
+  box_ttl_sec: 0.2
 
 fusion:
   require_person: false
@@ -83,11 +85,13 @@ loop:
 
 gps:
   enabled: true
-  # Live rig overlay (/data/projects/gimbal/wavecam/config.local.yaml) sets
-  # `source: direct_lora` so the base Wio's JSONL output is the active GPS
-  # feed. If the overlay is absent this file defaults to the legacy module.
+  # direct_lora is the LIVE GPS transport (custom firmware/direct-lora/ firmware on
+  # both Wios); the legacy Meshtastic module is retired (audit 2026-07-01 L3). The
+  # live rig overlay (/data/projects/gimbal/wavecam/config.local.yaml) may still
+  # override this, but the checked-in default must not silently fall back to
+  # Meshtastic if the overlay is ever absent.
+  source: direct_lora
   dev_path: /dev/ttyACM0
-  remote_id: "!9f5802d5"
   stale_threshold_sec: 45
   drive_stale_sec: 8.0  # drive-stale gate (tighter than display stale); review 2026-06-12
   drive_zoom: false

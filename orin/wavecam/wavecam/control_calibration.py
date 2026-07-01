@@ -144,9 +144,16 @@ class CalibrationManager:
                 "updated_at_unix_ms": self._store.updated_at_unix_ms,
                 # P1: GPS calibration status
                 "gps_calibrated": self.pipeline.pose.calibrated,
-                "base_locked": (
+                # M10 (audit 2026-07-01): "has a base position" and "the base-drift
+                # lock permits GPS authority" are DIFFERENT facts. base_locked used
+                # to mean only the former, so a confirmed tripod-drift unlock still
+                # showed "locked" while GPS pointing was silently withheld. has_base
+                # is the old (renamed) meaning; base_locked now reports the honest
+                # BaseDriftMonitor verdict pipeline.py actually gates on.
+                "has_base": (
                     self.pipeline.pose.lat != 0.0 or self.pipeline.pose.lon != 0.0
                 ),
+                "base_locked": bool(getattr(self.pipeline.pose, "base_locked", True)),
                 # P3: FOV curve for estimator vision bearing
                 "fov_entries": [list(e) for e in self._store.fov_curve],
                 "mode": "calibrate" if session.get("active") else "idle",
@@ -371,7 +378,12 @@ class CalibrationManager:
         samples = self._reject_location_outliers(samples)
         lat = sum(s["lat"] for s in samples) / len(samples)
         lon = sum(s["lon"] for s in samples) / len(samples)
-        alt = sum(s["alt_m"] for s in samples) / len(samples)
+        # M11 (audit 2026-07-01): average altitude only over samples that
+        # actually reported one; a camera 6m above the water must not be
+        # dragged toward 0 by samples that simply omitted alt_m. Fall back to
+        # 0.0 only when NONE of the samples reported an altitude.
+        alt_values = [s["alt_m"] for s in samples if s.get("alt_m") is not None]
+        alt = sum(alt_values) / len(alt_values) if alt_values else 0.0
         lat, lon = self._apply_location_offset(req, lat, lon)
         radius = max(LOCATION_MIN_RADIUS_M, max(s["radius_m"] for s in samples))
         entry = {
@@ -439,7 +451,12 @@ class CalibrationManager:
                 {
                     "lat": lat,
                     "lon": lon,
-                    "alt_m": _optional_float(_field(sample, "alt_m")) or 0.0,
+                    # M11 (audit 2026-07-01): keep None distinct from a real 0.0 —
+                    # `or 0.0` here silently coerced "no altitude reported" into
+                    # "sea level", which then got averaged into the locked base
+                    # altitude as if it were a measurement (~2 deg tilt error at
+                    # 150m). lock_location() now averages only non-None samples.
+                    "alt_m": _optional_float(_field(sample, "alt_m")),
                     "radius_m": max(radius_candidates),
                 }
             )
@@ -735,7 +752,12 @@ class CalibrationManager:
         # cue (±15-25° in practice), not a 2° lock — the caller must pass a lenient
         # max_uncertainty_deg to accept it, and the default budget will reject it.
         phone_acc = _optional_float(_field(req, "heading_acc_deg"))
-        if "phone" in method or phone_acc is not None:
+        # M12 (audit 2026-07-01): select the model by `method` ONLY. Branching on
+        # "or phone_acc is not None" let any request that incidentally carried
+        # heading_acc_deg skip the distance-geometry error model entirely — a
+        # 10m GPS capture (~27 deg hazard) with a plausible compass acc could
+        # lock a badly wrong heading despite method != phone.
+        if "phone" in method:
             acc = phone_acc if (phone_acc is not None and phone_acc >= 0) else HEADING_DEFAULT_BUDGET_DEG
             vision_error = _optional_float(_field(req, "vision_error_deg")) or 0.5
             latency_error = _optional_float(_field(req, "latency_error_deg")) or 0.2

@@ -100,7 +100,7 @@ class ColorCfg:
 @dataclass
 class DetectorCfg:
     enabled: bool = True
-    model: str = "yolo26n.pt"
+    model: str = "yolo11n.pt"
     conf: float = 0.35
     imgsz: int = 640
     person_class: int = 0
@@ -150,6 +150,10 @@ class WebCfg:
     port: int = 8088
     jpeg_quality: int = 70
     show_hud: bool = True
+    # M13 (audit 2026-07-01): without a dataclass field, _set_web_bool's setattr
+    # writes show_mask into config.local.yaml, but a fresh WebCfg() on restart
+    # drops the unknown attribute — the "survives restarts" doc claim was false.
+    show_mask: bool = True
 
 
 @dataclass
@@ -211,6 +215,11 @@ class GpsCfg:
     # reader_alive() only checks the thread is up, so /health flags base_silent when
     # the reader is alive but no fresh line has arrived for longer than this.
     base_silent_sec: float = 30.0
+    # M9 (audit 2026-07-01): remote fix horizontal-accuracy gate. A degraded
+    # reacquisition fix (~30m hacc) is ~11 deg of bearing error at 150m — off-frame
+    # at tele — yet gps_fresh only checked age. Above this, withhold drive
+    # authority (gps_fresh -> False) even though the fix is otherwise recent.
+    max_h_acc_m: float = 15.0
 
 
 @dataclass
@@ -266,6 +275,11 @@ class AgentCfg:
     model: str = ""
     arm_ttl_sec: float = 600.0
     mcp_config_path: str = ""
+    # C2 (audit 2026-07-01): /agent/arm + /agent/chat are a remote shell on the
+    # Orin once armed. Default False refuses them whenever auth.enabled is false
+    # (control_api.py, owned by the other audit-fixes agent) unless a config
+    # explicitly opts in (e.g. the desktop/testbed config.yaml).
+    allow_unauthenticated: bool = False
 
 
 @dataclass

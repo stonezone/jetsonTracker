@@ -136,6 +136,10 @@ class Pipeline(threading.Thread):
         self.ptz = ptz
         self.state = SharedState()
         self.state.show_hud = bool(getattr(cfg.web, "show_hud", True))
+        # M13 (audit 2026-07-01): mirror show_hud so a hot-config show_mask=False
+        # written to config.local.yaml actually survives a restart instead of
+        # resetting to the SharedState default of True.
+        self.state.show_mask = bool(getattr(cfg.web, "show_mask", True))
 
         self.grab = FrameGrabber(cfg.camera)
         self.color = ColorDetector(cfg.color) if cfg.color.enabled else None
@@ -818,9 +822,19 @@ class Pipeline(threading.Thread):
 
                 # P1: GPS arbiter handoff
                 gps_fix = self.gps.get_fix() if self.gps else None
+                # M9 (audit 2026-07-01): a degraded fix (~30m hacc) is ~11 deg of
+                # bearing error at 150m -- off-frame at tele -- yet age alone said
+                # "fresh". h_acc_m is None on older firmware/sources that don't
+                # report it; None must NOT withhold authority (unknown != bad).
+                gps_h_acc_ok = (
+                    gps_fix is None
+                    or gps_fix.h_acc_m is None
+                    or gps_fix.h_acc_m <= getattr(self.cfg.gps, "max_h_acc_m", 15.0)
+                )
                 gps_fresh = (
                     gps_fix is not None and
-                    gps_fix.age_sec < getattr(self.cfg.gps, "drive_stale_sec", 8.0)
+                    gps_fix.age_sec < getattr(self.cfg.gps, "drive_stale_sec", 8.0) and
+                    gps_h_acc_ok
                 ) if gps_fix else False
                 gps_calibrated = self.pose.calibrated
                 # C1: base position latched at setup; Phase-1 base-drift monitor

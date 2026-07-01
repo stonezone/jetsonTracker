@@ -22,6 +22,10 @@ class NormalizedFix:
     ts: float              # fix epoch seconds
     age_sec: float         # seconds since the fix was taken
     src: str = "lora"      # "lora" | "watch" | ...
+    # M9 (audit 2026-07-01): remote fix horizontal accuracy in meters, parsed
+    # from the firmware's hacc_cm when present. None = unknown (older firmware
+    # / non-LoRa source) -- callers must treat None as "cannot judge", not "good".
+    h_acc_m: Optional[float] = None
 
 
 class GpsStub:
