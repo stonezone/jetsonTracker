@@ -135,15 +135,15 @@ python3 .agent-collab/bin/collab.py claim-open --from claude --scope <path> --mo
 
 ## Coding Standards
 
-See `.claude/CODING_STANDARDS.md` for detailed coding standards.
+See `.claude/CODING_STANDARDS.md` for detailed coding standards (machine-local — `.claude/` is gitignored, not in the repo).
 
 ## Architecture
 
-See `.claude/ARCHITECTURE.md` for system architecture overview.
+See `.claude/ARCHITECTURE.md` for system architecture overview (machine-local — not in the repo).
 
 ## Development Practices
 
-See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices.
+See `.claude/DEVELOPMENT_PRACTICES.md` for development workflow and practices (machine-local — not in the repo).
 
 ## DO NOT
 

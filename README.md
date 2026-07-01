@@ -60,6 +60,12 @@ model instead of side-channel camera commands.
 - Direct-LoRa Wio GPS for coarse pointing and vision reacquisition.
 - PTZ pan/tilt/zoom over RAW VISCA UDP.
 - `tracking.mode` selector: `auto`, `gps_only`, `vision_only`.
+- CALIBRATE mode: operator wizard (iOS Calibrate tab) that establishes camera
+  location, level, and heading via `/api/v1/calibration/*`.
+- Target estimator shadow filter (`estimator.py`) fusing GPS + vision, with a
+  synthetic-scenario sim harness under `tools/sim/`.
+- ASK CLAUDE agent chat on the web UI and iOS: supervise-only by default,
+  behind an operator-only ARM toggle (TTL auto-expire, disarmed by KILL).
 - Cinematic Zoom feature-detected through `GET /api/v1/config`.
 - Hot config patching for tuning controls (persisted to `config.local.yaml`).
 - Presets, logs, guide, guide assets, media list/download/delete.
@@ -239,5 +245,5 @@ To be determined.
 
 ---
 
-**Last Updated:** June 6, 2026
-**Project Status:** WaveCam backend live on Orin; LoRa GPS is future work.
+**Last Updated:** July 1, 2026
+**Project Status:** WaveCam backend live on Orin; direct-LoRa Wio GPS is the live GPS source (`gps.source: direct_lora`).

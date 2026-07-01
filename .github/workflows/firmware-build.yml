@@ -1,0 +1,44 @@
+# H14: the direct-LoRa Wio firmware (the LIVE GPS source) had zero CI — a
+# C++ break only surfaced at the next bench flash. This compiles both envs
+# exactly as documented in firmware/direct-lora/README.md. Compile-only:
+# flashing (UF2 drag) and RF/GPS behavior still need the bench.
+name: Firmware build
+
+on:
+  push:
+    paths:
+      - 'firmware/direct-lora/**'
+      - '.github/workflows/firmware-build.yml'
+  pull_request:
+    paths:
+      - 'firmware/direct-lora/**'
+      - '.github/workflows/firmware-build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware/direct-lora
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Vendor the pinned Seeed board variant
+        # Required before the first build (platformio.ini points
+        # board_build.variants_dir at variants/, populated by this script).
+        run: ./fetch_variant.sh
+
+      - name: Build tracker firmware
+        run: pio run -e tracker
+
+      - name: Build base firmware
+        run: pio run -e base

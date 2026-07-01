@@ -1,0 +1,40 @@
+# H14: the iOS app had zero CI — a Swift compile break only surfaced on the
+# next Mac build. This compiles the app (+ embedded WaveCamWatch) unsigned;
+# it does NOT replace build-device.sh, which remains the install path.
+name: iOS build
+
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-build.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-build.yml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: cd ios/WaveCam && xcodegen generate
+
+      - name: Build (unsigned, generic iOS destination)
+        # CODE_SIGNING_ALLOWED=NO: no signing identity on the runner; the
+        # personal DEVELOPMENT_TEAM in project.yml must not be required to
+        # compile. Building the WaveCam scheme also builds the embedded
+        # WaveCamWatch target.
+        run: |
+          cd ios/WaveCam
+          xcodebuild build \
+            -project WaveCam.xcodeproj \
+            -scheme WaveCam \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO
