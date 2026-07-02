@@ -9,6 +9,22 @@ fix, targeted for **Sonnet-5 agents** to execute. Branch: `claude/project-audit-
 
 Baseline at plan time: **690 backend tests pass, mypy clean.** "Committed != deployed."
 
+## COMPLETION STATUS — 2026-07-01 (all 4 agent scopes implemented & committed)
+Backend suite now **742 pass** (+52 round-2 tests), **mypy clean**. Local commits (signed) on
+`claude/project-audit-findings-0tqcfz` — NOTE: not yet pushed (session git-push credential path
+was broken mid-session; retry once auth is restored):
+- GPS ingest (R6-B,R7,R8,R9 + wave-2 test updates) — `2bb2b5a`
+- iOS (R16-R21) — `a4db5b9` [needs a Mac build to confirm]
+- API/agent/recorder (R10,R11,R12,R13,R14,R22,N2) — `cbcea7e`
+- pipeline & servo (R1,R2,R3,R4,R5,R6-A,R2b,N1) + R4 control_ptz wiring — `63376ee`
+- this plan — `9094c49`
+HIGH fixes spot-verified in code by the coordinator: R1 (lead freeze), R2 (deadzone cap),
+R6 (mean vs raw seam), R10 (bump_revision moved past lock release; two-thread deadlock tests pass).
+Deviations accepted: R1 no command_min_interval floor (freeze already bounds to ~1Hz); R10 fixed at
+the shared callback (calibration instance documented, not restructured); N2 dead constant removed.
+Still deferred (see below): C2 deploy-config, M23 controller.py mypy, L16 orin/*.md, base-lock
+freshness gate, dev_path dead-config. iOS + firmware items still need [MAC]/[RIG] verification.
+
 ## Round-1 verification summary (what the re-review confirmed)
 - **Wave 1 (tracking):** C1,H5,H6,M1,M2,M3,M4,M6,M7,L1,L9,L10,L12,M22 = FIXED. H7,H8,M5 = PARTIAL (see R1,R2,R4).
 - **Wave 2 (GPS/config):** M10,M11,M12,M13,M14,M21,L3,box_ttl = FIXED. M8,M9 = PARTIAL (R7,R8); H9,L2 introduced regressions (R6,R9).
