@@ -32,11 +32,28 @@ class ViscaIP:
         self._lock = threading.Lock()
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.settimeout(timeout)
+        # R5 (audit round-2): one-shot log gate for the send-failure guard below
+        # — an extended camera-LAN outage would otherwise log every send (up to
+        # 10 Hz from the NO_VIDEO stop path) instead of once per outage.
+        self._send_failed = False
 
     # ---- transport: RAW VISCA, no VISCA-over-IP header (validated @1259) ----
     def _send(self, payload: bytes) -> None:
-        with self._lock:
-            self._sock.sendto(payload, (self.ip, self.port))
+        """R5 (audit round-2): sendto can raise OSError (ENETUNREACH/EHOSTUNREACH
+        when the camera LAN drops — the same event that causes an RTSP dropout).
+        Uncaught, this propagated out of every ptz.* call in the vision loop,
+        including C1's _stop_for_no_video and the KILL path's ptz.stop(),
+        which killed the pipeline thread -> zombie rig (API up, vision dead).
+        Swallow it: a UDP fire-and-forget send has no retry story anyway, and
+        the caller's own dedupe/keepalive logic will re-issue the next tick."""
+        try:
+            with self._lock:
+                self._sock.sendto(payload, (self.ip, self.port))
+            self._send_failed = False
+        except OSError as e:
+            if not self._send_failed:
+                print(f"[ptz_visca] sendto failed (camera unreachable?): {e}")
+                self._send_failed = True
 
     def _drain(self) -> None:
         self._sock.setblocking(False)

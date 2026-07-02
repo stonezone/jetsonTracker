@@ -61,7 +61,7 @@ class _ScriptedGrab:
     def read(self):
         self.n += 1
         if self.n > self.n_frames:
-            self.pipe._stop.set()
+            self.pipe._stop_evt.set()  # R3 (audit round-2): renamed from _stop
             return None
         self.frames += 1
         return FRAME

@@ -191,6 +191,11 @@ class PtzDispatcher:
 
             if pan_tilt_active:
                 self.pipeline.ptz.pan_tilt(pan_speed, tilt_speed, pan_dir, tilt_dir)
+                # R4: a manual pan/tilt moves the scene, so a person box captured
+                # before now must not be reused against a fresh color blob.
+                rec = getattr(self.pipeline, "record_manual_cmd_time", None)
+                if rec is not None:
+                    rec()
             else:
                 self.pipeline.ptz.stop()
             self._manual_pan_tilt_active = pan_tilt_active

@@ -101,7 +101,12 @@ class VisualServo:
         fov_scale = 1.0
         if hfov_deg is not None and hfov_ref_deg is not None and hfov_ref_deg > 0:
             fov_scale = max(1e-3, min(1.0, float(hfov_deg) / float(hfov_ref_deg)))
-        dz = self.cfg.deadzone / fov_scale   # constant in degrees across zoom
+        # R2 (audit round-2): an UNCAPPED degree-denominated deadzone can exceed
+        # +/-1.0 normalized at full tele (e.g. rig deadzone=0.08, 3.4/55 deg ->
+        # 1.29), which is never crossed by any on-screen error -- the servo goes
+        # completely dead at exactly the long-range zooms this project exists
+        # for. Cap it so there's always a reachable normalized error band.
+        dz = min(self.cfg.deadzone / fov_scale, 0.25)   # constant in degrees, capped
 
         w, h = frame_wh
         ex = (target_xy[0] - w / 2.0) / (w / 2.0)   # -1 (left) .. +1 (right)

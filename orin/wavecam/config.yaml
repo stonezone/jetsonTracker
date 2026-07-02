@@ -59,7 +59,7 @@ detector:
   imgsz: 640
   person_class: 0        # COCO 'person'
   every_n: 3             # run YOLO every Nth frame (color runs every frame)
-  box_ttl_sec: 0.6       # reuse last YOLO boxes for this long between YOLO frames
+  box_ttl_sec: 0.2       # reuse last YOLO boxes for this long between YOLO frames
 
 fusion:
   require_person: false  # false = keep tracking the orange even if YOLO misses a frame

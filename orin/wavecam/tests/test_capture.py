@@ -239,7 +239,7 @@ def test_run_loop_stops_camera_on_none_frames():
     pipe.start_paused = False
     pipe.estimator = None
     pipe._shadow_writer = None
-    pipe._stop = threading.Event()
+    pipe._stop_evt = threading.Event()  # R3 (audit round-2): renamed from _stop
 
     t = threading.Thread(target=pipe.run, daemon=True)
     t.start()

@@ -122,7 +122,7 @@ def test_run_stops_ptz_even_when_the_loop_crashes():
     pipe.cfg.loop = types.SimpleNamespace(target_fps=30, log_every_sec=10)
     pipe.grab = _CrashingGrab()
     pipe.start_paused = False
-    pipe._stop = threading.Event()
+    pipe._stop_evt = threading.Event()  # R3 (audit round-2): renamed from _stop
     pipe._shadow_writer = None
     pipe.estimator = None
 
