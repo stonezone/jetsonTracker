@@ -54,8 +54,11 @@ struct SessionLogView: View {
     @MainActor
     private func pollNew() async {
         guard let fetched = await client.events(since: sinceCursor), !fetched.isEmpty else { return }
-        // L15: the backend `since` filter is inclusive, so the cursor event comes back
-        // every poll — re-appending it duplicates WCEvent.id ("t-kind") in the ForEach.
+        // R21: the backend `since` filter is EXCLUSIVE (events.py: `e["t"] > ts`), not
+        // inclusive as an earlier comment here claimed — the cursor event should not repeat
+        // server-side. This client-side filter is kept as a defensive guard against
+        // duplicate/equal timestamps re-appearing and duplicating WCEvent.id ("t-kind")
+        // entries in the ForEach.
         let fresh = fetched.filter { ($0.t ?? 0) > sinceCursor }
         guard !fresh.isEmpty else { return }
         events.append(contentsOf: fresh)

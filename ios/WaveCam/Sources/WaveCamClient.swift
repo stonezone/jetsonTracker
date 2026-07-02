@@ -121,6 +121,15 @@ struct WCStatus: Codable, Sendable {
     struct Agent: Codable, Sendable {
         var armed: Bool?
         var ttlRemainingS: Double?
+
+        // R21: the backend key is `ttl_sec` (agent_session.py:123), not `ttl_remaining_s` —
+        // .convertFromSnakeCase converts the incoming key to "ttlSec" BEFORE matching against
+        // CodingKeys, so the custom rawValue here must be the already-camelCased form, matching
+        // the pattern documented above WCStatus's own custom init(from:).
+        enum CodingKeys: String, CodingKey {
+            case armed
+            case ttlRemainingS = "ttlSec"
+        }
     }
     // NO explicit CodingKeys here. The shared `decoder` uses .convertFromSnakeCase, which
     // maps snake_case JSON (heading_deg, alt_m, age_sec, co_location, …) to these camelCase
@@ -1872,11 +1881,12 @@ final class WaveCamClient {
         if mode == .mock { return true }
         do {
             // H11: the summon can block on the provider CLI server-side — allow 120 s.
+            // R17: pin to the active route — a 120 s call must not draw the tether re-probe.
             let data = try await post("agent/summon", body: [
                 "source": "ios_native",
                 "reason": "operator_diagnostics",
                 "provider": provider
-            ], timeout: 120)
+            ], timeout: 120, pinToActiveRoute: true)
             if applyControlResponse(data) { return true }
             // H10: ok:false refusal (e.g. provider busy) is not an accepted summon.
             lastCommandError = "Summon refused: \(lastControlError ?? "backend reported failure")"
@@ -1904,7 +1914,8 @@ final class WaveCamClient {
         }
         // H11: /agent/chat blocks through the whole provider-CLI turn (5-30 s typical);
         // the default 5 s timeout dropped essentially every non-trivial reply.
-        guard let data = try? await post("agent/chat", body: ["message": message, "provider": provider], timeout: 120) else {
+        // R17: pin to the active route — a 120 s call must not draw the tether re-probe.
+        guard let data = try? await post("agent/chat", body: ["message": message, "provider": provider], timeout: 120, pinToActiveRoute: true) else {
             lastCommandError = "Agent chat failed."
             return nil
         }
@@ -2090,6 +2101,16 @@ final class WaveCamClient {
         deduped(candidateOrder())
     }
 
+    /// R17: candidates for long-timeout POSTs (agent/chat, agent/summon — 120 s) that must
+    /// NOT draw the tether re-probe. A blackholed tether fails those as `.timedOut`, which
+    /// write-failover doesn't retry (see `isWriteRouteFailoverAllowed`), so if `apiCandidates()`
+    /// happened to reorder tether-first for the probe, the call would burn the full 120 s with
+    /// no Wi-Fi fallback. Stay on whichever route is already active; the frequent status poll
+    /// (`getWithFallback` → `apiCandidates()`) is what actually re-probes and switches routes.
+    private func pinnedCandidates() -> [URL] {
+        deduped([baseURL, wifiBaseURL])
+    }
+
     private func candidateOrder(now: Date = Date()) -> [URL] {
         if activeRoute == .wifi || activeRoute == .custom {
             if now < nextTetherProbeAt {
@@ -2157,7 +2178,20 @@ final class WaveCamClient {
             return false
         }
         if let status = response.status {
-            self.status = status
+            // R20: a slow command response landing after a fresher status poll must not
+            // regress the displayed state — only accept the piggybacked status if it's at
+            // least as new as what's already applied. `connected` still flips true either
+            // way: the server DID answer, even if this particular snapshot is stale.
+            let isFresh = (self.status?.revision).map { status.revision >= $0 } ?? true
+            if isFresh {
+                self.status = status
+                // R21: agentArmed is reconciled from the 1Hz refresh() poll (the
+                // authoritative source), not here — deliberately not duplicated in this
+                // command-response path to avoid two independent writers racing on the
+                // same field. armAgent()'s optimistic set can still be overwritten by a
+                // refresh() tick already in flight when the toggle was sent; that's a
+                // ≤1s cosmetic flicker, not a correctness issue (refresh() always wins).
+            }
             connected = true
         } else {
             refreshAfterLegacyResponse()
@@ -2217,14 +2251,16 @@ final class WaveCamClient {
 
     @discardableResult
     private func post(_ path: String, body: [String: Any], idempotent: Bool = false,
-                      timeout: TimeInterval = 5) async throws -> Data {
+                      timeout: TimeInterval = 5, pinToActiveRoute: Bool = false) async throws -> Data {
         let payload = try JSONSerialization.data(withJSONObject: body)
         var failoverError: Error?
         // Mutating POSTs fail over only on *connection* errors (server provably never
         // received it) so a command is never double-applied. Idempotent telemetry
         // (sensors/phone — latest-sample-wins) opts into read-style failover so a dead
         // tether candidate that times out still retries the Wi-Fi route this tick.
-        for candidate in apiCandidates() {
+        // R17: long-timeout calls (agent/chat, summon) pin to the active route instead of
+        // apiCandidates() so they never draw the tether re-probe (see pinnedCandidates()).
+        for candidate in (pinToActiveRoute ? pinnedCandidates() : apiCandidates()) {
             do {
                 var req = URLRequest(url: candidate.appending(path: path))
                 req.httpMethod = "POST"

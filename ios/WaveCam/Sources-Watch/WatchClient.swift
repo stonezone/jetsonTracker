@@ -113,6 +113,15 @@ final class WatchClient {
         await poll()
     }
 
+    /// R19: let the operator clear a stale "STOP NOT CONFIRMED" banner once the situation
+    /// is known-resolved elsewhere (killed+resumed from the phone, or handled physically).
+    /// Fail-safe direction only — this never clears an ACTUAL kill latch (`snapshot.killed`
+    /// still gates the resume button independently), it only dismisses the unconfirmed-POST
+    /// warning banner itself.
+    func dismissStopNotConfirmed() {
+        stopNotConfirmed = false
+    }
+
     func toggleRecording() async {
         let path = snapshot.recording ? "media/record/stop" : "media/record/start"
         await post(path, body: ["source": "watch"])

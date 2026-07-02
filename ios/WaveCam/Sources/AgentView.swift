@@ -67,6 +67,10 @@ struct AgentView: View {
             // L13: don't let the 90 s summon poll outlive the view (beach battery/radio).
             summonTask?.cancel()
             summonTask = nil
+            // R16: a cancelled summon must not wedge the button at "Requesting..." forever.
+            if requestState.isRequesting {
+                requestState = .idle
+            }
         }
         .fullScreenCover(isPresented: $showChat) {
             AgentChatView(providers: config?.supported?.agentProviders)
