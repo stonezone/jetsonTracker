@@ -18,6 +18,8 @@ method only.
 """
 from __future__ import annotations
 
+import os
+import tempfile
 import threading
 from types import SimpleNamespace
 
@@ -26,14 +28,11 @@ from wavecam.camera_pose import CameraPose
 from wavecam.control_calibration import CalibrationManager
 
 
-_SCRATCH_STORE_PATH = (
-    "/tmp/claude-0/-home-user-jetsonTracker/3e8a975f-443b-56e4-a304-508c2b86a02e/"
-    "scratchpad/test_audit_wave2_calibration_store.json"
-)
-
-
 def _manager(pose: CameraPose | None = None) -> CalibrationManager:
-    store = CalibrationStore(path=_SCRATCH_STORE_PATH)
+    # Portable, per-call temp store — a hardcoded absolute path here passes
+    # locally but fails in CI (the store's atomic .tmp write lands in a dir that
+    # doesn't exist on the runner), which is what made lock_location return ok:false.
+    store = CalibrationStore(path=os.path.join(tempfile.mkdtemp(), "calibration_store.json"))
     pipeline = SimpleNamespace(
         pose=pose if pose is not None else CameraPose(),
         owner=SimpleNamespace(owner="idle", killed=False),

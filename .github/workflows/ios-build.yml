@@ -20,6 +20,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The app builds against the iOS 26 SDK (Theme+Glass.swift uses the Liquid
+      # Glass APIs — glassEffect/GlassEffectContainer — behind iOS-26 availability
+      # guards; deployment target stays iOS 17). macos-latest's default xcode-select
+      # is not always the newest installed Xcode, so a run can land on an older SDK
+      # where those symbols don't exist and fail to compile. Select the newest Xcode.
+      - name: Select newest Xcode (iOS 26 SDK for Liquid Glass)
+        run: |
+          NEWEST="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          echo "Selecting $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
+
       - name: Install xcodegen
         run: brew install xcodegen
 
