@@ -878,7 +878,16 @@ class CalibrationManager:
 
         cam_pos = None
         if step == "base_lock" and self.pipeline.gps is not None:
-            cam_pos = self.pipeline.gps.get_camera_position()
+            gps = self.pipeline.gps
+            # GPS-2 freshness gate (mirrors lock_location): a rebooted/wedged base
+            # Wio can leave an hours-old cached position that must NOT be latched
+            # as the camera reference. A None age (older fakes / no method) is
+            # treated as fresh for back-compat; a real stale cache or dead reader
+            # is rejected so cam_pos stays None and no lock happens.
+            reader_ok = gps.reader_alive() if hasattr(gps, "reader_alive") else True
+            cam_age = gps.get_camera_age() if hasattr(gps, "get_camera_age") else None
+            if reader_ok and (cam_age is None or cam_age <= LIVE_BASE_MAX_AGE_SEC):
+                cam_pos = gps.get_camera_position()
 
         with self._lock:
             if step == "heading":

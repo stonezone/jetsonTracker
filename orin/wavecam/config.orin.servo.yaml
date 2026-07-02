@@ -91,7 +91,9 @@ gps:
   # override this, but the checked-in default must not silently fall back to
   # Meshtastic if the overlay is ever absent.
   source: direct_lora
-  dev_path: /dev/ttyACM0
+  # direct_lora reads direct_dev_path (run.py); plain dev_path is the legacy
+  # Meshtastic key and is a no-op here (audit 2026-07-01) — set the base Wio port here.
+  direct_dev_path: /dev/ttyACM0
   stale_threshold_sec: 45
   drive_stale_sec: 8.0  # drive-stale gate (tighter than display stale); review 2026-06-12
   drive_zoom: false

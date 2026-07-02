@@ -11,9 +11,12 @@ correction loses the person box.
 """
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 
 from .ptz_visca import PAN_LEFT, PAN_RIGHT, PAN_STOP, TILT_UP, TILT_DOWN, TILT_STOP
+
+if TYPE_CHECKING:
+    from .config import PtzCfg
 
 
 @dataclass
@@ -47,9 +50,9 @@ STOP_CMD = PtzCommand(1, 1, PAN_STOP, TILT_STOP)
 
 
 class VisualServo:
-    def __init__(self, cfg):
+    def __init__(self, cfg: "PtzCfg") -> None:
         self.cfg = cfg
-        self._last = None      # last (ex, ey) image error, for feed-forward lead
+        self._last: Optional[Tuple[float, float]] = None  # last (ex, ey) image error, for feed-forward lead
         self._zoom_recovery_active = False
 
     def _map_speed(self, err_abs: float, max_speed: int,
