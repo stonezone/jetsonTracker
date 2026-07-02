@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import shutil
 import subprocess
+import threading
 import time
 from typing import Callable, Protocol, Sequence
 
@@ -51,90 +52,117 @@ class Recorder:
         self._proc: ProcessLike | None = None
         self._active_segment_pattern: str | None = None
         self._active_segment_prefix: str | None = None
+        # R13 (audit round-2): serialize start/stop/status against the async
+        # /safety/kill teardown (M16 — media.stop_for_safety() runs recorder.stop()
+        # on a daemon thread while the HTTP response returns immediately). Without
+        # this lock, a quick RESUME -> media/start POST within that ~stop_timeout_sec
+        # teardown window could race stop()'s `self._proc = None` and drop the NEW
+        # recording's handle (orphan ffmpeg, recorder reports not-recording, a
+        # second start spawns a second ffmpeg).
+        self._lock = threading.Lock()
         self.config.rec_dir.mkdir(parents=True, exist_ok=True)
 
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
     def start(self, segment_seconds: int | None = None) -> dict:
-        if self.is_running():
+        with self._lock:
+            if self.is_running():
+                return {
+                    "ok": True,
+                    "already": True,
+                    "segment_pattern": self._active_segment_pattern,
+                    "segment_prefix": self._active_segment_prefix,
+                    "segment_name": self._current_segment_name(),
+                }
+
+            seconds = int(segment_seconds or self.config.segment_seconds)
+            segment_prefix = f"wavecam_{self._now()}_"
+            segment_pattern = f"{segment_prefix}%03d.mp4"
+            pattern = self.config.rec_dir / segment_pattern
+            cmd = self._command(pattern, seconds)
+            self._proc = self._popen(cmd)
+            # Verify ffmpeg is still alive a moment after spawn — a missing binary,
+            # bad RTSP source, or full disk can kill it instantly.
+            time.sleep(0.25)
+            if self._proc.poll() is not None:
+                self._proc = None
+                # R22 (audit round-2): this used to report ok:true alongside
+                # started:false. The /api/v1/media/record/start route already special-
+                # cases started is False into a 503 refusal (REC-1), but any other
+                # caller reading this dict directly would see a false "ok" — the
+                # envelope's own ok field must agree with started.
+                return {
+                    "ok": False,
+                    "started": False,
+                    "error": "ffmpeg exited immediately (check RTSP source and path)",
+                }
+            self._active_segment_prefix = segment_prefix
+            self._active_segment_pattern = segment_pattern
             return {
                 "ok": True,
-                "already": True,
+                "started": True,
                 "segment_pattern": self._active_segment_pattern,
                 "segment_prefix": self._active_segment_prefix,
-                "segment_name": self._current_segment_name(),
+                "segment_name": None,
             }
 
-        seconds = int(segment_seconds or self.config.segment_seconds)
-        segment_prefix = f"wavecam_{self._now()}_"
-        segment_pattern = f"{segment_prefix}%03d.mp4"
-        pattern = self.config.rec_dir / segment_pattern
-        cmd = self._command(pattern, seconds)
-        self._proc = self._popen(cmd)
-        # Verify ffmpeg is still alive a moment after spawn — a missing binary,
-        # bad RTSP source, or full disk can kill it instantly.
-        time.sleep(0.25)
-        if self._proc.poll() is not None:
-            self._proc = None
-            return {"ok": True, "started": False, "error": "ffmpeg exited immediately (check RTSP source and path)"}
-        self._active_segment_prefix = segment_prefix
-        self._active_segment_pattern = segment_pattern
-        return {
-            "ok": True,
-            "started": True,
-            "segment_pattern": self._active_segment_pattern,
-            "segment_prefix": self._active_segment_prefix,
-            "segment_name": None,
-        }
-
     def stop(self) -> dict:
-        if not self.is_running():
-            self._proc = None
-            self._active_segment_pattern = None
-            self._active_segment_prefix = None
-            return {"ok": True, "already_stopped": True}
+        with self._lock:
+            if not self.is_running():
+                self._proc = None
+                self._active_segment_pattern = None
+                self._active_segment_prefix = None
+                return {"ok": True, "already_stopped": True}
 
-        assert self._proc is not None
-        killed = False
-        self._proc.terminate()
-        try:
-            self._proc.wait(timeout=self.config.stop_timeout_sec)
-        except Exception:
-            self._proc.kill()
-            killed = True
-        self._proc = None
-        self._active_segment_pattern = None
-        self._active_segment_prefix = None
+            proc = self._proc
+            assert proc is not None
+            killed = False
+            proc.terminate()
+            try:
+                proc.wait(timeout=self.config.stop_timeout_sec)
+            except Exception:
+                proc.kill()
+                killed = True
+            # R13: only drop the tracked handle (and segment bookkeeping) if it is
+            # still the EXACT process we just terminated. Held under self._lock this
+            # can't actually race a concurrent start() any more (that call blocks on
+            # the lock until this returns) — the identity check is defense-in-depth
+            # against any future caller that mutates self._proc without the lock.
+            if self._proc is proc:
+                self._proc = None
+                self._active_segment_pattern = None
+                self._active_segment_prefix = None
 
-        result = {"ok": True, "stopped": True}
-        if killed:
-            result["killed"] = True
-        return result
+            result = {"ok": True, "stopped": True}
+            if killed:
+                result["killed"] = True
+            return result
 
     def status(self) -> dict:
-        recording = self.is_running()
-        if not recording:
-            self._active_segment_pattern = None
-            self._active_segment_prefix = None
+        with self._lock:
+            recording = self.is_running()
+            if not recording:
+                self._active_segment_pattern = None
+                self._active_segment_prefix = None
 
-        segments = self._segments()
-        total_bytes = sum(path.stat().st_size for path in segments)
-        disk = shutil.disk_usage(self.config.rec_dir)
-        latest = [path.name for path in segments[-5:]]
-        current_segment_name = self._current_segment_name() if recording else None
-        return {
-            "recording": recording,
-            "dir": str(self.config.rec_dir),
-            "segments": len(segments),
-            "segment_name": current_segment_name if recording else (latest[-1] if latest else None),
-            "current_segment_name": current_segment_name,
-            "segment_pattern": self._active_segment_pattern,
-            "segment_prefix": self._active_segment_prefix,
-            "latest": latest,
-            "total_mb": round(total_bytes / 1_000_000, 1) if segments else 0.0,
-            "free_gb": round(disk.free / 1_000_000_000, 1),
-        }
+            segments = self._segments()
+            total_bytes = sum(path.stat().st_size for path in segments)
+            disk = shutil.disk_usage(self.config.rec_dir)
+            latest = [path.name for path in segments[-5:]]
+            current_segment_name = self._current_segment_name() if recording else None
+            return {
+                "recording": recording,
+                "dir": str(self.config.rec_dir),
+                "segments": len(segments),
+                "segment_name": current_segment_name if recording else (latest[-1] if latest else None),
+                "current_segment_name": current_segment_name,
+                "segment_pattern": self._active_segment_pattern,
+                "segment_prefix": self._active_segment_prefix,
+                "latest": latest,
+                "total_mb": round(total_bytes / 1_000_000, 1) if segments else 0.0,
+                "free_gb": round(disk.free / 1_000_000_000, 1),
+            }
 
     def _command(self, pattern: Path, segment_seconds: int) -> list[str]:
         return [

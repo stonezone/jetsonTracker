@@ -358,7 +358,7 @@ def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def safety_kill(_: SafetyKillRequest | None = None):
         api.kill_for_safety()
         api.bump_revision()
-        return api.ok()
+        return api.ok_after_kill()
 
     @app.post("/api/v1/safety/resume", dependencies=[Depends(require(SAFETY))])
     def safety_resume(_: SafetyResumeRequest | None = None):
@@ -987,6 +987,24 @@ class ControlApiAdapter:
     def ok(self) -> JSONResponse:
         return JSONResponse(
             {"ok": True, "request_id": make_request_id(), "status": self.status_snapshot()}
+        )
+
+    def ok_after_kill(self) -> JSONResponse:
+        """R12 (audit round-2): kill_for_safety() tears the recorder down on a
+        daemon thread (M16 — media.stop_for_safety() can take up to
+        stop_timeout_sec while the HTTP response returns immediately), so a
+        status snapshot built right here can still show media.recording=true
+        for a few seconds after KILL. Overlay recording:false + stopping:true
+        into THIS response's media block so a client reading the /safety/kill
+        reply itself can't observe stale "still recording" — later polls of
+        /status or /media/status still reflect the real (converging) state."""
+        snap = self.status_snapshot()
+        media = snap.get("media")
+        if isinstance(media, dict):
+            media["recording"] = False
+            media["stopping"] = True
+        return JSONResponse(
+            {"ok": True, "request_id": make_request_id(), "status": snap}
         )
 
     def refusal(self, code: str, message: str, status_code: int = 409) -> JSONResponse:

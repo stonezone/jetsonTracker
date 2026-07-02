@@ -273,14 +273,28 @@ class PtzDispatcher:
                 self._zoom_deadman = None
 
     def zoom_deadman_expired(self, generation: int | None = None) -> None:
+        # R10 (audit round-2, ABBA deadlock): this used to call self._bump_revision()
+        # (which reaches into the adapter's own lock) WHILE STILL HOLDING self._lock.
+        # Meanwhile control_system.SystemManager.prepare_for_restart (and
+        # control_calibration.CalibrationManager.start_session's takeover path) hold
+        # the adapter lock and then call into THIS lock via cancel_zoom_deadman/
+        # cancel_manual_deadman -- an A->B / B->A ABBA pair that could wedge the whole
+        # API, including /safety/kill. Fix: decide under self._lock, then bump the
+        # revision AFTER releasing it, so this side of the pair never holds both locks
+        # at once.
         with self._lock:
             if generation is not None and generation != self._zoom_deadman_generation:
                 return
             self.pipeline.ptz.zoom("stop")
             self._zoom_deadman = None
-            self._bump_revision()
+        self._bump_revision()
 
     def manual_deadman_expired(self, generation: int | None = None) -> None:
+        # R10 (audit round-2): same ABBA hazard as zoom_deadman_expired above -- move
+        # self._bump_revision() to after self._lock is released. `acted` tracks
+        # whether we actually changed anything so a no-op expiry (owner already
+        # non-manual) still skips the revision bump, matching prior behavior.
+        acted = False
         with self._lock:
             if generation is not None and generation != self._manual_deadman_generation:
                 return
@@ -293,4 +307,6 @@ class PtzDispatcher:
                 self.pipeline.ptz.zoom("stop")
                 self._manual_pan_tilt_active = False
                 self.release_manual_owner()
-                self._bump_revision()
+                acted = True
+        if acted:
+            self._bump_revision()

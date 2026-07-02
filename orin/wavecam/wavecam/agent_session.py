@@ -50,14 +50,16 @@ AGENT_SYSTEM_PROMPT = (
     "When NOT armed you have no shell and can only inspect and advise. Keep replies concise and concrete."
 )
 
-# H1 defense-in-depth: forbidden actions the agent must never invoke even while armed,
-# restated here (not just prose in the prompt) so future acting-tool gating can check
-# a request path against this list mechanically.
-AGENT_FORBIDDEN_PATHS = (
-    "/safety/kill",
-    "/safety/resume",
-    "/system/restart",
-)
+# N2 (audit round-2): a previous H1 defense-in-depth constant, AGENT_FORBIDDEN_PATHS
+# (/safety/kill, /safety/resume, /system/restart), lived here as a "future acting-tool
+# gating can check a request path against this list mechanically" placeholder. The
+# armed agent has no such request-path-level tool today — it acts by invoking curl via
+# a raw Bash tool (see AGENT_SYSTEM_PROMPT's HARD RULES above, which already restate the
+# same three forbidden calls in-band) — so there was nothing in this codebase for the
+# constant to gate, and it was referenced nowhere. Dropped rather than wired up: adding
+# a request-interception layer just to consume an unused constant is out of scope for a
+# correctness pass. If a dedicated HTTP-calling tool is added for the agent later, gate
+# it against this same forbidden set (kill/resume/restart) at that call site.
 
 
 class ArmState:
@@ -161,7 +163,22 @@ def _run_claude_cli(argv: list[str], env: dict, stdin_text: str, timeout: float,
             out, err = proc.communicate(input=stdin_text, timeout=timeout)
         except subprocess.TimeoutExpired:
             _kill_process_group(proc)
-            proc.communicate()  # reap after kill, avoid a zombie
+            # R11 (audit round-2): the reap-after-kill communicate() used to be
+            # unbounded -- if a grandchild escaped the process group and kept a
+            # stdout/stderr pipe end open, this call (and every future agent chat,
+            # since it runs under AgentSession._session_lock) could hang forever.
+            # Bound it, and if the pipes are still open after that, hit the group
+            # with SIGKILL a second time (covers a process that respawned/forked
+            # again between the first killpg and now) and give the reap one more
+            # bounded chance before giving up -- never block unbounded here.
+            try:
+                proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                _kill_process_group(proc)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass  # give up reaping cleanly; do not block the caller forever
             raise RuntimeError(f"claude CLI timed out after {int(timeout)}s")
     finally:
         if session is not None:
@@ -202,10 +219,16 @@ class AgentSession:
     # session_id is keyed per provider — a Claude conversation can't --resume under
     # DeepSeek, so each provider threads its own session.
     _session_ids: dict = field(default_factory=dict)
-    # H1: per-provider lock serializing _session_ids read/resume/write (M15) —
-    # two concurrent chat turns on the same provider must not both --resume the
-    # same session_id and race the last-writer-wins update.
+    # H1/R14 (audit round-2): serialize _session_ids read/resume/write PER PROVIDER
+    # (M15's original comment claimed "per-provider" but _session_lock was actually
+    # ONE lock shared by every provider, so a stuck 120s claude_code turn also
+    # blocked a concurrent deepseek turn). _session_lock now only guards the
+    # (fast, in-memory) creation of each provider's own entry in _session_locks;
+    # the actual per-turn serialization happens via _provider_lock(provider) in
+    # chat() below. Kept as a real per-instance Lock (not renamed/removed) because
+    # it also usefully pins "the lock lives on the instance, not module state".
     _session_lock: threading.Lock = field(default_factory=threading.Lock)
+    _session_locks: dict = field(default_factory=dict, repr=False, compare=False)
     # H1: the currently in-flight child process (real runner only), so agent_kill()
     # can SIGKILL its process group. None when no turn is running or the injected
     # test runner is in use (fakes have no real OS process to track).
@@ -245,15 +268,29 @@ class AgentSession:
         _kill_process_group(proc)
         return True
 
+    def _provider_lock(self, provider: str) -> threading.Lock:
+        """R14: return (creating if needed) the Lock dedicated to `provider`.
+        Guarded by _session_lock only for the dict mutation itself — that guard is
+        held briefly and never nested with a provider lock, so it cannot itself
+        introduce cross-provider blocking."""
+        with self._session_lock:
+            lock = self._session_locks.get(provider)
+            if lock is None:
+                lock = threading.Lock()
+                self._session_locks[provider] = lock
+            return lock
+
     def chat(self, message: str, status_text: str, armed: bool = False,
              provider: str = DEFAULT_PROVIDER) -> dict:
-        # M15: serialize per-provider session-id read/resume/write. Two concurrent
-        # turns on the same provider must not both --resume the same session_id
-        # (the CLI can fork/error, and last-writer-wins would silently drop one
-        # branch's conversation context) — hold the lock for the WHOLE turn
-        # (argv build through session_id write), not just the dict access, or a
-        # second turn could still read a stale sid between our read and write.
-        with self._session_lock:
+        # M15/R14: serialize per-provider session-id read/resume/write. Two
+        # concurrent turns on the SAME provider must not both --resume the same
+        # session_id (the CLI can fork/error, and last-writer-wins would silently
+        # drop one branch's conversation context) — hold the provider's lock for
+        # the WHOLE turn (argv build through session_id write), not just the dict
+        # access, or a second turn could still read a stale sid between our read
+        # and write. Different providers use different locks (R14, audit round-2)
+        # so a stuck turn on one provider cannot block a turn on another.
+        with self._provider_lock(provider):
             return self._chat_locked(message, status_text, armed=armed, provider=provider)
 
     def _chat_locked(self, message: str, status_text: str, armed: bool,

@@ -237,6 +237,17 @@ class CalibrationManager:
                 "Only requested_owner=manual is accepted for CALIBRATE.",
                 422,
             )
+        # R10 (audit round-2): this holds self._lock (the adapter lock, shared with
+        # SystemManager) across cancel_manual_deadman/cancel_zoom_deadman/
+        # reset_restore_owner below, each of which reaches into PtzDispatcher's own
+        # lock (ptz._lock) -- the SAME adapter-lock-then-ptz-lock nesting used by
+        # control_system.SystemManager.request_service_restart. That nesting is only
+        # safe because PtzDispatcher's deadman-expiry callbacks (control_ptz.py
+        # zoom_deadman_expired/manual_deadman_expired) always release ptz._lock BEFORE
+        # calling back into the adapter lock (bump_revision) -- they never hold both
+        # locks at once, so this side blocking on ptz._lock can never deadlock against
+        # them holding it while blocked on this lock. Do not reintroduce a call from
+        # inside ptz._lock back into the adapter lock without preserving that ordering.
         with self._lock:
             current_owner = self.pipeline.owner.owner
             if current_owner == CALIBRATE and self._session.get("active"):
