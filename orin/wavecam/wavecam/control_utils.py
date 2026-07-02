@@ -45,6 +45,8 @@ HOT_CONFIG_KEYS = (
     "gps.stale_threshold_sec",
     "gps.drive_stale_sec",
     "gps.coast_on_no_fix_sec",
+    "gps.lead_margin_s",
+    "gps.lead_cap_s",
     "gps.grace_sec",
     "gps.lock_frames",
     "gps.drive_zoom",
@@ -80,6 +82,13 @@ HOT_CONFIG_KEYS = (
     "estimator.zoom_cov_wide_deg",
     "estimator.zoom_cov_narrow_deg",
     "estimator.log_every_n",
+    # M14 (audit 2026-07-01): setters already existed in control_config.py but
+    # these three were missing here, so /config feature-detection (iOS) and
+    # PresetStore.validate_values both refused them despite /config/hot
+    # accepting and persisting them.
+    "estimator.use_vision_range",
+    "estimator.subject_height_m",
+    "estimator.r_range_frac",
     "sensors.enabled",
     "sensors.drift_alert_deg",
 )

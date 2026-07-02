@@ -11,6 +11,8 @@ struct AgentView: View {
     @State private var logLevel: LogLevelFilter = .all
     @State private var logsLoading = false
     @State private var showChat = false
+    /// L13: the summon poll loop (up to 90 s) is held here so leaving the view cancels it.
+    @State private var summonTask: Task<Void, Never>?
 
     private var agentSupported: Bool { config?.supported?.agent == true || client.mode == .mock }
 
@@ -55,6 +57,21 @@ struct AgentView: View {
         .onChange(of: logLevel) {
             Task { await loadLogs() }
         }
+        // M20: the full-screen chat cover renders ABOVE the root KILL-latch overlay, so a
+        // KILL arriving while the chat is open (watch/web/chat's own button) would be
+        // invisible. Dismiss the cover so "STOP LATCHED" + hold-to-resume are reachable.
+        .onChange(of: client.effectiveKilled) { _, killed in
+            if killed { showChat = false }
+        }
+        .onDisappear {
+            // L13: don't let the 90 s summon poll outlive the view (beach battery/radio).
+            summonTask?.cancel()
+            summonTask = nil
+            // R16: a cancelled summon must not wedge the button at "Requesting..." forever.
+            if requestState.isRequesting {
+                requestState = .idle
+            }
+        }
         .fullScreenCover(isPresented: $showChat) {
             AgentChatView(providers: config?.supported?.agentProviders)
                 .environment(client)
@@ -88,7 +105,8 @@ struct AgentView: View {
     }
 
     private func summonDiagnostics() {
-        Task { await summonDiagnosticsRequest() }
+        summonTask?.cancel()
+        summonTask = Task { await summonDiagnosticsRequest() }
     }
 
     @MainActor
@@ -96,16 +114,19 @@ struct AgentView: View {
         requestState = .requesting
         report = nil
         let ok = await client.summonAgent(provider: provider.rawValue)
+        guard !Task.isCancelled else { return }
         guard ok else {
             requestState = .failed(client.lastCommandError ?? "Summon failed.")
             return
         }
         requestState = .requested
         // Poll the advisor until the consultation lands (LLM round-trips
-        // take 5-30s; cap at 90s).
+        // take 5-30s; cap at 90s). L13: bail as soon as the view cancels us.
         for _ in 0..<45 {
             try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
             guard let r = await client.agentReport() else { continue }
+            guard !Task.isCancelled else { return }
             report = r
             if r.status == "done" || r.status == "error" {
                 requestState = r.status == "done" ? .idle

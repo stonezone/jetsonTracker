@@ -473,6 +473,11 @@ def test_api_v1_safety_kill_stops_active_recording():
     killed = client.post("/api/v1/safety/kill", json={"reason": "test"}).json()
 
     assert killed["ok"] is True
+    # M16: recorder teardown runs on a daemon thread so /safety/kill can return
+    # immediately after latching KILL + stopping PTZ; poll for the async stop.
+    deadline = time.monotonic() + 5.0
+    while pipe.recorder.stop_calls < 1 and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert pipe.recorder.stop_calls == 1
     assert killed["status"]["media"]["recording"] is False
 
@@ -1509,7 +1514,12 @@ def test_api_v1_config_hot_rejects_stale_revision_without_mutating():
     assert after["current"]["ptz"]["deadzone"] == before["current"]["ptz"]["deadzone"]
 
 
-def test_api_v1_config_hot_rejects_persist_without_mutating():
+def test_api_v1_config_hot_persist_field_is_a_documented_noop():
+    # L5 (audit 2026-07-01): persist=true used to be refused as "unsupported"
+    # even though every hot-config apply persists unconditionally — a
+    # contradictory contract. persist is now a documented no-op: accepted
+    # regardless of value, and the patch applies + persists exactly like any
+    # other /config/hot call.
     client = make_client()
 
     before = client.get("/api/v1/config").json()
@@ -1522,10 +1532,9 @@ def test_api_v1_config_hot_rejects_persist_without_mutating():
     )
     after = client.get("/api/v1/config").json()
 
-    assert response.status_code == 422
-    assert response.json()["code"] == "invalid_request"
-    assert after["revision"] == before["revision"]
-    assert after["current"]["ptz"]["deadzone"] == before["current"]["ptz"]["deadzone"]
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert after["current"]["ptz"]["deadzone"] == 0.11
 
 
 def test_api_v1_config_hot_rejects_inverted_fusion_hysteresis():

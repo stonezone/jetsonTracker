@@ -375,21 +375,14 @@ class TargetEstimator:
         if frame_h <= 0 or bbox_h_px <= 0:
             return
 
-        hfov_deg = _fov_at_zoom(self._fov_curve, zoom_enc)
-        hfov_rad = math.radians(hfov_deg)
-        # vfov from hfov via 16:9 aspect ratio
-        vfov_rad = 2.0 * math.atan(math.tan(hfov_rad / 2.0) * 9.0 / 16.0)
-
-        bbox_frac = bbox_h_px / frame_h
-        # angular subtense of the subject in the vertical
-        angle_sub_rad = vfov_rad * bbox_frac
-
-        half_angle = angle_sub_rad / 2.0
-        if half_angle <= 0 or math.tan(half_angle) == 0:
-            return
-
+        # Shared with the sim/replay harness — the logged observation can never
+        # diverge from what was fused (L12: the inline copy was the divergence
+        # the helper exists to prevent).
         subject_h = float(getattr(self._cfg, "subject_height_m", 1.0))
-        range_m = subject_h / (2.0 * math.tan(half_angle))
+        range_m = range_from_bbox_height(self._fov_curve, zoom_enc, bbox_h_px,
+                                         frame_h, subject_h)
+        if range_m is None:
+            return
 
         if range_m < 1.0:
             return  # geometry degenerate — too close or bbox fills frame
@@ -414,22 +407,28 @@ class TargetEstimator:
     def _scalar_update(self, h: list, innovation: float, r_var: float) -> None:
         """Fuse one scalar observation with Jacobian row ``h``.
 
-        Covariance form note: the update keeps only the diagonal term of
-        (K h) P — approximate but stable for the small innovations this
-        filter sees. If the form ever changes, it changes HERE for every
-        observation type (bearing, range) at once.
+        Covariance form note: full (I - K h) P via the matrix shim (the same
+        form update_gps uses), then re-symmetrized — the old diagonal-only
+        approximation dropped the cross-covariance reduction and let P drift
+        non-PSD (audit 2026-07-01 M4). If the form ever changes, it changes
+        HERE for every observation type (bearing, range) at once.
         """
-        Pht = [sum(self._P[i][j] * h[j] for j in range(4)) for i in range(4)]
+        P = _mat_to_list(self._P)
+        Pht = [sum(P[i][j] * h[j] for j in range(4)) for i in range(4)]
         S = sum(h[j] * Pht[j] for j in range(4)) + r_var
         if abs(S) < 1e-9:
             return
         K = [Pht[i] / S for i in range(4)]
         for i in range(4):
             self._x[i] += K[i] * innovation
-        KhP = [[K[i] * h[j] for j in range(4)] for i in range(4)]
-        for i in range(4):
-            for j in range(4):
-                self._P[i][j] -= KhP[i][j] * self._P[j][j]  # approximate but stable
+        # P = (I - K h) P, computed with the 4x4 helpers (K as 4x1, h as 1x4)
+        I4 = _mat([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
+        KH = _matmul(_mat([[k] for k in K]), _mat([h]))
+        self._P = _matmul(_matsub(I4, KH), self._P)
+        # Re-symmetrize: P = (P + P^T) / 2 guards against float drift
+        P = _mat_to_list(self._P)
+        self._P = _mat([[0.5 * (P[i][j] + P[j][i]) for j in range(4)]
+                        for i in range(4)])
 
     # ── output ───────────────────────────────────────────────────────────────
 

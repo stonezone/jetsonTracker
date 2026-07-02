@@ -100,12 +100,15 @@ class ColorCfg:
 @dataclass
 class DetectorCfg:
     enabled: bool = True
-    model: str = "yolo26n.pt"
+    model: str = "yolo11n.pt"
     conf: float = 0.35
     imgsz: int = 640
     person_class: int = 0
     every_n: int = 3
-    box_ttl_sec: float = 0.6
+    # 0.2 s (was 0.6): cached boxes are reused in image coordinates with no motion
+    # compensation — a 10 deg/s pan shifts the scene hundreds of px in 0.6 s, so
+    # stale boxes confirm phantoms during slews (audit 2026-07-01 M5).
+    box_ttl_sec: float = 0.2
     # Phase-2 (v3): persistent tracker. None = plain predict (current behavior).
     # "bytetrack.yaml" | "botsort.yaml" enable YOLO tracking (fail-open if missing).
     # Restart-required (the tracker is bound to the model instance).
@@ -147,6 +150,10 @@ class WebCfg:
     port: int = 8088
     jpeg_quality: int = 70
     show_hud: bool = True
+    # M13 (audit 2026-07-01): without a dataclass field, _set_web_bool's setattr
+    # writes show_mask into config.local.yaml, but a fresh WebCfg() on restart
+    # drops the unknown attribute — the "survives restarts" doc claim was false.
+    show_mask: bool = True
 
 
 @dataclass
@@ -174,6 +181,11 @@ class GpsCfg:
     # GPS-1: on an honest no-fix packet (wipeout / wave-trough blackout) coast on the
     # last good fix this long before dropping the aim. 0 = drop immediately.
     coast_on_no_fix_sec: float = 2.0
+    # H6 (audit 2026-07-01): pointing leads the target by fix.age_sec + lead_margin_s
+    # so an old-but-driveable fix aims where the subject IS, not where it was.
+    # lead_cap_s bounds course-extrapolation error on very old fixes.
+    lead_margin_s: float = 0.65
+    lead_cap_s: float = 4.0
     # P2: GPS-driven zoom (off by default — untuned; enable when ready)
     drive_zoom: bool = False
     # Phase-4 (v3): GPS-driven zoom curve params (used only when drive_zoom=True +
@@ -203,6 +215,11 @@ class GpsCfg:
     # reader_alive() only checks the thread is up, so /health flags base_silent when
     # the reader is alive but no fresh line has arrived for longer than this.
     base_silent_sec: float = 30.0
+    # M9 (audit 2026-07-01): remote fix horizontal-accuracy gate. A degraded
+    # reacquisition fix (~30m hacc) is ~11 deg of bearing error at 150m — off-frame
+    # at tele — yet gps_fresh only checked age. Above this, withhold drive
+    # authority (gps_fresh -> False) even though the fix is otherwise recent.
+    max_h_acc_m: float = 15.0
 
 
 @dataclass
@@ -258,6 +275,11 @@ class AgentCfg:
     model: str = ""
     arm_ttl_sec: float = 600.0
     mcp_config_path: str = ""
+    # C2 (audit 2026-07-01): /agent/arm + /agent/chat are a remote shell on the
+    # Orin once armed. Default False refuses them whenever auth.enabled is false
+    # (control_api.py, owned by the other audit-fixes agent) unless a config
+    # explicitly opts in (e.g. the desktop/testbed config.yaml).
+    allow_unauthenticated: bool = False
 
 
 @dataclass

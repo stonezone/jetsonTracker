@@ -17,11 +17,19 @@ from typing import Optional
 class NormalizedFix:
     lat: float
     lon: float
-    course: float          # course-over-ground, degrees (0..360)
+    # R8 (audit round-2, 2026-07-01): Optional -- None when the firmware's
+    # crs_ok flag is false (course unknown), so predict_lead() (which already
+    # skips extrapolation when course_deg is None) doesn't lead a subject due
+    # north on an invalid course.
+    course: Optional[float]  # course-over-ground, degrees (0..360), or None if unknown
     speed: float           # m/s
     ts: float              # fix epoch seconds
     age_sec: float         # seconds since the fix was taken
     src: str = "lora"      # "lora" | "watch" | ...
+    # M9 (audit 2026-07-01): remote fix horizontal accuracy in meters, parsed
+    # from the firmware's hacc_cm when present. None = unknown (older firmware
+    # / non-LoRa source) -- callers must treat None as "cannot judge", not "good".
+    h_acc_m: Optional[float] = None
 
 
 class GpsStub:

@@ -15,7 +15,7 @@ import time
 import uuid
 from typing import Any, Callable, Dict
 
-from fastapi import Body, Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Body, Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -358,7 +358,7 @@ def register_safety_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     def safety_kill(_: SafetyKillRequest | None = None):
         api.kill_for_safety()
         api.bump_revision()
-        return api.ok()
+        return api.ok_after_kill()
 
     @app.post("/api/v1/safety/resume", dependencies=[Depends(require(SAFETY))])
     def safety_resume(_: SafetyResumeRequest | None = None):
@@ -686,30 +686,14 @@ def register_config_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
     @app.post("/api/v1/config/hot", dependencies=[Depends(require(CONFIG))])
     def config_hot(req: HotConfigRequest):
+        # L5/L7 (audit 2026-07-01): validate_hot_config_request no longer checks
+        # revision (persist=true is now a documented no-op, see ConfigManager);
+        # apply_and_persist_hot_patch does the revision check + apply + persist
+        # atomically under api._lock, shared with the legacy /tune route.
         refusal = api.validate_hot_config_request(req)
         if refusal is not None:
             return refusal
-        refusal = api.apply_hot_config(req.patch)
-        if refusal is not None:
-            return refusal
-        # Persist the successfully applied keys back to the live yaml so the rig file
-        # is always the single source of truth. Failure must not fail the request —
-        # the in-memory apply already succeeded.
-        # Read post-coercion values from the live cfg rather than persisting req.patch
-        # directly — set_float/set_int coerce e.g. "0.3" → 0.3, so persisting the raw
-        # request string would write a yaml string and corrupt the dataclass type on restart.
-        src = getattr(getattr(api.pipeline, "cfg", None), "source_path", "")
-        if src and req.patch:
-            try:
-                coerced = {}
-                for dotted in req.patch:
-                    section, attr = dotted.split(".", 1)
-                    coerced[dotted] = getattr(getattr(api.pipeline.cfg, section), attr)
-                persist_hot_values(src, coerced)
-            except Exception as e:
-                print(f"[control_api] hot-config persist failed (live value still applied): {e}")
-        api.bump_revision()
-        return api.ok()
+        return api.apply_and_persist_hot_patch(req.patch, revision=req.revision)
 
 
 def register_system_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
@@ -718,13 +702,46 @@ def register_system_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         return api.request_service_restart(req or RestartRequest())
 
 
+def _agent_auth_refusal(request: Request, api: "ControlApiAdapter") -> JSONResponse | None:
+    """C2: the agent arm/chat/summon routes must not be reachable with zero auth.
+
+    ``Depends(require(...))`` is a no-op while ``auth.enabled`` is False (the
+    live rig's current default -- no auth file deployed), so those three
+    dependencies alone leave arm+chat = unauthenticated remote code execution
+    for anyone on the LAN/tether. When auth is OFF, additionally require
+    ``cfg.agent.allow_unauthenticated`` to be true before letting these routes
+    proceed; this field is read defensively (it may not exist on every cfg
+    yet) and DEFAULTS TO PERMISSIVE when absent so a testbed config with no
+    opinion on the field keeps working -- operators who want the hole closed
+    set it to false explicitly (the servo/rig config should).
+    """
+    auth = getattr(request.app.state, "auth", None)
+    if auth is not None and auth.enabled:
+        return None  # normal per-role auth already gates this via Depends(require(...))
+    acfg = getattr(getattr(api.pipeline, "cfg", None), "agent", None)
+    if getattr(acfg, "allow_unauthenticated", True):
+        return None
+    return api.refusal(
+        "auth_required",
+        "Auth is disabled and agent.allow_unauthenticated is false; the agent "
+        "arm/chat/summon routes refuse unauthenticated access on this rig.",
+        401,
+    )
+
+
 def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
     @app.post("/api/v1/agent/summon", dependencies=[Depends(require(SERVICE))])
-    def agent_summon(req: AgentSummonRequest | None = None):
+    def agent_summon(request: Request, req: AgentSummonRequest | None = None):
+        refusal = _agent_auth_refusal(request, api)
+        if refusal is not None:
+            return refusal
         return api.request_agent_summon(req or AgentSummonRequest())
 
     @app.post("/api/v1/agent/chat", dependencies=[Depends(require(SERVICE))])
-    async def agent_chat(req: AgentChatRequest):
+    async def agent_chat(request: Request, req: AgentChatRequest):
+        refusal = _agent_auth_refusal(request, api)
+        if refusal is not None:
+            return refusal
         # Async + to_thread + semaphore (API-1): the blocking claude -p subprocess
         # runs off the event loop and is capped, so a slow/stuck agent turn can't
         # occupy the whole threadpool and delay safety routes.
@@ -732,7 +749,10 @@ def register_agent_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
             return await asyncio.to_thread(api.request_agent_chat, req.message, req.provider)
 
     @app.post("/api/v1/agent/arm", dependencies=[Depends(require(CONFIG))])
-    def agent_arm(req: AgentArmRequest):
+    def agent_arm(request: Request, req: AgentArmRequest):
+        refusal = _agent_auth_refusal(request, api)
+        if refusal is not None:
+            return refusal
         return api.request_agent_arm(req.armed)
 
     @app.get("/api/v1/agent/report", dependencies=[Depends(require(READ))])
@@ -757,8 +777,12 @@ def register_sensors_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
 
     POST /api/v1/sensors/phone/baseline/reset — force re-capture of the
     heading baseline on the next valid sample.
+
+    L4 (audit 2026-07-01): ingest is gated CONFIG, not READ — it writes state
+    (heading baseline, anchor_suspect events) that the advisor and operator
+    consume, so a read-only viewer/agent token must not be able to post it.
     """
-    @app.post("/api/v1/sensors/phone", dependencies=[Depends(require(READ))])
+    @app.post("/api/v1/sensors/phone", dependencies=[Depends(require(CONFIG))])
     def sensors_phone(req: PhoneSampleRequest):
         sample = PhoneSample(
             heading_deg=req.heading_deg,
@@ -789,7 +813,7 @@ def register_sensors_routes(app: FastAPI, api: "ControlApiAdapter") -> None:
         Each frame is the same shape as PhoneSampleRequest. `{"type":"ping"}` frames are
         answered with `{"type":"pong"}` for the client's latency/heartbeat tracking."""
         await websocket.accept()
-        if not websocket_authorized(websocket, READ):
+        if not websocket_authorized(websocket, CONFIG):  # L4: ingest, not a read
             await websocket.close(code=1008)
             return
         try:
@@ -965,6 +989,24 @@ class ControlApiAdapter:
             {"ok": True, "request_id": make_request_id(), "status": self.status_snapshot()}
         )
 
+    def ok_after_kill(self) -> JSONResponse:
+        """R12 (audit round-2): kill_for_safety() tears the recorder down on a
+        daemon thread (M16 — media.stop_for_safety() can take up to
+        stop_timeout_sec while the HTTP response returns immediately), so a
+        status snapshot built right here can still show media.recording=true
+        for a few seconds after KILL. Overlay recording:false + stopping:true
+        into THIS response's media block so a client reading the /safety/kill
+        reply itself can't observe stale "still recording" — later polls of
+        /status or /media/status still reflect the real (converging) state."""
+        snap = self.status_snapshot()
+        media = snap.get("media")
+        if isinstance(media, dict):
+            media["recording"] = False
+            media["stopping"] = True
+        return JSONResponse(
+            {"ok": True, "request_id": make_request_id(), "status": snap}
+        )
+
     def refusal(self, code: str, message: str, status_code: int = 409) -> JSONResponse:
         return JSONResponse(
             {"ok": False, "code": code, "message": message, "status": self.status_snapshot()},
@@ -1025,10 +1067,21 @@ class ControlApiAdapter:
 
     def kill_for_safety(self) -> None:
         """Full safety-kill sequence shared by the v1 and legacy kill routes:
-        cancel any CALIBRATE session, latch KILL, stop recording, clear deadmen."""
+        cancel any CALIBRATE session, latch KILL (motion stop is synchronous,
+        inside pipeline.kill()), stop recording, clear deadmen.
+
+        M16 (audit 2026-07-01): media.stop_for_safety() (ffmpeg terminate +
+        wait(5) + kill) used to run synchronously here and could stall the
+        /safety/kill HTTP response ~5s — motion is already stopped by the time
+        we get here (pipeline.kill() stops PTZ before returning), so recording
+        teardown is not safety-ordered and can finish on a daemon thread while
+        the response returns immediately.
+        """
         self.cancel_calibration_session("killed")
         self.pipeline.kill(True)
-        self.media.stop_for_safety()
+        threading.Thread(
+            target=self.media.stop_for_safety, name="kill-media-teardown", daemon=True,
+        ).start()
         self.cancel_manual_deadman()
         self.cancel_zoom_deadman()
         self._system.agent_kill()   # supervise-only floor: KILL disarms the agent
@@ -1138,6 +1191,51 @@ class ControlApiAdapter:
 
     def apply_hot_config(self, patch: dict[str, Any]) -> JSONResponse | None:
         return self._config.apply_hot_config(patch)
+
+    def apply_and_persist_hot_patch(
+        self, patch: dict[str, Any], revision: int | None = None,
+    ) -> JSONResponse:
+        """Shared apply+persist path for /api/v1/config/hot AND the legacy /tune
+        route (L5, audit 2026-07-01) — /tune used to apply hot config WITHOUT
+        persisting, so identical keys silently reverted on restart if set via
+        /tune but survived if set via /config/hot; same keys now behave
+        identically regardless of entry point.
+
+        L7 (audit 2026-07-01): the revision check + apply used to happen
+        outside any lock, so two operators could both pass a stale-revision
+        check and interleave writes. Both the check and the apply now happen
+        under api._lock so the whole read-check-apply is atomic against a
+        concurrent hot-config POST.
+        """
+        with self._lock:
+            if revision is not None and revision != self._revision:
+                return self.refusal(
+                    "revision_conflict",
+                    "Hot config revision is stale; refresh /api/v1/config and retry.",
+                    409,
+                )
+            refusal = self._config.apply_hot_config(patch)
+            if refusal is not None:
+                return refusal
+            # Persist the successfully applied keys back to the live yaml so the rig
+            # file is always the single source of truth. Failure must not fail the
+            # request — the in-memory apply already succeeded. Read post-coercion
+            # values from the live cfg rather than persisting the raw patch directly
+            # — set_float/set_int coerce e.g. "0.3" → 0.3, so persisting the raw
+            # request string would write a yaml string and corrupt the dataclass
+            # type on restart.
+            src = getattr(getattr(self.pipeline, "cfg", None), "source_path", "")
+            if src and patch:
+                try:
+                    coerced = {}
+                    for dotted in patch:
+                        section, attr = dotted.split(".", 1)
+                        coerced[dotted] = getattr(getattr(self.pipeline.cfg, section), attr)
+                    persist_hot_values(src, coerced)
+                except Exception as e:
+                    print(f"[control_api] hot-config persist failed (live value still applied): {e}")
+            self.bump_revision()  # RLock is re-entrant — safe to call while _lock is held
+        return self.ok()
 
     def validate_hot_config_request(self, req: HotConfigRequest) -> JSONResponse | None:
         return self._config.validate_hot_config_request(req)

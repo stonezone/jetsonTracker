@@ -27,7 +27,9 @@ class FrameGrabber(threading.Thread):
         self.cfg = cfg
         self._latest: Optional[np.ndarray] = None
         self._lock = threading.Lock()
-        self._stop = threading.Event()
+        # NOT named _stop: that would shadow threading.Thread._stop() and make
+        # Thread.join() raise TypeError (found by test_capture.py, M22).
+        self._stop_evt = threading.Event()
         self._connected = False
         self._frames = 0
 
@@ -49,7 +51,7 @@ class FrameGrabber(threading.Thread):
 
     def run(self) -> None:
         cap = None
-        while not self._stop.is_set():
+        while not self._stop_evt.is_set():
             if cap is None:
                 cap = self._open()
                 if cap is None:
@@ -90,4 +92,4 @@ class FrameGrabber(threading.Thread):
         return self._frames
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_evt.set()

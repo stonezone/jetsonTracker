@@ -65,6 +65,8 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "enabled": getattr(getattr(cfg, "gps", None), "enabled", False),
                 "stale_threshold_sec": getattr(getattr(cfg, "gps", None), "stale_threshold_sec", 10.0),
                 "coast_on_no_fix_sec": getattr(getattr(cfg, "gps", None), "coast_on_no_fix_sec", 2.0),
+                "lead_margin_s": getattr(getattr(cfg, "gps", None), "lead_margin_s", 0.65),
+                "lead_cap_s": getattr(getattr(cfg, "gps", None), "lead_cap_s", 4.0),
                 "grace_sec": getattr(getattr(cfg, "gps", None), "grace_sec", 1.0),
                 "lock_frames": getattr(getattr(cfg, "gps", None), "lock_frames", 5),
                 "drive_zoom": getattr(getattr(cfg, "gps", None), "drive_zoom", False),
@@ -115,6 +117,13 @@ def build_config_snapshot(pipeline, revision: int, calibration: dict | None = No
                 "zoom_cov_wide_deg": getattr(getattr(cfg, "estimator", None), "zoom_cov_wide_deg", 4.0),
                 "zoom_cov_narrow_deg": getattr(getattr(cfg, "estimator", None), "zoom_cov_narrow_deg", 1.5),
                 "log_every_n": getattr(getattr(cfg, "estimator", None), "log_every_n", 3),
+                # M14 (audit 2026-07-01): these hot keys existed in control_config.py
+                # setters but were missing from this snapshot, so iOS feature-detection
+                # against /config could never show them even though /config/hot accepted
+                # and persisted the values.
+                "use_vision_range": getattr(getattr(cfg, "estimator", None), "use_vision_range", False),
+                "subject_height_m": getattr(getattr(cfg, "estimator", None), "subject_height_m", 1.0),
+                "r_range_frac": getattr(getattr(cfg, "estimator", None), "r_range_frac", 0.3),
             },
         },
         "supported": {
@@ -318,7 +327,10 @@ def gps_snapshot_source(pipeline, legacy: dict, threshold: float = 10.0):
 def gps_fix_snapshot(fix, gps=None, threshold: float = 10.0) -> dict | None:
     if fix is None:
         return None
-    from .gps_meshtastic import bearing_deg, haversine_m
+    # L3 (audit 2026-07-01): gps_geo, not the retired gps_meshtastic module —
+    # both had identical bearing_deg/haversine_m, but this kept a live import
+    # path pointed at legacy code.
+    from .gps_geo import bearing_deg, haversine_m
 
     target_age = getattr(fix, "age_sec", None)
     snapshot = {

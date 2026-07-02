@@ -50,12 +50,14 @@ class PointingVerifier:
 
     def record_move(self, pan_enc: int, tilt_enc: int, t: float | None = None) -> None:
         """Call immediately after issuing an absolute pan/tilt command.
-        If this is the same target as the previous move (e.g. GPS loop re-issuing
-        the same command), preserve the retry count so the "one retry max" rule
-        applies across repeated identical commands to the same position."""
+        A re-issue of the SAME pending target (e.g. the GPS loop's keepalive
+        resend) must not touch the settle clock or the retry count — resetting
+        _issue_t on every identical resend starved tick() forever while
+        gps_tracker commands flowed (audit 2026-07-01 H7)."""
         new_target = (pan_enc, tilt_enc)
-        if new_target != self._target:
-            self._retry_count = 0
+        if new_target == self._target and self._issue_t is not None:
+            return
+        self._retry_count = 0
         self._target = new_target
         self._issue_t = t if t is not None else time.time()
 
@@ -72,6 +74,10 @@ class PointingVerifier:
         enc, age = self._ptz_state.latest()
         if enc is None:
             return  # no encoder data yet — skip silently
+        if age is None or age > 1.0:
+            # A wedged poller hands back a pre-move reading; comparing the target
+            # against it logs a false miss and re-slews (audit 2026-07-01 L1).
+            return
 
         pan_target, tilt_target = self._target
         pan_actual, tilt_actual = enc

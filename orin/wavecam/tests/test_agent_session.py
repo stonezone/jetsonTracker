@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -102,30 +103,25 @@ def test_chat_disarmed_blocks_shell(tmp_path):
     assert "bypassPermissions" not in argv
 
 
-def test_run_claude_cli_redacts_token_on_error(monkeypatch):
+def test_run_claude_cli_redacts_token_on_error():
+    # H1 (audit 2026-07-01): _run_claude_cli is now Popen-based (its own process
+    # group), so this drives a REAL (tiny, no CLI dependency) subprocess rather
+    # than mocking subprocess.run — exercises the actual code path.
     import wavecam.agent_session as ags
-
-    class FakeProc:
-        returncode = 1
-        stdout = ""
-        stderr = "traceback leaked SEKRET_TOKEN_VALUE in env"
-
-    monkeypatch.setattr(ags.subprocess, "run", lambda *a, **k: FakeProc())
+    argv = ["python3", "-c",
+            "import sys; sys.stderr.write('traceback leaked SEKRET_TOKEN_VALUE in env'); "
+            "sys.exit(1)"]
     with pytest.raises(RuntimeError) as ei:
-        ags._run_claude_cli(["claude"], {"CLAUDE_CODE_OAUTH_TOKEN": "SEKRET_TOKEN_VALUE"}, "p", 1.0)
+        ags._run_claude_cli(argv, {"CLAUDE_CODE_OAUTH_TOKEN": "SEKRET_TOKEN_VALUE"}, "p", 5.0)
     assert "SEKRET_TOKEN_VALUE" not in str(ei.value)   # token never surfaced
     assert "<redacted>" in str(ei.value)
 
 
-def test_run_claude_cli_timeout_is_clean(monkeypatch):
+def test_run_claude_cli_timeout_is_clean():
     import wavecam.agent_session as ags
-
-    def boom(*a, **k):
-        raise ags.subprocess.TimeoutExpired(cmd="claude", timeout=1)
-
-    monkeypatch.setattr(ags.subprocess, "run", boom)
+    argv = ["python3", "-c", "import time; time.sleep(5)"]
     with pytest.raises(RuntimeError, match="timed out"):
-        ags._run_claude_cli(["claude"], {}, "p", 1.0)
+        ags._run_claude_cli(argv, dict(os.environ), "p", 0.2)
 
 
 def test_chat_non_json_output_clears_session(tmp_path):

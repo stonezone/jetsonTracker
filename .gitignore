@@ -201,6 +201,12 @@ Backup*/
 # Component READMEs - KEEP
 !orin/README.md
 !orin/*/README.md
+
+# Firmware + iOS + backend docs - KEEP (the blanket *.md ban above silently hid
+# new notes/docs under firmware/, ios/, and orin/)
+!firmware/**/*.md
+!ios/**/*.md
+!orin/**/*.md
 !archive/
 !archive/legacy-20260606/
 !archive/legacy-20260606/**/

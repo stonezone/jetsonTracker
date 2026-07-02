@@ -73,13 +73,22 @@ def start_gps_reader(cfg):
             reconnect_sec=getattr(gps_cfg, "direct_reconnect_sec", 3.0),
             coast_on_no_fix_sec=getattr(gps_cfg, "coast_on_no_fix_sec", 2.0),
         )
-    else:
+    elif source == "meshtastic":
         from wavecam.gps_meshtastic import MeshtasticGps
 
         gps = MeshtasticGps(
             dev_path=getattr(gps_cfg, "dev_path", "/dev/ttyACM0"),
             remote_id=getattr(gps_cfg, "remote_id", "") or None,
         )
+    else:
+        # L3 (audit 2026-07-01): an unrecognized gps.source used to fall through
+        # silently to the retired MeshtasticGps. Fail loud instead — a typo'd
+        # source must not silently reroute GPS onto a legacy path nobody is
+        # watching. GPS init failures are already caught (non-fatal to vision)
+        # by main()'s try/except around start_gps_reader().
+        print(f"[run] FATAL: unknown gps.source {source!r} "
+              "(expected 'direct_lora' or 'meshtastic')")
+        raise ValueError(f"unknown gps.source: {source!r}")
 
     gps.connect()
     return gps

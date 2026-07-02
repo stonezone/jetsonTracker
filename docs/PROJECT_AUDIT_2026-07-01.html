@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WaveCam Project Audit — 2026-07-01</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e2e; --panel2: #1c2436; --text: #dce3f0; --muted: #8fa0bc;
+    --critical: #ff4d5e; --high: #ff9b3d; --medium: #ffd166; --low: #6fb6ff; --clean: #4ade80;
+    --border: #2a3550; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 32px 20px 80px; }
+  header h1 { font-size: 28px; margin: 0 0 4px; }
+  header .sub { color: var(--muted); margin-bottom: 24px; }
+  .statbar { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0 8px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; min-width: 110px; }
+  .stat .n { font-size: 26px; font-weight: 700; }
+  .stat .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .stat.critical .n { color: var(--critical); } .stat.high .n { color: var(--high); }
+  .stat.medium .n { color: var(--medium); } .stat.low .n { color: var(--low); }
+  nav.toc { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin: 18px 0 30px; font-size: 14px; }
+  nav.toc a { color: var(--low); text-decoration: none; margin-right: 16px; }
+  nav.toc a:hover { text-decoration: underline; }
+  h2.sev { font-size: 21px; margin: 44px 0 6px; padding-bottom: 8px; border-bottom: 2px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  h2 .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .sev-note { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+  .card.critical { border-left-color: var(--critical); } .card.high { border-left-color: var(--high); }
+  .card.medium { border-left-color: var(--medium); } .card.low { border-left-color: var(--low); }
+  .card h3 { margin: 0 0 6px; font-size: 16.5px; }
+  .card h3 .id { color: var(--muted); font-family: var(--mono); font-size: 13px; margin-right: 8px; }
+  .tags { margin: 2px 0 10px; }
+  .tag { display: inline-block; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); border-radius: 999px; padding: 1px 10px; font-size: 11.5px; margin-right: 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .loc { font-family: var(--mono); font-size: 12.5px; color: var(--low); word-break: break-all; margin-bottom: 8px; }
+  .card p { margin: 6px 0; }
+  .card .lbl { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .fix { background: var(--panel2); border-radius: 8px; padding: 10px 14px; margin-top: 10px; }
+  .fix .lbl { color: var(--clean); }
+  code { font-family: var(--mono); font-size: 0.92em; background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+  .fix code { background: #101626; }
+  .compound { background: linear-gradient(90deg, rgba(255,77,94,.08), transparent); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin: 26px 0; }
+  .cleanlist { color: var(--muted); font-size: 14px; }
+  .cleanlist li { margin: 4px 0; }
+  footer { margin-top: 48px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--border); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>WaveCam Project Audit</h1>
+  <div class="sub">Full-repo review — tracking pipeline, GPS/pointing, control API &amp; safety, iOS/watch app, firmware, ops/CI/docs · 2026-07-01</div>
+</header>
+
+<div class="statbar">
+  <div class="stat critical"><div class="n">1</div><div class="l">Critical</div></div>
+  <div class="stat high"><div class="n">13</div><div class="l">High</div></div>
+  <div class="stat medium"><div class="n">23</div><div class="l">Medium</div></div>
+  <div class="stat low"><div class="n">15</div><div class="l">Low</div></div>
+  <div class="stat"><div class="n">5</div><div class="l">Security (info)</div></div>
+  <div class="stat"><div class="n">57</div><div class="l">Total</div></div>
+</div>
+
+<nav class="toc">
+  <a href="#critical">Critical</a>
+  <a href="#high">High</a>
+  <a href="#medium">Medium</a>
+  <a href="#low">Low</a>
+  <a href="#compound">Compounding effects</a>
+  <a href="#security">Security notes</a>
+  <a href="#clean">Verified clean</a>
+</nav>
+
+<div class="compound" id="exec">
+  <strong>Executive summary.</strong> The architecture is sound and most documented invariants are honored, but the audit found one critical issue — a <em>runaway-PTZ path on video dropout</em> — plus a cluster of high-severity tracking defects that compound at exactly the 50–300&nbsp;m mission range: fusion's dropout-grace window is dead code (instant unlock on one bad frame), GPS pointing ignores fix age (aims where the surfer <em>was</em>), the pointing verifier is starved by 20&nbsp;Hz command resends, and servo gains ignore zoom (limit-cycle hunting at 20×). On the safety side, the in-memory KILL latch can be erased by an automated watchdog restart, and the iOS app ignores <code>ok:false</code> refusals on every non-PTZ command including ARM and the KILL latch display. Fixing C1, H5, H6, and H8 first yields the biggest safety + tracking-quality gain. Pure security findings are recorded in a deprioritized informational section per the operator&#8217;s call (single-user personal rig).
+</div>
+
+<!-- ============================== CRITICAL ============================== -->
+<h2 class="sev" id="critical"><span class="dot" style="background:var(--critical)"></span>Critical</h2>
+<p class="sev-note">Can physically damage a session. Land this first.</p>
+
+<div class="card critical">
+  <h3><span class="id">C1</span>Video dropout leaves the camera slewing at its last commanded velocity (runaway PTZ)</h3>
+  <div class="tags"><span class="tag">Tracking</span><span class="tag">Safety</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:613-617 · capture.py:60-70</div>
+  <p><span class="lbl">Problem</span> — When RTSP drops, the loop only sets <code>state=NO_VIDEO</code>, sleeps 0.1&nbsp;s, and <code>continue</code>s. VISCA velocity commands persist until an explicit stop, so if <code>vision_follow</code> was mid-pan (or cinematic zoom mid-<code>tele</code>) at dropout, the camera runs at that velocity into the hard stop until video returns or a human hits KILL. The ZOMBIE-1 stale-capture guard requires a non-None frame and does not cover this path; no test covers NO_VIDEO stop behavior. <em>Verified directly against the code.</em></p>
+  <div class="fix"><span class="lbl">Fix</span> — In the <code>frame is None</code> branch: if <code>cfg.ptz.enabled</code> and the current owner is autonomous (<code>vision_follow</code>/<code>gps_tracker</code>/<code>testbed</code>), send <code>self.ptz.stop()</code> + <code>self._send_zoom("stop")</code> and reset <code>_last_cmd_key</code> before sleeping; optionally release the vision owner after <code>CAPTURE_STALE_SEC</code>. Add a regression test.</div>
+</div>
+
+
+<!-- ============================== HIGH ============================== -->
+<h2 class="sev" id="high"><span class="dot" style="background:var(--high)"></span>High</h2>
+<p class="sev-note">Safety-invariant gaps and the defects that most directly degrade tracking at 50&ndash;300&nbsp;m.</p>
+
+<div class="card high">
+  <h3><span class="id">H1</span>KILL cannot stop an in-flight ARMED agent turn; "KILL is human-only" is prompt-enforced only</h3>
+  <div class="tags"><span class="tag">Safety</span><span class="tag">Agent</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_system.py:137-151,187-191 · agent_session.py:113-126,173-200 · control_api.py:1026-1034</div>
+  <p><span class="lbl">Problem</span> — <code>request_agent_chat</code> captures <code>armed</code> <em>before</em> the turn; <code>agent_kill()</code> only flips <code>ArmState</code>. Nothing tracks or terminates the running <code>claude</code> subprocess, so after KILL an armed turn keeps a bypass-permissions Bash for up to 120&nbsp;s — and on localhost that shell could <code>curl POST /safety/resume</code> or <code>/system/restart</code> (which clears the in-memory latch, H2). The system prompt's HARD RULES are the only enforcement layer.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Keep the <code>Popen</code> handle (tracked process group) and have <code>agent_kill()</code> SIGKILL it; give the armed agent a scoped <code>agent</code> token and deny SAFETY/CONFIG/SERVICE actions to that identity at the auth layer; add <code>/system/restart</code> to the forbidden list as defense-in-depth.</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H2</span>Automated watchdog restart erases the operator's KILL latch and resumes autonomous motion</h3>
+  <div class="tags"><span class="tag">Safety</span><span class="tag">Ops</span></div>
+  <div class="loc">ops/watchdog.sh:81-95,137-171 · orin/deploy/wavecam.service:3-5,21-23 · pipeline.py:127,598-599</div>
+  <p><span class="lbl">Problem</span> — The KILL latch is in-memory only and the service starts unpaused, immediately claiming <code>testbed</code>. The watchdog restarts <code>wavecam.service</code> after two bad <code>gps_reader</code>/health polls — so an operator-KILLed rig with a wedged Wio restarts within two ticks and starts moving again with no human action. Bonus bug: on a rig with <code>gps.enabled=false</code> the <code>gps_reader</code> component is absent, <code>json_path</code> returns <code>__missing__</code>, and the watchdog restarts a healthy service every rate-limit window forever.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Persist the KILL latch to disk (e.g. next to <code>camera_pose.json</code>) and honor it at boot; make the watchdog check <code>safety.killed</code> before restarting; treat a missing <code>gps_reader</code> component as OK.</div>
+</div>
+
+
+<div class="card high">
+  <h3><span class="id">H4</span>Neither post-deploy verification nor the watchdog detects a dead vision loop ("zombie rig")</h3>
+  <div class="tags"><span class="tag">Ops</span><span class="tag">Reliability</span></div>
+  <div class="loc">orin/wavecam/deploy.sh:33-37 · ops/watchdog.sh:20-21,155-180</div>
+  <p><span class="lbl">Problem</span> — deploy.sh verifies only <code>systemctl is-active</code> + a version-SHA match; the watchdog acts only on <code>gps_reader.ok</code> and free disk. CLAUDE.md's own gotcha ("post-deploy verification must check fps&gt;0 while LOCKED — two zombie rigs passed idle checks") is implemented nowhere, so the documented #1 incident class (API answering, vision loop dead) passes the deploy check and survives the watchdog indefinitely. The pipeline already exposes the evidence (<code>components.capture.detail.fps</code>, <code>components.loop</code>).</p>
+  <div class="fix"><span class="lbl">Fix</span> — deploy.sh: after the SHA check, fail unless <code>components.loop.ok</code> is true and <code>capture.detail.fps &gt; 0</code>. watchdog.sh: add a <code>loop_dead_twice</code> rule (loop not ok, or fps==0 while active, two consecutive runs → rate-limited restart) mirroring the gps_reader rule — but gated on <code>safety.killed</code> being false (H2).</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H5</span>Fusion's dropout grace (COASTING) is dead code — one bad frame instantly unlocks</h3>
+  <div class="tags"><span class="tag">Tracking</span></div>
+  <div class="loc">orin/wavecam/wavecam/fusion.py:214-237</div>
+  <p><span class="lbl">Problem</span> — When no candidate exists, <code>conf==0 &lt; unlock_threshold</code> sets <code>_locked=False</code> <em>before</em> the coasting check, so <code>elif coasting and self._locked</code> is unreachable (no test reaches COASTING — <em>verified directly</em>). One frame where both the orange blob and the person box are missed (splash/whitewater) instantly unlocks; lock flapping resets the arbiter's 5-frame re-earn, halts cinematic zoom and estimator vision updates, and re-acquiring then needs matched color+person (0.6) — color-only frames (0.45) can never re-hold. This is the dominant lock-churn mechanism at range. The same block also wipes <code>_ema</code> on any single low-conf frame.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Compute <code>coasting</code> (via <code>_last_seen</code>) <em>before</em> applying the unlock threshold; keep <code>_locked=True</code> while <code>(now - _last_seen) &lt;= lost_grace_sec</code> when no candidate is present; unlock immediately only when a candidate exists with conf below <code>unlock_threshold</code>. Add COASTING-state tests.</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H6</span>GPS pointing leads by a fixed 0.65&nbsp;s but accepts fixes up to 8&nbsp;s old — aims where the surfer <em>was</em></h3>
+  <div class="tags"><span class="tag">Tracking</span><span class="tag">GPS</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:558 · gps_pointing.py:46-56 · gps_direct_lora.py:214</div>
+  <p><span class="lbl">Problem</span> — <code>compute_target(..., lead_s=0.65)</code> is hardcoded while the drive gate admits any fix with <code>age_sec &lt; drive_stale_sec</code> (8.0&nbsp;s). <code>NormalizedFix.age_sec</code> is available on the very fix being used and is ignored. A foiler at 8&nbsp;m/s on a 7.9&nbsp;s-old fix is ~60&nbsp;m past the aim point — ~22° of pan error at 150&nbsp;m, several FOV-widths at tele — so GPS coarse-point places vision somewhere it can never re-acquire, defeating the narrow-FOV acquisition strategy. (Both the pipeline and GPS reviews independently flagged this.)</p>
+  <div class="fix"><span class="lbl">Fix</span> — <code>lead_s = min(fix.age_sec + lead_margin, lead_cap)</code> with <code>lead_margin</code> (~0.65) and <code>lead_cap</code> (~4-5&nbsp;s, bounding course-extrapolation error) as hot-configurable <code>gps</code> keys; keep the ≥0.1&nbsp;m/s speed gate in <code>predict_lead</code>.</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H7</span>Identical absolute moves re-sent at 20&nbsp;Hz permanently starve the PointingVerifier</h3>
+  <div class="tags"><span class="tag">Tracking</span><span class="tag">GPS</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:437-456 · pointing_verifier.py:51-60</div>
+  <p><span class="lbl">Problem</span> — The send gate is <code>if changed or due:</code> with <code>due</code> firing every 0.05&nbsp;s, so between ~1&nbsp;Hz GPS fixes the same absolute move is re-sent every 50&nbsp;ms. Each resend calls <code>record_move()</code>, which resets <code>_issue_t</code>; <code>tick()</code> needs 0.5&nbsp;s since <code>_issue_t</code>, so verification can never trigger while gps_tracker commands flow — the verify-and-resend mechanism (built for the bench-documented ~390-count overshoot) is dead in exactly the mode it was built for. The 20&nbsp;Hz stream may also re-trigger the camera's motion profile (post-slew hunting).</p>
+  <div class="fix"><span class="lbl">Fix</span> — Gate on <code>if changed:</code> (absolute moves need no keepalive; the verifier owns retries) or refresh every 2-3&nbsp;s ≫ <code>VERIFY_DELAY_SEC</code>; alternatively make <code>record_move()</code> not reset <code>_issue_t</code> when the target is unchanged.</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H8</span>Visual-servo gains and deadzone are FOV-independent — limit-cycle hunting at 20× zoom</h3>
+  <div class="tags"><span class="tag">Tracking</span></div>
+  <div class="loc">orin/wavecam/wavecam/controller.py:55-60,80-111</div>
+  <p><span class="lbl">Problem</span> — <code>compute()</code> maps normalized image error to VISCA speed with no knowledge of zoom. At full tele (~3.4° HFOV) the 0.05 deadzone is ±0.085°; even pan speed 1 crosses it in ~0.1&nbsp;s — less than the video+command latency chain — so the camera oscillates around the subject at exactly the long-range zooms this project exists for, while the same mapping is sluggish at wide. The zoom encoder and FOV curve already exist (<code>ptz_state.latest_zoom()</code>, <code>fov_curve</code>) but are never consulted.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Gain-schedule by FOV: pass current hfov into <code>compute()</code> and scale mapped speed by <code>hfov / hfov_ref</code>, with a degree-denominated deadzone derived from <code>_fov_at_zoom</code>.</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H9</span>Base Wio emits an unbounded running-mean position, mathematically defeating the tripod-drift monitor</h3>
+  <div class="tags"><span class="tag">GPS</span><span class="tag">Firmware</span></div>
+  <div class="loc">firmware/direct-lora/src/base/main.cpp:81-117 · orin/wavecam/wavecam/base_drift.py · pipeline.py:512-521</div>
+  <p><span class="lbl">Problem</span> — <code>base_lat_mean += (lat - mean)/base_n</code> accumulates over the entire valid-fix run (reset only on fix loss or HDOP&gt;2.5 — hours in open sky). BaseDriftMonitor consumes this mean: after 30&nbsp;min (n≈1800) a 10&nbsp;m tripod kick moves the emitted position ~5.5&nbsp;mm/sample, so the dual trigger (mean&gt;4&nbsp;m AND trend&gt;2&nbsp;m over 10 samples) can never fire. The exact failure the monitor exists to catch — silent pointing corruption after a tripod bump — is undetectable.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Have the firmware emit the instantaneous (or ~30&nbsp;s-windowed) fix in a separate JSON field alongside the settle mean; feed the drift monitor the raw one and keep the mean for <code>base_lock</code>.</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H10</span>iOS ignores <code>ok:false</code> on every non-PTZ POST — ARM display can lie and the KILL latch can wedge</h3>
+  <div class="tags"><span class="tag">iOS</span><span class="tag">Safety</span></div>
+  <div class="loc">ios/WaveCam/Sources/WaveCamClient.swift:1095-1163,1211-1220,1524-1566,1727-1808</div>
+  <p><span class="lbl">Problem</span> — Only the PTZ path decodes <code>ok</code>; kill, resume, record start/stop, configHot, setAgentArm, summonAgent, systemRestart, and savePreset treat any 2xx as success, violating the documented "refusals are silent 200s with ok:false" gotcha. Concretely: a refused <code>agent/arm</code> still shows "ARMED — Claude can act"; a refused <code>safety/kill</code> leaves <code>killInFlight</code>/<code>optimisticKilled</code> latched forever, displaying "STOP LATCHED — pan, tilt &amp; zoom halted" while the camera may still be moving; a refused config patch shows as applied.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Decode <code>WCControlResponse</code> (at least <code>ok</code>/<code>code</code>/<code>message</code>) in all <code>post()</code> callers and route through <code>applyControlResponse</code>; in <code>kill()</code> treat <code>ok==false</code> like the catch branch (clear <code>killInFlight</code>/<code>optimisticKilled</code>, set <code>lastCommandError</code>).</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H11</span>Agent chat uses a 5-second HTTP timeout against a 5-30&nbsp;s synchronous LLM turn</h3>
+  <div class="tags"><span class="tag">iOS</span><span class="tag">Agent</span></div>
+  <div class="loc">ios/WaveCam/Sources/WaveCamClient.swift:2075,1753-1762 · orin/wavecam/wavecam/control_api.py:726-731</div>
+  <p><span class="lbl">Problem</span> — <code>post()</code> hardcodes <code>timeoutInterval = 5</code>; <code>/agent/chat</code> blocks through the whole <code>claude -p</code> subprocess with no bytes sent, so URLSession times out on essentially every non-trivial turn. The chat shows "⚠️ Agent chat failed" while the rig-side turn keeps running (and, if armed, keeps <em>acting</em>); the reply is lost and the <code>agentArmed</code> sync in the response never lands.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Add a per-request timeout parameter to <code>post()</code>; use ~120&nbsp;s for <code>agent/chat</code> and <code>agent/summon</code>.</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H12</span>Joystick and zoom slider flood <code>ptz/velocity</code>/<code>ptz/zoom</code> with unthrottled, unordered POSTs</h3>
+  <div class="tags"><span class="tag">iOS</span></div>
+  <div class="loc">ios/WaveCam/Sources/JoystickPad.swift:56-58 · PTZManualController.swift:49-61,144-159 · MergedLiveView.swift:230,328-378</div>
+  <p><span class="lbl">Problem</span> — Every DragGesture tick spawns a detached <code>Task</code> POST; a 2-second stick drag fires ~100+ concurrent <code>takeover:true</code> requests (5&nbsp;s timeout each) over a tethered/lossy link with no ordering guarantee — a stale high-velocity command can land <em>after</em> a newer low one, producing jerky/overshooting manual PTZ and a delayed release-stop behind the queued backlog, plus needless radio/battery load.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Throttle in <code>sendVelocity</code>/<code>updateZoom</code>: send immediately if ≥100&nbsp;ms since the last send, otherwise coalesce to the latest value; always send the final stop (the existing release retry covers it).</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H13</span>Watch emergency STOP silently fails on the documented tether-blackhole failure mode</h3>
+  <div class="tags"><span class="tag">Watch</span><span class="tag">Safety</span></div>
+  <div class="loc">ios/WaveCam/Sources-Watch/WatchClient.swift:97-100,155-201</div>
+  <p><span class="lbl">Problem</span> — <code>post()</code> fails over to Wi-Fi only on <code>.cannotConnectToHost/.cannotFindHost/.dnsLookupFailed</code>. The code's own comment documents that an absent tether subnet fails as <code>.timedOut</code> — added to GET failover for exactly this reason — but POST still hard-fails on it. Operator hits STOP right as the tether drops → 5&nbsp;s timeout → <code>false</code> returned, discarded by <code>kill()</code>: no Wi-Fi retry, no UI feedback.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Allow <code>.timedOut</code>/<code>.networkConnectionLost</code> failover for the idempotent safety endpoints (kill/resume); surface a failed STOP in <code>WatchStatusView</code> (e.g. a "STOP NOT CONFIRMED" banner).</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H14</span>CI builds neither the iOS app nor the Wio firmware</h3>
+  <div class="tags"><span class="tag">CI</span></div>
+  <div class="loc">.github/workflows/backend-tests.yml:3-11</div>
+  <p><span class="lbl">Problem</span> — The only workflow is path-filtered to <code>orin/wavecam/**</code>. The iOS app (59 tracked files, the operator-safety surface that must keep KILL reachable) and <code>firmware/direct-lora/</code> (the live GPS source) get zero compile signal; a broken Swift or C++ change surfaces only at manual device-build/flash time.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Add a <code>macos-latest</code> job (<code>xcodegen generate</code> + <code>xcodebuild build CODE_SIGNING_ALLOWED=NO</code>) filtered on <code>ios/**</code>, and an ubuntu PlatformIO job (<code>./fetch_variant.sh &amp;&amp; pio run -e tracker -e base</code>) filtered on <code>firmware/direct-lora/**</code>.</div>
+</div>
+
+<!-- ============================== MEDIUM ============================== -->
+<h2 class="sev" id="medium"><span class="dot" style="background:var(--medium)"></span>Medium</h2>
+<p class="sev-note">Real defects with bounded blast radius: degraded accuracy, misleading state, performance risks, or gaps that bite when other things change.</p>
+
+<div class="card medium">
+  <h3><span class="id">M1</span>Estimator re-fuses the same cached GPS fix as an independent measurement ~35× per second</h3>
+  <div class="tags"><span class="tag">Estimator</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:293-295 · estimator.py:260-305</div>
+  <p><span class="lbl">Problem</span> — <code>get_fix()</code> returns the same fix until the next ~1&nbsp;Hz LoRa packet, and the shadow tick calls <code>update_gps()</code> every frame with no timestamp dedup. Covariance collapses toward zero between fixes, velocity whipsaws on each new fix, and <code>bearing_std_deg</code> in the shadow logs is meaningless — the Plan-3 go/no-go evaluation data is corrupted.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Store <code>_last_gps_ts</code> and skip <code>update_gps</code> when <code>fix.ts</code> is unchanged.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M2</span>Vision thread takes the control-API lock and builds the full calibration dict every frame</h3>
+  <div class="tags"><span class="tag">Performance</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:712-715 · control_calibration.py:126-167,479-487</div>
+  <p><span class="lbl">Problem</span> — <code>calibration_state()</code> takes the shared API <code>_lock</code> and allocates a ~20-key dict (copying steps + FOV curve) at 35&nbsp;fps just to read two booleans. The same lock is held across disk writes and other API handlers, so operator activity can stall the vision loop mid-frame — a direct 30-FPS risk.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Expose a cheap <code>calibration_gate()</code> returning <code>(valid, confirmed)</code> from an atomic snapshot updated on session state changes, or cache in the pipeline and refresh at ~1&nbsp;Hz.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M3</span>Estimator vision-bearing update falls back to <code>zoom_enc=0</code> (widest FOV) on a stale zoom cache</h3>
+  <div class="tags"><span class="tag">Estimator</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:311-316</div>
+  <p><span class="lbl">Problem</span> — With the camera at tele (3.4°) but FOV assumed wide (~55°), a quarter-frame offset (~0.85° real) is converted to ~14° and fused with <code>r_vis_deg=1.0</code>; one poller hiccup during locked tracking can yank the state tens of metres. The range update already skips on stale zoom; the bearing update doesn't.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Skip <code>update_vision</code> when <code>_fresh_zoom is None</code>, matching the <code>update_vision_range</code> gate.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M4</span><code>_scalar_update</code> covariance math is wrong (keeps only the diagonal term of KhP)</h3>
+  <div class="tags"><span class="tag">Estimator</span></div>
+  <div class="loc">orin/wavecam/wavecam/estimator.py:429-432</div>
+  <p><span class="lbl">Problem</span> — <code>P[i][j] -= K[i]*h[j]*P[j][j]</code> instead of <code>K[i]·Σₖ h[k]P[k][j]</code>: cross-covariance reduction is dropped and P symmetry breaks, so P can drift non-PSD and <code>bearing_std_deg</code> is unreliable — compounding M1 for the shadow-filter evaluation.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Use the full <code>(I − Kh)P</code> (the 4×4 matrix shim already exists and is used by <code>update_gps</code>) or Joseph form.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M5</span>Fresh color blobs are associated against YOLO boxes up to 0.6&nbsp;s old while the camera pans</h3>
+  <div class="tags"><span class="tag">Tracking</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:665-666 · config.orin.servo.yaml:58</div>
+  <p><span class="lbl">Problem</span> — Cached boxes are reused in image coordinates with no motion compensation; a 10°/s pan at mid-zoom shifts the scene hundreds of px in 0.6&nbsp;s, so stale boxes either fail to confirm the fresh blob (conf stuck at 0.45, unlockable) or confirm at a phantom offset the EMA then chases — worst exactly during GPS→vision handoff slews.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Shorten <code>box_ttl_sec</code> to ~0.2&nbsp;s, or shift cached boxes by the encoder delta since capture (<code>ptz_state</code> + <code>fov_curve</code> give px/deg), or bypass TTL reuse while a non-stop PTZ command is active.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M6</span><code>Fusion._last_track_id</code> is never cleared on lock loss — recycled tracker IDs can steal the lock</h3>
+  <div class="tags"><span class="tag">Tracking</span></div>
+  <div class="loc">orin/wavecam/wavecam/fusion.py:135-144,157,226-237</div>
+  <p><span class="lbl">Problem</span> — After a long dropout, <code>_prefer_track_id</code> overrides continuity and proximity in favor of whichever new person inherited the stale ByteTrack ID — e.g. locking a beach walker instead of the subject.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Set <code>_last_track_id = None</code> in the <code>if not coasting:</code> reset branch alongside <code>_ema = None</code>.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M7</span>Overlay drawing + JPEG encode run every frame even with zero preview clients</h3>
+  <div class="tags"><span class="tag">Performance</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:798-823 · overlay.py:27-33</div>
+  <p><span class="lbl">Problem</span> — Per frame: <code>frame.copy()</code>, <code>np.zeros_like</code> tint + boolean index + <code>addWeighted</code>, box/text drawing, and <code>cv2.imencode</code> — several ms of the 28&nbsp;ms budget, pure observability with no MJPEG viewers (the normal field state), and it silently becomes the bottleneck if <code>camera.source</code> ever points at the 1080p stream.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Track active preview clients in the web layer and skip annotate/encode (or encode every Nth frame) when none are connected; at minimum reuse a preallocated tint buffer.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M8</span>Firmware speed/course validity flags are dropped — course 0° (due north) is reported as real data</h3>
+  <div class="tags"><span class="tag">GPS</span><span class="tag">Firmware</span></div>
+  <div class="loc">firmware/direct-lora/src/base/main.cpp:178-190 · orin/wavecam/wavecam/gps_direct_lora.py:218-219</div>
+  <p><span class="lbl">Problem</span> — The base JSON emits only the fix flag; <code>PKT_FLAG_SPEED_VALID</code>/<code>PKT_FLAG_COURSE_VALID</code> never cross the wire, and the parser decodes <code>speed_cm_s</code>/<code>course_cdeg</code> unconditionally. When fix is valid but course isn't (slow drift), the memset 0 reads as course=0° and <code>predict_lead</code> leads the subject north — small today, a direct pointing error once H6 grows lead to seconds.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Emit <code>"spd_ok"</code>/<code>"crs_ok"</code> in the base JSON; parser nulls course / zeroes speed when unset.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M9</span>Remote fix quality (<code>hacc_cm</code>, sats) never gates pointing — a 30&nbsp;m fix drives pan like a 1&nbsp;m fix</h3>
+  <div class="tags"><span class="tag">GPS</span></div>
+  <div class="loc">firmware/direct-lora/src/tracker/main.cpp:126-127 · orin/wavecam/wavecam/gps_stub.py:17</div>
+  <p><span class="lbl">Problem</span> — The base emits <code>hacc_cm</code> but no Python code reads it; <code>NormalizedFix</code> has no accuracy field. A degraded post-wipeout reacquisition fix (~30&nbsp;m) is ~11° of error at 150&nbsp;m — off-frame at tele — and the bearing cue still claims a fixed 5° uncertainty.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Add <code>h_acc_m</code> to <code>NormalizedFix</code>, parse <code>hacc_cm/100</code>, and above a threshold either withhold drive authority or inflate <code>bearing_uncertainty_deg</code> and widen zoom.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M10</span>Calibration API's <code>base_locked</code> reports "has a base position", not the actual drift lock</h3>
+  <div class="tags"><span class="tag">GPS</span><span class="tag">API</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_calibration.py:147-149 · pipeline.py:709</div>
+  <p><span class="lbl">Problem</span> — It returns <code>pose.lat != 0 or pose.lon != 0</code> while GPS authority actually keys off <code>pose.base_locked</code> (flipped by BaseDriftMonitor). After a confirmed tripod-drift unlock, iOS/web still shows "locked" while GPS pointing is silently withheld — operator sees calibrated + locked and a camera that won't GPS-point.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Report <code>has_base</code> and <code>pose.base_locked</code> as separate fields (and surface both in the app).</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M11</span>Missing sample altitude is coerced to 0.0 and averaged into the locked base altitude</h3>
+  <div class="tags"><span class="tag">GPS</span><span class="tag">Calibration</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_calibration.py:374,442</div>
+  <p><span class="lbl">Problem</span> — <code>"alt_m": _optional_float(...) or 0.0</code>, then a plain mean over all samples: a camera 6&nbsp;m above the water averages toward 0 when some samples omit altitude → ~2° tilt error at 150&nbsp;m, comparable to the entire heading budget. The <code>or 0.0</code> also conflates a legitimate 0.0 with missing.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Average altitude only over samples that reported it; fall back to 0 only when none did.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M12</span>Heading-uncertainty model is selected by payload field presence, not by method — close-range GPS capture can pass the 2° budget</h3>
+  <div class="tags"><span class="tag">GPS</span><span class="tag">Calibration</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_calibration.py:737-742</div>
+  <p><span class="lbl">Problem</span> — <code>if "phone" in method or phone_acc is not None:</code> — any request incidentally carrying <code>heading_acc_deg</code> skips the distance-geometry error model. A 10&nbsp;m GPS capture (the documented ≈27° hazard) with compass acc 1.5° would lock a badly wrong heading, undermining the "heading at range" invariant.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Branch on <code>method</code> only; never let field presence select the model.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M13</span><code>web.show_mask</code> persists to the overlay file but silently vanishes on every restart</h3>
+  <div class="tags"><span class="tag">Config</span></div>
+  <div class="loc">orin/wavecam/wavecam/config.py:144-150,320-323 · control_config.py:366-373 · pipeline.py:92</div>
+  <p><span class="lbl">Problem</span> — <code>_set_web_bool</code> setattr's <code>show_mask</code> dynamically, so hot-config writes it into <code>config.local.yaml</code>; on restart <code>_apply_overlay</code> drops unknown attrs (fresh <code>WebCfg</code> lacks it) and <code>show_mask</code> resets to True — the docstring's "survives restarts" claim is false. This is exactly the documented silently-vanishing-config gotcha class.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Add <code>show_mask: bool = True</code> to <code>WebCfg</code> and initialize <code>state.show_mask</code> from it in <code>Pipeline.__init__</code> (as done for <code>show_hud</code>).</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M14</span>Three estimator hot keys are accepted and persisted but invisible to feature detection and refused by presets</h3>
+  <div class="tags"><span class="tag">Config</span><span class="tag">API</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_config.py:153-155 · control_utils.py:72-85 · control_snapshots.py:106-118 · control_presets.py:188-199</div>
+  <p><span class="lbl">Problem</span> — <code>estimator.use_vision_range</code>, <code>estimator.subject_height_m</code>, <code>estimator.r_range_frac</code> work via <code>/config/hot</code> but are missing from <code>HOT_CONFIG_KEYS</code> and the <code>current.estimator</code> snapshot, so the iOS app (which feature-detects everything against <code>/config</code>) can never show them, and PresetStore refuses them as unsupported.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Add the three keys to <code>HOT_CONFIG_KEYS</code> and the <code>current.estimator</code> snapshot block.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M15</span>Concurrent agent chats race on the per-provider session id</h3>
+  <div class="tags"><span class="tag">Agent</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_api.py:64-65 · agent_session.py:153,178-199</div>
+  <p><span class="lbl">Problem</span> — The semaphore allows 2 concurrent turns; <code>_session_ids</code> is read (<code>--resume</code>) and written with no lock. Two turns on the same provider both resume the same session; the CLI may fork or error, and last-writer-wins silently loses one branch's conversation context.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Serialize per provider (per-provider lock or semaphore of 1), or refuse the second turn with an <code>agent_busy</code> refusal.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M16</span><code>/safety/kill</code> can block ~5&nbsp;s on ffmpeg teardown before responding</h3>
+  <div class="tags"><span class="tag">Safety</span><span class="tag">API</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_api.py:1026-1034 · control_media.py:115-117 · recorder.py:91-113</div>
+  <p><span class="lbl">Problem</span> — KILL correctly latches and stops PTZ first, but then synchronously runs <code>recorder.stop()</code> (terminate + wait(5) + kill) on the request thread — the KILL HTTP response the iOS app watches can stall ~5&nbsp;s, so the operator may hammer retries or assume the rig is wedged.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Move <code>media.stop_for_safety()</code> to a daemon thread; recording teardown is not safety-ordered once motion is stopped.</div>
+</div>
+
+
+<div class="card medium">
+  <h3><span class="id">M18</span>iOS <code>WCConfig</code> violates the tolerant-Codable invariant — one missing backend field kills all feature detection</h3>
+  <div class="tags"><span class="tag">iOS</span></div>
+  <div class="loc">ios/WaveCam/Sources/WaveCamClient.swift:261-338</div>
+  <p><span class="lbl">Problem</span> — <code>WCConfig.Current</code> requires the <code>ptz/fusion/color/detector/web</code> sub-objects with non-optional fields and has no tolerant <code>init(from:)</code> extension (unlike WCStatus/WCPreset). If the backend renames or drops any one field, the whole <code>/config</code> decode throws → Tune never loads and every feature-detected control silently disables.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Add an extension <code>init(from:)</code> with <code>decodeIfPresent ?? default</code> for all non-essential fields; only <code>supported</code> truly gates features and is already optional.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M19</span>iOS <code>agentArmed</code> is never reconciled with the backend — TTL expiry and external disarm are invisible</h3>
+  <div class="tags"><span class="tag">iOS</span><span class="tag">Agent</span></div>
+  <div class="loc">ios/WaveCam/Sources/WaveCamClient.swift:967-968,1778-1797</div>
+  <p><span class="lbl">Problem</span> — <code>agentArmed</code> is set only by the local toggle and chat replies; <code>/status</code> polling never updates it. After server-side TTL expiry or KILL-disarm, the chat header and AskClaudeCard keep showing "ARMED — Claude can act" (or the inverse after a web-page arm). Combined with H10, the displayed ARM state is advisory.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Expose armed state in <code>/status</code> (or poll <code>agent/report</code>) and reconcile in <code>refresh()</code>; at minimum decode the <code>agent/arm</code> response body.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M20</span>KILL-latch overlay and failure alerts are invisible under the full-screen agent chat cover</h3>
+  <div class="tags"><span class="tag">iOS</span><span class="tag">Safety</span></div>
+  <div class="loc">ios/WaveCam/Sources/ContentView.swift:24-36 · AgentView.swift:58-61 · AgentChatView.swift:44-50</div>
+  <p><span class="lbl">Problem</span> — <code>.fullScreenCover</code> renders above the root ZStack, so if KILL latches while the chat is open (from the watch, web, or the chat's own KILL button), the operator never sees "STOP LATCHED"/hold-to-resume, and a failed-KILL alert can't present. The GPS popovers already dismiss on <code>effectiveKilled</code> for exactly this layering reason.</p>
+  <div class="fix"><span class="lbl">Fix</span> — <code>.onChange(of: client.effectiveKilled) { if $0 { showChat = false } }</code> in AgentView, or embed the latch overlay inside AgentChatView.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M21</span>Default detector model is the documented-unusable <code>yolo26n.pt</code></h3>
+  <div class="tags"><span class="tag">Config</span></div>
+  <div class="loc">orin/wavecam/wavecam/config.py:103 · config.yaml:56 · config.orin.yaml:48</div>
+  <p><span class="lbl">Problem</span> — All three default to yolo26n, which CLAUDE.md states is NOT usable on the rig's ultralytics (8.3.233). Any fresh testbed run — or a rig run that loses the detector overlay section — preflights a model that cannot load (the detector falls back, but the configured intent is broken).</p>
+  <div class="fix"><span class="lbl">Fix</span> — Change the dataclass default and both non-servo YAMLs to <code>yolo11n.pt</code> (matching the live <code>yolo11n.engine</code>); update the stale "YOLO26 person validator" comments.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M22</span><code>capture.py</code> — the exact zombie-rig component — has zero direct test coverage</h3>
+  <div class="tags"><span class="tag">Tests</span></div>
+  <div class="loc">orin/wavecam/wavecam/capture.py · orin/wavecam/tests/</div>
+  <p><span class="lbl">Problem</span> — Mapping all 45 modules against 62 test files: <code>capture.py</code> (RTSP grab/reconnect thread) is imported by no test, along with <code>overlay.py</code> and <code>control_{logs,media,presets,system}.py</code> (the latter are at least exercised via TestClient). The component whose silent death caused two field incidents is tested nowhere.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Unit tests for capture reconnect/staleness with a fake <code>cv2.VideoCapture</code>: frame freeze, open failure, <code>reconnect_sec</code> honored — plus the C1 NO_VIDEO stop behavior.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M23</span>The mypy strict gate excludes every module that actually emits motion commands</h3>
+  <div class="tags"><span class="tag">Tests</span><span class="tag">CI</span></div>
+  <div class="loc">orin/wavecam/mypy.ini:7-13</div>
+  <p><span class="lbl">Problem</span> — Only 6 pointing-math files are gated; <code>ptz_visca.py</code>, <code>controller.py</code>, <code>control_ptz.py</code>, and <code>pipeline.py</code> — where the KILL/safety invariants live — are outside it.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Add <code>ptz_visca.py</code> and <code>controller.py</code> next (both small, low-dependency), then <code>control_ptz.py</code>.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M24</span>CLAUDE.md points at three <code>.claude/</code> files that don't exist in the repo</h3>
+  <div class="tags"><span class="tag">Docs</span></div>
+  <div class="loc">CLAUDE.md · .gitignore:151-152</div>
+  <p><span class="lbl">Problem</span> — <code>.claude/CODING_STANDARDS.md</code>, <code>ARCHITECTURE.md</code>, <code>DEVELOPMEN
+T_PRACTICES.md</code> are referenced as canonical guidance, but <code>.claude/</code> is gitignored and absent from a fresh clone — every new agent/contributor gets dangling standards pointers.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Commit repo-portable copies (e.g. under <code>docs/</code>) and re-point CLAUDE.md, or note in CLAUDE.md that they're machine-local.</div>
+</div>
+
+<!-- ============================== LOW ============================== -->
+<h2 class="sev" id="low"><span class="dot" style="background:var(--low)"></span>Low</h2>
+<p class="sev-note">Bounded impact, hygiene, and future-proofing — worth batching into cleanup passes.</p>
+
+<div class="card low">
+  <h3><span class="id">L1</span>PointingVerifier ignores encoder-cache age — a wedged poller causes false misses and spurious re-slews</h3>
+  <div class="tags"><span class="tag">GPS</span></div>
+  <div class="loc">orin/wavecam/wavecam/pointing_verifier.py:72-79</div>
+  <p><span class="lbl">Problem</span> — <code>enc, age = latest()</code> but <code>age</code> is never checked; a frozen encoder cache compares the target against a pre-move reading, logs a false <code>pointing_miss</code>, and re-issues the move (bounded to 1 retry).</p>
+  <div class="fix"><span class="lbl">Fix</span> — <code>if age is None or age &gt; 1.0: return</code>.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L2</span>Serial reconnect only reopens the configured device path — an ACM1 re-enumeration never recovers</h3>
+  <div class="tags"><span class="tag">GPS</span></div>
+  <div class="loc">orin/wavecam/wavecam/gps_direct_lora.py:115-137</div>
+  <p><span class="lbl">Problem</span> — If a stale process holds <code>/dev/ttyACM0</code> and the replugged Wio lands on ACM1, GPS stays down until service restart, with only the health flag as a symptom.</p>
+  <div class="fix"><span class="lbl">Fix</span> — After N consecutive open failures, glob <code>/dev/ttyACM*</code> — or better, use a udev by-id symlink for the Wio.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L3</span>Meshtastic remnants: legacy module on a live import path, stale YAML comment, unused <code>remote_id</code></h3>
+  <div class="tags"><span class="tag">Hygiene</span><span class="tag">GPS</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_snapshots.py:321 · run.py:66-82 · config.orin.servo.yaml:86-90</div>
+  <p><span class="lbl">Problem</span> — <code>control_snapshots</code> imports <code>bearing_deg</code>/<code>haversine_m</code> from <code>gps_meshtastic</code> instead of <code>gps_geo</code>; <code>run.py</code> silently routes any unknown <code>gps.source</code> to the retired MeshtasticGps; the servo YAML comment claims the legacy module is the default (the code default is <code>direct_lora</code>) and carries a Meshtastic-era <code>remote_id</code>.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Re-point the import at <code>gps_geo</code>; make <code>run.py</code> reject unknown sources loudly; fix the comment and drop <code>remote_id</code>.</div>
+</div>
+
+
+<div class="card low">
+  <h3><span class="id">L5</span>Legacy <code>/tune</code> applies hot config without persisting; <code>/config/hot</code> refuses <code>persist=true</code> yet always persists</h3>
+  <div class="tags"><span class="tag">API</span></div>
+  <div class="loc">orin/wavecam/wavecam/web.py:603-612 · control_api.py:687-712 · control_config.py:66-71</div>
+  <p><span class="lbl">Problem</span> — Tuning via <code>/tune</code> silently reverts on restart while identical keys via <code>/config/hot</code> persist; meanwhile the <code>persist</code> field is refused as unsupported while persistence happens unconditionally — a contradictory contract.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Route <code>/tune</code> through the same persist path; honor or remove the <code>persist</code> field.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L6</span>Agent routes are the only endpoints returning 200 + <code>ok:false</code> without the standard refusal shape</h3>
+  <div class="tags"><span class="tag">API</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_system.py:128-143,178-185 · agent_session.py:40</div>
+  <p><span class="lbl">Problem</span> — <code>agent_disabled</code>/<code>agent_error</code> lack <code>request_id</code>/<code>status</code> and use 200 where every other route uses <code>api.refusal(...)</code> (4xx + code/message); the agent system prompt's claim that all refusals are "HTTP 200 with ok:false" is wrong for every non-agent route.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Use <code>api.refusal(...)</code> for agent errors; correct the system-prompt sentence.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L7</span>TOCTOU races on config revision check and restart scheduling</h3>
+  <div class="tags"><span class="tag">API</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_config.py:73-78 · control_system.py:72-84,231-238</div>
+  <p><span class="lbl">Problem</span> — Two operators can both pass a stale-revision check and interleave writes; two concurrent <code>/system/restart</code> posts can schedule two timers → double restart. Benign-ish but one lock away from correct.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Perform check+apply under <code>api._lock</code>.</div>
+</div>
+
+
+<div class="card low">
+  <h3><span class="id">L9</span><code>_gps_cue</code> uses encoder/zoom cache values with no freshness gate</h3>
+  <div class="tags"><span class="tag">Tracking</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:471-484</div>
+  <p><span class="lbl">Problem</span> — A wedged poller feeds an old pan encoder / wide-FOV px-per-deg into <code>compute_bearing_cue</code>, mislocating the confidence-boost region — which can boost the wrong blob across the lock threshold (VIS-1 by design).</p>
+  <div class="fix"><span class="lbl">Fix</span> — Apply the same &lt;0.5&nbsp;s / <code>ZOOM_FRESH_SEC</code> gates used by the estimator path; fall back to the center cue.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L10</span>One in-flight velocity command can be sent up to a frame after KILL</h3>
+  <div class="tags"><span class="tag">Safety</span></div>
+  <div class="loc">orin/wavecam/wavecam/pipeline.py:243-262,681-693</div>
+  <p><span class="lbl">Problem</span> — A loop iteration already past the <code>killed</code> check can send a moving command after <code>ptz.stop()</code> was issued; self-correcting within a frame, but violates the spirit of KILL supremacy.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Guard <code>_send_cmd</code>/<code>_send_zoom</code>/<code>_send_absolute_cmd</code> with <code>if self.owner.killed: return</code>.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L11</span>VISCA inquiry transactions are not serialized on the shared socket</h3>
+  <div class="tags"><span class="tag">Tracking</span></div>
+  <div class="loc">orin/wavecam/wavecam/ptz_visca.py:41-49,110-181</div>
+  <p><span class="lbl">Problem</span> — <code>_drain()</code> flips blocking mode and consumes datagrams outside <code>_lock</code>; the 10&nbsp;Hz poller and a calibration inquiry can steal each other's replies — a stolen pan/tilt reply during calibration stamps a wrong anchor. (Acknowledged as a follow-up in ptz_state.py's docstring.)</p>
+  <div class="fix"><span class="lbl">Fix</span> — One transaction-scoped lock covering drain+send+recv, or a dedicated inquiry socket per caller.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L12</span>Duplicated bbox-range math and a dead arbiter field</h3>
+  <div class="tags"><span class="tag">Hygiene</span></div>
+  <div class="loc">orin/wavecam/wavecam/estimator.py:111-123,352-412 · tracking_arbiter.py:54</div>
+  <p><span class="lbl">Problem</span> — <code>update_vision_range</code> re-implements <code>range_from_bbox_height</code> inline (the divergence the helper was created to prevent); <code>TrackingArbiter.max_gps_age_sec</code> is stored but never read, and the hot-config sync doesn't update it.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Call the helper; delete <code>max_gps_age_sec</code> or actually use it in <code>decide()</code>.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L13</span>Agent summon poll loop outlives its view for up to 90&nbsp;s</h3>
+  <div class="tags"><span class="tag">iOS</span></div>
+  <div class="loc">ios/WaveCam/Sources/AgentView.swift:90-117</div>
+  <p><span class="lbl">Problem</span> — <code>summonDiagnostics()</code> spawns an unstructured Task polling every 2&nbsp;s ×45; leaving the view keeps it running (battery/radio on the beach) and writing <code>@State</code> on a dead view.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Hold the Task in <code>@State</code> and cancel in <code>.onDisappear</code>, or use <code>.task</code>-scoped structured concurrency.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L14</span>Route committed as connected before the HTTP status check</h3>
+  <div class="tags"><span class="tag">iOS</span></div>
+  <div class="loc">ios/WaveCam/Sources/WaveCamClient.swift:1917-1922,2045-2052,2079-2084</div>
+  <p><span class="lbl">Problem</span> — <code>markConnected(to:)</code> runs before the 2xx check, so a candidate answering 401/404/500 still becomes <code>baseURL</code>/<code>activeRoute</code> — a misbehaving tether-side proxy pins the app to the bad route while Wi-Fi works.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Move <code>markConnected</code> after the status-code check.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L15</span>Session-log event ring grows unboundedly and can produce duplicate ForEach IDs</h3>
+  <div class="tags"><span class="tag">iOS</span></div>
+  <div class="loc">ios/WaveCam/Sources/SessionLogView.swift:51-56 · WaveCamClient.swift:763-766</div>
+  <p><span class="lbl">Problem</span> — <code>pollNew()</code> appends forever at 5&nbsp;s cadence with no cap; an inclusive <code>since</code> filter re-appends the last event, and <code>WCEvent.id</code> (<code>"t-kind"</code>) then collides — undefined SwiftUI behavior.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Skip events with <code>t &lt;= sinceCursor</code> on append and trim to a max (~500).</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L16</span>Blanket <code>*.md</code> gitignore silently drops new documentation</h3>
+  <div class="tags"><span class="tag">Hygiene</span></div>
+  <div class="loc">.gitignore:182</div>
+  <p><span class="lbl">Problem</span> — Verified: <code>git check-ignore firmware/direct-lora/NOTES.md</code> → ignored. Any new non-README markdown under <code>ios/</code>, <code>firmware/</code>, or <code>orin/wavecam/</code> never enters git, with no warning.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Replace the blanket ban with targeted ignores, or add <code>!firmware/**/*.md</code>, <code>!ios/**/*.md</code>, <code>!orin/**/*.md</code>.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L17</span>README footer contradicts its own body and the live system</h3>
+  <div class="tags"><span class="tag">Docs</span></div>
+  <div class="loc">README.md:242-243</div>
+  <p><span class="lbl">Problem</span> — "Last Updated: June 6, 2026 … LoRa GPS is future work" while the body correctly describes direct-LoRa as live (deployed 2026-06-14); the features list omits CALIBRATE mode, the estimator, and the acting-agent/ARM surfaces.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Refresh the footer/status line and add the missing active features.</div>
+</div>
+
+<!-- ============================== COMPOUND ============================== -->
+<div class="compound" id="compound">
+  <strong>Compounding effects at mission range (50–300&nbsp;m).</strong> H5, H6, and H8 chain into the worst-case field behavior: instant unlock on one splashy frame (H5) forces frequent GPS re-acquisition; GPS then points behind the subject on any aged fix (H6), placing the narrow tele FOV where the surfer no longer is; and any re-lock that does happen oscillates at high zoom (H8), shaking the very detections needed to hold it. M5 (stale-box association during slews) makes the GPS→vision handoff itself unreliable. Fixing these four together is the single largest tracking-quality win available; C1 should still land first because it is the only one that can physically damage a session.
+</div>
+
+
+<!-- ============================== SECURITY NOTES ============================== -->
+<h2 class="sev" id="security"><span class="dot" style="background:var(--muted)"></span>Security notes (informational — deprioritized per operator)</h2>
+<p class="sev-note">Zack has explicitly deprioritized security hardening: this is a single-operator personal rig, not distributed software. These are recorded for reference only — none block field use. The one caveat worth remembering: the tether hotspot subnet is only as private as the hotspot password.</p>
+
+<div class="card critical">
+  <h3><span class="id">C2</span>Unauthenticated agent ARM + chat = remote shell on the Orin from any LAN/tether device</h3>
+  <div class="tags"><span class="tag">Security</span><span class="tag">Safety</span></div>
+  <div class="loc">orin/wavecam/wavecam/auth.py:63-77 · control_api.py:722-736 · agent_session.py:184-188 · orin/deploy/wavecam.service</div>
+  <p><span class="lbl">Problem</span> — Auth is fail-open and off by default (<code>load_auth</code> returns a disabled config when <code>WAVECAM_AUTH_FILE</code> is unset, missing, <em>or unparseable</em> — verified), and the deployed unit file sets no auth file. With the agent feature live, <code>POST /api/v1/agent/arm {"armed":true}</code> then <code>POST /api/v1/agent/chat</code> runs <code>claude -p</code> with <code>--permission-mode bypassPermissions --allowedTools Bash Read Edit Write</code> as user <code>zack</code>. Any device on
+ the home LAN, camera LAN, or the iPhone-hotspot tether subnet (172.20.10.x) gets arbitrary code execution on the Orin with two unauthenticated POSTs. Cloudflare Access protects only the tunnel path, not the LAN.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Require auth for <code>/agent/arm</code> + <code>/agent/chat</code> even when global auth is disabled (dedicated operator token), or refuse to arm when <code>app.state.auth.enabled</code> is false. Log loudly at boot when auth is disabled, and fail <em>closed</em> when an auth file exists but is unreadable/invalid (see M17).</div>
+</div>
+
+<div class="card high">
+  <h3><span class="id">H3</span>Enabling auth silently breaks the watchdog: restart loop + false-success recording stop</h3>
+  <div class="tags"><span class="tag">Safety</span><span class="tag">Ops</span></div>
+  <div class="loc">ops/watchdog.sh:104,150 · control_api.py:836,648</div>
+  <p><span class="lbl">Problem</span> — The watchdog's curls carry no Authorization header. If auth is ever enabled (the C2 fix!): the <code>/health</code> fetch gets 401, counts as <code>health_unreachable_twice</code>, and the watchdog restarts the service every 10 minutes indefinitely — each restart also clearing a latched KILL (H2). The low-disk <code>record/stop</code> curl has no <code>--fail</code> and never checks the body, so a 401 logs <code>stop_recording_ok</code> while the disk keeps filling.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Add a token env to watchdog.sh (mirror <code>WAVECAM_SUPERVISOR_TOKEN</code>); use <code>--fail</code> + a JSON <code>ok</code> check on the media-stop call; distinguish 401 from unreachable in the health rule.</div>
+</div>
+
+<div class="card medium">
+  <h3><span class="id">M17</span>Auth downgrade is completely silent</h3>
+  <div class="tags"><span class="tag">Security</span></div>
+  <div class="loc">orin/wavecam/wavecam/auth.py:63-77</div>
+  <p><span class="lbl">Problem</span> — A JSON syntax error, wrong permissions, or a typo'd <code>WAVECAM_AUTH_FILE</code> path yields <em>disabled</em> auth with no log line; nothing on <code>/status</code>, <code>/health</code>, or the journal says the rig is running wide open (see C2).</p>
+  <div class="fix"><span class="lbl">Fix</span> — Log the loaded auth state at <code>install_auth</code>; fail closed (or mark <code>/health</code> degraded) when the file exists but can't be parsed.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L4</span>Read-only tokens can write phone-sensor state</h3>
+  <div class="tags"><span class="tag">Security</span></div>
+  <div class="loc">orin/wavecam/wavecam/control_api.py:761-832</div>
+  <p><span class="lbl">Problem</span> — <code>/sensors/phone</code> POST and WS require only READ, so a viewer/agent token can set the heading baseline and fire <code>anchor_suspect</code> events the advisor and operator consume.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Gate ingest as CONFIG (baseline reset already is) or add a dedicated telemetry action class.</div>
+</div>
+
+<div class="card low">
+  <h3><span class="id">L8</span>Bearer token accepted as a URL query parameter on streaming routes</h3>
+  <div class="tags"><span class="tag">Security</span></div>
+  <div class="loc">orin/wavecam/wavecam/auth.py:101-115 · control_api.py:333 · web.py:527</div>
+  <p><span class="lbl">Problem</span> — <code>?token=</code> on the MJPEG routes will land in Cloudflare/proxy logs and browser history once auth is enabled.</p>
+  <div class="fix"><span class="lbl">Fix</span> — Use a short-lived stream-scoped token rather than the operator bearer token for MJPEG.</div>
+</div>
+
+<!-- ============================== CLEAN ============================== -->
+<h2 class="sev" id="clean"><span class="dot" style="background:var(--clean)"></span>Verified clean</h2>
+<p class="sev-note">Areas explicitly checked and found correct — no action needed.</p>
+<ul class="cleanlist">
+  <li>Geodesy math in <code>gps_geo.py</code> (haversine, bearing, ±180° wrap, lat/lon argument order at every call site) and the wrap-safe bearing error in <code>gps_bearing_cue.py</code>.</li>
+  <li>The never-block-on-GPS invariant: all <code>get_fix()</code>/<code>get_camera_position()</code> calls are lock-guarded cache reads; base-silent detection via <code>last_poll_age_sec</code> works.</li>
+  <li>ARM TTL enforcement (floor-clamped), the SAFE-2/SAFE-3 KILL↔VISCA lock rechecks, and the per-frame forced stop while killed.</li>
+  <li>Media/log/guide endpoints: no path traversal (sanitize + <code>relative_to</code> on resolved paths); no shell-injection surfaces (fixed argv lists, prompt via stdin, tokens via env with redaction).</li>
+  <li>No committed secrets: placeholder-only <code>auth.example.json</code>, iOS token in Keychain, agent keys outside the repo/rsync tree.</li>
+  <li>Config-loader <code>_KNOWN_SECTIONS</code> currently matches all 13 dataclass sections — no silent-vanish risk today (except M13's dynamic attr).</li>
+  <li>Deploy rsync excludes correctly protect <code>config.local.yaml</code>/<code>auth.json</code>/<code>camera_pose.json</code>; recordings and shadow logs are outside the <code>--delete</code> blast radius.</li>
+  <li>iOS: all GETs route through <code>getWithFallback</code>; KILL is reachable on every tab, in fullscreen, and in chat; portrait/landscape parity holds; the watch <code>WKBackgroundModes</code> plist fix is correctly in <code>project.yml</code>; the MJPEG coordinator is properly serialized with a stall watchdog and no retain cycles.</li>
+  <li>Firmware: <code>course_cdeg</code> cast/modulo, the <code>gps_age_ms</code> 0xFFFF sentinel handling, and malformed-JSONL tolerance in the parser.</li>
+</ul>
+
+<footer>
+  Generated 2026-07-01 by a five-track parallel code audit (tracking pipeline · GPS/pointing · control API &amp; safety · iOS/watch · config/CI/docs), with each finding verified against the code before inclusion. Line numbers reference the repo state at the audit commit.
+</footer>
+
+</div>
+</body>
+</html>

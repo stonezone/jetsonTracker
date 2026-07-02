@@ -102,17 +102,29 @@ static void update_base_gps() {
 // One {"base":1,...} line per second. "stable" goes 1 after a continuous
 // good-fix run >= BASE_SETTLE_MS; that's the Orin's cue that base_lock can
 // latch a settled camera position. lat/lon are the running mean.
+// raw_lat/raw_lon (H9, additive — old parsers unaffected) are the
+// INSTANTANEOUS fix at the same 1e7 scaling: the unbounded run mean freezes
+// after ~30 min (a 10 m tripod kick moves it ~5.5 mm/sample), so the Orin's
+// BaseDriftMonitor must watch the raw fix, not the mean. Gate on "fix" before
+// trusting them (0,0 while invalid, same contract as the tracker line).
 static void emit_base_position() {
   bool valid = base_fix_since_ms != 0;
   bool stable = valid && (millis() - base_fix_since_ms) >= BASE_SETTLE_MS;
   uint32_t hold_s = valid ? (millis() - base_fix_since_ms) / 1000 : 0;
   uint16_t hdop_x10 = base_gps.hdop.isValid()
       ? (uint16_t)min(base_gps.hdop.hdop() * 10.0, 65535.0) : 999;
+  long raw_lat_e7 = 0, raw_lon_e7 = 0;
+  if (base_gps.location.isValid()) {
+    raw_lat_e7 = (long)(base_gps.location.lat() * 1e7);
+    raw_lon_e7 = (long)(base_gps.location.lng() * 1e7);
+  }
   Serial.printf(
       "{\"base\":1,\"fix\":%d,\"lat_e7\":%ld,\"lon_e7\":%ld,\"alt_m\":%d,"
+      "\"raw_lat\":%ld,\"raw_lon\":%ld,"
       "\"sats\":%u,\"hdop_x10\":%u,\"stable\":%d,\"hold_s\":%lu}\n",
       valid ? 1 : 0, (long)(base_lat_mean * 1e7), (long)(base_lon_mean * 1e7),
       (int)base_alt_mean,
+      raw_lat_e7, raw_lon_e7,
       base_gps.satellites.isValid() ? base_gps.satellites.value() : 0,
       hdop_x10, stable ? 1 : 0, (unsigned long)hold_s);
 }
@@ -175,16 +187,23 @@ void loop() {
 
   // Integer-scaled JSON: no embedded float printf, exact on the Orin, and the
   // Orin checks "fix" before trusting lat_e7/lon_e7 (no phantom 0,0 point).
+  // spd_ok/crs_ok (M8, additive) surface PKT_FLAG_SPEED_VALID /
+  // PKT_FLAG_COURSE_VALID so the Orin can null course / zero speed when the
+  // GNSS didn't vouch for them (speed_cm_s/course_cdeg are 0 when the flag is
+  // clear, and 0 is also a legal course — the flag disambiguates).
   Serial.printf(
       "{\"seq\":%u,\"tracker_ms\":%lu,\"fix\":%d,"
       "\"lat_e7\":%ld,\"lon_e7\":%ld,\"gps_age_ms\":%u,"
       "\"speed_cm_s\":%u,\"course_cdeg\":%u,\"hacc_cm\":%u,"
+      "\"spd_ok\":%s,\"crs_ok\":%s,"
       "\"sats\":%u,\"batt_mv\":%u,"
       "\"rssi_x10\":%d,\"snr_x10\":%d,\"rx\":%lu,\"lost\":%lu}\n",
       pkt.seq, (unsigned long)pkt.tracker_ms,
       (int)(pkt.flags_sats & PKT_FLAG_FIX_VALID),
       (long)pkt.lat_e7, (long)pkt.lon_e7, pkt.gps_age_ms,
       pkt.speed_cm_s, pkt.course_cdeg, pkt.hacc_cm,
+      (pkt.flags_sats & PKT_FLAG_SPEED_VALID) ? "true" : "false",
+      (pkt.flags_sats & PKT_FLAG_COURSE_VALID) ? "true" : "false",
       pkt.flags_sats >> 8, pkt.battery_mv,
       rssi_x10, snr_x10,
       (unsigned long)received, (unsigned long)lost);

@@ -32,11 +32,28 @@ class ViscaIP:
         self._lock = threading.Lock()
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.settimeout(timeout)
+        # R5 (audit round-2): one-shot log gate for the send-failure guard below
+        # — an extended camera-LAN outage would otherwise log every send (up to
+        # 10 Hz from the NO_VIDEO stop path) instead of once per outage.
+        self._send_failed = False
 
     # ---- transport: RAW VISCA, no VISCA-over-IP header (validated @1259) ----
     def _send(self, payload: bytes) -> None:
-        with self._lock:
-            self._sock.sendto(payload, (self.ip, self.port))
+        """R5 (audit round-2): sendto can raise OSError (ENETUNREACH/EHOSTUNREACH
+        when the camera LAN drops — the same event that causes an RTSP dropout).
+        Uncaught, this propagated out of every ptz.* call in the vision loop,
+        including C1's _stop_for_no_video and the KILL path's ptz.stop(),
+        which killed the pipeline thread -> zombie rig (API up, vision dead).
+        Swallow it: a UDP fire-and-forget send has no retry story anyway, and
+        the caller's own dedupe/keepalive logic will re-issue the next tick."""
+        try:
+            with self._lock:
+                self._sock.sendto(payload, (self.ip, self.port))
+            self._send_failed = False
+        except OSError as e:
+            if not self._send_failed:
+                print(f"[ptz_visca] sendto failed (camera unreachable?): {e}")
+                self._send_failed = True
 
     def _drain(self) -> None:
         self._sock.setblocking(False)
@@ -131,7 +148,7 @@ class ViscaIP:
     def home(self) -> None:
         self._send(bytes([self.addr, 0x01, 0x06, 0x04, 0xFF]))
 
-    def inquire_pan_tilt(self):
+    def inquire_pan_tilt(self) -> tuple[int, int] | None:
         """Pan/tilt position inquiry -> (pan_counts, tilt_counts) signed, or None.
         Raw reply: 90 50 0p 0p 0p 0p 0t 0t 0t 0t FF (no 8-byte header). Reads past
         stale ACK/completion frames. Lock held only for the sendto, not the blocking
@@ -140,7 +157,7 @@ class ViscaIP:
         with self._lock:
             self._sock.sendto(bytes([self.addr, 0x09, 0x06, 0x12, 0xFF]), (self.ip, self.port))
 
-        def parse(data):
+        def parse(data: bytes) -> tuple[int, int] | None:
             if len(data) == 11 and data[0] == 0x90 and data[1] == 0x50:
                 pan = (data[2] << 12) | (data[3] << 8) | (data[4] << 4) | data[5]
                 tilt = (data[6] << 12) | (data[7] << 8) | (data[8] << 4) | data[9]
@@ -189,13 +206,13 @@ class ViscaIP:
 
 class NullPtz:
     """Stand-in when ptz.enabled is false — accepts calls, does nothing."""
-    def reset_sequence(self): pass
-    def pan_tilt(self, *a, **k): pass
-    def pan_tilt_absolute(self, *a, **k): pass
-    def stop(self): pass
-    def zoom(self, *a, **k): pass
-    def zoom_absolute(self, *a, **k): pass
-    def home(self): pass
-    def inquire_pan_tilt(self): return None
-    def inquire_zoom(self): return None
-    def close(self): pass
+    def reset_sequence(self) -> None: pass
+    def pan_tilt(self, *a: object, **k: object) -> None: pass
+    def pan_tilt_absolute(self, *a: object, **k: object) -> None: pass
+    def stop(self) -> None: pass
+    def zoom(self, *a: object, **k: object) -> None: pass
+    def zoom_absolute(self, *a: object, **k: object) -> None: pass
+    def home(self) -> None: pass
+    def inquire_pan_tilt(self) -> tuple[int, int] | None: return None
+    def inquire_zoom(self) -> int | None: return None
+    def close(self) -> None: pass

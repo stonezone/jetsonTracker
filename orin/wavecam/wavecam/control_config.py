@@ -64,18 +64,16 @@ class ConfigManager:
         return None
 
     def validate_hot_config_request(self, req) -> JSONResponse | None:
-        if req.persist:
-            return self._api.refusal(
-                "invalid_request",
-                "persist=true is not supported by hot config in v1.",
-                422,
-            )
-        if req.revision is not None and req.revision != self._api.revision:
-            return self._api.refusal(
-                "revision_conflict",
-                "Hot config revision is stale; refresh /api/v1/config and retry.",
-                409,
-            )
+        # L5 (audit 2026-07-01): hot config ALWAYS persists (to config.local.yaml);
+        # persist was previously refused as unsupported while persistence happened
+        # unconditionally anyway — a contradictory contract. req.persist is now a
+        # documented no-op: accepted regardless of value, changes nothing, because
+        # every successful hot-config apply already persists.
+        #
+        # The revision check itself now happens under api._lock in
+        # apply_and_persist_hot_patch (L7 — closes the TOCTOU where two concurrent
+        # requests could both pass a stale-revision check here and then interleave
+        # writes); this method no longer duplicates that check.
         return None
 
     def apply_hot_key(self, key: str, value: Any, dry_run: bool = False) -> JSONResponse | None:
@@ -114,6 +112,8 @@ class ConfigManager:
             "gps.stale_threshold_sec": lambda: self.apply_gps_float("stale_threshold_sec", value, 1.0, 120.0, dry_run=dry_run),
             "gps.drive_stale_sec": lambda: self.apply_gps_float("drive_stale_sec", value, 1.0, 60.0, dry_run=dry_run),
             "gps.coast_on_no_fix_sec": lambda: self.apply_gps_coast(value, dry_run=dry_run),
+            "gps.lead_margin_s": lambda: self.apply_gps_float("lead_margin_s", value, 0.0, 5.0, dry_run=dry_run),
+            "gps.lead_cap_s": lambda: self.apply_gps_float("lead_cap_s", value, 0.5, 15.0, dry_run=dry_run),
             "gps.grace_sec": lambda: self.apply_gps_float("grace_sec", value, 0.1, 10.0, dry_run=dry_run),
             "gps.lock_frames": lambda: self.apply_gps_int("lock_frames", value, 1, 30, dry_run=dry_run),
             "gps.drive_zoom": lambda: self.apply_gps_bool("drive_zoom", value, dry_run=dry_run),
@@ -255,8 +255,6 @@ class ConfigManager:
             return
         arbiter.lock_frames = int(getattr(gps_cfg, "lock_frames", arbiter.lock_frames))
         arbiter.grace_sec = float(getattr(gps_cfg, "grace_sec", arbiter.grace_sec))
-        arbiter.max_gps_age_sec = float(getattr(gps_cfg, "drive_stale_sec",
-                                               getattr(arbiter, "max_gps_age_sec", 8.0)))
 
     # ------------------------------------------------------------------
     # Tracking mode helpers

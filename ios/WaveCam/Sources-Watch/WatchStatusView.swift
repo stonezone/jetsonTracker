@@ -7,6 +7,9 @@ struct WatchStatusView: View {
     @State private var holdProgress: Double = 0
     @State private var holdTimer: Timer?
     private let holdDuration: Double = 1.2
+    /// R18: true while a STOP POST is in flight (either the primary button or the
+    /// offline-screen retry), so the operator sees "SENDING STOP…" instead of an inert STOP.
+    @State private var sendingStop = false
 
     private var snap: WatchSnapshot { client.snapshot }
 
@@ -15,7 +18,19 @@ struct WatchStatusView: View {
             Color.black.ignoresSafeArea()
 
             if !client.online {
-                offlineView
+                VStack(spacing: 8) {
+                    if client.stopNotConfirmed {
+                        stopNotConfirmedBanner
+                        // R18: the offline screen previously showed only the banner with no
+                        // way to retry — the operator was stuck until a GET poll happened to
+                        // succeed, even though kill() POSTs over 2 routes with its own
+                        // timeout/failover and can succeed where the 3 s status GET just failed.
+                        retryStopButton
+                    }
+                    offlineView
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
             } else {
                 VStack(spacing: 6) {
                     stateRow
@@ -25,6 +40,9 @@ struct WatchStatusView: View {
                         gpsRow
                     }
                     Spacer(minLength: 2)
+                    if client.stopNotConfirmed {
+                        stopNotConfirmedBanner
+                    }
                     if snap.killed {
                         resumeButton
                     } else {
@@ -127,20 +145,73 @@ struct WatchStatusView: View {
         }
     }
 
+    /// H13: shown when the last STOP could not be confirmed by the rig — the camera
+    /// may still be moving. Cleared when a poll confirms killed or a resume succeeds.
+    /// R19: tap-to-dismiss — fail-safe direction only; this clears just the unconfirmed-POST
+    /// warning, not an actual kill latch (`snapshot.killed` still gates resume independently),
+    /// for when the situation is known-resolved elsewhere (phone kill/resume, physical stop).
+    private var stopNotConfirmedBanner: some View {
+        Text("STOP NOT CONFIRMED — tap to dismiss")
+            .font(.system(size: 10, weight: .black, design: .monospaced))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .background(Color.red.opacity(0.85))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .contentShape(Rectangle())
+            .onTapGesture { client.dismissStopNotConfirmed() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Stop not confirmed. Tap to dismiss.")
+    }
+
     /// Large red Emergency Stop button
     private var stopButton: some View {
         Button {
-            Task { await client.kill() }
+            Task {
+                sendingStop = true
+                await client.kill()
+                sendingStop = false
+            }
         } label: {
-            Text("STOP")
+            Text(sendingStop ? "SENDING STOP…" : "STOP")
                 .font(.system(size: 16, weight: .black, design: .monospaced))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(Color.red)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
         }
         .buttonStyle(.plain)
+        .disabled(sendingStop)
+    }
+
+    /// R18: retry-STOP for the offline screen — shown only alongside the unconfirmed-STOP
+    /// banner (the operator must not lose the emergency-stop path just because the last
+    /// status GET failed; kill() has its own 2-route timeout/failover independent of poll()).
+    private var retryStopButton: some View {
+        Button {
+            Task {
+                sendingStop = true
+                await client.kill()
+                sendingStop = false
+            }
+        } label: {
+            Text(sendingStop ? "SENDING STOP…" : "RETRY STOP")
+                .font(.system(size: 13, weight: .black, design: .monospaced))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(Color.red)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+        .disabled(sendingStop)
     }
 
     /// Hold-to-resume button shown only when killed

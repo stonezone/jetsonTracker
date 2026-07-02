@@ -513,13 +513,20 @@ def build_app(pipeline) -> FastAPI:
 
     def _frames():
         boundary = b"--frame\r\n"
-        while True:
-            jpg = pipeline.state.get_jpeg()
-            if jpg is None:
-                time.sleep(0.05)
-                continue
-            yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
-            time.sleep(0.03)
+        # M7: count live MJPEG readers so the pipeline can skip annotate+encode
+        # when nobody is watching. finally fires on client disconnect
+        # (GeneratorExit when StreamingResponse closes the generator).
+        pipeline.state.preview_client_add()
+        try:
+            while True:
+                jpg = pipeline.state.get_jpeg()
+                if jpg is None:
+                    time.sleep(0.05)
+                    continue
+                yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
+                time.sleep(0.03)
+        finally:
+            pipeline.state.preview_client_remove()
 
     # AUTH-1: gate the legacy read routes like the /api/v1 reads, so enabling auth is
     # all-or-nothing instead of leaving the console's data routes open. No-op while auth
@@ -602,14 +609,16 @@ def build_app(pipeline) -> FastAPI:
 
     @app.post("/tune", dependencies=[Depends(require(CONFIG))])
     def tune(t: Tune):
+        # L5 (audit 2026-07-01): route through the SAME apply+persist path as
+        # /api/v1/config/hot. Previously /tune applied hot config in memory only
+        # (no persist_hot_values call) so identical keys set via /tune silently
+        # reverted on the next restart while the same keys via /config/hot
+        # survived — a contradictory, surprising contract for two UIs tuning the
+        # same live values.
         patch = tune_patch(t)
         if not patch:
             return {"ok": True}
-        refusal = app.state.control_api.apply_hot_config(patch)
-        if refusal is not None:
-            return refusal
-        app.state.control_api.bump_revision()
-        return {"ok": True, "patch": patch}
+        return app.state.control_api.apply_and_persist_hot_patch(patch)
 
     register_control_api(app, pipeline, _frames)
 
