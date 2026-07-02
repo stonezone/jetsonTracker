@@ -49,9 +49,10 @@ def test_course_nulled_and_speed_zeroed_when_flags_false():
     )
     fix = g.get_fix(now=1000.0)
     assert fix is not None
-    # course=0 with crs_ok false must not be reported as "due north" — the bug
-    # was reporting the firmware's memset-0 field as real data.
-    assert fix.course == 0.0
+    # course with crs_ok false must not be reported as "due north" — the bug was
+    # reporting the firmware's memset-0 field as real data. R8: report None so
+    # predict_lead won't extrapolate the aim due north.
+    assert fix.course is None
     assert fix.speed == 0.0
 
 
@@ -96,16 +97,19 @@ def test_h_acc_m_is_none_when_hacc_cm_absent():
 
 # --- H9: get_camera_position() prefers the raw instantaneous fix -----------
 
-def test_camera_position_prefers_raw_fix_when_present():
+def test_camera_position_returns_mean_raw_seam_returns_raw():
     g = DirectRadioGps()
     g._handle_line(
         '{"base":1,"fix":1,"lat_e7":216000000,"lon_e7":-1580000000,'
         '"raw_lat":216005000,"raw_lon":-1580003000,"alt_m":8,"stable":1}',
         now=1000.0,
     )
-    # The settled mean (216000000) differs from the instantaneous raw fix
-    # (216005000) -- get_camera_position() must return the RAW one.
-    assert g.get_camera_position() == (21.6005, -158.0003, 8.0)
+    # R6-B: the settled mean (216000000) differs from the instantaneous raw fix
+    # (216005000). get_camera_position() must return the settled MEAN (used by
+    # calibration/pointing); only get_camera_position_raw() returns the raw fix
+    # (used by the drift monitor).
+    assert g.get_camera_position() == (21.6, -158.0, 8.0)
+    assert g.get_camera_position_raw() == (21.6005, -158.0003, 8.0)
 
 
 def test_camera_position_falls_back_to_mean_without_raw_fields():
@@ -160,8 +164,17 @@ class _FailThenSucceedFactory:
 
 
 class _FakeSerial:
+    """Emits one parseable seq line (so R9 glob-validation accepts the port),
+    then goes quiet."""
+
+    def __init__(self):
+        self._lines = [
+            b'{"seq":1,"fix":1,"lat_e7":216000000,"lon_e7":-1580000000,'
+            b'"gps_age_ms":0,"speed_cm_s":0,"course_cdeg":0}\n'
+        ]
+
     def readline(self):
-        return b""
+        return self._lines.pop(0) if self._lines else b""
 
     def close(self):
         pass
@@ -193,7 +206,7 @@ def test_candidate_paths_globs_after_threshold(monkeypatch):
 def test_reader_loop_recovers_via_glob_after_repeated_failures(monkeypatch):
     factory = _FailThenSucceedFactory(good_path="/dev/ttyACM1")
     g = DirectRadioGps(dev_path="/dev/ttyACM0", reconnect_sec=0.001,
-                       serial_factory=factory)
+                       serial_factory=factory, glob_validate_sec=0.5)
     monkeypatch.setattr(
         "wavecam.gps_direct_lora.glob.glob",
         lambda pattern: ["/dev/ttyACM0", "/dev/ttyACM1"],

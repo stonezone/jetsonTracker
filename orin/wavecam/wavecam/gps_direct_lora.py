@@ -26,6 +26,14 @@ SerialFactory = Callable[..., Any]
 # Wio lands on ACM1) without a service restart.
 OPEN_FAIL_GLOB_THRESHOLD = 5
 
+# R9 (audit round-2, 2026-07-01): a glob-discovered (non-configured) candidate
+# must produce at least one parseable base/seq JSONL line within this many
+# seconds before the reader trusts it. Without this gate, an unrelated
+# /dev/ttyACM* node (Arduino/Nucleo/debug probe) that opens fine but emits
+# nothing lets readline() return b"" forever with no exception, so the reader
+# latches onto the wrong device and never re-scans for the real Wio.
+DEFAULT_GLOB_VALIDATE_SEC = 10.0
+
 
 def _flag(value: Any) -> bool:
     if isinstance(value, str):
@@ -80,11 +88,16 @@ class DirectRadioGps:
         reconnect_sec: float = 3.0,
         serial_factory: SerialFactory | None = None,
         coast_on_no_fix_sec: float = 2.0,
+        glob_validate_sec: float = DEFAULT_GLOB_VALIDATE_SEC,
     ):
         self.dev_path = dev_path
         self.baud = int(baud)
         self.reconnect_sec = float(reconnect_sec)
         self._serial_factory = serial_factory
+        # R9: validation window for a glob-discovered candidate (see
+        # DEFAULT_GLOB_VALIDATE_SEC); a constructor override lets tests use a
+        # short window instead of the real 10s.
+        self.glob_validate_sec = float(glob_validate_sec)
         # L2: consecutive open failures on self.dev_path; reset to 0 on a
         # successful open. current_dev_path is what actually got opened last
         # (the configured path, or a glob-discovered fallback).
@@ -106,8 +119,10 @@ class DirectRadioGps:
         # H9 (audit 2026-07-01): the base's settled running mean (_cam) is
         # unbounded and freezes after ~30 min, defeating BaseDriftMonitor (a 10m
         # tripod kick moves the mean ~5.5mm/sample). raw_lat/raw_lon are the
-        # INSTANTANEOUS fix at the same tick; prefer it for drift detection,
-        # falling back to the mean when the firmware doesn't emit it.
+        # INSTANTANEOUS fix at the same tick, exposed via get_camera_position_raw()
+        # for drift detection only (R6-B, audit round-2: get_camera_position()
+        # itself must keep returning the settled mean -- calibration/pointing/
+        # snapshot consumers need it, not the noisier single-shot raw fix).
         self._cam_raw: Optional[Tuple[float, float, float]] = None
         self._cam_raw_ts: float = 0.0
         self._last_poll_ts: Optional[float] = None
@@ -161,6 +176,36 @@ class DirectRadioGps:
 
         return serial.Serial(dev_path, self.baud, timeout=1)
 
+    def _validate_glob_candidate(self, ser: Any, dev_path: str) -> bool:
+        """R9: read from a glob-discovered (non-configured) port for up to
+        ``self.glob_validate_sec`` looking for >=1 parseable base/seq JSONL
+        line. Returns True (and feeds the validating line through the normal
+        handler so it isn't wasted) as soon as one is seen; False if the
+        window elapses first or the reader is asked to stop."""
+        deadline = time.monotonic() + self.glob_validate_sec
+        while time.monotonic() < deadline:
+            if self._stop.is_set():
+                return False
+            try:
+                raw = ser.readline()
+            except Exception as e:
+                log.warning("DirectRadioGps glob candidate %s read error during validation: %s", dev_path, e)
+                return False
+            if not raw:
+                continue
+            line = raw.decode("utf-8", errors="replace").strip() if isinstance(raw, bytes) else str(raw).strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(data, dict) and (_flag(data.get("base")) or "seq" in data):
+                log.info("DirectRadioGps validated glob candidate %s (parseable JSONL)", dev_path)
+                self._handle_line(line)
+                return True
+        return False
+
     def _reader_loop(self) -> None:
         while not self._stop.is_set():
             if self._serial is None:
@@ -169,23 +214,41 @@ class DirectRadioGps:
                 last_err: Exception | None = None
                 for dev_path in candidates:
                     try:
-                        self._serial = self._open_serial(dev_path)
-                        self.current_dev_path = dev_path
-                        self.enabled = True
-                        self._open_fail_count = 0
-                        opened = True
-                        if dev_path != self.dev_path:
-                            log.warning(
-                                "DirectRadioGps recovered via glob fallback on %s "
-                                "(configured %s unavailable after %d failures)",
-                                dev_path, self.dev_path, OPEN_FAIL_GLOB_THRESHOLD,
-                            )
-                        else:
-                            log.info("DirectRadioGps connected on %s at %s baud", dev_path, self.baud)
-                        break
+                        candidate = self._open_serial(dev_path)
                     except Exception as e:
                         last_err = e
                         continue
+                    is_configured = dev_path == self.dev_path
+                    if not is_configured:
+                        # R9 (audit round-2): a glob-discovered candidate might be
+                        # an unrelated /dev/ttyACM* node (Arduino/Nucleo/debug
+                        # probe) that opens fine but never emits our JSONL --
+                        # require proof before trusting it, so a silent wrong
+                        # device can't latch the reader forever.
+                        if not self._validate_glob_candidate(candidate, dev_path):
+                            try:
+                                candidate.close()
+                            except Exception:
+                                pass
+                            last_err = RuntimeError(
+                                f"{dev_path} produced no parseable JSONL within "
+                                f"{self.glob_validate_sec:.0f}s"
+                            )
+                            continue
+                    self._serial = candidate
+                    self.current_dev_path = dev_path
+                    self.enabled = True
+                    self._open_fail_count = 0
+                    opened = True
+                    if not is_configured:
+                        log.warning(
+                            "DirectRadioGps recovered via glob fallback on %s "
+                            "(configured %s unavailable after %d failures)",
+                            dev_path, self.dev_path, OPEN_FAIL_GLOB_THRESHOLD,
+                        )
+                    else:
+                        log.info("DirectRadioGps connected on %s at %s baud", dev_path, self.baud)
+                    break
                 if not opened:
                     self._open_fail_count += 1
                     self.enabled = False
@@ -293,12 +356,20 @@ class DirectRadioGps:
             # memset-0 field as if it were real data (course=0 == due north).
             spd_ok = _flag_or_default(data, "spd_ok", True)
             crs_ok = _flag_or_default(data, "crs_ok", True)
-            course = (_float_value(data.get("course_cdeg")) / 100.0) % 360.0 if crs_ok else 0.0
+            # R8 (audit round-2, 2026-07-01): course=None (not 0.0/due-north) when
+            # crs_ok is false. predict_lead() already returns the point unchanged
+            # when course_deg is None; reporting 0.0 instead made a slow-drifting
+            # subject with an invalid course get led due north.
+            course = (_float_value(data.get("course_cdeg")) / 100.0) % 360.0 if crs_ok else None
             speed = _float_value(data.get("speed_cm_s")) / 100.0 if spd_ok else 0.0
             # M9 (audit 2026-07-01): hacc_cm -> h_acc_m (None when absent so callers
             # can distinguish "unknown" from "0m accurate").
+            # R7 (audit round-2): the firmware also sends hacc_cm=0 (memset-0) when
+            # the fix/hdop is briefly invalid during reacquisition -- that must map
+            # to None ("unknown"), not a false "perfect 0m" that defeats the
+            # h_acc gate exactly in the post-wipeout scenario it exists for.
             hacc_cm = _float_value(data.get("hacc_cm"), default=-1.0)
-            h_acc_m = (hacc_cm / 100.0) if hacc_cm >= 0.0 else None
+            h_acc_m = (hacc_cm / 100.0) if hacc_cm > 0.0 else None
             fix = NormalizedFix(
                 lat=lat,
                 lon=lon,
@@ -352,27 +423,49 @@ class DirectRadioGps:
         return replace(fix, age_sec=max(0.0, now - fix.ts))
 
     def get_camera_position(self) -> Optional[Tuple[float, float, float]]:
-        """The base/camera reference position.
+        """The base/camera reference position: the firmware's settled running
+        mean (fix-gated AND stable-gated).
 
-        H9 (audit 2026-07-01): prefer the INSTANTANEOUS raw fix (raw_lat/raw_lon)
-        when the firmware has emitted one -- the settled running mean (_cam) is
-        unbounded and freezes after ~30 min, which silently defeats
-        BaseDriftMonitor (this is the only read seam it consumes). Falls back to
-        the mean on older firmware that doesn't emit raw_lat/raw_lon, or before
-        the first raw sample arrives.
+        R6-B (audit round-2, 2026-07-01): Wave 2's H9 fix re-pointed this seam at
+        the instantaneous raw fix, but calibration base-lock, live-base checks,
+        the no-base GPS-pointing fallback, and snapshot overlays all genuinely
+        need the settled mean -- raw is single-shot (~2-3 m scatter) and bypasses
+        the "stable" gate, so a pre-settle base-lock corrupts every GPS slew
+        (3 m of base error is ~1-2 degrees of bearing error at 150 m). Use
+        get_camera_position_raw() for drift detection instead (the only
+        consumer that wants the instantaneous fix).
         """
         with self._lock:
-            return self._cam_raw if self._cam_raw is not None else self._cam
+            return self._cam
 
     def get_camera_age(self, now: Optional[float] = None) -> Optional[float]:
-        """Age of whichever position get_camera_position() would return (raw
-        fix when present, else the settled mean) so freshness gates that pair
-        the two calls (e.g. CALIBRATE's live-base check) stay consistent."""
+        """Age of the settled-mean position get_camera_position() returns, or
+        None if no base fix yet."""
         with self._lock:
-            if self._cam_raw is not None:
-                cam, ts = self._cam_raw, self._cam_raw_ts
-            else:
-                cam, ts = self._cam, self._cam_ts
+            cam, ts = self._cam, self._cam_ts
+        if cam is None or ts <= 0:
+            return None
+        return max(0.0, (time.time() if now is None else now) - ts)
+
+    def get_camera_position_raw(self) -> Optional[Tuple[float, float, float]]:
+        """The base's INSTANTANEOUS raw fix (raw_lat/raw_lon), fix-gated only
+        (not stable-gated). None on older firmware that doesn't emit raw_lat/
+        raw_lon, or before the first raw sample arrives.
+
+        R6-B: this is the seam BaseDriftMonitor should use -- the settled mean
+        (get_camera_position()) is unbounded and freezes after ~30 min, which
+        silently defeats drift detection (a 10 m tripod kick moves the mean
+        ~5.5 mm/sample). Everything else (calibration, pointing, snapshots)
+        must keep using the mean via get_camera_position().
+        """
+        with self._lock:
+            return self._cam_raw
+
+    def get_camera_age_raw(self, now: Optional[float] = None) -> Optional[float]:
+        """Age of the instantaneous raw fix get_camera_position_raw() returns,
+        or None if no raw base fix yet."""
+        with self._lock:
+            cam, ts = self._cam_raw, self._cam_raw_ts
         if cam is None or ts <= 0:
             return None
         return max(0.0, (time.time() if now is None else now) - ts)

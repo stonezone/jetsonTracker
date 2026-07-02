@@ -17,7 +17,11 @@ from typing import Optional
 class NormalizedFix:
     lat: float
     lon: float
-    course: float          # course-over-ground, degrees (0..360)
+    # R8 (audit round-2, 2026-07-01): Optional -- None when the firmware's
+    # crs_ok flag is false (course unknown), so predict_lead() (which already
+    # skips extrapolation when course_deg is None) doesn't lead a subject due
+    # north on an invalid course.
+    course: Optional[float]  # course-over-ground, degrees (0..360), or None if unknown
     speed: float           # m/s
     ts: float              # fix epoch seconds
     age_sec: float         # seconds since the fix was taken
